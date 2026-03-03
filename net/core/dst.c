@@ -48,7 +48,8 @@ EXPORT_SYMBOL(dst_default_metrics);
 static LIST_HEAD(dst_list);
 static DEFINE_SPINLOCK(dst_list_lock);
 
-void print_dst_list(const struct net_device *dev) {
+void print_dst_list(const struct net_device *dev)
+{
 	struct dst_entry *dst;
 	unsigned long flags;
 
@@ -59,8 +60,8 @@ void print_dst_list(const struct net_device *dev) {
 			       atomic_read(&dst->num_dst_hold_calls),
 			       atomic_read(&dst->num_sk_dst_get_calls),
 			       atomic_read(&dst->num_dst_release_calls),
-			       ((unsigned int) atomic_read(&dst->num_rcuref_init_calls)) >> 16,
-			       ((unsigned int) atomic_read(&dst->num_rcuref_init_calls)) & 65535);
+			       ((unsigned int)atomic_read(&dst->num_rcuref_init_calls)) >> 16,
+			       ((unsigned int)atomic_read(&dst->num_rcuref_init_calls)) & 65535);
 	}
 	spin_unlock_irqrestore(&dst_list_lock, flags);
 }
@@ -156,7 +157,7 @@ static void dst_destroy(struct dst_entry *dst)
 	lwtstate_put(dst->lwtstate);
 
 #ifdef CONFIG_NET_DEV_REFCNT_TRACKER
-	if (!list_empty(&dst->dst_list)) {
+	if (!list_empty(&dst->dst_list) && dst->dst_list.next && dst->dst_list.prev) {
 		unsigned long flags;
 
 		spin_lock_irqsave(&dst_list_lock, flags);

@@ -2108,12 +2108,12 @@ int ntfs_resident_attr_record_add(struct ntfs_inode *ni, __le32 type,
 	int err, offset;
 	struct ntfs_inode *base_ni;
 
+	if (!ni || (!name && name_len))
+		return -EINVAL;
+
 	ntfs_debug("Entering for inode 0x%llx, attr 0x%x, flags 0x%x.\n",
 			(long long) ni->mft_no, (unsigned int) le32_to_cpu(type),
 			(unsigned int) le16_to_cpu(flags));
-
-	if (!ni || (!name && name_len))
-		return -EINVAL;
 
 	err = ntfs_attr_can_be_resident(ni->vol, type);
 	if (err) {
@@ -2229,13 +2229,13 @@ static int ntfs_non_resident_attr_record_add(struct ntfs_inode *ni, __le32 type,
 	struct ntfs_inode *base_ni;
 	int err, offset;
 
+	if (!ni || dataruns_size <= 0 || (!name && name_len))
+		return -EINVAL;
+
 	ntfs_debug("Entering for inode 0x%llx, attr 0x%x, lowest_vcn %lld, dataruns_size %d, flags 0x%x.\n",
 			(long long) ni->mft_no, (unsigned int) le32_to_cpu(type),
 			(long long) lowest_vcn, dataruns_size,
 			(unsigned int) le16_to_cpu(flags));
-
-	if (!ni || dataruns_size <= 0 || (!name && name_len))
-		return -EINVAL;
 
 	err = ntfs_attr_can_be_non_resident(ni->vol, type);
 	if (err) {
@@ -2661,6 +2661,7 @@ add_non_resident:
 	/* Open new attribute and resize it. */
 	attr_vi = ntfs_attr_iget(VFS_I(ni), type, name, name_len);
 	if (IS_ERR(attr_vi)) {
+		err = PTR_ERR(attr_vi);
 		ntfs_error(sb, "Failed to open just added attribute");
 		goto rm_attr_err_out;
 	}
@@ -5123,8 +5124,10 @@ int ntfs_non_resident_attr_collapse_range(struct ntfs_inode *ni, s64 start_vcn, 
 
 	down_write(&ni->runlist.lock);
 	ret = ntfs_attr_map_whole_runlist(ni);
-	if (ret)
+	if (ret) {
+		up_write(&ni->runlist.lock);
 		return ret;
+	}
 
 	len = min(len, end_vcn - start_vcn);
 	for (rl = ni->runlist.rl, dst_cnt = 0; rl && rl->length; rl++)

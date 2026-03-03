@@ -275,6 +275,8 @@ drm-msm		https://gitlab.freedesktop.org/drm/msm.git#msm-next
 drm-msm-lumag	https://gitlab.freedesktop.org/lumag/msm.git#msm-next-lumag
 drm-xe		https://gitlab.freedesktop.org/drm/xe/kernel.git#drm-xe-next
 etnaviv		https://git.pengutronix.de/git/lst/linux#etnaviv/next
+drm-rust	https://gitlab.freedesktop.org/drm/rust/kernel.git#drm-rust-next
+drm-nova	https://gitlab.freedesktop.org/drm/nova.git#nova-next
 fbdev		https://git.kernel.org/pub/scm/linux/kernel/git/deller/linux-fbdev.git#for-next
 regmap		https://git.kernel.org/pub/scm/linux/kernel/git/broonie/regmap.git#for-next
 sound		https://git.kernel.org/pub/scm/linux/kernel/git/tiwai/sound.git#for-next
@@ -406,5 +408,3 @@ fwctl		https://git.kernel.org/pub/scm/linux/kernel/git/fwctl/fwctl.git#for-next
 devsec-tsm	https://git.kernel.org/pub/scm/linux/kernel/git/devsec/tsm.git#next
 hisilicon	https://github.com/hisilicon/linux-hisi.git#for-next
 kthread		https://git.kernel.org/pub/scm/linux/kernel/git/frederic/linux-dynticks.git#for-next
-drm-rust	https://gitlab.freedesktop.org/drm/rust/kernel.git#drm-rust-next
-drm-nova	https://gitlab.freedesktop.org/drm/nova.git#nova-next

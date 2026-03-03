@@ -8,7 +8,7 @@
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/pagemap.h>
-#include <linux/pagevec.h>
+#include <linux/folio_batch.h>
 #include <linux/highmem.h>
 #include <linux/kthread.h>
 #include <linux/time.h>
@@ -224,7 +224,6 @@ void btrfs_free_compr_folio(struct folio *folio)
 		return;
 
 free:
-	ASSERT(folio_ref_count(folio) == 1);
 	folio_put(folio);
 }
 
