@@ -156,6 +156,7 @@ drm-rust-fixes	https://gitlab.freedesktop.org/drm/rust/kernel.git#drm-rust-fixes
 tenstorrent-dt-fixes	https://github.com/tenstorrent/linux.git#tenstorrent-dt-fixes
 drm-misc-fixes	https://gitlab.freedesktop.org/drm/misc/kernel.git#for-linux-next-fixes
 rust		https://github.com/Rust-for-Linux/linux.git#rust-next
+rust-interop	https://github.com/Rust-for-Linux/linux.git#interop-next
 rust-alloc	https://github.com/Rust-for-Linux/linux.git#alloc-next
 rust-io		https://github.com/Rust-for-Linux/linux.git#io-next
 rust-pin-init	https://github.com/Rust-for-Linux/linux.git#pin-init-next

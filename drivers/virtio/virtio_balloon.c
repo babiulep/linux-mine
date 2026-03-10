@@ -1022,19 +1022,7 @@ static int virtballoon_probe(struct virtio_device *vdev)
 			goto out_unregister_oom;
 		}
 
-		/*
-		 * page_reporting_register() takes the order either
-		 * from the driver or the commandline. If neither
-		 * are provided, it falls back to MAX_PAGE_ORDER.
-		 *
-		 * Order given by the driver is required to be in the
-		 * range [0, MAX_PAGE_ORDER].
-		 *
-		 * One way for the driver to not provide any order
-		 * is by setting it to -1.
-		 */
-
-		vb->pr_dev_info.order = -1;
+		vb->pr_dev_info.order = PAGE_REPORTING_ORDER_UNSPECIFIED;
 
 		/*
 		 * The default page reporting order is @pageblock_order, which

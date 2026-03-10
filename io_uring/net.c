@@ -375,10 +375,13 @@ static int io_send_setup(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 		kmsg->msg.msg_namelen = addr_len;
 	}
 	if (sr->flags & IORING_RECVSEND_FIXED_BUF) {
-		if (sr->flags & IORING_SEND_VECTORIZED)
-			return -EINVAL;
-		req->flags |= REQ_F_IMPORT_BUFFER;
-		return 0;
+		if (!(sr->flags & IORING_SEND_VECTORIZED)) {
+			req->flags |= REQ_F_IMPORT_BUFFER;
+			return 0;
+		}
+
+		kmsg->msg.msg_iter.nr_segs = sr->len;
+		return io_prep_reg_iovec(req, &kmsg->vec, sr->buf, sr->len);
 	}
 	if (req->flags & REQ_F_BUFFER_SELECT)
 		return 0;
@@ -396,6 +399,7 @@ static int io_sendmsg_setup(struct io_kiocb *req, const struct io_uring_sqe *sqe
 	struct user_msghdr msg;
 	int ret;
 
+	sr->flags |= IORING_SEND_VECTORIZED;
 	sr->umsg = u64_to_user_ptr(READ_ONCE(sqe->addr));
 	ret = io_msg_copy_hdr(req, kmsg, &msg, ITER_SOURCE, NULL);
 	if (unlikely(ret))
@@ -1329,11 +1333,12 @@ int io_send_zc_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 	struct io_ring_ctx *ctx = req->ctx;
 	struct io_async_msghdr *iomsg;
 	struct io_kiocb *notif;
+	u64 user_data;
 	int ret;
 
 	zc->done_io = 0;
 
-	if (unlikely(READ_ONCE(sqe->__pad2[0]) || READ_ONCE(sqe->addr3)))
+	if (unlikely(READ_ONCE(sqe->__pad2[0])))
 		return -EINVAL;
 	/* we don't support IOSQE_CQE_SKIP_SUCCESS just yet */
 	if (req->flags & REQ_F_CQE_SKIP)
@@ -1342,7 +1347,11 @@ int io_send_zc_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 	notif = zc->notif = io_alloc_notif(ctx);
 	if (!notif)
 		return -ENOMEM;
-	notif->cqe.user_data = req->cqe.user_data;
+	user_data = READ_ONCE(sqe->addr3);
+	if (!user_data)
+		user_data = req->cqe.user_data;
+
+	notif->cqe.user_data = user_data;
 	notif->cqe.res = 0;
 	notif->cqe.flags = IORING_CQE_F_NOTIF;
 	req->flags |= REQ_F_NEED_CLEANUP | REQ_F_POLL_NO_LAZY;
@@ -1453,7 +1462,7 @@ static int io_send_zc_import(struct io_kiocb *req,
 
 	notif->buf_index = req->buf_index;
 
-	if (req->opcode == IORING_OP_SEND_ZC) {
+	if (!(sr->flags & IORING_SEND_VECTORIZED)) {
 		ret = io_import_reg_buf(notif, &kmsg->msg.msg_iter,
 					(u64)(uintptr_t)sr->buf, sr->len,
 					ITER_SOURCE, issue_flags);

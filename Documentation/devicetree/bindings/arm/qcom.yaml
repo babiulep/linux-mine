@@ -397,6 +397,7 @@ properties:
       - items:
           - enum:
               - acer,aspire1
+              - ecs,liva-qc710
               - qcom,sc7180-idp
           - const: qcom,sc7180
 
@@ -978,6 +979,7 @@ properties:
               - sony,pdx201
               - xiaomi,ginkgo
               - xiaomi,laurel-sprout
+              - xiaomi,willow
           - const: qcom,sm6125
 
       - items:
@@ -1133,6 +1135,12 @@ properties:
           - const: microsoft,denali-oled
           - const: microsoft,denali
           - const: qcom,x1e80100
+
+      - items:
+          - enum:
+              - qcom,purwa-iot-evk
+          - const: qcom,purwa-iot-som
+          - const: qcom,x1p42100
 
       - items:
           - enum:

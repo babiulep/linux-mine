@@ -650,7 +650,7 @@ static s32 piix4_access(struct i2c_adapter * adap, u16 addr,
 		size = PIIX4_BLOCK_DATA;
 		break;
 	default:
-		i2c_warn(adap, "Unsupported transaction %d\n", size);
+		dev_warn(&adap->dev, "Unsupported transaction %d\n", size);
 		return -EOPNOTSUPP;
 	}
 
@@ -788,7 +788,7 @@ static s32 piix4_access_sb800(struct i2c_adapter *adap, u16 addr,
 	u8 prev_port;
 	int retval;
 
-	retval = piix4_sb800_region_request(i2c_adapter_dev(adap), &adapdata->mmio_cfg);
+	retval = piix4_sb800_region_request(&adap->dev, &adapdata->mmio_cfg);
 	if (retval)
 		return retval;
 
@@ -825,12 +825,12 @@ static s32 piix4_access_sb800(struct i2c_adapter *adap, u16 addr,
 		ret = piix4_imc_sleep();
 		switch (ret) {
 		case -EBUSY:
-			i2c_warn(adap,
+			dev_warn(&adap->dev,
 				 "IMC base address index region 0x%x already in use.\n",
 				 KERNCZ_IMC_IDX);
 			break;
 		case -ETIMEDOUT:
-			i2c_warn(adap,
+			dev_warn(&adap->dev,
 				 "Failed to communicate with the IMC.\n");
 			break;
 		default:
@@ -839,7 +839,7 @@ static s32 piix4_access_sb800(struct i2c_adapter *adap, u16 addr,
 
 		/* If IMC communication fails do not retry */
 		if (ret) {
-			i2c_warn(adap,
+			dev_warn(&adap->dev,
 				 "Continuing without IMC notification.\n");
 			adapdata->notify_imc = false;
 		}
@@ -859,7 +859,7 @@ static s32 piix4_access_sb800(struct i2c_adapter *adap, u16 addr,
 		piix4_imc_wakeup();
 
 release:
-	piix4_sb800_region_release(i2c_adapter_dev(adap), &adapdata->mmio_cfg);
+	piix4_sb800_region_release(&adap->dev, &adapdata->mmio_cfg);
 	return retval;
 }
 
@@ -947,7 +947,7 @@ static int piix4_add_adapter(struct pci_dev *dev, unsigned short smba,
 	adap->dev.parent = &dev->dev;
 
 	if (has_acpi_companion(&dev->dev)) {
-		acpi_preset_companion(i2c_adapter_dev(adap),
+		acpi_preset_companion(&adap->dev,
 				      ACPI_COMPANION(&dev->dev),
 				      hw_port_nr);
 	}

@@ -370,7 +370,7 @@ s64 ntfs_attr_vcn_to_lcn_nolock(struct ntfs_inode *ni, const s64 vcn,
 	unsigned long flags;
 	bool is_retry = false;
 
-	ntfs_debug("Entering for i_ino 0x%lx, vcn 0x%llx, %s_locked.",
+	ntfs_debug("Entering for i_ino 0x%llx, vcn 0x%llx, %s_locked.",
 			ni->mft_no, (unsigned long long)vcn,
 			write_locked ? "write" : "read");
 	if (!ni->runlist.rl) {
@@ -521,7 +521,7 @@ struct runlist_element *ntfs_attr_find_vcn_nolock(struct ntfs_inode *ni, const s
 	int err = 0;
 	bool is_retry = false;
 
-	ntfs_debug("Entering for i_ino 0x%lx, vcn 0x%llx, with%s ctx.",
+	ntfs_debug("Entering for i_ino 0x%llx, vcn 0x%llx, with%s ctx.",
 			ni->mft_no, (unsigned long long)vcn, ctx ? "" : "out");
 	if (!ni->runlist.rl) {
 		read_lock_irqsave(&ni->size_lock, flags);
@@ -679,8 +679,8 @@ static int ntfs_attr_find(const __le32 type, const __le16 *name,
 			if (a->name_length && ((le16_to_cpu(a->name_offset) +
 					       a->name_length * sizeof(__le16)) >
 						le32_to_cpu(a->length))) {
-				ntfs_error(vol->sb, "Corrupt attribute name in MFT record %lld\n",
-					   (long long)ctx->ntfs_ino->mft_no);
+				ntfs_error(vol->sb, "Corrupt attribute name in MFT record %llu\n",
+					   ctx->ntfs_ino->mft_no);
 				break;
 			}
 
@@ -790,7 +790,7 @@ int load_attribute_list(struct ntfs_inode *base_ni, u8 *al_start, const s64 size
 	attr_vi = ntfs_attr_iget(VFS_I(base_ni), AT_ATTRIBUTE_LIST, AT_UNNAMED, 0);
 	if (IS_ERR(attr_vi)) {
 		ntfs_error(base_ni->vol->sb,
-			   "Failed to open an inode for Attribute list, mft = %ld",
+			   "Failed to open an inode for Attribute list, mft = %llu",
 			   base_ni->mft_no);
 		return PTR_ERR(attr_vi);
 	}
@@ -798,7 +798,7 @@ int load_attribute_list(struct ntfs_inode *base_ni, u8 *al_start, const s64 size
 	if (ntfs_inode_attr_pread(attr_vi, 0, size, al_start) != size) {
 		iput(attr_vi);
 		ntfs_error(base_ni->vol->sb,
-			   "Failed to read attribute list, mft = %ld",
+			   "Failed to read attribute list, mft = %llu",
 			   base_ni->mft_no);
 		return -EIO;
 	}
@@ -817,7 +817,7 @@ int load_attribute_list(struct ntfs_inode *base_ni, u8 *al_start, const s64 size
 			break;
 	}
 	if (al != al_start + size) {
-		ntfs_error(base_ni->vol->sb, "Corrupt attribute list, mft = %ld",
+		ntfs_error(base_ni->vol->sb, "Corrupt attribute list, mft = %llu",
 			   base_ni->mft_no);
 		return -EIO;
 	}
@@ -890,7 +890,7 @@ static int ntfs_external_attr_find(const __le32 type,
 	int err = 0;
 	static const char *es = " Unmount and run chkdsk.";
 
-	ntfs_debug("Entering for inode 0x%lx, type 0x%x.", ni->mft_no, type);
+	ntfs_debug("Entering for inode 0x%llx, type 0x%x.", ni->mft_no, type);
 	if (!base_ni) {
 		/* First call happens with the base mft record. */
 		base_ni = ctx->base_ntfs_ino = ctx->ntfs_ino;
@@ -1090,7 +1090,7 @@ is_enumeration:
 		if (MREF_LE(al_entry->mft_reference) == ni->mft_no) {
 			if (MSEQNO_LE(al_entry->mft_reference) != ni->seq_no) {
 				ntfs_error(vol->sb,
-					"Found stale mft reference in attribute list of base inode 0x%lx.%s",
+					"Found stale mft reference in attribute list of base inode 0x%llx.%s",
 					base_ni->mft_no, es);
 				err = -EIO;
 				break;
@@ -1112,7 +1112,7 @@ is_enumeration:
 						al_entry->mft_reference), &ni);
 				if (IS_ERR(ctx->mrec)) {
 					ntfs_error(vol->sb,
-							"Failed to map extent mft record 0x%lx of base inode 0x%lx.%s",
+							"Failed to map extent mft record 0x%lx of base inode 0x%llx.%s",
 							MREF_LE(al_entry->mft_reference),
 							base_ni->mft_no, es);
 					err = PTR_ERR(ctx->mrec);
@@ -1201,7 +1201,7 @@ corrupt:
 
 	if (!err) {
 		ntfs_error(vol->sb,
-			"Base inode 0x%lx contains corrupt attribute list attribute.%s",
+			"Base inode 0x%llx contains corrupt attribute list attribute.%s",
 			base_ni->mft_no, es);
 		err = -EIO;
 	}
@@ -1908,8 +1908,8 @@ undo_err_out:
 			err2 = attr_size;
 			attr_size = arec_size - mp_ofs;
 			ntfs_error(vol->sb,
-				"Failed to undo partial resident to non-resident attribute conversion.  Truncating inode 0x%lx, attribute type 0x%x from %i bytes to %i bytes to maintain metadata consistency.  THIS MEANS YOU ARE LOSING %i BYTES DATA FROM THIS %s.",
-					vi->i_ino,
+				"Failed to undo partial resident to non-resident attribute conversion.  Truncating inode 0x%llx, attribute type 0x%x from %i bytes to %i bytes to maintain metadata consistency.  THIS MEANS YOU ARE LOSING %i BYTES DATA FROM THIS %s.",
+					ni->mft_no,
 					(unsigned int)le32_to_cpu(ni->type),
 					err2, attr_size, err2 - attr_size,
 					((ni->type == AT_DATA) &&
@@ -2062,7 +2062,7 @@ static int ntfs_make_room_for_attr(struct mft_record *m, u8 *pos, u32 size)
 
 	/* Rigorous consistency checks. */
 	if (!m || !pos || pos < (u8 *)m) {
-		pr_err("%s: pos=%p  m=%p", __func__, pos, m);
+		pr_err("%s: pos=%p  m=%p\n", __func__, pos, m);
 		return -EINVAL;
 	}
 
@@ -2240,16 +2240,16 @@ static int ntfs_non_resident_attr_record_add(struct ntfs_inode *ni, __le32 type,
 	err = ntfs_attr_can_be_non_resident(ni->vol, type);
 	if (err) {
 		if (err == -EPERM)
-			pr_err("Attribute can't be non resident");
+			pr_err("Attribute can't be non resident\n");
 		else
-			pr_err("ntfs_attr_can_be_non_resident failed");
+			pr_err("ntfs_attr_can_be_non_resident failed\n");
 		return err;
 	}
 
 	/* Locate place where record should be. */
 	ctx = ntfs_attr_get_search_ctx(ni, NULL);
 	if (!ctx) {
-		pr_err("%s: Failed to get search context", __func__);
+		pr_err("%s: Failed to get search context\n", __func__);
 		return -ENOMEM;
 	}
 	/*
@@ -2260,11 +2260,11 @@ static int ntfs_non_resident_attr_record_add(struct ntfs_inode *ni, __le32 type,
 	err = ntfs_attr_find(type, name, name_len, CASE_SENSITIVE, NULL, 0, ctx);
 	if (!err) {
 		err = -EEXIST;
-		pr_err("Attribute 0x%x already present", type);
+		pr_err("Attribute 0x%x already present\n", type);
 		goto put_err_out;
 	}
 	if (err != -ENOENT) {
-		pr_err("ntfs_attr_find failed");
+		pr_err("ntfs_attr_find failed\n");
 		err = -EIO;
 		goto put_err_out;
 	}
@@ -2279,7 +2279,7 @@ static int ntfs_non_resident_attr_record_add(struct ntfs_inode *ni, __le32 type,
 		 sizeof(a->data.non_resident.compressed_size) : 0);
 	err = ntfs_make_room_for_attr(ctx->mrec, (u8 *) ctx->attr, length);
 	if (err) {
-		pr_err("Failed to make room for attribute");
+		pr_err("Failed to make room for attribute\n");
 		goto put_err_out;
 	}
 
@@ -2319,7 +2319,7 @@ static int ntfs_non_resident_attr_record_add(struct ntfs_inode *ni, __le32 type,
 	if (type != AT_ATTRIBUTE_LIST && NInoAttrList(base_ni)) {
 		err = ntfs_attrlist_entry_add(ni, a);
 		if (err) {
-			pr_err("Failed add attr entry to attrlist");
+			pr_err("Failed add attr entry to attrlist\n");
 			ntfs_attr_record_resize(m, a, 0);
 			goto put_err_out;
 		}
@@ -2334,7 +2334,7 @@ static int ntfs_non_resident_attr_record_add(struct ntfs_inode *ni, __le32 type,
 	err = ntfs_attr_lookup(type, name, name_len, CASE_SENSITIVE,
 				lowest_vcn, NULL, 0, ctx);
 	if (err) {
-		pr_err("%s: attribute lookup failed", __func__);
+		pr_err("%s: attribute lookup failed\n", __func__);
 		ntfs_attr_put_search_ctx(ctx);
 		return err;
 
@@ -2825,7 +2825,7 @@ int ntfs_attr_open(struct ntfs_inode *ni, const __le32 type,
 	ctx = ntfs_attr_get_search_ctx(base_ni, NULL);
 	if (!ctx) {
 		err = -ENOMEM;
-		pr_err("%s: Failed to get search context", __func__);
+		pr_err("%s: Failed to get search context\n", __func__);
 		goto err_out;
 	}
 
@@ -3497,7 +3497,7 @@ retry:
 		 * delete extent) and continue search.
 		 */
 		if (finished_build) {
-			ntfs_debug("Mark attr 0x%x for delete in inode 0x%lx.\n",
+			ntfs_debug("Mark attr 0x%x for delete in inode 0x%llx.\n",
 				(unsigned int)le32_to_cpu(a->type), ctx->ntfs_ino->mft_no);
 			a->data.non_resident.highest_vcn = cpu_to_le64(NTFS_VCN_DELETE_MARK);
 			mark_mft_record_dirty(ctx->ntfs_ino);
@@ -4615,7 +4615,7 @@ int ntfs_attr_expand(struct ntfs_inode *ni, const s64 newsize, const s64 preallo
 	 * which is what Windows NT4 does, too.
 	 */
 	if (NInoEncrypted(ni)) {
-		pr_err("Failed to truncate encrypted attribute");
+		pr_err("Failed to truncate encrypted attribute\n");
 		return -EACCES;
 	}
 
@@ -4669,12 +4669,12 @@ int ntfs_attr_truncate_i(struct ntfs_inode *ni, const s64 newsize, unsigned int 
 	 * which is what Windows NT4 does, too.
 	 */
 	if (NInoEncrypted(ni)) {
-		pr_err("Failed to truncate encrypted attribute");
+		pr_err("Failed to truncate encrypted attribute\n");
 		return -EACCES;
 	}
 
 	if (NInoCompressed(ni)) {
-		pr_err("Failed to truncate compressed attribute");
+		pr_err("Failed to truncate compressed attribute\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -4728,7 +4728,7 @@ int ntfs_attr_map_cluster(struct ntfs_inode *ni, s64 vcn_start, s64 *lcn_start,
 			CASE_SENSITIVE, vcn, NULL, 0, ctx);
 	if (err) {
 		ntfs_error(vol->sb,
-			   "ntfs_attr_lookup failed, ntfs inode(mft_no : %ld) type : 0x%x, err : %d",
+			   "ntfs_attr_lookup failed, ntfs inode(mft_no : %llu) type : 0x%x, err : %d",
 			   ni->mft_no, ni->type, err);
 		goto out;
 	}

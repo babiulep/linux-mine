@@ -194,18 +194,13 @@ static bool ima_detect_file_change(struct ima_iint_cache *iint,
 	result = vfs_getattr_nosec(&file->f_path, &stat, STATX_CHANGE_COOKIE,
 				   AT_STATX_SYNC_AS_STAT);
 
-	if (!result && stat.result_mask & STATX_CHANGE_COOKIE &&
-	    stat.change_cookie != iint->real_inode.version)
-		return true;
-	else if (!(stat.result_mask & STATX_CHANGE_COOKIE) &&
-		 IS_I_VERSION(inode) &&
-		 !(inode_eq_iversion(inode, iint->real_inode.version)))
-		return true;
-	else if (!(stat.result_mask & STATX_CHANGE_COOKIE) &&
-		 !(IS_I_VERSION(inode)))
-		return true;
+	if (!result && stat.result_mask & STATX_CHANGE_COOKIE)
+		return stat.change_cookie != iint->real_inode.version;
 
-	return false;
+	if (IS_I_VERSION(inode))
+		return !inode_eq_iversion(inode, iint->real_inode.version);
+
+	return true;
 }
 
 static void ima_check_last_writer(struct ima_iint_cache *iint,

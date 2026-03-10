@@ -36,6 +36,8 @@
 #include <linux/virtio.h>
 #include <linux/virtio_ids.h>
 #include <linux/virtio_config.h>
+#include <linux/uaccess.h>
+#include <linux/string.h>
 #include "mac80211_hwsim.h"
 
 #define WARN_QUEUE 100
@@ -337,7 +339,9 @@ static inline void hwsim_net_set_wmediumd(struct net *net, u32 portid)
 	hwsim_net->wmediumd = portid;
 }
 
-static struct class *hwsim_class;
+static const struct class hwsim_class = {
+	.name	= "mac80211_hwsim"
+};
 
 static struct net_device *hwsim_mon; /* global monitor netdev */
 
@@ -1199,6 +1203,65 @@ static const struct file_operations hwsim_background_cac_ops = {
 	.write = hwsim_background_cac_write,
 	.open = simple_open,
 	.llseek = default_llseek,
+};
+
+struct hwsim_chanctx_iter_arg {
+	struct ieee80211_chanctx_conf *conf;
+	u32 freq_mhz;
+};
+
+static void hwsim_6ghz_chanctx_iter(struct ieee80211_hw *hw,
+				    struct ieee80211_chanctx_conf *conf,
+				    void *data)
+{
+	struct hwsim_chanctx_iter_arg *arg = data;
+
+	if (conf->def.chan &&
+	    conf->def.chan->band == NL80211_BAND_6GHZ &&
+	    conf->def.chan->center_freq == arg->freq_mhz)
+		arg->conf = conf;
+}
+
+static ssize_t hwsim_simulate_incumbent_signal_write(struct file *file,
+						     const char __user *ubuf,
+						     size_t len, loff_t *ppos)
+{
+	struct mac80211_hwsim_data *data = file->private_data;
+	struct hwsim_chanctx_iter_arg arg = {};
+	u32 bitmap;
+	char buf[64];
+
+	if (!len || len > sizeof(buf) - 1)
+		return -EINVAL;
+
+	if (copy_from_user(buf, ubuf, len))
+		return -EFAULT;
+	buf[len] = '\0';
+
+	if (sscanf(buf, "%u %i", &arg.freq_mhz, &bitmap) != 2)
+		return -EINVAL;
+
+	if (!arg.freq_mhz)
+		return -EINVAL;
+
+	ieee80211_iter_chan_contexts_atomic(data->hw,
+					    hwsim_6ghz_chanctx_iter,
+					    &arg);
+
+	if (!arg.conf)
+		return -EINVAL;
+
+	cfg80211_incumbent_signal_notify(data->hw->wiphy,
+					 &arg.conf->def,
+					 bitmap,
+					 GFP_KERNEL);
+
+	return len;
+}
+
+static const struct file_operations hwsim_simulate_incumbent_signal_fops = {
+	.open	= simple_open,
+	.write	= hwsim_simulate_incumbent_signal_write,
 };
 
 static int hwsim_fops_group_read(void *dat, u64 *val)
@@ -5524,7 +5587,7 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 	data = hw->priv;
 	data->hw = hw;
 
-	data->dev = device_create(hwsim_class, NULL, 0, hw, "hwsim%d", idx);
+	data->dev = device_create(&hwsim_class, NULL, 0, hw, "hwsim%d", idx);
 	if (IS_ERR(data->dev)) {
 		printk(KERN_DEBUG
 		       "mac80211_hwsim: device_create failed (%ld)\n",
@@ -5948,6 +6011,9 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 		debugfs_create_file("dfs_background_cac", 0200,
 				    data->debugfs,
 				    data, &hwsim_background_cac_ops);
+	debugfs_create_file("simulate_incumbent_signal_interference", 0200,
+			    data->debugfs,
+			    data, &hwsim_simulate_incumbent_signal_fops);
 
 	if (param->pmsr_capa) {
 		data->pmsr_capa = *param->pmsr_capa;
@@ -6097,7 +6163,7 @@ static void mac80211_hwsim_free(void)
 		spin_lock_bh(&hwsim_radio_lock);
 	}
 	spin_unlock_bh(&hwsim_radio_lock);
-	class_destroy(hwsim_class);
+	class_unregister(&hwsim_class);
 }
 
 static const struct net_device_ops hwsim_netdev_ops = {
@@ -6611,7 +6677,7 @@ static int hwsim_new_radio_nl(struct sk_buff *msg, struct genl_info *info)
 	if (info->attrs[HWSIM_ATTR_PMSR_SUPPORT]) {
 		struct cfg80211_pmsr_capabilities *pmsr_capa;
 
-		pmsr_capa = kmalloc_obj(*pmsr_capa);
+		pmsr_capa = kzalloc_obj(*pmsr_capa);
 		if (!pmsr_capa) {
 			ret = -ENOMEM;
 			goto out_free;
@@ -7205,11 +7271,9 @@ static int __init init_mac80211_hwsim(void)
 	if (err)
 		goto out_exit_netlink;
 
-	hwsim_class = class_create("mac80211_hwsim");
-	if (IS_ERR(hwsim_class)) {
-		err = PTR_ERR(hwsim_class);
+	err = class_register(&hwsim_class);
+	if (err)
 		goto out_exit_virtio;
-	}
 
 	hwsim_init_s1g_channels(hwsim_channels_s1g);
 

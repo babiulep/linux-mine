@@ -67,5 +67,21 @@ int ras_fw_get_badpage_ipid(struct ras_core_context *ras_core,
 int ras_fw_erase_ras_table(struct ras_core_context *ras_core,
 				   uint32_t *result);
 int ras_fw_eeprom_reset_table(struct ras_core_context *ras_core);
+bool ras_fw_eeprom_check_safety_watermark(struct ras_core_context *ras_core);
+int ras_fw_eeprom_append(struct ras_core_context *ras_core,
+			   struct eeprom_umc_record *record, const u32 num);
+int ras_fw_eeprom_read_idx(struct ras_core_context *ras_core,
+			 struct eeprom_umc_record *record_umc,
+			 struct ras_bank_ecc *ras_ecc,
+			 u32 rec_idx, const u32 num);
+uint32_t ras_fw_eeprom_get_record_count(struct ras_core_context *ras_core);
+int ras_fw_eeprom_update_record(struct ras_core_context *ras_core,
+				struct ras_bank_ecc *ras_ecc);
+int ras_fw_eeprom_hw_init(struct ras_core_context *ras_core);
+int ras_fw_eeprom_hw_fini(struct ras_core_context *ras_core);
+int ras_fw_eeprom_check_storage_status(struct ras_core_context *ras_core);
+enum ras_gpu_health_status
+	ras_fw_eeprom_check_gpu_status(struct ras_core_context *ras_core);
+void ras_fw_eeprom_sync_info(struct ras_core_context *ras_core);
 
 #endif
