@@ -2448,7 +2448,7 @@ static void __update_reg_bounds(struct bpf_reg_state *reg)
 }
 
 /* Uses signed min/max values to inform unsigned, and vice-versa */
-static void __reg32_deduce_bounds(struct bpf_reg_state *reg)
+static void deduce_bounds_32_from_64(struct bpf_reg_state *reg)
 {
 	/* If upper 32 bits of u64/s64 range don't change, we can use lower 32
 	 * bits to improve our u32/s32 boundaries.
@@ -2518,6 +2518,10 @@ static void __reg32_deduce_bounds(struct bpf_reg_state *reg)
 		reg->s32_min_value = max_t(s32, reg->s32_min_value, (s32)reg->smin_value);
 		reg->s32_max_value = min_t(s32, reg->s32_max_value, (s32)reg->smax_value);
 	}
+}
+
+static void deduce_bounds_32_from_32(struct bpf_reg_state *reg)
+{
 	/* if u32 range forms a valid s32 range (due to matching sign bit),
 	 * try to learn from that
 	 */
@@ -2559,7 +2563,7 @@ static void __reg32_deduce_bounds(struct bpf_reg_state *reg)
 	}
 }
 
-static void __reg64_deduce_bounds(struct bpf_reg_state *reg)
+static void deduce_bounds_64_from_64(struct bpf_reg_state *reg)
 {
 	/* If u64 range forms a valid s64 range (due to matching sign bit),
 	 * try to learn from that. Let's do a bit of ASCII art to see when
@@ -2694,7 +2698,7 @@ static void __reg64_deduce_bounds(struct bpf_reg_state *reg)
 	}
 }
 
-static void __reg_deduce_mixed_bounds(struct bpf_reg_state *reg)
+static void deduce_bounds_64_from_32(struct bpf_reg_state *reg)
 {
 	/* Try to tighten 64-bit bounds from 32-bit knowledge, using 32-bit
 	 * values on both sides of 64-bit range in hope to have tighter range.
@@ -2763,9 +2767,10 @@ static void __reg_deduce_mixed_bounds(struct bpf_reg_state *reg)
 
 static void __reg_deduce_bounds(struct bpf_reg_state *reg)
 {
-	__reg32_deduce_bounds(reg);
-	__reg64_deduce_bounds(reg);
-	__reg_deduce_mixed_bounds(reg);
+	deduce_bounds_64_from_64(reg);
+	deduce_bounds_32_from_64(reg);
+	deduce_bounds_32_from_32(reg);
+	deduce_bounds_64_from_32(reg);
 }
 
 /* Attempts to improve var_off based on unsigned min/max information */
@@ -2786,7 +2791,6 @@ static void reg_bounds_sync(struct bpf_reg_state *reg)
 	/* We might have learned new bounds from the var_off. */
 	__update_reg_bounds(reg);
 	/* We might have learned something about the sign bit. */
-	__reg_deduce_bounds(reg);
 	__reg_deduce_bounds(reg);
 	__reg_deduce_bounds(reg);
 	/* We might have learned some bits from the bounds. */
@@ -15917,6 +15921,13 @@ static void scalar_byte_swap(struct bpf_reg_state *dst_reg, struct bpf_insn *ins
 	/* Apply bswap if alu64 or switch between big-endian and little-endian machines */
 	bool need_bswap = alu64 || (to_le == is_big_endian);
 
+	/*
+	 * If the register is mutated, manually reset its scalar ID to break
+	 * any existing ties and avoid incorrect bounds propagation.
+	 */
+	if (need_bswap || insn->imm == 16 || insn->imm == 32)
+		dst_reg->id = 0;
+
 	if (need_bswap) {
 		if (insn->imm == 16)
 			dst_reg->var_off = tnum_bswap16(dst_reg->var_off);
@@ -17678,12 +17689,15 @@ static int check_cond_jmp_op(struct bpf_verifier_env *env,
 	}
 
 	/* detect if R == 0 where R is returned from bpf_map_lookup_elem().
+	 * Also does the same detection for a register whose the value is
+	 * known to be 0.
 	 * NOTE: these optimizations below are related with pointer comparison
 	 *       which will never be JMP32.
 	 */
-	if (!is_jmp32 && BPF_SRC(insn->code) == BPF_K &&
-	    insn->imm == 0 && (opcode == BPF_JEQ || opcode == BPF_JNE) &&
-	    type_may_be_null(dst_reg->type)) {
+	if (!is_jmp32 && (opcode == BPF_JEQ || opcode == BPF_JNE) &&
+	    type_may_be_null(dst_reg->type) &&
+	    ((BPF_SRC(insn->code) == BPF_K && insn->imm == 0) ||
+	     (BPF_SRC(insn->code) == BPF_X && register_is_null(src_reg)))) {
 		/* Mark all identical registers in each branch as either
 		 * safe or unknown depending R == 0 or R != 0 conditional.
 		 */

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
 
-#include "linux/lockdep.h"
 #include <linux/bitops.h>
 #include <linux/slab.h>
 #include <linux/bio.h>
@@ -15,6 +14,7 @@
 #include <linux/folio_batch.h>
 #include <linux/prefetch.h>
 #include <linux/fsverity.h>
+#include <linux/lockdep.h>
 #include "extent_io.h"
 #include "extent-io-tree.h"
 #include "extent_map.h"
@@ -2983,17 +2983,17 @@ static inline void btrfs_release_extent_buffer(struct extent_buffer *eb)
 }
 
 /*
- * btrfs_inhibit_eb_writeback - Inhibit writeback on buffer during transaction.
- * @trans: transaction handle that will own the inhibitor
- * @eb: extent buffer to inhibit writeback on
+ * Inhibit writeback on buffer during transaction.
  *
- * Attempts to track this extent buffer in the transaction's inhibited set.
- * If memory allocation fails, the buffer is simply not tracked. It may
- * be written back and need re-COW, which is the original behavior.
- * This is acceptable since inhibiting writeback is an optimization.
+ * @trans:  transaction handle that will own the inhibitor
+ * @eb:      extent buffer to inhibit writeback on
+ *
+ * Attempt to track this extent buffer in the transaction's inhibited set.  If
+ * memory allocation fails, the buffer is simply not tracked. It may be written
+ * back and need re-COW, which is the original behavior.  This is acceptable
+ * since inhibiting writeback is an optimization.
  */
-void btrfs_inhibit_eb_writeback(struct btrfs_trans_handle *trans,
-				struct extent_buffer *eb)
+void btrfs_inhibit_eb_writeback(struct btrfs_trans_handle *trans, struct extent_buffer *eb)
 {
 	unsigned long index = eb->start >> trans->fs_info->nodesize_bits;
 	void *old;
@@ -3026,8 +3026,7 @@ void btrfs_inhibit_eb_writeback(struct btrfs_trans_handle *trans,
 }
 
 /*
- * btrfs_uninhibit_all_eb_writeback - Uninhibit writeback on all buffers.
- * @trans: transaction handle to clean up
+ * Uninhibit writeback on all extent buffers.
  */
 void btrfs_uninhibit_all_eb_writeback(struct btrfs_trans_handle *trans)
 {
@@ -3834,6 +3833,10 @@ void set_extent_buffer_dirty(struct extent_buffer *eb)
 					 eb->len,
 					 eb->fs_info->dirty_metadata_batch);
 	}
+#ifdef CONFIG_BTRFS_DEBUG
+	for (int i = 0; i < num_extent_folios(eb); i++)
+		ASSERT(folio_test_dirty(eb->folios[i]));
+#endif
 }
 
 void clear_extent_buffer_uptodate(struct extent_buffer *eb)
@@ -3898,8 +3901,17 @@ int read_extent_buffer_pages_nowait(struct extent_buffer *eb, int mirror_num,
 	struct btrfs_fs_info *fs_info = eb->fs_info;
 	struct btrfs_bio *bbio;
 
-	if (extent_buffer_uptodate(eb))
+	if (extent_buffer_uptodate(eb)) {
+		int ret;
+
+		ret = btrfs_buffer_uptodate(eb, 0, true, check);
+		if (unlikely(ret <= 0)) {
+			if (ret == 0)
+				ret = -EIO;
+			return ret;
+		}
 		return 0;
+	}
 
 	/*
 	 * We could have had EXTENT_BUFFER_UPTODATE cleared by the write
@@ -3920,7 +3932,15 @@ int read_extent_buffer_pages_nowait(struct extent_buffer *eb, int mirror_num,
 	 * will now be set, and we shouldn't read it in again.
 	 */
 	if (unlikely(extent_buffer_uptodate(eb))) {
+		int ret;
+
 		clear_extent_buffer_reading(eb);
+		ret = btrfs_buffer_uptodate(eb, 0, true, check);
+		if (unlikely(ret <= 0)) {
+			if (ret == 0)
+				ret = -EIO;
+			return ret;
+		}
 		return 0;
 	}
 
@@ -4633,7 +4653,7 @@ void btrfs_readahead_tree_block(struct btrfs_fs_info *fs_info,
 	if (IS_ERR(eb))
 		return;
 
-	if (btrfs_buffer_uptodate(eb, gen, true)) {
+	if (btrfs_buffer_uptodate(eb, gen, true, NULL)) {
 		free_extent_buffer(eb);
 		return;
 	}

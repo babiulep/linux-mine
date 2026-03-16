@@ -68,7 +68,8 @@ static int aie2_hwctx_restart(struct amdxdna_dev *xdna, struct amdxdna_hwctx *hw
 	}
 
 	ret = aie2_map_host_buf(xdna->dev_handle, hwctx->fw_ctx_id,
-				heap->mem.userptr, heap->mem.size);
+				amdxdna_obj_dma_addr(hwctx->client, heap),
+				heap->mem.size);
 	if (ret) {
 		XDNA_ERR(xdna, "Map host buf failed, ret %d", ret);
 		goto out;
@@ -165,7 +166,6 @@ aie2_sched_notify(struct amdxdna_sched_job *job)
 
 	trace_xdna_job(&job->base, job->hwctx->name, "signaled fence", job->seq);
 
-	amdxdna_pm_suspend_put(job->hwctx->client->xdna);
 	job->hwctx->priv->completed++;
 	dma_fence_signal(fence);
 
@@ -290,19 +290,11 @@ aie2_sched_job_run(struct drm_sched_job *sched_job)
 	struct dma_fence *fence;
 	int ret;
 
-	ret = amdxdna_pm_resume_get(hwctx->client->xdna);
-	if (ret)
+	if (!hwctx->priv->mbox_chann)
 		return NULL;
 
-	if (!hwctx->priv->mbox_chann) {
-		amdxdna_pm_suspend_put(hwctx->client->xdna);
-		return NULL;
-	}
-
-	if (!mmget_not_zero(job->mm)) {
-		amdxdna_pm_suspend_put(hwctx->client->xdna);
+	if (!mmget_not_zero(job->mm))
 		return ERR_PTR(-ESRCH);
-	}
 
 	kref_get(&job->refcnt);
 	fence = dma_fence_get(job->fence);
@@ -333,7 +325,6 @@ aie2_sched_job_run(struct drm_sched_job *sched_job)
 
 out:
 	if (ret) {
-		amdxdna_pm_suspend_put(hwctx->client->xdna);
 		dma_fence_put(job->fence);
 		aie2_job_put(job);
 		mmput(job->mm);
@@ -637,7 +628,8 @@ int aie2_hwctx_init(struct amdxdna_hwctx *hwctx)
 	}
 
 	ret = aie2_map_host_buf(xdna->dev_handle, hwctx->fw_ctx_id,
-				heap->mem.userptr, heap->mem.size);
+				amdxdna_obj_dma_addr(hwctx->client, heap),
+				heap->mem.size);
 	if (ret) {
 		XDNA_ERR(xdna, "Map host buffer failed, ret %d", ret);
 		goto release_resource;

@@ -22,19 +22,19 @@ xor_gen_##_name(void *dest, void **srcs, unsigned int src_cnt,		\
 									\
 	while (src_cnt > 0) {						\
 		unsigned int this_cnt = min(src_cnt, 4);		\
-		unsigned long *p1 = (unsigned long *)srcs[src_off];	\
-		unsigned long *p2 = (unsigned long *)srcs[src_off + 1];	\
-		unsigned long *p3 = (unsigned long *)srcs[src_off + 2];	\
-		unsigned long *p4 = (unsigned long *)srcs[src_off + 3];	\
 									\
 		if (this_cnt == 1)					\
-			_handle1(bytes, dest, p1);			\
+			_handle1(bytes, dest, srcs[src_off]);		\
 		else if (this_cnt == 2)					\
-			_handle2(bytes, dest, p1, p2);			\
+			_handle2(bytes, dest, srcs[src_off],		\
+				srcs[src_off + 1]);			\
 		else if (this_cnt == 3)					\
-			_handle3(bytes, dest, p1, p2, p3);		\
+			_handle3(bytes, dest, srcs[src_off],		\
+				srcs[src_off + 1], srcs[src_off + 2]);	\
 		else							\
-			_handle4(bytes, dest, p1, p2, p3, p4);		\
+			_handle4(bytes, dest, srcs[src_off],		\
+				srcs[src_off + 1], srcs[src_off + 2],	\
+				srcs[src_off + 3]);			\
 									\
 		src_cnt -= this_cnt;					\
 		src_off += this_cnt;					\

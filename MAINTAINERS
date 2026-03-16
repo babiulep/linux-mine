@@ -2728,6 +2728,7 @@ ARM/CORESIGHT FRAMEWORK AND DRIVERS
 M:	Suzuki K Poulose <suzuki.poulose@arm.com>
 R:	Mike Leach <mike.leach@arm.com>
 R:	James Clark <james.clark@linaro.org>
+R:	Leo Yan <leo.yan@arm.com>
 L:	coresight@lists.linaro.org (moderated for non-subscribers)
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
@@ -2824,8 +2825,7 @@ S:	Maintained
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/frank.li/linux.git
 F:	Documentation/devicetree/bindings/firmware/fsl*
 F:	Documentation/devicetree/bindings/firmware/nxp*
-F:	arch/arm/boot/dts/nxp/imx/
-F:	arch/arm/boot/dts/nxp/mxs/
+F:	arch/arm/boot/dts/nxp/
 F:	arch/arm64/boot/dts/freescale/
 X:	Documentation/devicetree/bindings/media/i2c/
 X:	arch/arm64/boot/dts/freescale/fsl-*
@@ -6856,12 +6856,6 @@ L:	linux-crypto@vger.kernel.org
 S:	Maintained
 F:	tools/crypto/tcrypt/tcrypt_speed_compare.py
 
-CRYPTOGRAPHIC RANDOM NUMBER GENERATOR
-M:	Neil Horman <nhorman@tuxdriver.com>
-L:	linux-crypto@vger.kernel.org
-S:	Maintained
-F:	crypto/rng.c
-
 CS3308 MEDIA DRIVER
 M:	Hans Verkuil <hverkuil@kernel.org>
 L:	linux-media@vger.kernel.org
@@ -8028,7 +8022,9 @@ F:	Documentation/devicetree/bindings/display/himax,hx8357.yaml
 F:	drivers/gpu/drm/tiny/hx8357d.c
 
 DRM DRIVER FOR HYPERV SYNTHETIC VIDEO DEVICE
-M:	Deepak Rawat <drawat.floss@gmail.com>
+M:	Dexuan Cui <decui@microsoft.com>
+M:	Long Li <longli@microsoft.com>
+M:	Saurabh Sengar <ssengar@linux.microsoft.com>
 L:	linux-hyperv@vger.kernel.org
 L:	dri-devel@lists.freedesktop.org
 S:	Maintained
@@ -8088,6 +8084,12 @@ T:	git https://gitlab.freedesktop.org/drm/misc/kernel.git
 F:	Documentation/devicetree/bindings/display/lvds.yaml
 F:	Documentation/devicetree/bindings/display/panel/panel-lvds.yaml
 F:	drivers/gpu/drm/panel/panel-lvds.c
+
+DRM DRIVER FOR LXD M9189A PANELS
+M:	Michael Tretter <m.tretter@pengutronix.de>
+S:	Maintained
+F:	Documentation/devicetree/bindings/display/panel/lxd,m9189a.yaml
+F:	drivers/gpu/drm/panel/panel-lxd-m9189a.c
 
 DRM DRIVER FOR MANTIX MLAF057WE51 PANELS
 M:	Guido Günther <agx@sigxcpu.org>
@@ -8656,9 +8658,8 @@ F:	drivers/gpu/drm/lima/
 F:	include/uapi/drm/lima_drm.h
 
 DRM DRIVERS FOR LOONGSON
-M:	Sui Jingfeng <suijingfeng@loongson.cn>
 L:	dri-devel@lists.freedesktop.org
-S:	Supported
+S:	Orphan
 T:	git https://gitlab.freedesktop.org/drm/misc/kernel.git
 F:	drivers/gpu/drm/loongson/
 
@@ -8946,11 +8947,11 @@ R:	Christian Koenig <christian.koenig@amd.com>
 L:	dri-devel@lists.freedesktop.org
 S:	Maintained
 T:	git https://gitlab.freedesktop.org/drm/misc/kernel.git
-F:	drivers/gpu/drm_buddy.c
 F:	drivers/gpu/buddy.c
+F:	drivers/gpu/drm/drm_buddy.c
 F:	drivers/gpu/tests/gpu_buddy_test.c
-F:	include/linux/gpu_buddy.h
 F:	include/drm/drm_buddy.h
+F:	include/linux/gpu_buddy.h
 
 DRM AUTOMATED TESTING
 M:	Helen Koike <helen.fornazier@gmail.com>
@@ -12904,7 +12905,6 @@ F:	drivers/dma/ioat*
 INTEL IAA CRYPTO DRIVER
 M:	Kristen Accardi <kristen.c.accardi@intel.com>
 M:	Vinicius Costa Gomes <vinicius.gomes@intel.com>
-M:	Kanchana P Sridhar <kanchana.p.sridhar@intel.com>
 L:	linux-crypto@vger.kernel.org
 S:	Supported
 F:	Documentation/driver-api/crypto/iaa/iaa-crypto.rst
@@ -14503,6 +14503,17 @@ L:	platform-driver-x86@vger.kernel.org
 S:	Maintained
 F:	drivers/platform/x86/lenovo/wmi-hotkey-utilities.c
 
+LENOVO HID drivers
+M:	Derek J. Clark <derekjohn.clark@gmail.com>
+M:	Mark Pearson <mpearson-lenovo@squebb.ca>
+L:	linux-input@vger.kernel.org
+S:	Maintained
+F:	Documentation/ABI/testing/sysfs-driver-hid-lenovo-go
+F:	Documentation/ABI/testing/sysfs-driver-hid-lenovo-go-s
+F:	drivers/hid/hid-lenovo-go-s.c
+F:	drivers/hid/hid-lenovo-go.c
+F:	drivers/hid/hid-lenovo.c
+
 LETSKETCH HID TABLET DRIVER
 M:	Hans de Goede <hansg@kernel.org>
 L:	linux-input@vger.kernel.org
@@ -14646,7 +14657,6 @@ F:	tools/testing/nvdimm/
 
 LIBRARY CODE
 M:	Andrew Morton <akpm@linux-foundation.org>
-R:	Josh Law <objecting@objecting.org>
 L:	linux-kernel@vger.kernel.org
 S:	Supported
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/akpm/mm.git mm-nonmm-unstable
@@ -19804,12 +19814,6 @@ L:	linux-rtc@vger.kernel.org
 S:	Maintained
 F:	drivers/rtc/rtc-optee.c
 
-OPA-VNIC DRIVER
-M:	Dennis Dalessandro <dennis.dalessandro@cornelisnetworks.com>
-L:	linux-rdma@vger.kernel.org
-S:	Supported
-F:	drivers/infiniband/ulp/opa_vnic
-
 OPEN ALLIANCE 10BASE-T1S MACPHY SERIAL INTERFACE FRAMEWORK
 M:	Parthiban Veerasooran <parthiban.veerasooran@microchip.com>
 L:	netdev@vger.kernel.org
@@ -21386,6 +21390,7 @@ M:	Uwe Kleine-König <ukleinek@kernel.org>
 L:	linux-pwm@vger.kernel.org
 S:	Maintained
 Q:	https://patchwork.ozlabs.org/project/linux-pwm/list/
+C:	irc://irc.libera.chat/linux-pwm
 T:	git https://git.kernel.org/pub/scm/linux/kernel/git/ukleinek/linux.git
 F:	Documentation/devicetree/bindings/pwm/
 F:	Documentation/driver-api/pwm.rst
@@ -22867,8 +22872,12 @@ M:	Joel Stanley <jms@oss.tenstorrent.com>
 L:	linux-riscv@lists.infradead.org
 S:	Maintained
 T:	git https://github.com/tenstorrent/linux.git
+F:	Documentation/devicetree/bindings/clock/tenstorrent,atlantis-prcm-rcpu.yaml
 F:	Documentation/devicetree/bindings/riscv/tenstorrent.yaml
 F:	arch/riscv/boot/dts/tenstorrent/
+F:	drivers/clk/tenstorrent/
+F:	drivers/reset/reset-tenstorrent-atlantis.c
+F:	include/dt-bindings/clock/tenstorrent,atlantis-prcm-rcpu.h
 
 RISC-V THEAD SoC SUPPORT
 M:	Drew Fustini <fustini@kernel.org>
@@ -25217,15 +25226,6 @@ STARFIRE/DURALAN NETWORK DRIVER
 M:	Ion Badulescu <ionut@badula.org>
 S:	Odd Fixes
 F:	drivers/net/ethernet/adaptec/starfire*
-
-STARFIVE CAMERA SUBSYSTEM DRIVER
-M:	Jack Zhu <jack.zhu@starfivetech.com>
-M:	Changhuang Liang <changhuang.liang@starfivetech.com>
-L:	linux-media@vger.kernel.org
-S:	Maintained
-F:	Documentation/admin-guide/media/starfive_camss.rst
-F:	Documentation/devicetree/bindings/media/starfive,jh7110-camss.yaml
-F:	drivers/staging/media/starfive/camss
 
 STARFIVE CRYPTO DRIVER
 M:	Jia Jie Ho <jiajie.ho@starfivetech.com>

@@ -12,18 +12,38 @@ struct drm_device;
 struct drm_file;
 struct drm_framebuffer;
 struct drm_gem_object;
+struct drm_mode_fb_cmd2;
 struct drm_plane_state;
 struct drm_scanout_buffer;
 struct i915_vma;
 struct intel_dpt;
 struct intel_dsb_buffer;
+struct intel_frontbuffer;
 struct intel_hdcp_gsc_context;
 struct intel_initial_plane_config;
 struct intel_panic;
 struct intel_stolen_node;
 struct ref_tracker;
+struct seq_file;
+struct vm_area_struct;
 
 /* Keep struct definitions sorted */
+
+struct intel_display_bo_interface {
+	bool (*is_tiled)(struct drm_gem_object *obj); /* Optional */
+	bool (*is_userptr)(struct drm_gem_object *obj); /* Optional */
+	bool (*is_shmem)(struct drm_gem_object *obj); /* Optional */
+	bool (*is_protected)(struct drm_gem_object *obj);
+	int (*key_check)(struct drm_gem_object *obj);
+	int (*fb_mmap)(struct drm_gem_object *obj, struct vm_area_struct *vma);
+	int (*read_from_page)(struct drm_gem_object *obj, u64 offset, void *dst, int size);
+	void (*describe)(struct seq_file *m, struct drm_gem_object *obj); /* Optional */
+	int (*framebuffer_init)(struct drm_gem_object *obj, struct drm_mode_fb_cmd2 *mode_cmd);
+	void (*framebuffer_fini)(struct drm_gem_object *obj);
+	struct drm_gem_object *(*framebuffer_lookup)(struct drm_device *drm,
+						     struct drm_file *filp,
+						     const struct drm_mode_fb_cmd2 *user_mode_cmd);
+};
 
 struct intel_display_dpt_interface {
 	struct intel_dpt *(*create)(struct drm_gem_object *obj, size_t size);
@@ -40,6 +60,13 @@ struct intel_display_dsb_interface {
 	struct intel_dsb_buffer *(*create)(struct drm_device *drm, size_t size);
 	void (*cleanup)(struct intel_dsb_buffer *dsb_buf);
 	void (*flush_map)(struct intel_dsb_buffer *dsb_buf);
+};
+
+struct intel_display_frontbuffer_interface {
+	struct intel_frontbuffer *(*get)(struct drm_gem_object *obj);
+	void (*ref)(struct intel_frontbuffer *front);
+	void (*put)(struct intel_frontbuffer *front);
+	void (*flush_for_display)(struct intel_frontbuffer *front);
 };
 
 struct intel_display_hdcp_interface {
@@ -166,11 +193,17 @@ struct intel_display_vma_interface {
  * check the optional pointers.
  */
 struct intel_display_parent_interface {
-	/** @dsb: DPT interface. Optional. */
+	/** @bo: BO interface */
+	const struct intel_display_bo_interface *bo;
+
+	/** @dpt: DPT interface. Optional. */
 	const struct intel_display_dpt_interface *dpt;
 
 	/** @dsb: DSB buffer interface */
 	const struct intel_display_dsb_interface *dsb;
+
+	/** @frontbuffer: Frontbuffer interface */
+	const struct intel_display_frontbuffer_interface *frontbuffer;
 
 	/** @hdcp: HDCP GSC interface */
 	const struct intel_display_hdcp_interface *hdcp;

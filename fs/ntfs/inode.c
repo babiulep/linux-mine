@@ -865,10 +865,10 @@ static int ntfs_read_locked_inode(struct inode *vi)
 	}
 skip_attr_list_load:
 	err = ntfs_attr_lookup(AT_EA_INFORMATION, NULL, 0, 0, 0, NULL, 0, ctx);
-	if (!err)
+	if (!err) {
 		NInoSetHasEA(ni);
-
-	ntfs_ea_get_wsl_inode(vi, &dev, flags);
+		ntfs_ea_get_wsl_inode(vi, &dev, flags);
+	}
 
 	if (m->flags & MFT_RECORD_IS_DIRECTORY) {
 		vi->i_mode |= S_IFDIR;
@@ -1761,7 +1761,7 @@ static int load_attribute_list_mount(struct ntfs_volume *vol,
 		/* The attribute list cannot be sparse. */
 		if (lcn < 0) {
 			ntfs_error(sb, "ntfs_rl_vcn_to_lcn() failed. Cannot read attribute list.");
-			goto err_out;
+			return -EIO;
 		}
 
 		rl_byte_off = ntfs_cluster_to_bytes(vol, lcn);
@@ -1774,7 +1774,7 @@ static int load_attribute_list_mount(struct ntfs_volume *vol,
 				   round_up(rl_byte_len, SECTOR_SIZE));
 		if (err) {
 			ntfs_error(sb, "Cannot read attribute list.");
-			goto err_out;
+			return -EIO;
 		}
 
 		if (al + rl_byte_len >= al_end) {
@@ -1792,11 +1792,6 @@ initialize:
 	}
 done:
 	return err;
-	/* Real overflow! */
-	ntfs_error(sb, "Attribute list buffer overflow. Read attribute list is truncated.");
-err_out:
-	err = -EIO;
-	goto done;
 }
 
 /*
@@ -3250,8 +3245,10 @@ int ntfs_inode_close(struct ntfs_inode *ni)
 	 * base inode before destroying it.
 	 */
 	base_ni = ni->ext.base_ntfs_ino;
+	tmp_nis = base_ni->ext.extent_ntfs_inos;
+	if (!tmp_nis)
+		goto out;
 	for (i = 0; i < base_ni->nr_extents; ++i) {
-		tmp_nis = base_ni->ext.extent_ntfs_inos;
 		if (tmp_nis[i] != ni)
 			continue;
 		/* Found it. Disconnect. */
@@ -3279,6 +3276,7 @@ int ntfs_inode_close(struct ntfs_inode *ni)
 		break;
 	}
 
+out:
 	if (NInoDirty(ni))
 		ntfs_error(ni->vol->sb, "Releasing dirty inode %llu!\n",
 				ni->mft_no);

@@ -28,14 +28,18 @@ DEFINE_STATIC_CALL(xor_gen_impl, xor_gen_32regs);
  * @bytes:	length in bytes of each vector
  *
  * Performs bit-wise XOR operation into @dest for each of the @src_cnt vectors
- * in @srcs for a length of @bytes bytes.
+ * in @srcs for a length of @bytes bytes.  @src_count must be non-zero, and the
+ * memory pointed to by @dest and each member of @srcs must be at least 32-byte
+ * aligned.  @bytes must be non-zero and a multiple of 512.
  *
  * Note: for typical RAID uses, @dest either needs to be zeroed, or filled with
  * the first disk, which then needs to be removed from @srcs.
  */
 void xor_gen(void *dest, void **srcs, unsigned int src_cnt, unsigned int bytes)
 {
-	WARN_ON_ONCE(in_interrupt());
+	lockdep_assert_preemption_enabled();
+	WARN_ON_ONCE(bytes & 511);
+
 	static_call(xor_gen_impl)(dest, srcs, src_cnt, bytes);
 }
 EXPORT_SYMBOL(xor_gen);
@@ -115,7 +119,7 @@ static int __init calibrate_xor_blocks(void)
 
 	b1 = (void *) __get_free_pages(GFP_KERNEL, 2);
 	if (!b1) {
-		pr_info("xor: Yikes!  No memory available.\n");
+		pr_warn("xor: Yikes!  No memory available.\n");
 		return -ENOMEM;
 	}
 	b2 = b1 + 2*PAGE_SIZE + BENCH_SIZE;

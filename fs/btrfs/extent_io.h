@@ -99,11 +99,11 @@ struct extent_buffer {
 	spinlock_t refs_lock;
 	refcount_t refs;
 	int read_mirror;
+	/* Inhibit WB_SYNC_NONE writeback when > 0. */
+	atomic_t writeback_inhibitors;
 	/* >= 0 if eb belongs to a log tree, -1 otherwise */
 	s8 log_index;
 	u8 folio_shift;
-	/* Inhibits WB_SYNC_NONE writeback when > 0. */
-	atomic_t writeback_inhibitors;
 	struct rcu_head rcu_head;
 
 	struct rw_semaphore lock;

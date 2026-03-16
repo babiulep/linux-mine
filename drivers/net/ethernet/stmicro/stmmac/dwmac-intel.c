@@ -566,7 +566,7 @@ static void common_default_data(struct plat_stmmacenet_data *plat)
 	/* clk_csr_i = 20-35MHz & MDC = clk_csr_i/16 */
 	plat->clk_csr = STMMAC_CSR_20_35M;
 	plat->core_type = DWMAC_CORE_GMAC;
-	plat->force_sf_dma_mode = 1;
+	plat->force_sf_dma_mode = true;
 
 	plat->mdio_bus_data->needs_reset = true;
 }
@@ -589,7 +589,7 @@ static int intel_mgbe_common_data(struct pci_dev *pdev,
 	int ret;
 	int i;
 
-	plat->pdev = pdev;
+	plat->provide_bus_info = true;
 	plat->phy_addr = -1;
 	plat->clk_csr = STMMAC_CSR_250_300M;
 	plat->core_type = DWMAC_CORE_GMAC4;
@@ -1249,11 +1249,6 @@ static int intel_eth_pci_probe(struct pci_dev *pdev,
 					   sizeof(*plat->mdio_bus_data),
 					   GFP_KERNEL);
 	if (!plat->mdio_bus_data)
-		return -ENOMEM;
-
-	plat->dma_cfg = devm_kzalloc(&pdev->dev, sizeof(*plat->dma_cfg),
-				     GFP_KERNEL);
-	if (!plat->dma_cfg)
 		return -ENOMEM;
 
 	plat->safety_feat_cfg = devm_kzalloc(&pdev->dev,

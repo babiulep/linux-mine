@@ -156,6 +156,19 @@ static struct btrfs_ordered_extent *alloc_ordered_extent(
 	const bool is_nocow = (flags &
 	       ((1U << BTRFS_ORDERED_NOCOW) | (1U << BTRFS_ORDERED_PREALLOC)));
 
+	/* Only one type flag can be set. */
+	ASSERT(has_single_bit_set(flags & BTRFS_ORDERED_EXCLUSIVE_FLAGS));
+
+	/* DIRECT cannot be set with COMPRESSED nor ENCODED. */
+	if (test_bit(BTRFS_ORDERED_DIRECT, &flags)) {
+		ASSERT(!test_bit(BTRFS_ORDERED_COMPRESSED, &flags));
+		ASSERT(!test_bit(BTRFS_ORDERED_ENCODED, &flags));
+	}
+
+	/* ENCODED must be set with COMPRESSED. */
+	if (test_bit(BTRFS_ORDERED_ENCODED, &flags))
+		ASSERT(test_bit(BTRFS_ORDERED_COMPRESSED, &flags));
+
 	/*
 	 * For a NOCOW write we can free the qgroup reserve right now. For a COW
 	 * one we transfer the reserved space from the inode's iotree into the
@@ -240,10 +253,15 @@ static void insert_ordered_extent(struct btrfs_ordered_extent *entry)
 	spin_lock(&inode->ordered_tree_lock);
 	node = tree_insert(&inode->ordered_tree, entry->file_offset,
 			   &entry->rb_node);
-	if (unlikely(node))
+	if (unlikely(node)) {
+		struct btrfs_ordered_extent *exist =
+			rb_entry(node, struct btrfs_ordered_extent, rb_node);
+
 		btrfs_panic(fs_info, -EEXIST,
-				"inconsistency in ordered tree at offset %llu",
-				entry->file_offset);
+"overlapping ordered extents, existing oe file_offset %llu num_bytes %llu flags 0x%lx, new oe file_offset %llu num_bytes %llu flags 0x%lx",
+			    exist->file_offset, exist->num_bytes, exist->flags,
+			    entry->file_offset, entry->num_bytes, entry->flags);
+	}
 	spin_unlock(&inode->ordered_tree_lock);
 
 	spin_lock(&root->ordered_extent_lock);

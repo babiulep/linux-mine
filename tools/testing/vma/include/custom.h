@@ -21,9 +21,6 @@ extern unsigned long dac_mmap_min_addr;
 #define VM_BUG_ON(_expr) (BUG_ON(_expr))
 #define VM_BUG_ON_VMA(_expr, _vma) (BUG_ON(_expr))
 
-/* We hardcode this for now. */
-#define sysctl_max_map_count 0x1000000UL
-
 #define TASK_SIZE ((1ul << 47)-PAGE_SIZE)
 
 /*
@@ -117,4 +114,9 @@ static __always_inline vma_flags_t __mk_vma_flags(size_t count,
 		if (bits[i] < NUM_VMA_FLAG_BITS)
 			vma_flags_set_flag(&flags, bits[i]);
 	return flags;
+}
+
+static inline unsigned long vma_kernel_pagesize(struct vm_area_struct *vma)
+{
+	return PAGE_SIZE;
 }

@@ -26,18 +26,11 @@ xor-$(CONFIG_CPU_HAS_LSX)	+= loongarch/xor_simd_glue.o
 xor-$(CONFIG_ALTIVEC)		+= powerpc/xor_vmx.o powerpc/xor_vmx_glue.o
 xor-$(CONFIG_RISCV_ISA_V)	+= riscv/xor.o riscv/xor-glue.o
 xor-$(CONFIG_SPARC32)		+= sparc/xor-sparc32.o
-xor-$(CONFIG_SPARC64)		+= sparc/xor-vis.o sparc/xor-vis-glue.o
-xor-$(CONFIG_SPARC64)		+= sparc/xor-niagara.o sparc/xor-niagara-glue.o
+xor-$(CONFIG_SPARC64)		+= sparc/xor-sparc64.o sparc/xor-sparc64-glue.o
 xor-$(CONFIG_S390)		+= s390/xor.o
-ifeq ($(CONFIG_32BIT),y)
-xor-$(CONFIG_UML_X86)		+= x86/xor-mmx.o
-endif
-xor-$(CONFIG_UML_X86)		+= x86/xor-avx.o
-xor-$(CONFIG_UML_X86)		+= x86/xor-sse.o
-xor-$(CONFIG_X86_32)		+= x86/xor-mmx.o
-xor-$(CONFIG_X86)		+= x86/xor-avx.o
-xor-$(CONFIG_X86)		+= x86/xor-sse.o
-
+xor-$(CONFIG_X86_32)		+= x86/xor-avx.o x86/xor-sse.o x86/xor-mmx.o
+xor-$(CONFIG_X86_64)		+= x86/xor-avx.o x86/xor-sse.o
+obj-y				+= tests/
 
 CFLAGS_arm/xor-neon.o		+= $(CC_FLAGS_FPU)
 CFLAGS_REMOVE_arm/xor-neon.o	+= $(CC_FLAGS_NO_FPU)

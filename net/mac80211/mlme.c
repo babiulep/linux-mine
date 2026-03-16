@@ -216,6 +216,24 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 			return IEEE80211_CONN_MODE_LEGACY;
 		}
 
+		if (eht_oper && ieee80211_hw_check(&sdata->local->hw, STRICT)) {
+			struct cfg80211_chan_def he_chandef = *chandef;
+
+			if (!ieee80211_chandef_he_6ghz_oper(sdata->local,
+							    he_oper, NULL,
+							    &he_chandef)) {
+				sdata_info(sdata,
+					   "bad HE operation in EHT AP\n");
+				return IEEE80211_CONN_MODE_LEGACY;
+			}
+
+			if (!cfg80211_chandef_compatible(chandef,
+							 &he_chandef)) {
+				sdata_info(sdata, "HE/EHT incompatible\n");
+				return IEEE80211_CONN_MODE_LEGACY;
+			}
+		}
+
 		if (mode <= IEEE80211_CONN_MODE_EHT)
 			return mode;
 		goto check_uhr;
@@ -7058,6 +7076,7 @@ static void ieee80211_ml_reconf_work(struct wiphy *wiphy,
 		container_of(work, struct ieee80211_sub_if_data,
 			     u.mgd.ml_reconf_work.work);
 	u16 new_valid_links, new_active_links, new_dormant_links;
+	struct sta_info *sta;
 	int ret;
 
 	if (!sdata->u.mgd.removed_links)
@@ -7091,6 +7110,16 @@ static void ieee80211_ml_reconf_work(struct wiphy *wiphy,
 				   "Failed setting active links\n");
 			goto out;
 		}
+	}
+
+	sta = sta_info_get(sdata, sdata->vif.cfg.ap_addr);
+	if (sta) {
+		unsigned long removed_links = sdata->u.mgd.removed_links;
+		unsigned int link_id;
+
+		for_each_set_bit(link_id, &removed_links,
+				 IEEE80211_MLD_MAX_NUM_LINKS)
+			ieee80211_sta_free_link(sta, link_id);
 	}
 
 	new_dormant_links = sdata->vif.dormant_links & ~sdata->u.mgd.removed_links;

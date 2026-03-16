@@ -593,7 +593,7 @@ err_out:
 		unmap_mft_record(dir_ni);
 	kfree(name);
 	*res = NULL;
-	if (ia_vi && !IS_ERR(ia_vi))
+	if (!IS_ERR_OR_NULL(ia_vi))
 		iput(ia_vi);
 	return ERR_MREF(err);
 dir_err_out:
@@ -1032,8 +1032,10 @@ out:
 	}
 
 	if (err) {
-		private->curr_pos = actor->pos;
-		private->end_in_iterate = true;
+		if (private) {
+			private->curr_pos = actor->pos;
+			private->end_in_iterate = true;
+		}
 		err = 0;
 	}
 	ntfs_index_ctx_put(ictx);

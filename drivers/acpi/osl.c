@@ -1263,7 +1263,7 @@ acpi_status acpi_os_delete_semaphore(acpi_handle handle)
 
 	ACPI_DEBUG_PRINT((ACPI_DB_MUTEX, "Deleting semaphore[%p].\n", handle));
 
-	BUG_ON(!list_empty(&sem->wait_list));
+	BUG_ON(sem->first_waiter);
 	kfree(sem);
 	sem = NULL;
 
@@ -1698,7 +1698,7 @@ acpi_status __init acpi_os_initialize(void)
 		 * Use acpi_os_map_generic_address to pre-map the reset
 		 * register if it's in system memory.
 		 */
-		void *rv;
+		void __iomem *rv;
 
 		rv = acpi_os_map_generic_address(&acpi_gbl_FADT.reset_register);
 		pr_debug("%s: Reset register mapping %s\n", __func__,

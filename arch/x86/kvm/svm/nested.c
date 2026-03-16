@@ -448,6 +448,17 @@ static bool nested_vmcb_check_save(struct kvm_vcpu *vcpu,
 	return true;
 }
 
+int nested_svm_check_cached_vmcb12(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_svm *svm = to_svm(vcpu);
+
+	if (!nested_vmcb_check_save(vcpu, &svm->nested.save) ||
+	    !nested_vmcb_check_controls(vcpu, &svm->nested.ctl))
+		return -EINVAL;
+
+	return 0;
+}
+
 /*
  * If a feature is not advertised to L1, clear the corresponding vmcb12
  * intercept.
@@ -1061,8 +1072,7 @@ static int nested_svm_copy_vmcb12_to_cache(struct kvm_vcpu *vcpu, u64 vmcb12_gpa
 	nested_copy_vmcb_control_to_cache(svm, &vmcb12->control);
 	nested_copy_vmcb_save_to_cache(svm, &vmcb12->save);
 
-	if (!nested_vmcb_check_save(vcpu, &svm->nested.save) ||
-	    !nested_vmcb_check_controls(vcpu, &svm->nested.ctl)) {
+	if (nested_svm_check_cached_vmcb12(vcpu) < 0) {
 		vmcb12->control.exit_code = SVM_EXIT_ERR;
 		vmcb12->control.exit_info_1 = 0;
 		vmcb12->control.exit_info_2 = 0;
@@ -1079,7 +1089,7 @@ static int nested_svm_copy_vmcb12_to_cache(struct kvm_vcpu *vcpu, u64 vmcb12_gpa
 int nested_svm_vmrun(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
-	int ret, err;
+	int ret;
 	u64 vmcb12_gpa;
 	struct vmcb *vmcb01 = svm->vmcb01.ptr;
 
@@ -1104,19 +1114,20 @@ int nested_svm_vmrun(struct kvm_vcpu *vcpu)
 		return -EINVAL;
 
 	vmcb12_gpa = svm->vmcb->save.rax;
-	err = nested_svm_copy_vmcb12_to_cache(vcpu, vmcb12_gpa);
-	if (err == -EFAULT) {
-		kvm_inject_gp(vcpu, 0);
-		return 1;
+
+	ret = nested_svm_copy_vmcb12_to_cache(vcpu, vmcb12_gpa);
+	if (ret) {
+		if (ret == -EFAULT) {
+			kvm_inject_gp(vcpu, 0);
+			return 1;
+		}
+
+		/* Advance RIP past VMRUN as part of the nested #VMEXIT. */
+		return kvm_skip_emulated_instruction(vcpu);
 	}
 
-	/*
-	 * Advance RIP if #GP or #UD are not injected, but otherwise stop if
-	 * copying and checking vmcb12 failed.
-	 */
+	/* At this point, VMRUN is guaranteed to not fault; advance RIP. */
 	ret = kvm_skip_emulated_instruction(vcpu);
-	if (err)
-		return ret;
 
 	/*
 	 * Since vmcb01 is not in use, we can use it to store some of the L1

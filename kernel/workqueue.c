@@ -405,7 +405,7 @@ struct work_offq_data {
 	u32			flags;
 };
 
-static const char *wq_affn_names[WQ_AFFN_NR_TYPES] = {
+static const char * const wq_affn_names[WQ_AFFN_NR_TYPES] = {
 	[WQ_AFFN_DFL]		= "default",
 	[WQ_AFFN_CPU]		= "cpu",
 	[WQ_AFFN_SMT]		= "smt",
@@ -3313,7 +3313,7 @@ __acquires(&pool->lock)
 		dump_stack();
 	}
 #ifdef CONFIG_KCOV
-	if (unlikely(old_kcov_mode != new_kcov_mode))
+	if (unlikely((old_kcov_mode & ~(1 << 30)) != (new_kcov_mode & ~(1 << 30))))
 		pr_err("BUG: workqueue function %ps changed kcov_mode from %u to %u\n",
 		       worker->current_func, old_kcov_mode, new_kcov_mode);
 #endif
@@ -3407,6 +3407,11 @@ static int worker_thread(void *__worker)
 {
 	struct worker *worker = __worker;
 	struct worker_pool *pool = worker->pool;
+
+#ifdef CONFIG_KCOV
+	if (unlikely(current->kcov_mode & ~(1 << 30)))
+		pr_err("BUG: %s started with kcov_mode=%u\n", __func__, current->kcov_mode);
+#endif
 
 	/* tell the scheduler that this is a workqueue worker */
 	set_pf_worker(true);
@@ -3559,6 +3564,11 @@ static int rescuer_thread(void *__rescuer)
 	struct worker *rescuer = __rescuer;
 	struct workqueue_struct *wq = rescuer->rescue_wq;
 	bool should_stop;
+
+#ifdef CONFIG_KCOV
+	if (unlikely(current->kcov_mode & ~(1 << 30)))
+		pr_err("BUG: %s started with kcov_mode=%u\n", __func__, current->kcov_mode);
+#endif
 
 	set_user_nice(current, RESCUER_NICE_LEVEL);
 
@@ -7114,13 +7124,7 @@ int workqueue_unbound_housekeeping_update(const struct cpumask *hk)
 
 static int parse_affn_scope(const char *val)
 {
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(wq_affn_names); i++) {
-		if (!strncasecmp(val, wq_affn_names[i], strlen(wq_affn_names[i])))
-			return i;
-	}
-	return -EINVAL;
+	return sysfs_match_string(wq_affn_names, val);
 }
 
 static int wq_affn_dfl_set(const char *val, const struct kernel_param *kp)

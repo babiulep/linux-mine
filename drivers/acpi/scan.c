@@ -2222,10 +2222,8 @@ static void acpi_create_video_bus_device(struct acpi_device *adev,
 		goto err;
 
 	ACPI_COMPANION_SET(&aux_dev->dev, adev);
-	if (__auxiliary_device_add(aux_dev, "acpi")) {
+	if (__auxiliary_device_add(aux_dev, "acpi"))
 		auxiliary_device_uninit(aux_dev);
-		goto err;
-	}
 
 	return;
 

@@ -8419,9 +8419,13 @@ int vmx_leave_smm(struct kvm_vcpu *vcpu, const union kvm_smram *smram)
 	}
 
 	if (vmx->nested.smm.guest_mode) {
+		/* Triple fault if the state is invalid.  */
+		if (nested_vmx_check_restored_vmcs12(vcpu) < 0)
+			return 1;
+
 		ret = nested_vmx_enter_non_root_mode(vcpu, false);
-		if (ret)
-			return ret;
+		if (ret != NVMX_VMENTRY_SUCCESS)
+			return 1;
 
 		vmx->nested.nested_run_pending = 1;
 		vmx->nested.smm.guest_mode = false;
@@ -8582,10 +8586,6 @@ __init int vmx_hardware_setup(void)
 	host_idt_base = dt.address;
 
 	vmx_setup_user_return_msrs();
-
-
-	if (boot_cpu_has(X86_FEATURE_NX))
-		kvm_enable_efer_bits(EFER_NX);
 
 	if (boot_cpu_has(X86_FEATURE_MPX)) {
 		rdmsrq(MSR_IA32_BNDCFGS, host_bndcfgs);

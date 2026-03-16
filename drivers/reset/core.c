@@ -132,20 +132,21 @@ int reset_controller_register(struct reset_controller_dev *rcdev)
 	if ((rcdev->of_node && rcdev->fwnode) || (rcdev->of_xlate && rcdev->fwnode_xlate))
 		return -EINVAL;
 
-	if (!rcdev->of_node && !rcdev->fwnode) {
+	if (rcdev->of_node && !rcdev->fwnode)
+		rcdev->fwnode = of_fwnode_handle(rcdev->of_node);
+
+	if (!rcdev->fwnode) {
 		rcdev->fwnode = dev_fwnode(rcdev->dev);
 		if (!rcdev->fwnode)
 			return -EINVAL;
 	}
 
-	if (rcdev->of_node) {
-		rcdev->fwnode = of_fwnode_handle(rcdev->of_node);
+	if (rcdev->of_xlate)
 		rcdev->fwnode_reset_n_cells = rcdev->of_reset_n_cells;
-	}
 
-	if (rcdev->fwnode && !rcdev->fwnode_xlate) {
-		rcdev->fwnode_reset_n_cells = 1;
+	if (!rcdev->fwnode_xlate && !rcdev->of_xlate) {
 		rcdev->fwnode_xlate = fwnode_reset_simple_xlate;
+		rcdev->fwnode_reset_n_cells = 1;
 	}
 
 	INIT_LIST_HEAD(&rcdev->reset_control_head);
@@ -1215,7 +1216,7 @@ __fwnode_reset_control_get(struct fwnode_handle *fwnode, const char *id, int ind
 	}
 	if (rstc_id < 0) {
 		rstc = ERR_PTR(rstc_id);
-			goto out_put;
+		goto out_put;
 	}
 
 	flags &= ~RESET_CONTROL_FLAGS_BIT_OPTIONAL;

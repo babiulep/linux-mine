@@ -2,7 +2,6 @@
 #ifndef _XOR_H
 #define _XOR_H
 
-void xor_gen(void *dest, void **srcss, unsigned int src_cnt,
-		unsigned int bytes);
+void xor_gen(void *dest, void **srcs, unsigned int src_cnt, unsigned int bytes);
 
 #endif /* _XOR_H */

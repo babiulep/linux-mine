@@ -626,15 +626,9 @@ static struct qcom_pdm_data *qcom_pdm_start(void)
 	const struct qcom_pdm_domain_data * const *domains;
 	const struct of_device_id *match;
 	struct qcom_pdm_data *data;
-	struct device_node *root;
 	int ret, i;
 
-	root = of_find_node_by_path("/");
-	if (!root)
-		return ERR_PTR(-ENODEV);
-
-	match = of_match_node(qcom_pdm_domains, root);
-	of_node_put(root);
+	match = of_match_node(qcom_pdm_domains, of_root);
 	if (!match) {
 		pr_notice("PDM: no support for the platform, userspace daemon might be required.\n");
 		return ERR_PTR(-ENODEV);
@@ -667,7 +661,7 @@ static struct qcom_pdm_data *qcom_pdm_start(void)
 			goto err_stop;
 	}
 
-	ret = qmi_add_server(&data->handle, SERVREG_LOCATOR_SERVICE,
+	ret = qmi_add_server(&data->handle, QMI_SERVICE_ID_SERVREG_LOC,
 			     SERVREG_QMI_VERSION, SERVREG_QMI_INSTANCE);
 	if (ret) {
 		pr_err("PDM: error adding server %d\n", ret);

@@ -777,10 +777,6 @@ static inline unsigned long huge_page_size(const struct hstate *h)
 	return (unsigned long)PAGE_SIZE << h->order;
 }
 
-extern unsigned long vma_kernel_pagesize(struct vm_area_struct *vma);
-
-extern unsigned long vma_mmu_pagesize(struct vm_area_struct *vma);
-
 static inline unsigned long huge_page_mask(struct hstate *h)
 {
 	return h->mask;
@@ -796,13 +792,19 @@ static inline unsigned huge_page_shift(struct hstate *h)
 	return h->order + PAGE_SHIFT;
 }
 
-/*
- * Convert the address within this vma to the page offset within
- * the mapping, huge page units here.
+/**
+ * hugetlb_linear_page_index() - linear_page_index() but in hugetlb
+ *				 page size granularity.
+ * @vma: the hugetlb VMA
+ * @address: the virtual address within the VMA
+ *
+ * Return: the page offset within the mapping in huge page units.
  */
-static inline pgoff_t vma_hugecache_offset(struct hstate *h,
-		struct vm_area_struct *vma, unsigned long address)
+static inline pgoff_t hugetlb_linear_page_index(struct vm_area_struct *vma,
+		unsigned long address)
 {
+	struct hstate *h = hstate_vma(vma);
+
 	return ((address - vma->vm_start) >> huge_page_shift(h)) +
 		(vma->vm_pgoff >> huge_page_order(h));
 }
@@ -1186,16 +1188,6 @@ static inline unsigned long huge_page_size(struct hstate *h)
 static inline unsigned long huge_page_mask(struct hstate *h)
 {
 	return PAGE_MASK;
-}
-
-static inline unsigned long vma_kernel_pagesize(struct vm_area_struct *vma)
-{
-	return PAGE_SIZE;
-}
-
-static inline unsigned long vma_mmu_pagesize(struct vm_area_struct *vma)
-{
-	return PAGE_SIZE;
 }
 
 static inline unsigned int huge_page_order(struct hstate *h)

@@ -155,18 +155,16 @@ void tctx_task_work(struct callback_head *cb)
 /*
  * Sets IORING_SQ_TASKRUN in the sq_flags shared with userspace, using the
  * RCU protected rings pointer to be safe against concurrent ring resizing.
- * Must be called inside an RCU read-side critical section.
  */
 static void io_ctx_mark_taskrun(struct io_ring_ctx *ctx)
 {
-	struct io_rings *rings;
+	lockdep_assert_in_rcu_read_lock();
 
-	if (!(ctx->flags & IORING_SETUP_TASKRUN_FLAG))
-		return;
+	if (ctx->flags & IORING_SETUP_TASKRUN_FLAG) {
+		struct io_rings *rings = rcu_dereference(ctx->rings_rcu);
 
-	rings = rcu_dereference(ctx->rings_rcu);
-	if (rings)
 		atomic_or(IORING_SQ_TASKRUN, &rings->sq_flags);
+	}
 }
 
 void io_req_local_work_add(struct io_kiocb *req, unsigned flags)
@@ -224,7 +222,7 @@ void io_req_local_work_add(struct io_kiocb *req, unsigned flags)
 
 	if (!head) {
 		io_ctx_mark_taskrun(ctx);
-		if (ctx->has_evfd)
+		if (data_race(ctx->int_flags) & IO_RING_F_HAS_EVFD)
 			io_eventfd_signal(ctx, false);
 	}
 

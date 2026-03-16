@@ -292,12 +292,10 @@ int fseek(FILE *stream, long offset, int whence)
 
 
 /* printf(). Supports most of the normal integer and string formats.
- *  - %[#-+ 0][width][{l,t,z,ll,L,j,q}]{c,d,i,u,x,X,p,s,m,%}
+ *  - %[#0-+ ][width|*[.precision|*}][{l,t,z,ll,L,j,q}]{c,d,i,u,o,x,X,p,s,m,%}
  *  - %% generates a single %
  *  - %m outputs strerror(errno).
  *  - %X outputs a..f the same as %x.
- *  - The modifiers [#-+ 0] are currently ignored.
- *  - No support for precision or variable widths.
  *  - No support for floating point or wide characters.
  *  - Invalid formats are copied to the output buffer.
  *
@@ -343,11 +341,12 @@ int __nolibc_printf(__nolibc_printf_cb cb, void *state, const char *fmt, va_list
 	char ch;
 	unsigned long long v;
 	long long signed_v;
-	int written, width, len;
+	int written, width, precision, len;
 	unsigned int flags, ch_flag;
-	char outbuf[21];
+	char outbuf[2 + 31 + 22 + 1];
 	char *out;
 	const char *outstr;
+	unsigned int sign_prefix;
 
 	written = 0;
 	while (1) {
@@ -377,12 +376,24 @@ int __nolibc_printf(__nolibc_printf_cb cb, void *state, const char *fmt, va_list
 			flags |= ch_flag;
 		}
 
-		/* width */
-		while (ch >= '0' && ch <= '9') {
-			width *= 10;
-			width += ch - '0';
-
-			ch = *fmt++;
+		/* Width and precision */
+		for (;; ch = *fmt++) {
+			if (ch == '*') {
+				precision = va_arg(args, unsigned int);
+				ch = *fmt++;
+			} else {
+				for (precision = 0; ch >= '0' && ch <= '9'; ch = *fmt++)
+					precision = precision * 10 + (ch - '0');
+			}
+			if (_NOLIBC_PF_FLAGS_CONTAIN(flags, '.'))
+				break;
+			width = precision;
+			if (ch != '.') {
+				/* Default precision for strings */
+				precision = INT_MAX;
+				break;
+			}
+			flags |= _NOLIBC_PF_FLAG('.');
 		}
 
 		/* Length modifier.
@@ -409,10 +420,13 @@ int __nolibc_printf(__nolibc_printf_cb cb, void *state, const char *fmt, va_list
 		 * so that 'X' can be allowed through.
 		 * 'X' gets treated and 'x' because _NOLIBC_PF_FLAG() returns the same
 		 * value for both.
+		 *
+		 * We need to check for "%p" or "%#x" later, merging here gives better code.
+		 * But '#' collides with 'c' so shift right.
 		 */
-		ch_flag = _NOLIBC_PF_FLAG(ch);
+		ch_flag = _NOLIBC_PF_FLAG(ch) | (flags & _NOLIBC_PF_FLAG('#')) >> 1;
 		if (((ch >= 'a' && ch <= 'z') || ch == 'X') &&
-		    _NOLIBC_PF_FLAGS_CONTAIN(ch_flag, 'c', 'd', 'i', 'u', 'x', 'p', 's')) {
+		    _NOLIBC_PF_FLAGS_CONTAIN(ch_flag, 'c', 'd', 'i', 'u', 'o', 'x', 'p', 's')) {
 			/* 'long' is needed for pointer/string conversions and ltz lengths.
 			 * A single test can be used provided 'p' (the same bit as '0')
 			 * is masked from flags.
@@ -440,37 +454,129 @@ int __nolibc_printf(__nolibc_printf_cb cb, void *state, const char *fmt, va_list
 			if (ch == 's') {
 				/* "%s" - character string. */
 				outstr = (const char  *)(uintptr_t)v;
-				if (!outstr)
+				if (!outstr) {
 					outstr = "(null)";
+					/* Match glibc, nothing output if precision too small */
+					len = precision >= 6 ? 6 : 0;
+					goto do_output;
+				}
 				goto do_strlen_output;
 			}
 
-			out = outbuf;
+			/* The 'sign_prefix' can be zero, one or two ("0x") characters.
+			 * Prepended least significant byte first stopping on a zero byte.
+			 */
+			sign_prefix = 0;
 
 			if (_NOLIBC_PF_FLAGS_CONTAIN(ch_flag, 'd', 'i')) {
 				/* "%d" and "%i" - signed decimal numbers. */
 				if (signed_v < 0) {
-					*out++ = '-';
+					sign_prefix = '-';
 					v = -(signed_v + 1);
 					v++;
+				} else if (_NOLIBC_PF_FLAGS_CONTAIN(flags, '+')) {
+					sign_prefix = '+';
+				} else if (_NOLIBC_PF_FLAGS_CONTAIN(flags, ' ')) {
+					sign_prefix = ' ';
 				}
-			}
-
-			/* Convert the number to ascii in the required base. */
-			if (_NOLIBC_PF_FLAGS_CONTAIN(ch_flag, 'd', 'i', 'u')) {
-				/* Base 10 */
-				u64toa_r(v, out);
 			} else {
-				/* Base 16 */
-				if (_NOLIBC_PF_FLAGS_CONTAIN(ch_flag, 'p')) {
-					*(out++) = '0';
-					*(out++) = 'x';
-				}
-				u64toh_r(v, out);
+				/* "#o" requires that the output always starts with a '0'.
+				 * This needs another check after any zero padding to avoid
+				 * adding an extra leading '0'.
+				 */
+				if (_NOLIBC_PF_FLAGS_CONTAIN(ch_flag, 'o') &&
+						_NOLIBC_PF_FLAGS_CONTAIN(ch_flag, '#' - 1))
+					sign_prefix = '0';
 			}
 
-			outstr = outbuf;
-			goto do_strlen_output;
+			/* The value is converted offset into the buffer so that
+			 * 31 zero pad characters and the sign/prefix can be added in front.
+			 * The longest digit string is 22 + 1 for octal conversions.
+			 */
+			out = outbuf + 2 + 31;
+
+			if (v == 0) {
+				/* There are special rules for zero. */
+				if (_NOLIBC_PF_FLAGS_CONTAIN(ch_flag, 'p')) {
+					/* "%p" match glibc, precision is ignored */
+					outstr = "(nil)";
+					len = 5;
+					goto do_output;
+				}
+				if (!precision) {
+					/* Explicit %nn.0d, no digits output (except for %#.0o) */
+					len = 0;
+					goto prepend_sign;
+				}
+				/* All other formats (including "%#x") just output "0". */
+				out[0] = '0';
+				len = 1;
+			} else {
+				/* Convert the number to ascii in the required base. */
+				unsigned long long recip;
+				unsigned int base;
+				if (_NOLIBC_PF_FLAGS_CONTAIN(ch_flag, 'd', 'i', 'u')) {
+					base = 10;
+					recip = _NOLIBC_U64TOA_RECIP(10);
+				} else if (_NOLIBC_PF_FLAGS_CONTAIN(ch_flag, 'o')) {
+					base = 8;
+					recip = _NOLIBC_U64TOA_RECIP(8);
+				} else {
+					base = 16;
+					recip = _NOLIBC_U64TOA_RECIP(16);
+					if (_NOLIBC_PF_FLAGS_CONTAIN(ch_flag, 'p', '#' - 1)) {
+						/* "%p" and "%#x" need "0x" prepending. */
+						sign_prefix = '0' << 8 | 'x';
+					}
+				}
+				len = _nolibc_u64toa_base(v, out, base, recip);
+			}
+
+			/* Add zero padding */
+			if (_NOLIBC_PF_FLAGS_CONTAIN(flags, '0', '.')) {
+				if (!_NOLIBC_PF_FLAGS_CONTAIN(flags, '.')) {
+					if (_NOLIBC_PF_FLAGS_CONTAIN(flags, '-'))
+						/* Left justify overrides zero pad */
+						goto prepend_sign;
+					/* eg "%05d", Zero pad to field width less sign.
+					 * Note that precision can end up negative so all
+					 * the variables have to be 'signed int'.
+					 */
+					precision = width;
+					if (sign_prefix) {
+						precision--;
+						if (sign_prefix >= 256)
+							precision--;
+					}
+				}
+				if (precision > 31)
+					/* Don't run off the start of outbuf[], arbitrary limit
+					 * longer than the longest number field. */
+					precision = 31;
+				for (; len < precision; len++) {
+					/* Stop gcc generating horrid code and memset(). */
+					_NOLIBC_OPTIMIZER_HIDE_VAR(len);
+					*--out = '0';
+				}
+			}
+
+			/* %#o has set sign_prefix to '0', but we don't want so add an extra
+			 * leading zero here.
+			 * Since the only other byte values of sign_prefix are ' ', '+' and '-'
+			 * it is enough to check that out[] doesn't already start with sign_prefix.
+			 */
+			if (sign_prefix - *out) {
+prepend_sign:
+				/* Add the 0, 1 or 2 ("0x") sign/prefix characters at the front. */
+				for (; sign_prefix; sign_prefix >>= 8) {
+					/* Force gcc to increment len inside the loop. */
+					_NOLIBC_OPTIMIZER_HIDE_VAR(len);
+					len++;
+					*--out = sign_prefix;
+				}
+			}
+			outstr = out;
+			goto do_output;
 		}
 
 		if (ch == 'm') {
@@ -496,8 +602,8 @@ int __nolibc_printf(__nolibc_printf_cb cb, void *state, const char *fmt, va_list
 		goto do_output;
 
 do_strlen_output:
-		/* Open coded strlen() (slightly smaller). */
-		for (len = 0;; len++)
+		/* Open coded strnlen() (slightly smaller). */
+		for (len = 0; len < precision; len++)
 			if (!outstr[len])
 				break;
 
@@ -507,7 +613,11 @@ do_output:
 		/* Stop gcc back-merging this code into one of the conditionals above. */
 		_NOLIBC_OPTIMIZER_HIDE_VAR(len);
 
+		/* Output the characters on the required side of any padding. */
 		width -= len;
+		flags = _NOLIBC_PF_FLAGS_CONTAIN(flags, '-');
+		if (flags && cb(state, outstr, len) != 0)
+			return -1;
 		while (width > 0) {
 			/* Output pad in 16 byte blocks with the small block first. */
 			int pad_len = ((width - 1) & 15) + 1;
@@ -516,7 +626,7 @@ do_output:
 			if (cb(state, "                ", pad_len) != 0)
 				return -1;
 		}
-		if (cb(state, outstr, len) != 0)
+		if (!flags && cb(state, outstr, len) != 0)
 			return -1;
 	}
 

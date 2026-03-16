@@ -1875,6 +1875,7 @@ static bool nvme_init_integrity(struct nvme_ns_head *head,
 		break;
 	}
 
+	bi->flags |= BLK_SPLIT_INTERVAL_CAPABLE;
 	bi->metadata_size = head->ms;
 	if (bi->csum_type) {
 		bi->pi_tuple_size = head->pi_size;
@@ -4834,7 +4835,6 @@ EXPORT_SYMBOL_GPL(nvme_complete_async_event);
 int nvme_alloc_admin_tag_set(struct nvme_ctrl *ctrl, struct blk_mq_tag_set *set,
 		const struct blk_mq_ops *ops, unsigned int cmd_size)
 {
-	struct queue_limits lim = {};
 	int ret;
 
 	memset(set, 0, sizeof(*set));
@@ -4861,7 +4861,7 @@ int nvme_alloc_admin_tag_set(struct nvme_ctrl *ctrl, struct blk_mq_tag_set *set,
 	if (ctrl->admin_q)
 		blk_put_queue(ctrl->admin_q);
 
-	ctrl->admin_q = blk_mq_alloc_queue(set, &lim, NULL);
+	ctrl->admin_q = blk_mq_alloc_queue(set, NULL, NULL);
 	if (IS_ERR(ctrl->admin_q)) {
 		ret = PTR_ERR(ctrl->admin_q);
 		goto out_free_tagset;

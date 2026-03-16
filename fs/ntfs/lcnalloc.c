@@ -721,7 +721,7 @@ out:
 		rl[rlpos].lcn = is_extension ? LCN_ENOENT : LCN_RL_NOT_MAPPED;
 		rl[rlpos].length = 0;
 	}
-	if (likely(folio && !IS_ERR(folio))) {
+	if (!IS_ERR_OR_NULL(folio)) {
 		if (need_writeback) {
 			ntfs_debug("Marking page dirty.");
 			folio_mark_dirty(folio);
@@ -732,11 +732,13 @@ out:
 		folio_put(folio);
 	}
 	if (likely(!err)) {
+		if (!rl) {
+			err = -EIO;
+			goto out_restore;
+		}
 		if (is_dealloc == true)
 			ntfs_release_dirty_clusters(vol, rl->length);
 		ntfs_debug("Done.");
-		if (rl == NULL)
-			err = -EIO;
 		goto out_restore;
 	}
 	if (err != -ENOSPC)
