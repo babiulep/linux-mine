@@ -11,6 +11,6 @@ drbd-$(CONFIG_DRBD_COMPAT_84) += drbd_legacy_84.o
 
 obj-$(CONFIG_BLK_DEV_DRBD)     += drbd.o
 
-obj-$(CONFIG_BLK_DEV_DRBD)     += drbd_transport_tcp.o
-obj-$(CONFIG_BLK_DEV_DRBD)     += drbd_transport_lb-tcp.o
-obj-$(if $(CONFIG_BLK_DEV_DRBD),$(if $(CONFIG_INFINIBAND),m)) += drbd_transport_rdma.o
+obj-$(CONFIG_BLK_DEV_DRBD_TCP) += drbd_transport_tcp.o
+obj-$(CONFIG_BLK_DEV_DRBD_LB_TCP) += drbd_transport_lb-tcp.o
+obj-$(CONFIG_BLK_DEV_DRBD_RDMA) += drbd_transport_rdma.o

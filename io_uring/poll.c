@@ -272,12 +272,15 @@ static int io_poll_check_events(struct io_kiocb *req, io_tw_token_t tw)
 				atomic_andnot(IO_POLL_RETRY_FLAG, &req->poll_refs);
 				v &= ~IO_POLL_RETRY_FLAG;
 			}
+			v &= IO_POLL_REF_MASK;
 		}
 
 		/* the mask was stashed in __io_poll_execute */
 		if (!req->cqe.res) {
-			struct poll_table_struct pt = { ._key = req->apoll_events };
-			req->cqe.res = vfs_poll(req->file, &pt) & req->apoll_events;
+			__poll_t events = req->apoll_events;
+			struct poll_table_struct pt = { ._key = events };
+
+			req->cqe.res = vfs_poll(req->file, &pt) & events;
 			/*
 			 * We got woken with a mask, but someone else got to
 			 * it first. The above vfs_poll() doesn't add us back
@@ -286,7 +289,7 @@ static int io_poll_check_events(struct io_kiocb *req, io_tw_token_t tw)
 			 */
 			if (unlikely(!req->cqe.res)) {
 				/* Multishot armed need not reissue */
-				if (!(req->apoll_events & EPOLLONESHOT))
+				if (!(events & EPOLLONESHOT))
 					continue;
 				return IOU_POLL_REISSUE;
 			}
@@ -303,21 +306,20 @@ static int io_poll_check_events(struct io_kiocb *req, io_tw_token_t tw)
 				io_req_set_res(req, mask, 0);
 				return IOU_POLL_REMOVE_POLL_USE_RES;
 			}
-			v &= IO_POLL_REF_MASK;
 		} else {
-			int ret = io_poll_issue(req, tw);
+			int ret;
 
+			/* multiple refs and HUP, ensure we loop once more */
+			if ((req->cqe.res & (POLLHUP | POLLRDHUP)) && v != 1)
+				v--;
+
+			ret = io_poll_issue(req, tw);
 			if (ret == IOU_COMPLETE)
 				return IOU_POLL_REMOVE_POLL_USE_RES;
 			else if (ret == IOU_REQUEUE)
 				return IOU_POLL_REQUEUE;
 			if (ret != IOU_RETRY && ret < 0)
 				return ret;
-			/*
-			 * One event consumed, but additional wakes may have
-			 * raced. Only drain a single ref.
-			 */
-			v = 1;
 		}
 
 		/* force the next iteration to vfs_poll() */

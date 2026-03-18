@@ -449,7 +449,7 @@ static inline struct node_barn *get_barn_node(struct kmem_cache *s, int node)
 }
 
 /*
- * Get the barn of the current cpu's memory node. It may be a memoryless node.
+ * Get the barn of the current cpu's NUMA node. It may be a memoryless node.
  */
 static inline struct node_barn *get_barn(struct kmem_cache *s)
 {
