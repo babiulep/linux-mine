@@ -7888,20 +7888,25 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, bool 
 {
 	struct cpumask *cpus = this_cpu_cpumask_var_ptr(select_rq_mask);
 	int i, cpu, idle_cpu = -1, nr = INT_MAX;
-	struct sched_domain_shared *sd_share;
-
-	cpumask_and(cpus, sched_domain_span(sd), p->cpus_ptr);
 
 	if (sched_feat(SIS_UTIL)) {
-		sd_share = rcu_dereference_all(per_cpu(sd_llc_shared, target));
-		if (sd_share) {
-			/* because !--nr is the condition to stop scan */
-			nr = READ_ONCE(sd_share->nr_idle_scan) + 1;
-			/* overloaded LLC is unlikely to have idle cpu/core */
-			if (nr == 1)
-				return -1;
-		}
+		/*
+		 * Increment because !--nr is the condition to stop scan.
+		 *
+		 * Since "sd" is "sd_llc" for target CPU dereferenced in the
+		 * caller, it is safe to directly dereference "sd->shared".
+		 * Topology bits always ensure it assigned for "sd_llc" abd it
+		 * cannot disappear as long as we have a RCU protected
+		 * reference to one the associated "sd" here.
+		 */
+		nr = READ_ONCE(sd->shared->nr_idle_scan) + 1;
+		/* overloaded LLC is unlikely to have idle cpu/core */
+		if (nr == 1)
+			return -1;
 	}
+
+	if (!cpumask_and(cpus, sched_domain_span(sd), p->cpus_ptr))
+		return -1;
 
 	if (static_branch_unlikely(&sched_cluster_active)) {
 		struct sched_group *sg = sd->groups;
@@ -8582,10 +8587,9 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu)
 	struct perf_domain *pd;
 	struct energy_env eenv;
 
-	rcu_read_lock();
 	pd = rcu_dereference_all(rd->pd);
 	if (!pd)
-		goto unlock;
+		return target;
 
 	/*
 	 * Energy-aware wake-up happens on the lowest sched_domain starting
@@ -8595,13 +8599,13 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu)
 	while (sd && !cpumask_test_cpu(prev_cpu, sched_domain_span(sd)))
 		sd = sd->parent;
 	if (!sd)
-		goto unlock;
+		return target;
 
 	target = prev_cpu;
 
 	sync_entity_load_avg(&p->se);
 	if (!task_util_est(p) && p_util_min == 0)
-		goto unlock;
+		return target;
 
 	eenv_task_busy_time(&eenv, p, prev_cpu);
 
@@ -8696,7 +8700,7 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu)
 						    prev_cpu);
 			/* CPU utilization has changed */
 			if (prev_delta < base_energy)
-				goto unlock;
+				return target;
 			prev_delta -= base_energy;
 			prev_actual_cap = cpu_actual_cap;
 			best_delta = min(best_delta, prev_delta);
@@ -8720,7 +8724,7 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu)
 						   max_spare_cap_cpu);
 			/* CPU utilization has changed */
 			if (cur_delta < base_energy)
-				goto unlock;
+				return target;
 			cur_delta -= base_energy;
 
 			/*
@@ -8737,17 +8741,11 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu)
 			best_actual_cap = cpu_actual_cap;
 		}
 	}
-	rcu_read_unlock();
 
 	if ((best_fits > prev_fits) ||
 	    ((best_fits > 0) && (best_delta < prev_delta)) ||
 	    ((best_fits < 0) && (best_actual_cap > prev_actual_cap)))
 		target = best_energy_cpu;
-
-	return target;
-
-unlock:
-	rcu_read_unlock();
 
 	return target;
 }
@@ -8794,7 +8792,6 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 		want_affine = !wake_wide(p) && cpumask_test_cpu(cpu, p->cpus_ptr);
 	}
 
-	rcu_read_lock();
 	for_each_domain(cpu, tmp) {
 		/*
 		 * If both 'cpu' and 'prev_cpu' are part of this domain,
@@ -8820,14 +8817,13 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 			break;
 	}
 
-	if (unlikely(sd)) {
-		/* Slow path */
-		new_cpu = sched_balance_find_dst_cpu(sd, p, cpu, prev_cpu, sd_flag);
-	} else if (wake_flags & WF_TTWU) { /* XXX always ? */
-		/* Fast path */
-		new_cpu = select_idle_sibling(p, prev_cpu, new_cpu);
-	}
-	rcu_read_unlock();
+	/* Slow path */
+	if (unlikely(sd))
+		return sched_balance_find_dst_cpu(sd, p, cpu, prev_cpu, sd_flag);
+
+	/* Fast path */
+	if (wake_flags & WF_TTWU)
+		return select_idle_sibling(p, prev_cpu, new_cpu);
 
 	return new_cpu;
 }
@@ -11255,6 +11251,7 @@ static void update_idle_cpu_scan(struct lb_env *env,
 				 unsigned long sum_util)
 {
 	struct sched_domain_shared *sd_share;
+	struct sched_domain *sd = env->sd;
 	int llc_weight, pct;
 	u64 x, y, tmp;
 	/*
@@ -11268,11 +11265,7 @@ static void update_idle_cpu_scan(struct lb_env *env,
 	if (!sched_feat(SIS_UTIL) || env->idle == CPU_NEWLY_IDLE)
 		return;
 
-	llc_weight = per_cpu(sd_llc_size, env->dst_cpu);
-	if (env->sd->span_weight != llc_weight)
-		return;
-
-	sd_share = rcu_dereference_all(per_cpu(sd_llc_shared, env->dst_cpu));
+	sd_share = sd->shared;
 	if (!sd_share)
 		return;
 
@@ -11306,10 +11299,11 @@ static void update_idle_cpu_scan(struct lb_env *env,
 	 */
 	/* equation [3] */
 	x = sum_util;
+	llc_weight = sd->span_weight;
 	do_div(x, llc_weight);
 
 	/* equation [4] */
-	pct = env->sd->imbalance_pct;
+	pct = sd->imbalance_pct;
 	tmp = x * x * pct * pct;
 	do_div(tmp, 10000 * SCHED_CAPACITY_SCALE);
 	tmp = min_t(long, tmp, SCHED_CAPACITY_SCALE);

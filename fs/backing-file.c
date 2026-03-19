@@ -44,8 +44,9 @@ struct file *backing_file_open(const struct path *user_path,
 	if (IS_ERR(f))
 		return f;
 
-	backing_file_open_user_path(f, user_path);
-	error = vfs_open(real_path, f);
+	error = backing_file_open_user_path(f, user_path);
+	if (!error)
+		error = vfs_open(real_path, f);
 	if (error) {
 		fput(f);
 		f = ERR_PTR(error);
@@ -68,8 +69,9 @@ struct file *backing_tmpfile_open(const struct path *user_path,
 	if (IS_ERR(f))
 		return f;
 
-	backing_file_open_user_path(f, user_path);
-	error = vfs_tmpfile(real_idmap, real_parentpath, f, mode);
+	error = backing_file_open_user_path(f, user_path);
+	if (!error)
+		error = vfs_tmpfile(real_idmap, real_parentpath, f, mode);
 	if (error) {
 		fput(f);
 		f = ERR_PTR(error);

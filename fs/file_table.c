@@ -67,10 +67,10 @@ const struct file *backing_file_user_path_file(const struct file *f)
 }
 EXPORT_SYMBOL_GPL(backing_file_user_path_file);
 
-void backing_file_open_user_path(struct file *f, const struct path *path)
+int backing_file_open_user_path(struct file *f, const struct path *path)
 {
-	/* open an O_PATH file to reference the user path - cannot fail */
-	WARN_ON(vfs_open(path, &backing_file(f)->user_path_file));
+	/* open an O_PATH file to reference the user path - should not fail */
+	return WARN_ON(vfs_open(path, &backing_file(f)->user_path_file));
 }
 EXPORT_SYMBOL_GPL(backing_file_open_user_path);
 
@@ -222,7 +222,7 @@ static int init_file(struct file *f, int flags, const struct cred *cred)
 	 * fget-rcu pattern users need to be able to handle spurious
 	 * refcount bumps we should reinitialize the reused file first.
 	 */
-	atomic_long_set(&f->f_ref.refcnt, FILE_REF_ONEREF);
+	file_ref_init(&f->f_ref, FILE_REF_ONEREF);
 	return 0;
 }
 
@@ -329,7 +329,7 @@ struct file *alloc_empty_backing_file(int flags, const struct cred *cred,
 
 	error = init_file(&ff->user_path_file, O_PATH, user_cred);
 	/* user_path_file is not refcounterd - it dies with the backing file */
-	atomic_long_set(&ff->user_path_file.f_ref.refcnt, FILE_REF_DEAD);
+	file_ref_init(&ff->user_path_file.f_ref, FILE_REF_DEAD);
 	if (unlikely(error)) {
 		destroy_file(&ff->file);
 		kmem_cache_free(bfilp_cachep, ff);

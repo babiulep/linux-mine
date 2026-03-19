@@ -4067,10 +4067,6 @@ static int selinux_file_mprotect(struct vm_area_struct *vma,
 	if (file && (file->f_mode & FMODE_BACKING)) {
 		backing_file = vma->vm_file;
 		file = backing_file_user_path_file(backing_file);
-
-		/* sanity check the special O_PATH user file */
-		if (WARN_ON(!(file->f_mode & FMODE_OPENED)))
-			return -EPERM;
 	}
 
 	if (default_noexec &&
