@@ -379,7 +379,6 @@ ntb		https://github.com/jonmason/ntb.git#ntb-next
 seccomp		https://git.kernel.org/pub/scm/linux/kernel/git/kees/linux.git#for-next/seccomp
 slimbus		https://git.kernel.org/pub/scm/linux/kernel/git/srini/slimbus.git#for-next
 nvmem		https://git.kernel.org/pub/scm/linux/kernel/git/srini/nvmem.git#for-next
-xarray		git://git.infradead.org/users/willy/xarray.git#main
 hyperv		https://git.kernel.org/pub/scm/linux/kernel/git/hyperv/linux.git#hyperv-next
 auxdisplay	https://git.kernel.org/pub/scm/linux/kernel/git/andy/linux-auxdisplay.git#for-next
 kgdb		https://git.kernel.org/pub/scm/linux/kernel/git/danielt/linux.git#kgdb/for-next

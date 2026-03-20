@@ -6029,7 +6029,7 @@ static __always_inline bool can_free_to_pcs(struct slab *slab)
 	 * point to the closest node as we would on a proper memoryless node
 	 * setup.
 	 */
-	if (unlikely(!node_isset(numa_node, slab_nodes)))
+	if (unlikely(!node_state(numa_node, N_MEMORY)))
 		goto check_pfmemalloc;
 #endif
 

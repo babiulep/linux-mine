@@ -486,7 +486,7 @@ static void virtio_fs_free_devs(struct virtio_fs *fs)
 		if (!fsvq->fud)
 			continue;
 
-		fuse_dev_put(fsvq->fud);
+		fuse_dev_free(fsvq->fud);
 		fsvq->fud = NULL;
 	}
 }
@@ -1585,11 +1585,13 @@ static int virtio_fs_fill_super(struct super_block *sb, struct fs_context *fsc)
 	for (i = 0; i < fs->nvqs; i++) {
 		struct virtio_fs_vq *fsvq = &fs->vqs[i];
 
-		fsvq->fud = fuse_dev_alloc(true);
+		fsvq->fud = fuse_dev_alloc();
 		if (!fsvq->fud)
 			goto err_free_fuse_devs;
 	}
 
+	/* virtiofs allocates and installs its own fuse devices */
+	ctx->fudptr = NULL;
 	if (ctx->dax_mode != FUSE_DAX_NEVER) {
 		if (ctx->dax_mode == FUSE_DAX_ALWAYS && !fs->dax_dev) {
 			err = -EINVAL;
@@ -1606,7 +1608,7 @@ static int virtio_fs_fill_super(struct super_block *sb, struct fs_context *fsc)
 	for (i = 0; i < fs->nvqs; i++) {
 		struct virtio_fs_vq *fsvq = &fs->vqs[i];
 
-		fuse_dev_install(fsvq->fud, fc, NULL);
+		fuse_dev_install(fsvq->fud, fc);
 	}
 
 	/* Previous unmount will stop all queues. Start these again */

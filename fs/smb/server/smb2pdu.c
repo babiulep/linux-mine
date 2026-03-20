@@ -1939,8 +1939,8 @@ out_err:
 				try_delay = true;
 
 			/*
-			 * For binding requests, sess belongs to another
-			 * connection. Do not expire or delay it.
+			 * For binding requests, session belongs to another
+			 * connection. Do not expire it.
 			 */
 			if (!(req->Flags & SMB2_SESSION_REQ_FLAG_BINDING)) {
 				sess->last_active = jiffies;

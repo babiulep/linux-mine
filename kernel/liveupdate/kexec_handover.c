@@ -471,31 +471,6 @@ struct page *kho_restore_pages(phys_addr_t phys, unsigned long nr_pages)
 }
 EXPORT_SYMBOL_GPL(kho_restore_pages);
 
-/*
- * With CONFIG_DEFERRED_STRUCT_PAGE_INIT, struct pages in higher memory regions
- * may not be initialized yet at the time KHO deserializes preserved memory.
- * KHO uses the struct page to store metadata and a later initialization would
- * overwrite it.
- * Ensure all the struct pages in the preservation are
- * initialized. kho_preserved_memory_reserve() marks the reservation as noinit
- * to make sure they don't get re-initialized later.
- */
-static struct page *__init kho_get_preserved_page(phys_addr_t phys,
-						  unsigned int order)
-{
-	unsigned long pfn = PHYS_PFN(phys);
-	int nid;
-
-	if (!IS_ENABLED(CONFIG_DEFERRED_STRUCT_PAGE_INIT))
-		return pfn_to_page(pfn);
-
-	nid = early_pfn_to_nid(pfn);
-	for (unsigned long i = 0; i < (1UL << order); i++)
-		init_deferred_page(pfn + i, nid);
-
-	return pfn_to_page(pfn);
-}
-
 static int __init kho_preserved_memory_reserve(phys_addr_t phys,
 					       unsigned int order)
 {
@@ -504,7 +479,7 @@ static int __init kho_preserved_memory_reserve(phys_addr_t phys,
 	u64 sz;
 
 	sz = 1 << (order + PAGE_SHIFT);
-	page = kho_get_preserved_page(phys, order);
+	page = phys_to_page(phys);
 
 	/* Reserve the memory preserved in KHO in memblock */
 	memblock_reserve(phys, sz);
@@ -1352,23 +1327,6 @@ int kho_retrieve_subtree(const char *name, phys_addr_t *phys)
 }
 EXPORT_SYMBOL_GPL(kho_retrieve_subtree);
 
-bool pfn_is_kho_scratch(unsigned long pfn)
-{
-	unsigned int i;
-	phys_addr_t scratch_start, scratch_end, phys = __pfn_to_phys(pfn);
-
-	for (i = 0; i < kho_scratch_cnt; i++) {
-		scratch_start = kho_scratch[i].addr;
-		scratch_end = kho_scratch[i].addr + kho_scratch[i].size;
-
-		if (scratch_start <= phys && phys < scratch_end)
-			return true;
-	}
-
-	return false;
-}
-EXPORT_SYMBOL_GPL(pfn_is_kho_scratch);
-
 static int __init kho_mem_retrieve(const void *fdt)
 {
 	struct kho_radix_tree tree;
@@ -1495,27 +1453,12 @@ err_free_scratch:
 }
 fs_initcall(kho_init);
 
-static void __init kho_init_scratch_pages(void)
-{
-	if (!IS_ENABLED(CONFIG_DEFERRED_STRUCT_PAGE_INIT))
-		return;
-
-	for (int i = 0; i < kho_scratch_cnt; i++) {
-		unsigned long pfn = PFN_DOWN(kho_scratch[i].addr);
-		unsigned long end_pfn = PFN_UP(kho_scratch[i].addr + kho_scratch[i].size);
-		int nid = early_pfn_to_nid(pfn);
-
-		for (; pfn < end_pfn; pfn++)
-			init_deferred_page(pfn, nid);
-	}
-}
-
 static void __init kho_release_scratch(void)
 {
 	phys_addr_t start, end;
 	u64 i;
 
-	kho_init_scratch_pages();
+	memmap_init_kho_scratch_pages();
 
 	/*
 	 * Mark scratch mem as CMA before we return it. That way we
@@ -1544,7 +1487,6 @@ void __init kho_memory_init(void)
 			kho_in.fdt_phys = 0;
 	} else {
 		kho_reserve_scratch();
-		kho_init_scratch_pages();
 	}
 }
 

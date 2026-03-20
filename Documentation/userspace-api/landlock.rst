@@ -196,6 +196,7 @@ similar backwards compatibility check is needed for the restrict flags
 (see sys_landlock_restrict_self() documentation for available flags):
 
 .. code-block:: c
+
     __u32 restrict_flags =
         LANDLOCK_RESTRICT_SELF_LOG_NEW_EXEC_ON |
         LANDLOCK_RESTRICT_SELF_TSYNC;

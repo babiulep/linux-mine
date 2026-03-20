@@ -1891,14 +1891,6 @@ config DEBUG_CLOSURES
 	  interface to list them, which makes it possible to see asynchronous
 	  operations that get stuck.
 
-config DEBUG_XARRAY
-	bool "Debug XArray"
-	depends on DEBUG_KERNEL
-	help
-	  Enable XArray debugging information and extra validation.
-
-	  If unsure, say N.
-
 config DEBUG_MAPLE_TREE
 	bool "Debug maple trees"
 	depends on DEBUG_KERNEL
@@ -3093,6 +3085,16 @@ config LONGEST_SYM_KUNIT_TEST
 	default KUNIT_ALL_TESTS
 	help
 	  Tests the longest symbol possible
+
+	  If unsure, say N.
+
+config LINEINFO_KUNIT_TEST
+	tristate "KUnit tests for kallsyms lineinfo" if !KUNIT_ALL_TESTS
+	depends on KUNIT && KALLSYMS_LINEINFO
+	default KUNIT_ALL_TESTS
+	help
+	  KUnit tests for the kallsyms source line info feature.
+	  Verifies that stack traces include correct (file.c:line) annotations.
 
 	  If unsure, say N.
 

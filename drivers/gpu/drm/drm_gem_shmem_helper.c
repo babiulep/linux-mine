@@ -570,7 +570,7 @@ static vm_fault_t drm_gem_shmem_try_insert_pfn_pmd(struct vm_fault *vmf, unsigne
 	return 0;
 }
 
-static vm_fault_t drm_gem_shmem_fault(struct vm_fault *vmf)
+static vm_fault_t drm_gem_shmem_any_fault(struct vm_fault *vmf, unsigned int order)
 {
 	struct vm_area_struct *vma = vmf->vma;
 	struct drm_gem_object *obj = vma->vm_private_data;
@@ -609,6 +609,11 @@ out:
 	dma_resv_unlock(obj->resv);
 
 	return ret;
+}
+
+static vm_fault_t drm_gem_shmem_fault(struct vm_fault *vmf)
+{
+	return drm_gem_shmem_any_fault(vmf, 0);
 }
 
 static void drm_gem_shmem_vm_open(struct vm_area_struct *vma)
@@ -665,6 +670,9 @@ static vm_fault_t drm_gem_shmem_pfn_mkwrite(struct vm_fault *vmf)
 
 const struct vm_operations_struct drm_gem_shmem_vm_ops = {
 	.fault = drm_gem_shmem_fault,
+#ifdef CONFIG_ARCH_SUPPORTS_PMD_PFNMAP
+	.huge_fault = drm_gem_shmem_any_fault,
+#endif
 	.open = drm_gem_shmem_vm_open,
 	.close = drm_gem_shmem_vm_close,
 	.pfn_mkwrite = drm_gem_shmem_pfn_mkwrite,

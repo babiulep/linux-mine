@@ -378,8 +378,8 @@ static int eswin_pcie_resume_noirq(struct device *dev)
 	return dw_pcie_resume_noirq(&pcie->pci);
 }
 
-DEFINE_NOIRQ_DEV_PM_OPS(eswin_pcie_pm, eswin_pcie_suspend_noirq,
-			eswin_pcie_resume_noirq);
+static DEFINE_NOIRQ_DEV_PM_OPS(eswin_pcie_pm, eswin_pcie_suspend_noirq,
+				eswin_pcie_resume_noirq);
 
 static const struct eswin_pcie_data eswin_eic7700_data = {
 	.skip_l23 = true,
