@@ -443,7 +443,7 @@ static void mlock_vma_pages_range(struct vm_area_struct *vma,
 	if (vma_flags_test(new_vma_flags, VMA_LOCKED_BIT))
 		vma_flags_set(new_vma_flags, VMA_IO_BIT);
 	vma_start_write(vma);
-	WRITE_ONCE(vma->flags, *new_vma_flags);
+	vma_flags_reset_once(vma, new_vma_flags);
 
 	lru_add_drain();
 	walk_page_range(vma->vm_mm, start, end, &mlock_walk_ops, NULL);
@@ -451,7 +451,7 @@ static void mlock_vma_pages_range(struct vm_area_struct *vma,
 
 	if (vma_flags_test(new_vma_flags, VMA_IO_BIT)) {
 		vma_flags_clear(new_vma_flags, VMA_IO_BIT);
-		WRITE_ONCE(vma->flags, *new_vma_flags);
+		vma_flags_reset_once(vma, new_vma_flags);
 	}
 }
 

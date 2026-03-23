@@ -1198,25 +1198,6 @@ void compat_set_desc_from_vma(struct vm_area_desc *desc,
 }
 EXPORT_SYMBOL(compat_set_desc_from_vma);
 
-static int __compat_vma_mapped(struct file *file, struct vm_area_struct *vma)
-{
-	const struct vm_operations_struct *vm_ops = vma->vm_ops;
-	void *vm_private_data = vma->vm_private_data;
-	int err;
-
-	if (!vm_ops || !vm_ops->mapped)
-		return 0;
-
-	err = vm_ops->mapped(vma->vm_start, vma->vm_end, vma->vm_pgoff, file,
-			     &vm_private_data);
-	if (err)
-		unmap_vma_locked(vma);
-	else if (vm_private_data != vma->vm_private_data)
-		vma->vm_private_data = vm_private_data;
-
-	return err;
-}
-
 /**
  * __compat_vma_mmap() - Similar to compat_vma_mmap(), only it allows
  * flexibility as to how the mmap_prepare callback is invoked, which is useful
@@ -1251,13 +1232,7 @@ int __compat_vma_mmap(struct vm_area_desc *desc,
 	/* Update the VMA from the descriptor. */
 	compat_set_vma_from_desc(vma, desc);
 	/* Complete any specified mmap actions. */
-	err = mmap_action_complete(vma, &desc->action,
-				   /*rmap_lock_held=*/false);
-	if (err)
-		return err;
-
-	/* Invoke vm_ops->mapped callback. */
-	return __compat_vma_mapped(desc->file, vma);
+	return mmap_action_complete(vma, &desc->action);
 }
 EXPORT_SYMBOL(__compat_vma_mmap);
 
@@ -1290,12 +1265,17 @@ EXPORT_SYMBOL(__compat_vma_mmap);
 int compat_vma_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct vm_area_desc desc;
+	struct mmap_action *action;
 	int err;
 
 	compat_set_desc_from_vma(&desc, file, vma);
 	err = vfs_mmap_prepare(file, &desc);
 	if (err)
 		return err;
+	action = &desc.action;
+
+	/* being invoked from .mmmap means we don't have to enforce this. */
+	action->hide_from_rmap_until_complete = false;
 
 	return __compat_vma_mmap(&desc, vma);
 }
@@ -1399,25 +1379,47 @@ again:
 	}
 }
 
-static int mmap_action_finish(struct vm_area_struct *vma,
-			      struct mmap_action *action, int err,
-			      bool rmap_lock_held)
+static int call_vma_mapped(struct vm_area_struct *vma)
 {
-	if (rmap_lock_held)
-		i_mmap_unlock_write(vma->vm_file->f_mapping);
+	const struct vm_operations_struct *vm_ops = vma->vm_ops;
+	void *vm_private_data = vma->vm_private_data;
+	int err;
 
-	if (!err) {
-		if (action->success_hook)
-			return action->success_hook(vma);
+	if (!vm_ops || !vm_ops->mapped)
 		return 0;
-	}
+
+	err = vm_ops->mapped(vma->vm_start, vma->vm_end, vma->vm_pgoff,
+			     vma->vm_file, &vm_private_data);
+	if (err)
+		return err;
+
+	if (vm_private_data != vma->vm_private_data)
+		vma->vm_private_data = vm_private_data;
+	return 0;
+}
+
+static int mmap_action_finish(struct vm_area_struct *vma,
+			      struct mmap_action *action, int err)
+{
+	size_t len;
+
+	if (!err)
+		err = call_vma_mapped(vma);
+	if (!err && action->success_hook)
+		err = action->success_hook(vma);
+
+	/* do_munmap() might take rmap lock, so release if held. */
+	maybe_rmap_unlock_action(vma, action);
+	if (!err)
+		return 0;
 
 	/*
 	 * If an error occurs, unmap the VMA altogether and return an error. We
 	 * only clear the newly allocated VMA, since this function is only
 	 * invoked if we do NOT merge, so we only clean up the VMA we created.
 	 */
-	unmap_vma_locked(vma);
+	len = vma_pages(vma) << PAGE_SHIFT;
+	do_munmap(current->mm, vma->vm_start, len, NULL);
 	if (action->error_hook) {
 		/* We may want to filter the error. */
 		err = action->error_hook(err);
@@ -1459,16 +1461,13 @@ EXPORT_SYMBOL(mmap_action_prepare);
  * mmap_action_complete - Execute VMA descriptor action.
  * @vma: The VMA to perform the action upon.
  * @action: The action to perform.
- * @rmap_lock_held: Is the file rmap lock held?
  *
  * Similar to mmap_action_prepare().
  *
  * Return: 0 on success, or error, at which point the VMA will be unmapped.
  */
 int mmap_action_complete(struct vm_area_struct *vma,
-			 struct mmap_action *action,
-			 bool rmap_lock_held)
-
+			 struct mmap_action *action)
 {
 	int err = 0;
 
@@ -1489,8 +1488,7 @@ int mmap_action_complete(struct vm_area_struct *vma,
 		break;
 	}
 
-	return mmap_action_finish(vma, action, err,
-				  rmap_lock_held);
+	return mmap_action_finish(vma, action, err);
 }
 EXPORT_SYMBOL(mmap_action_complete);
 #else
@@ -1512,8 +1510,7 @@ int mmap_action_prepare(struct vm_area_desc *desc)
 EXPORT_SYMBOL(mmap_action_prepare);
 
 int mmap_action_complete(struct vm_area_struct *vma,
-			 struct mmap_action *action,
-			 bool rmap_lock_held)
+			 struct mmap_action *action)
 {
 	int err = 0;
 
@@ -1523,13 +1520,14 @@ int mmap_action_complete(struct vm_area_struct *vma,
 	case MMAP_REMAP_PFN:
 	case MMAP_IO_REMAP_PFN:
 	case MMAP_SIMPLE_IO_REMAP:
+	case MMAP_MAP_KERNEL_PAGES:
 		WARN_ON_ONCE(1); /* nommu cannot handle this. */
 
 		err = -EINVAL;
 		break;
 	}
 
-	return mmap_action_finish(vma, action, err, rmap_lock_held);
+	return mmap_action_finish(vma, action, err);
 }
 EXPORT_SYMBOL(mmap_action_complete);
 #endif

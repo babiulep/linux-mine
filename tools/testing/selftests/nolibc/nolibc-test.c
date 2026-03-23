@@ -42,6 +42,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <ctype.h>
+#include <stdbool.h>
 
 #pragma GCC diagnostic ignored "-Wmissing-prototypes"
 
@@ -68,6 +69,14 @@ static int constructor_test_value;
 
 static const int is_nolibc =
 #ifdef NOLIBC
+	1
+#else
+	0
+#endif
+;
+
+static const int is_glibc =
+#ifdef __GLIBC__
 	1
 #else
 	0
@@ -702,6 +711,37 @@ static void constructor2(int argc, char **argv, char **envp)
 		constructor_test_value |= 1 << 1;
 }
 
+int test_program_invocation_name(void)
+{
+	char buf[100];
+	char *dirsep;
+	ssize_t r;
+	int fd;
+
+	fd = open("/proc/self/cmdline", O_RDONLY);
+	if (fd == -1)
+		return 1;
+
+	r = read(fd, buf, sizeof(buf));
+	close(fd);
+	if (r < 1 || r == sizeof(buf))
+		return 1;
+
+	buf[r - 1] = '\0';
+
+	if (strcmp(program_invocation_name, buf) != 0)
+		return 1;
+
+	dirsep = strrchr(buf, '/');
+	if (!dirsep || dirsep[1] == '\0')
+		return 1;
+
+	if (strcmp(program_invocation_short_name, dirsep + 1) != 0)
+		return 1;
+
+	return 0;
+}
+
 int run_startup(int min, int max)
 {
 	int test;
@@ -716,6 +756,7 @@ int run_startup(int min, int max)
 #ifdef NOLIBC
 	test_auxv = _auxv;
 #endif
+	bool proc = access("/proc", R_OK) == 0;
 
 	for (test = min; test >= 0 && test <= max; test++) {
 		int llen = 0; /* line length */
@@ -741,6 +782,7 @@ int run_startup(int min, int max)
 		CASE_TEST(constructor);      EXPECT_EQ(is_nolibc, constructor_test_value, 0x3); break;
 		CASE_TEST(linkage_errno);    EXPECT_PTREQ(1, linkage_test_errno_addr(), &errno); break;
 		CASE_TEST(linkage_constr);   EXPECT_EQ(1, linkage_test_constructor_test_value, 0x3); break;
+		CASE_TEST(prog_name);        EXPECT_ZR(proc, test_program_invocation_name()); break;
 		case __LINE__:
 			return ret; /* must be last */
 		/* note: do not set any defaults so as to permit holes above */
@@ -867,7 +909,7 @@ int test_file_stream(void)
 
 	errno = 0;
 	r = fwrite("foo", 1, 3, f);
-	if (r != 0 || errno != EBADF) {
+	if (r != 0 || ((is_nolibc || is_glibc) && errno != EBADF)) {
 		fclose(f);
 		return -1;
 	}
@@ -1824,13 +1866,13 @@ static int run_printf(int min, int max)
 		CASE_TEST(hex_alt_prec); EXPECT_VFPRINTF(1, "| 0x02|0x03| 0x123|", "|%#5.2x|%#04x|%#6.2x|", 2, 3, 0x123); break;
 		CASE_TEST(hex_0_alt);    EXPECT_VFPRINTF(1, "|0|0000|   00|", "|%#x|%#04x|%#5.2x|", 0, 0, 0); break;
 		CASE_TEST(pointer);      EXPECT_VFPRINTF(1, "0x1", "%p", (void *) 0x1); break;
-		CASE_TEST(pointer_NULL); EXPECT_VFPRINTF(1, "|(nil)|(nil)|", "|%p|%.4p|", (void *)0, (void *)0); break;
-		CASE_TEST(string_NULL);  EXPECT_VFPRINTF(1, "|(null)||(null)|", "|%s|%.5s|%.6s|", (void *)0, (void *)0, (void *)0); break;
+		CASE_TEST(pointer_NULL); EXPECT_VFPRINTF(is_nolibc || is_glibc, "|(nil)|(nil)|", "|%p|%.4p|", (void *)0, (void *)0); break;
+		CASE_TEST(string_NULL);  EXPECT_VFPRINTF(is_nolibc || is_glibc, "|(null)||(null)|", "|%s|%.5s|%.6s|", (void *)0, (void *)0, (void *)0); break;
 		CASE_TEST(percent);      EXPECT_VFPRINTF(1, "a%d42%69%", "a%%d%d%%%d%%", 42, 69); break;
-		CASE_TEST(perc_qual);    EXPECT_VFPRINTF(1, "a%d2", "a%-14l%d%d", 2); break;
-		CASE_TEST(invalid);      EXPECT_VFPRINTF(1, "a%12yx3%y42%P", "a%12yx%d%y%d%P", 3, 42); break;
+		CASE_TEST(perc_qual);    EXPECT_VFPRINTF(is_nolibc || is_glibc, "a%d2", "a%-14l%d%d", 2); break;
+		CASE_TEST(invalid);      EXPECT_VFPRINTF(is_nolibc || is_glibc, "a%12yx3%y42%P", "a%12yx%d%y%d%P", 3, 42); break;
 		CASE_TEST(intmax_max);   EXPECT_VFPRINTF(1, "9223372036854775807", "%lld", ~0ULL >> 1); break;
-		CASE_TEST(intmax_min);   EXPECT_VFPRINTF(1, "-9223372036854775808", "%Li", (~0ULL >> 1) + 1); break;
+		CASE_TEST(intmax_min);   EXPECT_VFPRINTF(is_nolibc || is_glibc, "-9223372036854775808", "%Li", (~0ULL >> 1) + 1); break;
 		CASE_TEST(uintmax_max);  EXPECT_VFPRINTF(1, "18446744073709551615", "%ju", ~0ULL); break;
 		CASE_TEST(truncation);   EXPECT_VFPRINTF(1, "012345678901234567890123456789", "%s", "012345678901234567890123456789"); break;
 		CASE_TEST(string_width); EXPECT_VFPRINTF(1, "         1", "%10s", "1"); break;

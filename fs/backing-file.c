@@ -11,19 +11,16 @@
 #include <linux/fs.h>
 #include <linux/backing-file.h>
 #include <linux/splice.h>
-#include <linux/uio.h>
 #include <linux/mm.h>
-#include <linux/security.h>
 
 #include "internal.h"
 
 /**
  * backing_file_open - open a backing file for kernel internal use
  * @user_path:	path that the user reuqested to open
- * @user_cred:	credentials that the user used for open
  * @flags:	open flags
  * @real_path:	path of the backing file
- * @cred:	credentials for open of the backing file
+ * @cred:	credentials for open
  *
  * Open a backing file for a stackable filesystem (e.g., overlayfs).
  * @user_path may be on the stackable filesystem and @real_path on the
@@ -32,21 +29,20 @@
  * returned file into a container structure that also stores the stacked
  * file's path, which can be retrieved using backing_file_user_path().
  */
-struct file *backing_file_open(const struct path *user_path,
-			       const struct cred *user_cred, int flags,
+struct file *backing_file_open(const struct path *user_path, int flags,
 			       const struct path *real_path,
 			       const struct cred *cred)
 {
 	struct file *f;
 	int error;
 
-	f = alloc_empty_backing_file(flags, cred, user_cred);
+	f = alloc_empty_backing_file(flags, cred);
 	if (IS_ERR(f))
 		return f;
 
-	error = backing_file_open_user_path(f, user_path);
-	if (!error)
-		error = vfs_open(real_path, f);
+	path_get(user_path);
+	backing_file_set_user_path(f, user_path);
+	error = vfs_open(real_path, f);
 	if (error) {
 		fput(f);
 		f = ERR_PTR(error);
@@ -56,8 +52,7 @@ struct file *backing_file_open(const struct path *user_path,
 }
 EXPORT_SYMBOL_GPL(backing_file_open);
 
-struct file *backing_tmpfile_open(const struct path *user_path,
-				  const struct cred *user_cred, int flags,
+struct file *backing_tmpfile_open(const struct path *user_path, int flags,
 				  const struct path *real_parentpath,
 				  umode_t mode, const struct cred *cred)
 {
@@ -65,13 +60,13 @@ struct file *backing_tmpfile_open(const struct path *user_path,
 	struct file *f;
 	int error;
 
-	f = alloc_empty_backing_file(flags, cred, user_cred);
+	f = alloc_empty_backing_file(flags, cred);
 	if (IS_ERR(f))
 		return f;
 
-	error = backing_file_open_user_path(f, user_path);
-	if (!error)
-		error = vfs_tmpfile(real_idmap, real_parentpath, f, mode);
+	path_get(user_path);
+	backing_file_set_user_path(f, user_path);
+	error = vfs_tmpfile(real_idmap, real_parentpath, f, mode);
 	if (error) {
 		fput(f);
 		f = ERR_PTR(error);
@@ -341,13 +336,8 @@ int backing_file_mmap(struct file *file, struct vm_area_struct *vma,
 
 	vma_set_file(vma, file);
 
-	scoped_with_creds(ctx->cred) {
-		ret = security_mmap_backing_file(vma, file, user_file);
-		if (ret)
-			return ret;
-
+	scoped_with_creds(ctx->cred)
 		ret = vfs_mmap(vma->vm_file, vma);
-	}
 
 	if (ctx->accessed)
 		ctx->accessed(user_file);

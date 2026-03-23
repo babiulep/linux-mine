@@ -224,6 +224,7 @@ void btrfs_free_compr_folio(struct folio *folio)
 		return;
 
 free:
+	ASSERT(folio_ref_count(folio) == 1);
 	folio_put(folio);
 }
 

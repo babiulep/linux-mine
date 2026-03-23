@@ -1138,11 +1138,14 @@ static int ib_uverbs_resize_cq(struct uverbs_attr_bundle *attrs)
 	if (ret)
 		return ret;
 
+	if (!cmd.cqe)
+		return -EINVAL;
+
 	cq = uobj_get_obj_read(cq, UVERBS_OBJECT_CQ, cmd.cq_handle, attrs);
 	if (IS_ERR(cq))
 		return PTR_ERR(cq);
 
-	ret = cq->device->ops.resize_cq(cq, cmd.cqe, &attrs->driver_udata);
+	ret = cq->device->ops.resize_user_cq(cq, cmd.cqe, &attrs->driver_udata);
 	if (ret)
 		goto out;
 
@@ -3801,7 +3804,7 @@ const struct uapi_definition uverbs_def_write_intf[] = {
 				     UAPI_DEF_WRITE_UDATA_IO(
 					     struct ib_uverbs_resize_cq,
 					     struct ib_uverbs_resize_cq_resp),
-				     UAPI_DEF_METHOD_NEEDS_FN(resize_cq)),
+				     UAPI_DEF_METHOD_NEEDS_FN(resize_user_cq)),
 		DECLARE_UVERBS_WRITE_EX(
 			IB_USER_VERBS_EX_CMD_CREATE_CQ,
 			ib_uverbs_ex_create_cq,

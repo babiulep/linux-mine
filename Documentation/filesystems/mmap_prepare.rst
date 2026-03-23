@@ -123,8 +123,8 @@ When implementing mmap_prepare(), reference flags by their bit number, defined
 as a ``VMA_xxx_BIT`` macro, e.g. ``VMA_READ_BIT``, ``VMA_WRITE_BIT`` etc.,
 and use one of (where ``desc`` is a pointer to struct vm_area_desc):
 
-* ``vma_desc_test_flags(desc, ...)`` - Specify a comma-separated list of flags
-  you wish to test for (whether _any_ are set), e.g. - ``vma_desc_test_flags(
+* ``vma_desc_test_any(desc, ...)`` - Specify a comma-separated list of flags
+  you wish to test for (whether _any_ are set), e.g. - ``vma_desc_test_any(
   desc, VMA_WRITE_BIT, VMA_MAYWRITE_BIT)`` - returns ``true`` if either are set,
   otherwise ``false``.
 * ``vma_desc_set_flags(desc, ...)`` - Update the VMA descriptor flags to set

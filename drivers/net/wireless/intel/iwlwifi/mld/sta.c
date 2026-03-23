@@ -528,7 +528,7 @@ iwl_mld_add_modify_sta_cmd(struct iwl_mld *mld,
 	return iwl_mld_send_sta_cmd(mld, &cmd);
 }
 
-IWL_MLD_ALLOC_FN(link_sta, link_sta)
+static IWL_MLD_ALLOC_FN(link_sta, link_sta)
 
 static int
 iwl_mld_add_link_sta(struct iwl_mld *mld, struct ieee80211_link_sta *link_sta)
@@ -755,14 +755,14 @@ iwl_mld_init_sta(struct iwl_mld *mld, struct ieee80211_sta *sta,
 }
 
 int iwl_mld_add_sta(struct iwl_mld *mld, struct ieee80211_sta *sta,
-		    struct ieee80211_vif *vif, enum iwl_fw_sta_type type)
+		    struct ieee80211_vif *vif)
 {
 	struct iwl_mld_sta *mld_sta = iwl_mld_sta_from_mac80211(sta);
 	struct ieee80211_link_sta *link_sta;
 	int link_id;
 	int ret;
 
-	ret = iwl_mld_init_sta(mld, sta, vif, type);
+	ret = iwl_mld_init_sta(mld, sta, vif, STATION_TYPE_PEER);
 	if (ret)
 		return ret;
 
@@ -938,7 +938,7 @@ static void iwl_mld_count_mpdu(struct ieee80211_link_sta *link_sta, int queue,
 	if (!(mld_vif->emlsr.blocked_reasons & IWL_MLD_EMLSR_BLOCKED_TPT))
 		goto unlock;
 
-	for (int i = 0; i <= IWL_FW_MAX_LINK_ID; i++)
+	for (int i = 0; i < IWL_FW_MAX_LINKS; i++)
 		total_mpdus += tx ? queue_counter->per_link[i].tx :
 				    queue_counter->per_link[i].rx;
 

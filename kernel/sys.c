@@ -2147,11 +2147,18 @@ static int prctl_set_mm_map(int opt, const void __user *addr, unsigned long data
 	mm->arg_end	= prctl_map.arg_end;
 	mm->env_start	= prctl_map.env_start;
 	mm->env_end	= prctl_map.env_end;
-	if (prctl_map.auxv_size) {
-		mm_flags_set(MMF_USER_HWCAP, mm);
-		memcpy(mm->saved_auxv, user_auxv, sizeof(user_auxv));
-	}
 	spin_unlock(&mm->arg_lock);
+
+	/*
+	 * Note this update of @saved_auxv is lockless thus
+	 * if someone reads this member in procfs while we're
+	 * updating -- it may get partly updated results. It's
+	 * known and acceptable trade off: we leave it as is to
+	 * not introduce additional locks here making the kernel
+	 * more complex.
+	 */
+	if (prctl_map.auxv_size)
+		memcpy(mm->saved_auxv, user_auxv, sizeof(user_auxv));
 
 	mmap_read_unlock(mm);
 	return 0;
@@ -2181,10 +2188,9 @@ static int prctl_set_auxv(struct mm_struct *mm, unsigned long addr,
 
 	BUILD_BUG_ON(sizeof(user_auxv) != sizeof(mm->saved_auxv));
 
-	spin_lock(&mm->arg_lock);
-	mm_flags_set(MMF_USER_HWCAP, mm);
+	task_lock(current);
 	memcpy(mm->saved_auxv, user_auxv, len);
-	spin_unlock(&mm->arg_lock);
+	task_unlock(current);
 
 	return 0;
 }
@@ -2472,17 +2478,9 @@ static inline int prctl_get_mdwe(unsigned long arg2, unsigned long arg3,
 static int prctl_get_auxv(void __user *addr, unsigned long len)
 {
 	struct mm_struct *mm = current->mm;
-	unsigned long auxv[AT_VECTOR_SIZE];
 	unsigned long size = min_t(unsigned long, sizeof(mm->saved_auxv), len);
 
-	if (!size)
-		return sizeof(mm->saved_auxv);
-
-	spin_lock(&mm->arg_lock);
-	memcpy(auxv, mm->saved_auxv, size);
-	spin_unlock(&mm->arg_lock);
-
-	if (copy_to_user(addr, auxv, size))
+	if (size && copy_to_user(addr, mm->saved_auxv, size))
 		return -EFAULT;
 	return sizeof(mm->saved_auxv);
 }

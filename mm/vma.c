@@ -38,8 +38,6 @@ struct mmap_state {
 
 	/* Determine if we can check KSM flags early in mmap() logic. */
 	bool check_ksm_early :1;
-	/* If we map new, hold the file rmap lock on mapping. */
-	bool hold_file_rmap_lock :1;
 	/* If .mmap_prepare changed the file, we don't need to pin. */
 	bool file_doesnt_need_get :1;
 };
@@ -2343,7 +2341,6 @@ void mm_drop_all_locks(struct mm_struct *mm)
 static bool accountable_mapping(struct mmap_state *map)
 {
 	const struct file *file = map->file;
-	vma_flags_t mask;
 
 	/*
 	 * hugetlb has its own accounting separate from the core VM
@@ -2352,9 +2349,9 @@ static bool accountable_mapping(struct mmap_state *map)
 	if (file && is_file_hugepages(file))
 		return false;
 
-	mask = vma_flags_and(&map->vma_flags, VMA_NORESERVE_BIT, VMA_SHARED_BIT,
-			     VMA_WRITE_BIT);
-	return vma_flags_same(&mask, VMA_WRITE_BIT);
+	return vma_flags_test(&map->vma_flags, VMA_WRITE_BIT) &&
+		!vma_flags_test_any(&map->vma_flags, VMA_NORESERVE_BIT,
+				    VMA_SHARED_BIT);
 }
 
 /*
@@ -2531,10 +2528,12 @@ static int __mmap_new_file_vma(struct mmap_state *map,
  *
  * @map:  Mapping state.
  * @vmap: Output pointer for the new VMA.
+ * @action: Any mmap_prepare action that is still to complete.
  *
  * Returns: Zero on success, or an error.
  */
-static int __mmap_new_vma(struct mmap_state *map, struct vm_area_struct **vmap)
+static int __mmap_new_vma(struct mmap_state *map, struct vm_area_struct **vmap,
+	struct mmap_action *action)
 {
 	struct vma_iterator *vmi = map->vmi;
 	int error = 0;
@@ -2583,7 +2582,7 @@ static int __mmap_new_vma(struct mmap_state *map, struct vm_area_struct **vmap)
 	vma_start_write(vma);
 	vma_iter_store_new(vmi, vma);
 	map->mm->map_count++;
-	vma_link_file(vma, map->hold_file_rmap_lock);
+	vma_link_file(vma, action->hide_from_rmap_until_complete);
 
 	/*
 	 * vma_merge_new_range() calls khugepaged_enter_vma() too, the below
@@ -2650,8 +2649,6 @@ static int call_action_prepare(struct mmap_state *map,
 	if (err)
 		return err;
 
-	if (desc->action.hide_from_rmap_until_complete)
-		map->hold_file_rmap_lock = true;
 	return 0;
 }
 
@@ -2732,30 +2729,6 @@ static bool can_set_ksm_flags_early(struct mmap_state *map)
 	return false;
 }
 
-static int call_mapped_hook(struct mmap_state *map,
-			    struct vm_area_struct *vma)
-{
-	const struct vm_operations_struct *vm_ops = vma->vm_ops;
-	void *vm_private_data = vma->vm_private_data;
-	int err;
-
-	if (!vm_ops || !vm_ops->mapped)
-		return 0;
-	err = vm_ops->mapped(vma->vm_start, vma->vm_end, vma->vm_pgoff,
-			     vma->vm_file, &vm_private_data);
-	if (err) {
-		if (map->hold_file_rmap_lock)
-			i_mmap_unlock_write(vma->vm_file->f_mapping);
-
-		unmap_vma_locked(vma);
-		return err;
-	}
-	/* Update private data if changed. */
-	if (vm_private_data != vma->vm_private_data)
-		vma->vm_private_data = vm_private_data;
-	return 0;
-}
-
 static unsigned long __mmap_region(struct file *file, unsigned long addr,
 		unsigned long len, vma_flags_t vma_flags,
 		unsigned long pgoff, struct list_head *uf)
@@ -2795,7 +2768,7 @@ static unsigned long __mmap_region(struct file *file, unsigned long addr,
 
 	/* ...but if we can't, allocate a new VMA. */
 	if (!vma) {
-		error = __mmap_new_vma(&map, &vma);
+		error = __mmap_new_vma(&map, &vma, &desc.action);
 		if (error)
 			goto unacct_error;
 		allocated_new = true;
@@ -2807,10 +2780,7 @@ static unsigned long __mmap_region(struct file *file, unsigned long addr,
 	__mmap_complete(&map, vma);
 
 	if (have_mmap_prepare && allocated_new) {
-		error = mmap_action_complete(vma, &desc.action,
-					     map.hold_file_rmap_lock);
-		if (!error)
-			error = call_mapped_hook(&map, vma);
+		error = mmap_action_complete(vma, &desc.action);
 		if (error)
 			return error;
 	}
@@ -3014,7 +2984,7 @@ retry:
 	gap += (info->align_offset - gap) & info->align_mask;
 	tmp = vma_next(&vmi);
 	/* Avoid prev check if possible */
-	if (tmp && (vma_test_any_mask(tmp, VMA_STARTGAP_FLAGS))) {
+	if (tmp && vma_test_any_mask(tmp, VMA_STARTGAP_FLAGS)) {
 		if (vm_start_gap(tmp) < gap + length - 1) {
 			low_limit = tmp->vm_end;
 			vma_iter_reset(&vmi);
@@ -3067,7 +3037,7 @@ retry:
 	gap_end = vma_iter_end(&vmi);
 	tmp = vma_next(&vmi);
 	 /* Avoid prev check if possible */
-	if (tmp && (vma_test_any_mask(tmp, VMA_STARTGAP_FLAGS))) {
+	if (tmp && vma_test_any_mask(tmp, VMA_STARTGAP_FLAGS)) {
 		if (vm_start_gap(tmp) < gap_end) {
 			high_limit = vm_start_gap(tmp);
 			vma_iter_reset(&vmi);

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
 /*
- * Copyright (C) 2012-2014, 2018-2019, 2021-2025 Intel Corporation
+ * Copyright (C) 2012-2014, 2018-2019, 2021-2026 Intel Corporation
  * Copyright (C) 2013-2015 Intel Mobile Communications GmbH
  * Copyright (C) 2016-2017 Intel Deutschland GmbH
  */
@@ -26,7 +26,7 @@ enum iwl_mac_conf_subcmd_ids {
 	 */
 	MISSED_VAP_NOTIF = 0xFA,
 	/**
-	 * @SESSION_PROTECTION_CMD: &struct iwl_mvm_session_prot_cmd
+	 * @SESSION_PROTECTION_CMD: &struct iwl_session_prot_cmd
 	 */
 	SESSION_PROTECTION_CMD = 0x5,
 	/**
@@ -34,7 +34,8 @@ enum iwl_mac_conf_subcmd_ids {
 	 */
 	CANCEL_CHANNEL_SWITCH_CMD = 0x6,
 	/**
-	 * @MAC_CONFIG_CMD: &struct iwl_mac_config_cmd
+	 * @MAC_CONFIG_CMD: &struct iwl_mac_config_cmd_v3 or
+	 *	&struct iwl_mac_config_cmd
 	 */
 	MAC_CONFIG_CMD = 0x8,
 	/**
@@ -43,7 +44,7 @@ enum iwl_mac_conf_subcmd_ids {
 	LINK_CONFIG_CMD = 0x9,
 	/**
 	 * @STA_CONFIG_CMD: &struct iwl_sta_cfg_cmd_v1,
-	 *	&struct iwl_sta_cfg_cmd_v2, or struct iwl_sta_cfg_cmd
+	 *	&struct iwl_sta_cfg_cmd_v2, or &struct iwl_sta_cfg_cmd
 	 */
 	STA_CONFIG_CMD = 0xA,
 	/**
@@ -357,7 +358,7 @@ struct iwl_mac_wifi_gen_support {
 } __packed;
 
 /**
- * struct iwl_mac_config_cmd - command structure to configure MAC contexts in
+ * struct iwl_mac_config_cmd_v3 - command structure to configure MAC contexts in
  *	MLD API for versions 2 and 3
  * ( MAC_CONTEXT_CONFIG_CMD = 0x8 )
  *
@@ -376,7 +377,7 @@ struct iwl_mac_wifi_gen_support {
  * @client: client mac data
  * @p2p_dev: mac data for p2p device
  */
-struct iwl_mac_config_cmd {
+struct iwl_mac_config_cmd_v3 {
 	__le32 id_and_color;
 	__le32 action;
 	/* MAC_CONTEXT_TYPE_API_E */
@@ -394,7 +395,62 @@ struct iwl_mac_config_cmd {
 		struct iwl_mac_client_data client;
 		struct iwl_mac_p2p_dev_data p2p_dev;
 	};
-} __packed; /* MAC_CONTEXT_CONFIG_CMD_API_S_VER_2_VER_3 */
+} __packed; /* MAC_CONTEXT_CONFIG_CMD_API_S_VER_2, _VER_3 */
+
+/**
+ * struct iwl_mac_nan_data - NAN specific MAC data
+ * @ndi_addrs: extra NDI addresses being used
+ * @ndi_addrs_count: number of extra NDI addresses
+ */
+struct iwl_mac_nan_data {
+	struct {
+		u8 addr[ETH_ALEN];
+		__le16 reserved;
+	} __packed ndi_addrs[2];
+	__le32 ndi_addrs_count;
+} __packed; /* MAC_CONTEXT_CONFIG_NAN_DATA_API_S_VER_1 */
+
+/**
+ * struct iwl_mac_config_cmd - command structure to configure MAC contexts in
+ *	MLD API for versions 4
+ * ( MAC_CONTEXT_CONFIG_CMD = 0x8 )
+ *
+ * @id_and_color: ID and color of the MAC
+ * @action: action to perform, see &enum iwl_ctxt_action
+ * @mac_type: one of &enum iwl_mac_types
+ * @local_mld_addr: mld address
+ * @reserved_for_local_mld_addr: reserved
+ * @filter_flags: combination of &enum iwl_mac_config_filter_flags
+ * @wifi_gen_v2: he/eht parameters as in cmd version 2
+ * @wifi_gen: he/eht/uhr parameters as in cmd version 3
+ * @nic_not_ack_enabled: mark that the NIC doesn't support receiving
+ *	ACK-enabled AGG, (i.e. both BACK and non-BACK frames in single AGG).
+ *	If the NIC is not ACK_ENABLED it may use the EOF-bit in first non-0
+ *	len delim to determine if AGG or single.
+ * @client: client mac data
+ * @p2p_dev: mac data for p2p device
+ * @nan: NAN specific data (NAN data interface addresses)
+ */
+struct iwl_mac_config_cmd {
+	__le32 id_and_color;
+	__le32 action;
+	/* MAC_CONTEXT_TYPE_API_E */
+	__le32 mac_type;
+	u8 local_mld_addr[6];
+	__le16 reserved_for_local_mld_addr;
+	__le32 filter_flags;
+	union {
+		struct iwl_mac_wifi_gen_support_v2 wifi_gen_v2;
+		struct iwl_mac_wifi_gen_support wifi_gen;
+	};
+	__le32 nic_not_ack_enabled;
+	/* MAC_CONTEXT_CONFIG_SPECIFIC_DATA_API_U_VER_3 */
+	union {
+		struct iwl_mac_client_data client;
+		struct iwl_mac_p2p_dev_data p2p_dev;
+		struct iwl_mac_nan_data nan;
+	};
+} __packed; /* MAC_CONTEXT_CONFIG_CMD_API_S_VER_4 */
 
 /**
  * enum iwl_link_ctx_modify_flags - indicate to the fw what fields are being
@@ -653,6 +709,7 @@ struct iwl_link_config_cmd {
  */
 #define IWL_FW_MAX_ACTIVE_LINKS_NUM 2
 #define IWL_FW_MAX_LINK_ID 3
+#define IWL_FW_MAX_LINKS IWL_FW_MAX_LINK_ID + 1
 
 /**
  * enum iwl_fw_sta_type - FW station types
@@ -663,22 +720,24 @@ struct iwl_link_config_cmd {
  * @STATION_TYPE_MCAST: the station used for BCAST / MCAST in GO. Will be
  *	suspended / resumed at the right timing depending on the clients'
  *	power save state and the DTIM timing
- * @STATION_TYPE_AUX: aux sta. In the FW there is no need for a special type
- *	for the aux sta, so this type is only for driver - internal use.
  * @STATION_TYPE_NAN_PEER_NMI: NAN management peer station type. A station
  *	of this type can have any number of links (even none) set in the
  *	link_mask. (Supported since version 3.)
  * @STATION_TYPE_NAN_PEER_NDI: NAN data peer station type. A station
  *	of this type can have any number of links (even none) set in the
  *	link_mask. (Supported since version 3.)
+ * @STATION_TYPE_MAX: maximum number of FW station types
+ * @STATION_TYPE_AUX: aux sta. In the FW there is no need for a special type
+ *	for the aux sta, so this type is only for driver - internal use.
  */
 enum iwl_fw_sta_type {
 	STATION_TYPE_PEER,
 	STATION_TYPE_BCAST_MGMT,
 	STATION_TYPE_MCAST,
-	STATION_TYPE_AUX,
 	STATION_TYPE_NAN_PEER_NMI,
 	STATION_TYPE_NAN_PEER_NDI,
+	STATION_TYPE_MAX,
+	STATION_TYPE_AUX = STATION_TYPE_MAX /* this doesn't exist in FW */
 }; /* STATION_TYPE_E_VER_1, _VER_2 */
 
 /**

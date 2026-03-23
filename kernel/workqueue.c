@@ -3159,10 +3159,6 @@ static bool manage_workers(struct worker *worker)
 	return true;
 }
 
-#ifdef CONFIG_NET_DEV_REFCNT_TRACKER
-static noinline void process_one_work(struct worker *worker, struct work_struct *work);
-#endif
-
 /**
  * process_one_work - process single work
  * @worker: self
@@ -3186,9 +3182,6 @@ __acquires(&pool->lock)
 	unsigned long work_data;
 	int lockdep_start_depth, rcu_start_depth;
 	bool bh_draining = pool->flags & POOL_BH_DRAINING;
-#ifdef CONFIG_KCOV
-	unsigned int old_kcov_mode, new_kcov_mode;
-#endif
 #ifdef CONFIG_LOCKDEP
 	/*
 	 * It is permissible to free the struct work_struct from
@@ -3282,13 +3275,7 @@ __acquires(&pool->lock)
 	 */
 	lockdep_invariant_state(true);
 	trace_workqueue_execute_start(work);
-#ifdef CONFIG_KCOV
-	old_kcov_mode = READ_ONCE(current->kcov_mode);
-#endif
 	worker->current_func(work);
-#ifdef CONFIG_KCOV
-	new_kcov_mode = READ_ONCE(current->kcov_mode);
-#endif
 	/*
 	 * While we must be careful to not use "work" after this, the trace
 	 * point will only record its address.
@@ -3311,11 +3298,6 @@ __acquires(&pool->lock)
 		debug_show_held_locks(current);
 		dump_stack();
 	}
-#ifdef CONFIG_KCOV
-	if (unlikely((old_kcov_mode & ~(1 << 30)) != (new_kcov_mode & ~(1 << 30))))
-		pr_err("BUG: workqueue function %ps changed kcov_mode from %u to %u\n",
-		       worker->current_func, old_kcov_mode, new_kcov_mode);
-#endif
 
 	/*
 	 * The following prevents a kworker from hogging CPU on !PREEMPTION
@@ -3406,11 +3388,6 @@ static int worker_thread(void *__worker)
 {
 	struct worker *worker = __worker;
 	struct worker_pool *pool = worker->pool;
-
-#ifdef CONFIG_KCOV
-	if (unlikely(current->kcov_mode & ~(1 << 30)))
-		pr_err("BUG: %s started with kcov_mode=%u\n", __func__, current->kcov_mode);
-#endif
 
 	/* tell the scheduler that this is a workqueue worker */
 	set_pf_worker(true);
@@ -3563,11 +3540,6 @@ static int rescuer_thread(void *__rescuer)
 	struct worker *rescuer = __rescuer;
 	struct workqueue_struct *wq = rescuer->rescue_wq;
 	bool should_stop;
-
-#ifdef CONFIG_KCOV
-	if (unlikely(current->kcov_mode & ~(1 << 30)))
-		pr_err("BUG: %s started with kcov_mode=%u\n", __func__, current->kcov_mode);
-#endif
 
 	set_user_nice(current, RESCUER_NICE_LEVEL);
 
@@ -7762,8 +7734,28 @@ static void wq_watchdog_timer_fn(struct timer_list *unused)
 		else
 			ts = touched;
 
-		/* did we stall? */
+		/*
+		 * Did we stall?
+		 *
+		 * Do a lockless check first. On weakly ordered
+		 * architectures, the lockless check can observe a
+		 * reordering between worklist insert_work() and
+		 * last_progress_ts update from __queue_work(). Since
+		 * __queue_work() is a much hotter path than the timer
+		 * function, we handle false positive here by reading
+		 * last_progress_ts again with pool->lock held.
+		 */
 		if (time_after(now, ts + thresh)) {
+			scoped_guard(raw_spinlock_irqsave, &pool->lock) {
+				pool_ts = pool->last_progress_ts;
+				if (time_after(pool_ts, touched))
+					ts = pool_ts;
+				else
+					ts = touched;
+			}
+			if (!time_after(now, ts + thresh))
+				continue;
+
 			lockup_detected = true;
 			stall_time = jiffies_to_msecs(now - pool_ts) / 1000;
 			max_stall_time = max(max_stall_time, stall_time);
@@ -7775,8 +7767,6 @@ static void wq_watchdog_timer_fn(struct timer_list *unused)
 			pr_cont_pool_info(pool);
 			pr_cont(" stuck for %us!\n", stall_time);
 		}
-
-
 	}
 
 	if (lockup_detected)

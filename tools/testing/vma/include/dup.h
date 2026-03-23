@@ -904,16 +904,20 @@ static inline void vm_flags_reset(struct vm_area_struct *vma,
 	vm_flags_init(vma, flags);
 }
 
-static inline void vm_flags_reset_once(struct vm_area_struct *vma,
-				       vm_flags_t flags)
+static inline void vma_flags_reset_once(struct vm_area_struct *vma,
+					vma_flags_t *flags)
 {
-	vma_assert_write_locked(vma);
-	/*
-	 * The user should only be interested in avoiding reordering of
-	 * assignment to the first word.
-	 */
-	vma_flags_clear_all(&vma->flags);
-	vma_flags_overwrite_word_once(&vma->flags, flags);
+	const unsigned long word = flags->__vma_flags[0];
+
+	/* It is assumed only the first system word must be written once. */
+	vma_flags_overwrite_word_once(&vma->flags, word);
+	/* The remainder can be copied normally. */
+	if (NUM_VMA_FLAG_BITS > BITS_PER_LONG) {
+		unsigned long *dst = &vma->flags.__vma_flags[1];
+		const unsigned long *src = &flags->__vma_flags[1];
+
+		bitmap_copy(dst, src, NUM_VMA_FLAG_BITS - BITS_PER_LONG);
+	}
 }
 
 static inline void vm_flags_set(struct vm_area_struct *vma,
@@ -1309,27 +1313,9 @@ static inline unsigned long vma_pages(const struct vm_area_struct *vma)
 	return (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
 }
 
-static inline void unmap_vma_locked(struct vm_area_struct *vma)
+static inline int vfs_mmap_prepare(struct file *file, struct vm_area_desc *desc)
 {
-	const size_t len = vma_pages(vma) << PAGE_SHIFT;
-
-	mmap_assert_write_locked(vma->vm_mm);
-	do_munmap(vma->vm_mm, vma->vm_start, len, NULL);
-}
-
-static inline int __compat_vma_mapped(struct file *file, struct vm_area_struct *vma)
-{
-	const struct vm_operations_struct *vm_ops = vma->vm_ops;
-	int err;
-
-	if (!vm_ops->mapped)
-		return 0;
-
-	err = vm_ops->mapped(vma->vm_start, vma->vm_end, vma->vm_pgoff, file,
-			     &vma->vm_private_data);
-	if (err)
-		unmap_vma_locked(vma);
-	return err;
+	return file->f_op->mmap_prepare(desc);
 }
 
 static inline int __compat_vma_mmap(struct vm_area_desc *desc,
@@ -1344,34 +1330,26 @@ static inline int __compat_vma_mmap(struct vm_area_desc *desc,
 	/* Update the VMA from the descriptor. */
 	compat_set_vma_from_desc(vma, desc);
 	/* Complete any specified mmap actions. */
-	err = mmap_action_complete(vma, &desc->action,
-				   /*rmap_lock_held=*/false);
-	if (err)
-		return err;
-
-	/* Invoke vm_ops->mapped callback. */
-	return __compat_vma_mapped(desc->file, vma);
+	return mmap_action_complete(vma, &desc->action);
 }
 
-static inline int vfs_mmap_prepare(struct file *file, struct vm_area_desc *desc)
-{
-	return file->f_op->mmap_prepare(desc);
-}
-
-static inline int compat_vma_mmap(struct file *file,
-		struct vm_area_struct *vma)
+static inline int compat_vma_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct vm_area_desc desc;
+	struct mmap_action *action;
 	int err;
 
 	compat_set_desc_from_vma(&desc, file, vma);
 	err = vfs_mmap_prepare(file, &desc);
 	if (err)
 		return err;
+	action = &desc.action;
+
+	/* being invoked from .mmmap means we don't have to enforce this. */
+	action->hide_from_rmap_until_complete = false;
 
 	return __compat_vma_mmap(&desc, vma);
 }
-
 
 static inline void vma_iter_init(struct vma_iterator *vmi,
 		struct mm_struct *mm, unsigned long addr)

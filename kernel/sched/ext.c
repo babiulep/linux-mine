@@ -1164,10 +1164,18 @@ static void deferred_irq_workfn(struct irq_work *irq_work)
 static void schedule_deferred(struct rq *rq)
 {
 	/*
-	 * Queue an irq work. They are executed on IRQ re-enable which may take
-	 * a bit longer than the scheduler hook in schedule_deferred_locked().
+	 * This is the fallback when schedule_deferred_locked() can't use
+	 * the cheaper balance callback or wakeup hook paths (the target
+	 * CPU is not in balance or wakeup). Currently, this is primarily
+	 * hit by reenqueue operations targeting a remote CPU.
+	 *
+	 * Queue on the target CPU. The deferred work can run from any CPU
+	 * correctly - the _locked() path already processes remote rqs from
+	 * the calling CPU - but targeting the owning CPU allows IPI delivery
+	 * without waiting for the calling CPU to re-enable IRQs and is
+	 * cheaper as the reenqueue runs locally.
 	 */
-	irq_work_queue(&rq->scx.deferred_irq_work);
+	irq_work_queue_on(&rq->scx.deferred_irq_work, cpu_of(rq));
 }
 
 /**
@@ -6494,8 +6502,10 @@ static struct scx_sched *scx_alloc_and_add_sched(struct sched_ext_ops *ops,
 #endif	/* CONFIG_EXT_SUB_SCHED */
 	return sch;
 
+#ifdef CONFIG_EXT_SUB_SCHED
 err_stop_helper:
 	kthread_destroy_worker(sch->helper);
+#endif
 err_free_pcpu:
 	for_each_possible_cpu(cpu) {
 		if (cpu == bypass_fail_cpu)
@@ -6514,7 +6524,9 @@ err_free_ei:
 err_free_sch:
 	kfree(sch);
 err_put_cgrp:
+#if defined(CONFIG_EXT_GROUP_SCHED) || defined(CONFIG_EXT_SUB_SCHED)
 	cgroup_put(cgrp);
+#endif
 	return ERR_PTR(ret);
 }
 
@@ -6603,7 +6615,9 @@ static void scx_root_enable_workfn(struct kthread_work *work)
 	if (ret)
 		goto err_unlock;
 
+#if defined(CONFIG_EXT_GROUP_SCHED) || defined(CONFIG_EXT_SUB_SCHED)
 	cgroup_get(cgrp);
+#endif
 	sch = scx_alloc_and_add_sched(ops, cgrp, NULL);
 	if (IS_ERR(sch)) {
 		ret = PTR_ERR(sch);
