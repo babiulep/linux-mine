@@ -547,13 +547,17 @@ bool module_lookup_lineinfo(struct module *mod, unsigned long addr,
 	if (hdr->files_size < hdr->num_files * sizeof(u32))
 		return false;
 
-	/* Compute offset from module .text base */
+	/*
+	 * Compute offset from module .text base.
+	 * NOTE: This assumes .text is at the start of the MOD_TEXT segment.
+	 * A proper fix would use ELF relocations to reference .text directly.
+	 */
 	text_base = (unsigned long)mod->mem[MOD_TEXT].base;
 	if (addr < text_base)
 		return false;
 
 	raw_offset = addr - text_base;
-	if (raw_offset > UINT_MAX)
+	if (raw_offset > U32_MAX)
 		return false;
 
 	tbl.blk_addrs	= base + hdr->blocks_offset;

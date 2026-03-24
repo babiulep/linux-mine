@@ -684,7 +684,7 @@ config CRYPTO_ECB
 config CRYPTO_HCTR2
 	tristate "HCTR2"
 	select CRYPTO_XCTR
-	select CRYPTO_LIB_POLYVAL
+	select CRYPTO_LIB_GF128HASH
 	select CRYPTO_MANAGER
 	help
 	  HCTR2 length-preserving encryption mode
@@ -792,7 +792,7 @@ config CRYPTO_GCM
 	tristate "GCM (Galois/Counter Mode) and GMAC (GCM MAC)"
 	select CRYPTO_CTR
 	select CRYPTO_AEAD
-	select CRYPTO_GHASH
+	select CRYPTO_LIB_GF128HASH
 	select CRYPTO_MANAGER
 	help
 	  GCM (Galois/Counter Mode) authenticated encryption mode and GMAC
@@ -885,13 +885,6 @@ config CRYPTO_CMAC
 	help
 	  CMAC (Cipher-based Message Authentication Code) authentication
 	  mode (NIST SP800-38B and IETF RFC4493)
-
-config CRYPTO_GHASH
-	tristate "GHASH"
-	select CRYPTO_HASH
-	select CRYPTO_LIB_GF128MUL
-	help
-	  GCM GHASH function (NIST SP800-38D)
 
 config CRYPTO_HMAC
 	tristate "HMAC (Keyed-Hash MAC)"

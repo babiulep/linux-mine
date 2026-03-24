@@ -206,14 +206,11 @@ static const char *make_relative(const char *path, const char *comp_dir)
 	 */
 	{
 		size_t len = strlen(path);
+		size_t mid = len / 2;
 
-		for (p = path; (p = strchr(p, '/')) != NULL; p++) {
-			size_t prefix = p - path;
-			size_t rest = len - prefix - 1;
-
-			if (rest == prefix && !memcmp(path, p + 1, prefix))
-				return p + 1;
-		}
+		if (len > 1 && path[mid] == '/' &&
+		    !memcmp(path, path + mid + 1, mid))
+			return path + mid + 1;
 	}
 
 	/*
@@ -340,17 +337,17 @@ static void find_text_section_range(Elf *elf)
 static unsigned int r_type_abs32(unsigned int e_machine)
 {
 	switch (e_machine) {
-	case EM_X86_64:		return 10;	/* R_X86_64_32 */
-	case EM_386:		return 1;	/* R_386_32 */
-	case EM_AARCH64:	return 258;	/* R_AARCH64_ABS32 */
-	case EM_ARM:		return 2;	/* R_ARM_ABS32 */
-	case EM_RISCV:		return 1;	/* R_RISCV_32 */
-	case EM_S390:		return 4;	/* R_390_32 */
-	case EM_MIPS:		return 2;	/* R_MIPS_32 */
-	case EM_PPC64:		return 1;	/* R_PPC64_ADDR32 */
-	case EM_PPC:		return 1;	/* R_PPC_ADDR32 */
-	case EM_LOONGARCH:	return 1;	/* R_LARCH_32 */
-	case EM_PARISC:		return 1;	/* R_PARISC_DIR32 */
+	case EM_X86_64:		return R_X86_64_32;
+	case EM_386:		return R_386_32;
+	case EM_AARCH64:	return R_AARCH64_ABS32;
+	case EM_ARM:		return R_ARM_ABS32;
+	case EM_RISCV:		return R_RISCV_32;
+	case EM_S390:		return R_390_32;
+	case EM_MIPS:		return R_MIPS_32;
+	case EM_PPC64:		return R_PPC64_ADDR32;
+	case EM_PPC:		return R_PPC_ADDR32;
+	case EM_LOONGARCH:	return R_LARCH_32;
+	case EM_PARISC:		return R_PARISC_DIR32;
 	default:		return 0;
 	}
 }
@@ -492,9 +489,10 @@ static void process_dwarf(Dwarf *dwarf, unsigned long long text_addr)
 
 			/*
 			 * In module mode, keep only .text addresses.
-			 * In ET_REL .ko files, .init.text/.exit.text may
-			 * overlap with .text address ranges, so we must
-			 * explicitly check against the .text bounds.
+			 * In ET_REL .ko files, .text, .init.text and
+			 * .exit.text all have sh_addr == 0 and therefore
+			 * overlapping address ranges.  Explicitly check
+			 * against the .text bounds.
 			 */
 			if (module_mode && text_section_end > text_section_start &&
 			    (addr < text_section_start || addr >= text_section_end))

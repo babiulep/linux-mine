@@ -29,6 +29,7 @@
 #![feature(lint_reasons)]
 //
 // Stable since Rust 1.82.0.
+#![feature(offset_of_nested)]
 #![feature(raw_ref_op)]
 //
 // Stable since Rust 1.83.0.
@@ -104,12 +105,15 @@ pub mod faux;
 pub mod firmware;
 pub mod fmt;
 pub mod fs;
+#[cfg(CONFIG_GPU_BUDDY = "y")]
+pub mod gpu;
 #[cfg(CONFIG_I2C = "y")]
 pub mod i2c;
 pub mod id_pool;
 #[doc(hidden)]
 pub mod impl_flags;
 pub mod init;
+pub mod interop;
 pub mod io;
 pub mod ioctl;
 pub mod iommu;

@@ -25,7 +25,7 @@ config EROFS_FS
 	  order to perform optimally on all kinds of devices, including block
 	  and memory-backed devices; the format is easy to parse and has zero
 	  metadata redundancy, unlike generic filesystems, making it ideal for
-	  for filesytem auditing and remote access; inline data, random-access
+	  filesystem auditing and remote access; inline data, random-access
 	  friendly directory data, inline/shared extended attributes and
 	  chunk-based deduplication ensure space efficiency while maintaining
 	  high performance.

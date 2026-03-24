@@ -8,6 +8,10 @@ quiet_cmd_perlasm = PERLASM $@
 quiet_cmd_perlasm_with_args = PERLASM $@
       cmd_perlasm_with_args = $(PERL) $(<) void $(@)
 
+ppc64-perlasm-flavour-y := linux-ppc64
+ppc64-perlasm-flavour-$(CONFIG_PPC64_ELF_ABI_V2) := linux-ppc64-elfv2
+ppc64-perlasm-flavour-$(CONFIG_CPU_LITTLE_ENDIAN) := linux-ppc64le
+
 obj-$(CONFIG_KUNIT)				+= tests/
 
 obj-$(CONFIG_CRYPTO_HASH_INFO)			+= hash_info.o
@@ -36,11 +40,8 @@ libaes-y += powerpc/aes-spe-core.o \
 	    powerpc/aes-tab-4k.o
 else
 libaes-y += powerpc/aesp8-ppc.o
-aes-perlasm-flavour-y := linux-ppc64
-aes-perlasm-flavour-$(CONFIG_PPC64_ELF_ABI_V2) := linux-ppc64-elfv2
-aes-perlasm-flavour-$(CONFIG_CPU_LITTLE_ENDIAN) := linux-ppc64le
 quiet_cmd_perlasm_aes = PERLASM $@
-      cmd_perlasm_aes = $(PERL) $< $(aes-perlasm-flavour-y) $@
+      cmd_perlasm_aes = $(PERL) $< $(ppc64-perlasm-flavour-y) $@
 # Use if_changed instead of cmd, in case the flavour changed.
 $(obj)/powerpc/aesp8-ppc.S: $(src)/powerpc/aesp8-ppc.pl FORCE
 	$(call if_changed,perlasm_aes)
@@ -157,6 +158,34 @@ libdes-y					:= des.o
 
 ################################################################################
 
+obj-$(CONFIG_CRYPTO_LIB_GF128HASH) += libgf128hash.o
+libgf128hash-y := gf128hash.o
+ifeq ($(CONFIG_CRYPTO_LIB_GF128HASH_ARCH),y)
+CFLAGS_gf128hash.o += -I$(src)/$(SRCARCH)
+libgf128hash-$(CONFIG_ARM) += arm/ghash-neon-core.o
+libgf128hash-$(CONFIG_ARM64) += arm64/ghash-neon-core.o \
+				arm64/polyval-ce-core.o
+
+ifeq ($(CONFIG_PPC),y)
+libgf128hash-y += powerpc/ghashp8-ppc.o
+quiet_cmd_perlasm_ghash = PERLASM $@
+      cmd_perlasm_ghash = $(PERL) $< $(ppc64-perlasm-flavour-y) $@
+$(obj)/powerpc/ghashp8-ppc.S: $(src)/powerpc/ghashp8-ppc.pl FORCE
+	$(call if_changed,perlasm_ghash)
+targets += powerpc/ghashp8-ppc.S
+OBJECT_FILES_NON_STANDARD_powerpc/ghashp8-ppc.o := y
+endif
+
+libgf128hash-$(CONFIG_RISCV) += riscv/ghash-riscv64-zvkg.o
+libgf128hash-$(CONFIG_X86) += x86/ghash-pclmul.o \
+			      x86/polyval-pclmul-avx.o
+endif # CONFIG_CRYPTO_LIB_GF128HASH_ARCH
+
+# clean-files must be defined unconditionally
+clean-files += powerpc/ghashp8-ppc.S
+
+################################################################################
+
 obj-$(CONFIG_CRYPTO_LIB_MD5) += libmd5.o
 libmd5-y := md5.o
 ifeq ($(CONFIG_CRYPTO_LIB_MD5_ARCH),y)
@@ -251,16 +280,6 @@ clean-files += arm/poly1305-core.S \
 	       mips/poly1305-core.S \
 	       riscv/poly1305-core.S \
 	       x86/poly1305-x86_64-cryptogams.S
-
-################################################################################
-
-obj-$(CONFIG_CRYPTO_LIB_POLYVAL) += libpolyval.o
-libpolyval-y := polyval.o
-ifeq ($(CONFIG_CRYPTO_LIB_POLYVAL_ARCH),y)
-CFLAGS_polyval.o += -I$(src)/$(SRCARCH)
-libpolyval-$(CONFIG_ARM64) += arm64/polyval-ce-core.o
-libpolyval-$(CONFIG_X86) += x86/polyval-pclmul-avx.o
-endif
 
 ################################################################################
 

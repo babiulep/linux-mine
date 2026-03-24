@@ -12,9 +12,7 @@ maintainers:
 properties:
   compatible:
     oneOf:
-      - enum:
-          - fsl,imx-irqsteer
-          - nxp,s32n79-irqsteer
+      - const: fsl,imx-irqsteer
       - items:
           - enum:
               - fsl,imx8m-irqsteer

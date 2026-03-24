@@ -1334,6 +1334,35 @@ out:
 	return ret;
 }
 
+static int gfs2_truncate_inode_pages(struct inode *inode)
+{
+	struct gfs2_inode *ip = GFS2_I(inode);
+	struct gfs2_sbd *sdp = GFS2_SB(inode);
+	struct address_space *mapping = &inode->i_data;
+	bool need_trans = gfs2_is_jdata(ip) && mapping->nrpages;
+	int ret;
+
+	/*
+	 * Truncating a jdata inode address space may create revokes in
+	 * truncate_inode_pages() -> gfs2_invalidate_folio() -> ... ->
+	 * gfs2_remove_from_journal(), so we need a transaction here.
+	 *
+	 * FIXME: During a withdraw, no new transactions can be created.
+	 * In that case, we skip the truncate, but that doesn't help because
+	 * truncate_inode_pages_final() will then call gfs2_invalidate_folio()
+	 * again, and outside of a transaction.
+	 */
+	if (need_trans) {
+		ret = gfs2_trans_begin(sdp, 0, sdp->sd_jdesc->jd_blocks);
+		if (ret)
+			return ret;
+	}
+	truncate_inode_pages(mapping, 0);
+	if (need_trans)
+		gfs2_trans_end(sdp);
+	return 0;
+}
+
 /*
  * evict_linked_inode - evict an inode whose dinode has not been unlinked
  * @inode: The inode to evict
@@ -1369,21 +1398,9 @@ static int evict_linked_inode(struct inode *inode, struct gfs2_holder *gh)
 	gfs2_ail_flush(gl, 0);
 
 clean:
-	if (gfs2_is_jdata(ip) &&
-	    filemap_range_needs_writeback(&inode->i_data, 0, (loff_t)-1)) {
-		/*
-		 * Allow truncate_inode_pages() -> gfs2_invalidate_folio() ->
-		 * gfs2_discard() -> gfs2_remove_from_journal() to create
-		 * revokes for jdata buffers.
-		 */
-		ret = gfs2_trans_begin(sdp, 0, sdp->sd_jdesc->jd_blocks);
-		if (ret)
-			return ret;
-		truncate_inode_pages(&inode->i_data, 0);
-		gfs2_trans_end(sdp);
-	} else {
-		truncate_inode_pages(&inode->i_data, 0);
-	}
+	ret = gfs2_truncate_inode_pages(inode);
+	if (ret)
+		return ret;
 	truncate_inode_pages(metamapping, 0);
 	return 0;
 }
