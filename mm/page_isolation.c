@@ -10,7 +10,6 @@
 #include <linux/hugetlb.h>
 #include <linux/page_owner.h>
 #include <linux/migrate.h>
-#include <linux/mmzone_lock.h>
 #include "internal.h"
 
 #define CREATE_TRACE_POINTS
@@ -174,7 +173,7 @@ static int set_migratetype_isolate(struct page *page, enum pb_isolate_mode mode,
 	if (PageUnaccepted(page))
 		accept_page(page);
 
-	zone_lock_irqsave(zone, flags);
+	spin_lock_irqsave(&zone->lock, flags);
 
 	/*
 	 * We assume the caller intended to SET migrate type to isolate.
@@ -182,7 +181,7 @@ static int set_migratetype_isolate(struct page *page, enum pb_isolate_mode mode,
 	 * set it before us.
 	 */
 	if (is_migrate_isolate_page(page)) {
-		zone_unlock_irqrestore(zone, flags);
+		spin_unlock_irqrestore(&zone->lock, flags);
 		return -EBUSY;
 	}
 
@@ -201,18 +200,18 @@ static int set_migratetype_isolate(struct page *page, enum pb_isolate_mode mode,
 			mode);
 	if (!unmovable) {
 		if (!pageblock_isolate_and_move_free_pages(zone, page)) {
-			zone_unlock_irqrestore(zone, flags);
+			spin_unlock_irqrestore(&zone->lock, flags);
 			return -EBUSY;
 		}
 		zone->nr_isolate_pageblock++;
-		zone_unlock_irqrestore(zone, flags);
+		spin_unlock_irqrestore(&zone->lock, flags);
 		return 0;
 	}
 
-	zone_unlock_irqrestore(zone, flags);
+	spin_unlock_irqrestore(&zone->lock, flags);
 	if (mode == PB_ISOLATE_MODE_MEM_OFFLINE) {
 		/*
-		 * printk() with zone lock held will likely trigger a
+		 * printk() with zone->lock held will likely trigger a
 		 * lockdep splat, so defer it here.
 		 */
 		dump_page(unmovable, "unmovable page");
@@ -230,7 +229,7 @@ static void unset_migratetype_isolate(struct page *page)
 	struct page *buddy;
 
 	zone = page_zone(page);
-	zone_lock_irqsave(zone, flags);
+	spin_lock_irqsave(&zone->lock, flags);
 	if (!is_migrate_isolate_page(page))
 		goto out;
 
@@ -281,7 +280,7 @@ static void unset_migratetype_isolate(struct page *page)
 	}
 	zone->nr_isolate_pageblock--;
 out:
-	zone_unlock_irqrestore(zone, flags);
+	spin_unlock_irqrestore(&zone->lock, flags);
 }
 
 static inline struct page *
@@ -553,7 +552,7 @@ void undo_isolate_page_range(unsigned long start_pfn, unsigned long end_pfn)
 /*
  * Test all pages in the range is free(means isolated) or not.
  * all pages in [start_pfn...end_pfn) must be in the same zone.
- * zone lock must be held before call this.
+ * zone->lock must be held before call this.
  *
  * Returns the last tested pfn.
  */
@@ -642,9 +641,9 @@ int test_pages_isolated(unsigned long start_pfn, unsigned long end_pfn,
 
 	/* Check all pages are free or marked as ISOLATED */
 	zone = page_zone(page);
-	zone_lock_irqsave(zone, flags);
+	spin_lock_irqsave(&zone->lock, flags);
 	pfn = __test_page_isolated_in_pageblock(start_pfn, end_pfn, mode);
-	zone_unlock_irqrestore(zone, flags);
+	spin_unlock_irqrestore(&zone->lock, flags);
 
 	ret = pfn < end_pfn ? -EBUSY : 0;
 

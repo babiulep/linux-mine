@@ -1038,12 +1038,12 @@ struct zone {
 	 * Locking rules:
 	 *
 	 * zone_start_pfn and spanned_pages are protected by span_seqlock.
-	 * It is a seqlock because it has to be read outside of zone_lock,
+	 * It is a seqlock because it has to be read outside of zone->lock,
 	 * and it is done in the main allocator path.  But, it is written
 	 * quite infrequently.
 	 *
-	 * The span_seq lock is declared along with zone_lock because it is
-	 * frequently read in proximity to zone_lock.  It's good to
+	 * The span_seq lock is declared along with zone->lock because it is
+	 * frequently read in proximity to zone->lock.  It's good to
 	 * give them a chance of being in the same cacheline.
 	 *
 	 * Write access to present_pages at runtime should be protected by
@@ -1066,7 +1066,7 @@ struct zone {
 	/*
 	 * Number of isolated pageblock. It is used to solve incorrect
 	 * freepage counting problem due to racy retrieving migratetype
-	 * of pageblock. Protected by zone_lock.
+	 * of pageblock. Protected by zone->lock.
 	 */
 	unsigned long		nr_isolate_pageblock;
 #endif
@@ -1095,11 +1095,8 @@ struct zone {
 	/* zone flags, see below */
 	unsigned long		flags;
 
-	/*
-	 * Primarily protects free_area. Should be accessed via zone_lock_*
-	 * helpers.
-	 */
-	spinlock_t		_lock;
+	/* Primarily protects free_area */
+	spinlock_t		lock;
 
 	/* Pages to be freed when next trylock succeeds */
 	struct llist_head	trylock_free_pages;
@@ -1495,7 +1492,7 @@ typedef struct pglist_data {
 	 * manipulate node_size_lock without checking for CONFIG_MEMORY_HOTPLUG
 	 * or CONFIG_DEFERRED_STRUCT_PAGE_INIT.
 	 *
-	 * Nests above zone_lock and zone->span_seqlock
+	 * Nests above zone->lock and zone->span_seqlock
 	 */
 	spinlock_t node_size_lock;
 #endif

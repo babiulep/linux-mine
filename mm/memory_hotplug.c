@@ -36,7 +36,6 @@
 #include <linux/rmap.h>
 #include <linux/module.h>
 #include <linux/node.h>
-#include <linux/mmzone_lock.h>
 
 #include <asm/tlbflush.h>
 
@@ -1183,9 +1182,9 @@ int online_pages(unsigned long pfn, unsigned long nr_pages,
 	 * Fixup the number of isolated pageblocks before marking the sections
 	 * onlining, such that undo_isolate_page_range() works correctly.
 	 */
-	zone_lock_irqsave(zone, flags);
+	spin_lock_irqsave(&zone->lock, flags);
 	zone->nr_isolate_pageblock += nr_pages / pageblock_nr_pages;
-	zone_unlock_irqrestore(zone, flags);
+	spin_unlock_irqrestore(&zone->lock, flags);
 
 	/*
 	 * If this zone is not populated, then it is not in zonelist.
@@ -2034,9 +2033,9 @@ int offline_pages(unsigned long start_pfn, unsigned long nr_pages,
 	 * effectively stale; nobody should be touching them. Fixup the number
 	 * of isolated pageblocks, memory onlining will properly revert this.
 	 */
-	zone_lock_irqsave(zone, flags);
+	spin_lock_irqsave(&zone->lock, flags);
 	zone->nr_isolate_pageblock -= nr_pages / pageblock_nr_pages;
-	zone_unlock_irqrestore(zone, flags);
+	spin_unlock_irqrestore(&zone->lock, flags);
 
 	lru_cache_enable();
 	zone_pcp_enable(zone);

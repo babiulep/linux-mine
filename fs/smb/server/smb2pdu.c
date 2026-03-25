@@ -3410,7 +3410,7 @@ int smb2_open(struct ksmbd_work *work)
 							OWNER_SECINFO | GROUP_SECINFO |
 							DACL_SECINFO);
 
-					pntsd = kvmalloc(scratch_len, KSMBD_DEFAULT_GFP);
+					pntsd = kvzalloc(scratch_len, KSMBD_DEFAULT_GFP);
 					if (!pntsd) {
 						posix_acl_release(fattr.cf_acls);
 						posix_acl_release(fattr.cf_dacls);
@@ -5368,8 +5368,9 @@ static int smb2_get_info_file(struct ksmbd_work *work,
 	if (test_share_config_flag(work->tcon->share_conf,
 				   KSMBD_SHARE_FLAG_PIPE)) {
 		/* smb2 info file called for pipe */
-		return smb2_get_info_file_pipe(work->sess, req, rsp,
+		rc = smb2_get_info_file_pipe(work->sess, req, rsp,
 					       work->response_buf);
+		goto iov_pin_out;
 	}
 
 	if (work->next_smb2_rcv_hdr_off) {
@@ -5470,6 +5471,7 @@ static int smb2_get_info_file(struct ksmbd_work *work,
 				      rsp, work->response_buf);
 	ksmbd_fd_put(work, fp);
 
+iov_pin_out:
 	if (!rc)
 		rc = ksmbd_iov_pin_rsp(work, (void *)rsp,
 				offsetof(struct smb2_query_info_rsp, Buffer) +
@@ -5714,7 +5716,7 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 {
 	struct ksmbd_file *fp;
 	struct mnt_idmap *idmap;
-	struct smb_ntsd *pntsd, *ppntsd = NULL;
+	struct smb_ntsd *pntsd = NULL, *ppntsd = NULL;
 	struct smb_fattr fattr = {{0}};
 	struct inode *inode;
 	__u32 secdesclen = 0;
@@ -5783,7 +5785,7 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 
 	scratch_len = smb_acl_sec_desc_scratch_len(&fattr, ppntsd,
 			ppntsd_size, addition_info);
-	pntsd = kvmalloc(scratch_len, KSMBD_DEFAULT_GFP);
+	pntsd = kvzalloc(scratch_len, KSMBD_DEFAULT_GFP);
 	if (!pntsd) {
 		rc = -ENOMEM;
 		goto out;
@@ -5804,9 +5806,22 @@ out:
 
 iov_pin:
 	rsp->OutputBufferLength = cpu_to_le32(secdesclen);
-	return ksmbd_iov_pin_rsp_read(work, (void *)rsp,
+	rc = buffer_check_err(le32_to_cpu(req->OutputBufferLength),
+			      rsp, work->response_buf);
+	if (rc) {
+		kvfree(pntsd);
+		return rc;
+	}
+
+	rc = ksmbd_iov_pin_rsp_read(work, (void *)rsp,
 			offsetof(struct smb2_query_info_rsp, Buffer),
 			pntsd, secdesclen);
+	if (rc) {
+		rsp->OutputBufferLength = 0;
+		kvfree(pntsd);
+	}
+
+	return rc;
 }
 
 /**
@@ -5863,7 +5878,7 @@ err_out:
 			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
 		else if (rc == -ENOMEM)
 			rsp->hdr.Status = STATUS_INSUFFICIENT_RESOURCES;
-		else if (rc == -EINVAL)
+		else if (rc == -EINVAL && rsp->hdr.Status == 0)
 			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 		else if (rc == -EOPNOTSUPP || rsp->hdr.Status == 0)
 			rsp->hdr.Status = STATUS_INVALID_INFO_CLASS;

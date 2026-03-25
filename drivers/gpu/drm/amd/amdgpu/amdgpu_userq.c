@@ -1227,10 +1227,8 @@ static void amdgpu_userq_restore_worker(struct work_struct *work)
 	}
 
 	ret = amdgpu_userq_restore_all(uq_mgr);
-	if (ret) {
+	if (ret)
 		drm_file_err(uq_mgr->file, "Failed to restore all queues\n");
-		goto unlock;
-	}
 
 unlock:
 	mutex_unlock(&uq_mgr->userq_mutex);
@@ -1300,7 +1298,7 @@ amdgpu_userq_wait_for_signal(struct amdgpu_userq_mgr *uq_mgr)
 }
 
 void
-amdgpu_userq_evict(struct amdgpu_userq_mgr *uq_mgr, bool schedule_resume)
+amdgpu_userq_evict(struct amdgpu_userq_mgr *uq_mgr)
 {
 	struct amdgpu_device *adev = uq_mgr->adev;
 	int ret;
@@ -1314,8 +1312,6 @@ amdgpu_userq_evict(struct amdgpu_userq_mgr *uq_mgr, bool schedule_resume)
 	if (ret)
 		dev_err(adev->dev, "Failed to evict userqueue\n");
 
-	if (schedule_resume)
-		schedule_delayed_work(&uq_mgr->resume_work, 0);
 }
 
 int amdgpu_userq_mgr_init(struct amdgpu_userq_mgr *userq_mgr, struct drm_file *file_priv,

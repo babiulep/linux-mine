@@ -5,5 +5,5 @@
 config SMB_COMMON_SMBDIRECT
 	def_tristate n
 	depends on INFINIBAND && INFINIBAND_ADDR_TRANS
-	depends on m || INFINIBAND != m
+	depends on m || INFINIBAND=y
 	select SG_POOL

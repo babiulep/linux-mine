@@ -487,7 +487,7 @@ unsigned long bitmap_weight_andnot(const unsigned long *src1,
  * @end: the bitmap size in bits
  *
  * Returns the number of set bits in the region. If @start >= @end,
- * the result is undefined.
+ * return >= end.
  */
 static __always_inline
 unsigned long bitmap_weight_from(const unsigned long *bitmap,

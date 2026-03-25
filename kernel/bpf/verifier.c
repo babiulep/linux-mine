@@ -1372,9 +1372,9 @@ static bool is_spilled_scalar_reg(const struct bpf_stack_state *stack)
 	       stack->spilled_ptr.type == SCALAR_VALUE;
 }
 
-static bool is_spilled_scalar_reg64(const struct bpf_stack_state *stack)
+static bool is_spilled_scalar_after(const struct bpf_stack_state *stack, int im)
 {
-	return stack->slot_type[0] == STACK_SPILL &&
+	return stack->slot_type[im] == STACK_SPILL &&
 	       stack->spilled_ptr.type == SCALAR_VALUE;
 }
 
@@ -5251,6 +5251,18 @@ static void check_fastcall_stack_contract(struct bpf_verifier_env *env,
 	}
 }
 
+static void scrub_special_slot(struct bpf_func_state *state, int spi)
+{
+	int i;
+
+	/* regular write of data into stack destroys any spilled ptr */
+	state->stack[spi].spilled_ptr.type = NOT_INIT;
+	/* Mark slots as STACK_MISC if they belonged to spilled ptr/dynptr/iter. */
+	if (is_stack_slot_special(&state->stack[spi]))
+		for (i = 0; i < BPF_REG_SIZE; i++)
+			scrub_spilled_slot(&state->stack[spi].slot_type[i]);
+}
+
 /* check_stack_{read,write}_fixed_off functions track spill/fill of registers,
  * stack boundary and alignment are checked in check_mem_access()
  */
@@ -5348,12 +5360,7 @@ static int check_stack_write_fixed_off(struct bpf_verifier_env *env,
 	} else {
 		u8 type = STACK_MISC;
 
-		/* regular write of data into stack destroys any spilled ptr */
-		state->stack[spi].spilled_ptr.type = NOT_INIT;
-		/* Mark slots as STACK_MISC if they belonged to spilled ptr/dynptr/iter. */
-		if (is_stack_slot_special(&state->stack[spi]))
-			for (i = 0; i < BPF_REG_SIZE; i++)
-				scrub_spilled_slot(&state->stack[spi].slot_type[i]);
+		scrub_special_slot(state, spi);
 
 		/* when we zero initialize stack slots mark them as such */
 		if ((reg && register_is_null(reg)) ||
@@ -5476,8 +5483,13 @@ static int check_stack_write_var_off(struct bpf_verifier_env *env,
 			}
 		}
 
-		/* Erase all other spilled pointers. */
-		state->stack[spi].spilled_ptr.type = NOT_INIT;
+		/*
+		 * Scrub slots if variable-offset stack write goes over spilled pointers.
+		 * Otherwise is_spilled_reg() may == true && spilled_ptr.type == NOT_INIT
+		 * and valid program is rejected by check_stack_read_fixed_off()
+		 * with obscure "invalid size of register fill" message.
+		 */
+		scrub_special_slot(state, spi);
 
 		/* Update the slot type. */
 		new_type = STACK_MISC;
@@ -14505,7 +14517,7 @@ static int check_kfunc_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 		if (btf_type_is_ptr(t))
 			mark_btf_func_reg_size(env, regno, sizeof(void *));
 		else
-			/* scalar. ensured by btf_check_kfunc_arg_match() */
+			/* scalar. ensured by check_kfunc_args() */
 			mark_btf_func_reg_size(env, regno, t->size);
 	}
 
@@ -20020,12 +20032,12 @@ static __init int unbound_reg_init(void)
 }
 late_initcall(unbound_reg_init);
 
-static bool is_stack_all_misc(struct bpf_verifier_env *env,
-			      struct bpf_stack_state *stack)
+static bool is_stack_misc_after(struct bpf_verifier_env *env,
+				struct bpf_stack_state *stack, int im)
 {
 	u32 i;
 
-	for (i = 0; i < ARRAY_SIZE(stack->slot_type); ++i) {
+	for (i = im; i < ARRAY_SIZE(stack->slot_type); ++i) {
 		if ((stack->slot_type[i] == STACK_MISC) ||
 		    (stack->slot_type[i] == STACK_INVALID && env->allow_uninit_stack))
 			continue;
@@ -20036,12 +20048,12 @@ static bool is_stack_all_misc(struct bpf_verifier_env *env,
 }
 
 static struct bpf_reg_state *scalar_reg_for_stack(struct bpf_verifier_env *env,
-						  struct bpf_stack_state *stack)
+						  struct bpf_stack_state *stack, int im)
 {
-	if (is_spilled_scalar_reg64(stack))
+	if (is_spilled_scalar_after(stack, im))
 		return &stack->spilled_ptr;
 
-	if (is_stack_all_misc(env, stack))
+	if (is_stack_misc_after(env, stack, im))
 		return &unbound_reg;
 
 	return NULL;
@@ -20059,6 +20071,7 @@ static bool stacksafe(struct bpf_verifier_env *env, struct bpf_func_state *old,
 	 */
 	for (i = 0; i < old->allocated_stack; i++) {
 		struct bpf_reg_state *old_reg, *cur_reg;
+		int im = i % BPF_REG_SIZE;
 
 		spi = i / BPF_REG_SIZE;
 
@@ -20081,18 +20094,21 @@ static bool stacksafe(struct bpf_verifier_env *env, struct bpf_func_state *old,
 		if (i >= cur->allocated_stack)
 			return false;
 
-		/* 64-bit scalar spill vs all slots MISC and vice versa.
-		 * Load from all slots MISC produces unbound scalar.
+		/*
+		 * 64 and 32-bit scalar spills vs MISC/INVALID slots and vice versa.
+		 * Load from MISC/INVALID slots produces unbound scalar.
 		 * Construct a fake register for such stack and call
 		 * regsafe() to ensure scalar ids are compared.
 		 */
-		old_reg = scalar_reg_for_stack(env, &old->stack[spi]);
-		cur_reg = scalar_reg_for_stack(env, &cur->stack[spi]);
-		if (old_reg && cur_reg) {
-			if (!regsafe(env, old_reg, cur_reg, idmap, exact))
-				return false;
-			i += BPF_REG_SIZE - 1;
-			continue;
+		if (im == 0 || im == 4) {
+			old_reg = scalar_reg_for_stack(env, &old->stack[spi], im);
+			cur_reg = scalar_reg_for_stack(env, &cur->stack[spi], im);
+			if (old_reg && cur_reg) {
+				if (!regsafe(env, old_reg, cur_reg, idmap, exact))
+					return false;
+				i += (im == 0 ? BPF_REG_SIZE - 1 : 3);
+				continue;
+			}
 		}
 
 		/* if old state was safe with misc data in the stack
@@ -24959,7 +24975,7 @@ static int check_struct_ops_btf_id(struct bpf_verifier_env *env)
 	}
 
 	for (i = 0; i < st_ops_desc->arg_info[member_idx].cnt; i++) {
-		if (st_ops_desc->arg_info[member_idx].info->refcounted) {
+		if (st_ops_desc->arg_info[member_idx].info[i].refcounted) {
 			has_refcounted_arg = true;
 			break;
 		}

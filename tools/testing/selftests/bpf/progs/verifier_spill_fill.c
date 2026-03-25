@@ -1279,4 +1279,82 @@ __naked void stack_noperfmon_spill_32bit_onto_64bit_slot(void)
 	: __clobber_all);
 }
 
+/*
+ * stacksafe(): check if 32-bit scalar spill in old state is considered
+ * equivalent to STACK_MISC in cur state.
+ * 32-bit scalar spill creates slot[0-3] = STACK_MISC, slot[4-7] = STACK_SPILL.
+ * Without 32-bit spill support in stacksafe(), the STACK_SPILL vs STACK_MISC
+ * mismatch at slot[4] causes pruning to fail.
+ */
+SEC("socket")
+__success __log_level(2)
+__msg("8: (79) r1 = *(u64 *)(r10 -8)")
+__msg("8: safe")
+__msg("processed 11 insns")
+__flag(BPF_F_TEST_STATE_FREQ)
+__naked void old_imprecise_scalar32_vs_cur_stack_misc(void)
+{
+	asm volatile(
+	/* get a random value for branching */
+	"call %[bpf_ktime_get_ns];"
+	"if r0 == 0 goto 1f;"
+	/* conjure 32-bit scalar spill at fp-8 */
+	"r0 = 42;"
+	"*(u32*)(r10 - 8) = r0;"
+	"goto 2f;"
+"1:"
+	/* conjure STACK_MISC at fp-8 */
+	"call %[bpf_ktime_get_ns];"
+	"*(u16*)(r10 - 8) = r0;"
+	"*(u16*)(r10 - 6) = r0;"
+"2:"
+	/* read fp-8, should be considered safe on second visit */
+	"r1 = *(u64*)(r10 - 8);"
+	"exit;"
+	:
+	: __imm(bpf_ktime_get_ns)
+	: __clobber_all);
+}
+
+SEC("raw_tp")
+__success
+__naked void var_off_write_over_scalar_spill(void)
+{
+	asm volatile (
+	/* Get an unknown value bounded to {0, 4} */
+	"call %[bpf_ktime_get_ns];"
+	"r6 = r0;"
+	"r6 &= 4;"
+
+	/* Spill a scalar to fp-16 */
+	"r7 = 0xdeadbeef00000000 ll;"
+	"*(u64 *)(r10 - 16) = r7;"
+
+	/*
+	 * Variable-offset 4-byte write covering [fp-12, fp-4).
+	 * This touches stype[3..0] of the spill slot at fp-16 but
+	 * leaves stype[7..4] as STACK_SPILL. check_stack_write_var_off()
+	 * must scrub the entire slot when setting spilled_ptr to NOT_INIT,
+	 * otherwise a subsequent sub-register fill sees a non-scalar
+	 * spilled_ptr and is rejected.
+	 */
+	"r8 = r10;"
+	"r8 += r6;"
+	"r8 += -12;"
+	"r9 = 0;"
+	"*(u32 *)(r8 + 0) = r9;"
+
+	/*
+	 * 4-byte read from fp-16. Without the fix this fails with
+	 * "invalid size of register fill" because is_spilled_reg()
+	 * sees STACK_SPILL while spilled_ptr.type == NOT_INIT.
+	 */
+	"r0 = *(u32 *)(r10 - 16);"
+	"r0 = 0;"
+	"exit;"
+	:
+	: __imm(bpf_ktime_get_ns)
+	: __clobber_all);
+}
+
 char _license[] SEC("license") = "GPL";

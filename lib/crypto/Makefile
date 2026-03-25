@@ -371,12 +371,21 @@ endif # CONFIG_CRYPTO_LIB_SHA3_ARCH
 
 ################################################################################
 
+obj-$(CONFIG_CRYPTO_LIB_SM3) += libsm3.o
+libsm3-y := sm3.o
+ifeq ($(CONFIG_CRYPTO_LIB_SM3_ARCH),y)
+CFLAGS_sm3.o += -I$(src)/$(SRCARCH)
+libsm3-$(CONFIG_ARM64) += arm64/sm3-ce-core.o \
+			  arm64/sm3-neon-core.o
+libsm3-$(CONFIG_RISCV) += riscv/sm3-riscv64-zvksh-zvkb.o
+libsm3-$(CONFIG_X86) += x86/sm3-avx-asm_64.o
+endif # CONFIG_CRYPTO_LIB_SM3_ARCH
+
+################################################################################
+
 obj-$(CONFIG_MPILIB) += mpi/
 
 obj-$(CONFIG_CRYPTO_SELFTESTS_FULL)		+= simd.o
-
-obj-$(CONFIG_CRYPTO_LIB_SM3)			+= libsm3.o
-libsm3-y					:= sm3.o
 
 # clean-files must be defined unconditionally
 clean-files += arm/sha256-core.S arm/sha512-core.S

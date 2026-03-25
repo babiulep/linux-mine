@@ -2826,8 +2826,7 @@ S:	Maintained
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/frank.li/linux.git
 F:	Documentation/devicetree/bindings/firmware/fsl*
 F:	Documentation/devicetree/bindings/firmware/nxp*
-F:	arch/arm/boot/dts/nxp/imx/
-F:	arch/arm/boot/dts/nxp/mxs/
+F:	arch/arm/boot/dts/nxp/
 F:	arch/arm64/boot/dts/freescale/
 X:	Documentation/devicetree/bindings/media/i2c/
 X:	arch/arm64/boot/dts/freescale/fsl-*
@@ -4834,13 +4833,10 @@ M:	Alexei Starovoitov <ast@kernel.org>
 M:	Daniel Borkmann <daniel@iogearbox.net>
 M:	Andrii Nakryiko <andrii@kernel.org>
 R:	Martin KaFai Lau <martin.lau@linux.dev>
-R:	Eduard Zingerman <eddyz87@gmail.com>
+M:	Eduard Zingerman <eddyz87@gmail.com>
+M:	Kumar Kartikeya Dwivedi <memxor@gmail.com>
 R:	Song Liu <song@kernel.org>
 R:	Yonghong Song <yonghong.song@linux.dev>
-R:	John Fastabend <john.fastabend@gmail.com>
-R:	KP Singh <kpsingh@kernel.org>
-R:	Stanislav Fomichev <sdf@fomichev.me>
-R:	Hao Luo <haoluo@google.com>
 R:	Jiri Olsa <jolsa@kernel.org>
 L:	bpf@vger.kernel.org
 S:	Supported
@@ -16736,7 +16732,6 @@ F:	include/linux/memory.h
 F:	include/linux/mm.h
 F:	include/linux/mm_*.h
 F:	include/linux/mmzone.h
-F:	include/linux/mmzone_lock.h
 F:	include/linux/mmdebug.h
 F:	include/linux/mmu_notifier.h
 F:	include/linux/pagewalk.h
@@ -16745,7 +16740,6 @@ F:	include/linux/pgtable.h
 F:	include/linux/ptdump.h
 F:	include/linux/vmpressure.h
 F:	include/linux/vmstat.h
-F:	include/trace/events/zone_lock.h
 F:	fs/proc/meminfo.c
 F:	kernel/fork.c
 F:	mm/Kconfig

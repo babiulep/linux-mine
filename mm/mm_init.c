@@ -32,7 +32,6 @@
 #include <linux/vmstat.h>
 #include <linux/kexec_handover.h>
 #include <linux/hugetlb.h>
-#include <linux/mmzone_lock.h>
 #include "internal.h"
 #include "slab.h"
 #include "shuffle.h"
@@ -784,31 +783,6 @@ void __meminit init_deferred_page(unsigned long pfn, int nid)
 	__init_deferred_page(pfn, nid);
 }
 
-/*
- * Initialised pages do not have PageReserved set. This function is
- * called for each range allocated by the bootmem allocator and
- * marks the pages PageReserved. The remaining valid pages are later
- * sent to the buddy page allocator.
- */
-void __meminit reserve_bootmem_region(phys_addr_t start,
-				      phys_addr_t end, int nid)
-{
-	unsigned long pfn;
-
-	for_each_valid_pfn(pfn, PFN_DOWN(start), PFN_UP(end)) {
-		struct page *page = pfn_to_page(pfn);
-
-		__init_deferred_page(pfn, nid);
-
-		/*
-		 * no need for atomic set_bit because the struct
-		 * page is not visible yet so nobody should
-		 * access it yet.
-		 */
-		__SetPageReserved(page);
-	}
-}
-
 /* If zone is ZONE_MOVABLE but memory is mirrored, it is an overlapped init */
 static bool __meminit
 overlap_memmap_init(unsigned long zone, unsigned long *pfn)
@@ -1422,7 +1396,7 @@ static void __meminit zone_init_internals(struct zone *zone, enum zone_type idx,
 	zone_set_nid(zone, nid);
 	zone->name = zone_names[idx];
 	zone->zone_pgdat = NODE_DATA(nid);
-	zone_lock_init(zone);
+	spin_lock_init(&zone->lock);
 	zone_seqlock_init(zone);
 	zone_pcp_init(zone);
 }

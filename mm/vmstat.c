@@ -28,7 +28,6 @@
 #include <linux/mm_inline.h>
 #include <linux/page_owner.h>
 #include <linux/sched/isolation.h>
-#include <linux/mmzone_lock.h>
 
 #include "internal.h"
 
@@ -1537,10 +1536,10 @@ static void walk_zones_in_node(struct seq_file *m, pg_data_t *pgdat,
 			continue;
 
 		if (!nolock)
-			zone_lock_irqsave(zone, flags);
+			spin_lock_irqsave(&zone->lock, flags);
 		print(m, pgdat, zone);
 		if (!nolock)
-			zone_unlock_irqrestore(zone, flags);
+			spin_unlock_irqrestore(&zone->lock, flags);
 	}
 }
 #endif
@@ -1605,9 +1604,9 @@ static void pagetypeinfo_showfree_print(struct seq_file *m,
 				}
 			}
 			seq_printf(m, "%s%6lu ", overflow ? ">" : "", freecount);
-			zone_unlock_irq(zone);
+			spin_unlock_irq(&zone->lock);
 			cond_resched();
-			zone_lock_irq(zone);
+			spin_lock_irq(&zone->lock);
 		}
 		seq_putc(m, '\n');
 	}
