@@ -3409,9 +3409,16 @@ int smb2_open(struct ksmbd_work *work)
 							NULL, 0,
 							OWNER_SECINFO | GROUP_SECINFO |
 							DACL_SECINFO);
+					if (!scratch_len || scratch_len == SIZE_MAX) {
+						rc = -EFBIG;
+						posix_acl_release(fattr.cf_acls);
+						posix_acl_release(fattr.cf_dacls);
+						goto err_out;
+					}
 
 					pntsd = kvzalloc(scratch_len, KSMBD_DEFAULT_GFP);
 					if (!pntsd) {
+						rc = -ENOMEM;
 						posix_acl_release(fattr.cf_acls);
 						posix_acl_release(fattr.cf_dacls);
 						goto err_out;
@@ -5723,7 +5730,7 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 	unsigned int id = KSMBD_NO_FID, pid = KSMBD_NO_FID;
 	int addition_info = le32_to_cpu(req->AdditionalInformation);
 	int rc = 0, ppntsd_size = 0, max_len;
-	size_t scratch_len;
+	size_t scratch_len = 0;
 
 	if (addition_info & ~(OWNER_SECINFO | GROUP_SECINFO | DACL_SECINFO |
 			      PROTECTED_DACL_SECINFO |
@@ -5731,7 +5738,8 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 		ksmbd_debug(SMB, "Unsupported addition info: 0x%x)\n",
 		       addition_info);
 
-		pntsd = kmalloc_obj(struct smb_ntsd, KSMBD_DEFAULT_GFP);
+		pntsd = kzalloc(ALIGN(sizeof(struct smb_ntsd), 8),
+				KSMBD_DEFAULT_GFP);
 		if (!pntsd)
 			return -ENOMEM;
 
@@ -5780,42 +5788,47 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 			le32_to_cpu(req->OutputBufferLength));
 	if (max_len < 0) {
 		rc = -EINVAL;
-		goto out;
+		goto release_acl;
 	}
 
 	scratch_len = smb_acl_sec_desc_scratch_len(&fattr, ppntsd,
 			ppntsd_size, addition_info);
+	if (!scratch_len || scratch_len == SIZE_MAX) {
+		rc = -EFBIG;
+		goto release_acl;
+	}
+
 	pntsd = kvzalloc(scratch_len, KSMBD_DEFAULT_GFP);
 	if (!pntsd) {
 		rc = -ENOMEM;
-		goto out;
+		goto release_acl;
 	}
 
 	rc = build_sec_desc(idmap, pntsd, ppntsd, ppntsd_size,
 			addition_info, &secdesclen, &fattr);
 
-out:
+release_acl:
 	posix_acl_release(fattr.cf_acls);
 	posix_acl_release(fattr.cf_dacls);
 	kfree(ppntsd);
 	ksmbd_fd_put(work, fp);
-	if (rc) {
-		kvfree(pntsd);
-		return rc;
-	}
+
+	if (!rc && ALIGN(secdesclen, 8) > scratch_len)
+		rc = -EFBIG;
+	if (rc)
+		goto err_out;
 
 iov_pin:
 	rsp->OutputBufferLength = cpu_to_le32(secdesclen);
 	rc = buffer_check_err(le32_to_cpu(req->OutputBufferLength),
 			      rsp, work->response_buf);
-	if (rc) {
-		kvfree(pntsd);
-		return rc;
-	}
+	if (rc)
+		goto err_out;
 
 	rc = ksmbd_iov_pin_rsp_read(work, (void *)rsp,
 			offsetof(struct smb2_query_info_rsp, Buffer),
 			pntsd, secdesclen);
+err_out:
 	if (rc) {
 		rsp->OutputBufferLength = 0;
 		kvfree(pntsd);

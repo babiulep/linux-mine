@@ -1257,7 +1257,7 @@ out_nolock:
 
 static enum scan_result collapse_scan_pmd(struct mm_struct *mm,
 		struct vm_area_struct *vma, unsigned long start_addr,
-		bool *mmap_locked, struct collapse_control *cc)
+		bool *lock_dropped, struct collapse_control *cc)
 {
 	pmd_t *pmd;
 	pte_t *pte, *_pte;
@@ -1432,7 +1432,7 @@ out_unmap:
 		result = collapse_huge_page(mm, start_addr, referenced,
 					    unmapped, cc);
 		/* collapse_huge_page will return with the mmap_lock released */
-		*mmap_locked = false;
+		*lock_dropped = true;
 	}
 out:
 	trace_mm_khugepaged_scan_pmd(mm, folio, referenced,
@@ -2429,7 +2429,7 @@ static enum scan_result collapse_scan_file(struct mm_struct *mm,
  * the results.
  */
 static enum scan_result collapse_single_pmd(unsigned long addr,
-		struct vm_area_struct *vma, bool *mmap_locked,
+		struct vm_area_struct *vma, bool *lock_dropped,
 		struct collapse_control *cc)
 {
 	struct mm_struct *mm = vma->vm_mm;
@@ -2438,8 +2438,10 @@ static enum scan_result collapse_single_pmd(unsigned long addr,
 	struct file *file;
 	pgoff_t pgoff;
 
+	mmap_assert_locked(mm);
+
 	if (vma_is_anonymous(vma)) {
-		result = collapse_scan_pmd(mm, vma, addr, mmap_locked, cc);
+		result = collapse_scan_pmd(mm, vma, addr, lock_dropped, cc);
 		goto end;
 	}
 
@@ -2447,7 +2449,7 @@ static enum scan_result collapse_single_pmd(unsigned long addr,
 	pgoff = linear_page_index(vma, addr);
 
 	mmap_read_unlock(mm);
-	*mmap_locked = false;
+	*lock_dropped = true;
 retry:
 	result = collapse_scan_file(mm, addr, file, pgoff, cc);
 
@@ -2544,21 +2546,21 @@ static void collapse_scan_mm_slot(unsigned int progress_max,
 		VM_BUG_ON(khugepaged_scan.address & ~HPAGE_PMD_MASK);
 
 		while (khugepaged_scan.address < hend) {
-			bool mmap_locked = true;
+			bool lock_dropped = false;
 
 			cond_resched();
 			if (unlikely(collapse_test_exit_or_disable(mm)))
 				goto breakouterloop;
 
-			VM_BUG_ON(khugepaged_scan.address < hstart ||
+			VM_WARN_ON_ONCE(khugepaged_scan.address < hstart ||
 				  khugepaged_scan.address + HPAGE_PMD_SIZE >
 				  hend);
 
 			*result = collapse_single_pmd(khugepaged_scan.address,
-						      vma, &mmap_locked, cc);
+						      vma, &lock_dropped, cc);
 			/* move to next address */
 			khugepaged_scan.address += HPAGE_PMD_SIZE;
-			if (!mmap_locked)
+			if (lock_dropped)
 				/*
 				 * We released mmap_lock so break loop.  Note
 				 * that we drop mmap_lock before all hugepage
@@ -2833,7 +2835,6 @@ int madvise_collapse(struct vm_area_struct *vma, unsigned long start,
 	unsigned long hstart, hend, addr;
 	enum scan_result last_fail = SCAN_FAIL;
 	int thps = 0;
-	bool mmap_locked = true;
 
 	BUG_ON(vma->vm_start > start);
 	BUG_ON(vma->vm_end < end);
@@ -2856,10 +2857,10 @@ int madvise_collapse(struct vm_area_struct *vma, unsigned long start,
 	for (addr = hstart; addr < hend; addr += HPAGE_PMD_SIZE) {
 		enum scan_result result = SCAN_FAIL;
 
-		if (!mmap_locked) {
+		if (*lock_dropped) {
 			cond_resched();
 			mmap_read_lock(mm);
-			mmap_locked = true;
+			*lock_dropped = false;
 			result = hugepage_vma_revalidate(mm, addr, false, &vma,
 							 cc);
 			if (result  != SCAN_SUCCEED) {
@@ -2869,12 +2870,8 @@ int madvise_collapse(struct vm_area_struct *vma, unsigned long start,
 
 			hend = min(hend, vma->vm_end & HPAGE_PMD_MASK);
 		}
-		mmap_assert_locked(mm);
 
-		result = collapse_single_pmd(addr, vma, &mmap_locked, cc);
-
-		if (!mmap_locked)
-			*lock_dropped = true;
+		result = collapse_single_pmd(addr, vma, lock_dropped, cc);
 
 		switch (result) {
 		case SCAN_SUCCEED:
@@ -2883,7 +2880,6 @@ int madvise_collapse(struct vm_area_struct *vma, unsigned long start,
 			break;
 		/* Whitelisted set of results where continuing OK */
 		case SCAN_NO_PTE_TABLE:
-		case SCAN_PTE_MAPPED_HUGEPAGE:
 		case SCAN_PTE_NON_PRESENT:
 		case SCAN_PTE_UFFD_WP:
 		case SCAN_LACK_REFERENCED_PAGE:
@@ -2904,7 +2900,7 @@ int madvise_collapse(struct vm_area_struct *vma, unsigned long start,
 
 out_maybelock:
 	/* Caller expects us to hold mmap_lock on return */
-	if (!mmap_locked)
+	if (*lock_dropped)
 		mmap_read_lock(mm);
 out_nolock:
 	mmap_assert_locked(mm);

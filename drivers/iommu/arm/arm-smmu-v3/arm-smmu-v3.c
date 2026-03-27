@@ -1129,7 +1129,7 @@ static inline int arm_smmu_invs_iter_next_cmp(struct arm_smmu_invs *invs_l,
  * Both @invs and @to_merge must be sorted, to ensure the returned array will be
  * sorted as well.
  *
- * Caller is resposible for freeing the @invs and the returned new one.
+ * Caller is responsible for freeing the @invs and the returned new one.
  *
  * Entries marked as trash will be purged in the returned array.
  */
@@ -1259,7 +1259,7 @@ EXPORT_SYMBOL_IF_KUNIT(arm_smmu_invs_unref);
  * This function must be locked and serialized with arm_smmu_invs_merge() and
  * arm_smmu_invs_unref(), but do not lockdep on any lock for KUNIT test.
  *
- * Caller is resposible for freeing the @invs and the returned new one.
+ * Caller is responsible for freeing the @invs and the returned new one.
  */
 VISIBLE_IF_KUNIT
 struct arm_smmu_invs *arm_smmu_invs_purge(struct arm_smmu_invs *invs)
@@ -2689,7 +2689,7 @@ static void __arm_smmu_domain_inv_range(struct arm_smmu_invs *invs,
 		case INV_TYPE_S2_VMID_S1_CLEAR:
 			/* CMDQ_OP_TLBI_S12_VMALL already flushed S1 entries */
 			if (arm_smmu_inv_size_too_big(cur->smmu, size, granule))
-				continue;
+				break;
 			cmd.tlbi.vmid = cur->id;
 			arm_smmu_cmdq_batch_add(smmu, &cmds, &cmd);
 			break;
@@ -2705,7 +2705,7 @@ static void __arm_smmu_domain_inv_range(struct arm_smmu_invs *invs,
 			break;
 		default:
 			WARN_ON_ONCE(1);
-			continue;
+			break;
 		}
 
 		/* Skip any trash entry in-between */
@@ -2740,7 +2740,7 @@ void arm_smmu_domain_inv_range(struct arm_smmu_domain *smmu_domain,
 	 * But in a race, these two can be interdependent, making it a special
 	 * case requiring an additional smp_mb() for the write->read ordering.
 	 * Pairing with the dma_wmb() in arm_smmu_install_ste_for_dev(), this
-	 * makes sure that IOPTE update prior to this point is visable to SMMU
+	 * makes sure that IOPTE update prior to this point is visible to SMMU
 	 * hardware before we load the updated invalidation array.
 	 *
 	 *  [CPU0]                        | [CPU1]
@@ -4942,6 +4942,8 @@ static int arm_smmu_device_reset(struct arm_smmu_device *smmu)
 #define IIDR_IMPLEMENTER_ARM		0x43b
 #define IIDR_PRODUCTID_ARM_MMU_600	0x483
 #define IIDR_PRODUCTID_ARM_MMU_700	0x487
+#define IIDR_PRODUCTID_ARM_MMU_L1	0x48a
+#define IIDR_PRODUCTID_ARM_MMU_S3	0x498
 
 static void arm_smmu_device_iidr_probe(struct arm_smmu_device *smmu)
 {
@@ -4966,11 +4968,19 @@ static void arm_smmu_device_iidr_probe(struct arm_smmu_device *smmu)
 				smmu->features &= ~ARM_SMMU_FEAT_NESTING;
 			break;
 		case IIDR_PRODUCTID_ARM_MMU_700:
-			/* Arm erratum 2812531 */
+			/* Many errata... */
 			smmu->features &= ~ARM_SMMU_FEAT_BTM;
-			smmu->options |= ARM_SMMU_OPT_CMDQ_FORCE_SYNC;
-			/* Arm errata 2268618, 2812531 */
-			smmu->features &= ~ARM_SMMU_FEAT_NESTING;
+			if (variant < 1 || revision < 1) {
+				/* Arm erratum 2812531 */
+				smmu->options |= ARM_SMMU_OPT_CMDQ_FORCE_SYNC;
+				/* Arm errata 2268618, 2812531 */
+				smmu->features &= ~ARM_SMMU_FEAT_NESTING;
+			}
+			break;
+		case IIDR_PRODUCTID_ARM_MMU_L1:
+		case IIDR_PRODUCTID_ARM_MMU_S3:
+			/* Arm errata 3878312/3995052 */
+			smmu->features &= ~ARM_SMMU_FEAT_BTM;
 			break;
 		}
 		break;

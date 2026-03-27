@@ -5296,7 +5296,7 @@ void map_anon_folio_pte_nopf(struct folio *folio, pte_t *pte,
 		struct vm_area_struct *vma, unsigned long addr,
 		bool uffd_wp)
 {
-	unsigned int nr_pages = folio_nr_pages(folio);
+	const unsigned int nr_pages = folio_nr_pages(folio);
 	pte_t entry = folio_mk_pte(folio, vma->vm_page_prot);
 
 	entry = pte_sw_mkyoung(entry);
@@ -5316,10 +5316,10 @@ void map_anon_folio_pte_nopf(struct folio *folio, pte_t *pte,
 static void map_anon_folio_pte_pf(struct folio *folio, pte_t *pte,
 		struct vm_area_struct *vma, unsigned long addr, bool uffd_wp)
 {
-	unsigned int order = folio_order(folio);
+	const unsigned int order = folio_order(folio);
 
 	map_anon_folio_pte_nopf(folio, pte, vma, addr, uffd_wp);
-	add_mm_counter(vma->vm_mm, MM_ANONPAGES, 1 << order);
+	add_mm_counter(vma->vm_mm, MM_ANONPAGES, 1L << order);
 	count_mthp_stat(order, MTHP_STAT_ANON_FAULT_ALLOC);
 }
 
@@ -5334,7 +5334,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	unsigned long addr = vmf->address;
 	struct folio *folio;
 	vm_fault_t ret = 0;
-	int nr_pages = 1;
+	int nr_pages;
 	pte_t entry;
 
 	/* File mapping without ->vm_ops ? */
@@ -5374,8 +5374,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		set_pte_at(vma->vm_mm, addr, vmf->pte, entry);
 
 		/* No need to invalidate - it was non-present before */
-		update_mmu_cache_range(vmf, vma, addr, vmf->pte,
-				       /*nr_pages=*/ 1);
+		update_mmu_cache(vma, addr, vmf->pte);
 		goto unlock;
 	}
 

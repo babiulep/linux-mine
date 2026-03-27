@@ -165,15 +165,12 @@ void gfs2_trans_end(struct gfs2_sbd *sdp)
 	sb_end_intwrite(sdp->sd_vfs);
 }
 
-struct gfs2_sbd;
-
 static struct gfs2_bufdata *gfs2_alloc_bufdata(struct gfs2_glock *gl,
 					       struct buffer_head *bh)
 {
-	struct gfs2_sbd *sdp = gl->gl_name.ln_sbd;
 	struct gfs2_bufdata *bd;
 
-	bd = kmem_cache_zalloc(sdp->sd_bufdata, GFP_NOFS | __GFP_NOFAIL);
+	bd = kmem_cache_zalloc(gfs2_bufdata_cachep, GFP_NOFS | __GFP_NOFAIL);
 	bd->bd_bh = bh;
 	bd->bd_gl = gl;
 	INIT_LIST_HEAD(&bd->bd_list);
@@ -207,16 +204,13 @@ void gfs2_trans_add_data(struct gfs2_glock *gl, struct buffer_head *bh)
 		set_bit(TR_TOUCHED, &tr->tr_flags);
 		goto out;
 	}
-	spin_lock(&sdp->sd_log_lock);
 	bd = bh->b_private;
 	if (bd == NULL) {
-		spin_unlock(&sdp->sd_log_lock);
 		unlock_buffer(bh);
 		bd = gfs2_alloc_bufdata(gl, bh);
 		lock_buffer(bh);
-		spin_lock(&sdp->sd_log_lock);
 		if (bh->b_private) {
-			kmem_cache_free(sdp->sd_bufdata, bd);
+			kmem_cache_free(gfs2_bufdata_cachep, bd);
 			bd = bh->b_private;
 		} else {
 			bh->b_private = bd;
@@ -224,6 +218,7 @@ void gfs2_trans_add_data(struct gfs2_glock *gl, struct buffer_head *bh)
 	}
 	gfs2_assert(sdp, bd->bd_gl == gl);
 	set_bit(TR_TOUCHED, &tr->tr_flags);
+	spin_lock(&sdp->sd_log_lock);
 	if (list_empty(&bd->bd_list)) {
 		set_bit(GLF_LFLUSH, &bd->bd_gl->gl_flags);
 		set_bit(GLF_DIRTY, &bd->bd_gl->gl_flags);
@@ -271,16 +266,13 @@ void gfs2_trans_add_meta(struct gfs2_glock *gl, struct buffer_head *bh)
 		set_bit(TR_TOUCHED, &tr->tr_flags);
 		goto out;
 	}
-	spin_lock(&sdp->sd_log_lock);
 	bd = bh->b_private;
 	if (bd == NULL) {
-		spin_unlock(&sdp->sd_log_lock);
 		unlock_buffer(bh);
 		bd = gfs2_alloc_bufdata(gl, bh);
 		lock_buffer(bh);
-		spin_lock(&sdp->sd_log_lock);
 		if (bh->b_private) {
-			kmem_cache_free(sdp->sd_bufdata, bd);
+			kmem_cache_free(gfs2_bufdata_cachep, bd);
 			bd = bh->b_private;
 		} else {
 			bh->b_private = bd;
@@ -288,6 +280,7 @@ void gfs2_trans_add_meta(struct gfs2_glock *gl, struct buffer_head *bh)
 	}
 	gfs2_assert(sdp, bd->bd_gl == gl);
 	set_bit(TR_TOUCHED, &tr->tr_flags);
+	spin_lock(&sdp->sd_log_lock);
 	if (!list_empty(&bd->bd_list))
 		goto out_unlock;
 	set_bit(GLF_LFLUSH, &bd->bd_gl->gl_flags);
@@ -343,7 +336,7 @@ void gfs2_trans_remove_revoke(struct gfs2_sbd *sdp, u64 blkno, unsigned int len)
 			sdp->sd_log_num_revoke--;
 			if (bd->bd_gl)
 				gfs2_glock_remove_revoke(bd->bd_gl);
-			kmem_cache_free(sdp->sd_bufdata, bd);
+			kmem_cache_free(gfs2_bufdata_cachep, bd);
 			gfs2_log_release_revokes(sdp, 1);
 			if (--n == 0)
 				break;

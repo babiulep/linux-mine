@@ -885,7 +885,6 @@ static int rzv2h_icu_probe_common(struct platform_device *pdev, struct device_no
 
 pm_put:
 	pm_runtime_put_sync(dev);
-
 	return ret;
 }
 

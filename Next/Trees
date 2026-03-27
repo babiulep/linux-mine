@@ -12,6 +12,7 @@ vfs-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/viro/vfs.git#fixes
 erofs-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs.git#fixes
 nfsd-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/cel/linux#nfsd-fixes
 v9fs-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/ericvh/v9fs.git#fixes/next
+overlayfs-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/overlayfs/vfs.git#ovl-fixes
 fscrypt		https://git.kernel.org/pub/scm/fs/fscrypt/linux.git#for-next
 btrfs		https://git.kernel.org/pub/scm/linux/kernel/git/kdave/linux.git#for-next
 ceph		https://github.com/ceph/ceph-client.git#master
@@ -264,7 +265,6 @@ ath-next	https://git.kernel.org/pub/scm/linux/kernel/git/ath/ath.git#for-next
 iwlwifi-next	https://git.kernel.org/pub/scm/linux/kernel/git/iwlwifi/iwlwifi-next.git#next
 wpan-next	https://git.kernel.org/pub/scm/linux/kernel/git/wpan/wpan-next.git#master
 wpan-staging	https://git.kernel.org/pub/scm/linux/kernel/git/wpan/wpan-next.git#staging
-drbd		https://github.com/LINBIT/linux-drbd.git#drbd-next
 mtd		https://git.kernel.org/pub/scm/linux/kernel/git/mtd/linux.git#mtd/next
 nand		https://git.kernel.org/pub/scm/linux/kernel/git/mtd/linux.git#nand/next
 spi-nor		https://git.kernel.org/pub/scm/linux/kernel/git/mtd/linux.git#spi-nor/next

@@ -25,6 +25,7 @@ class KDocTestFile():
         self.config = config
         self.test_file = os.path.expanduser(yaml_file)
         self.yaml_content = yaml_content
+        self.test_names = set()
 
         self.tests = []
 
@@ -85,7 +86,7 @@ class KDocTestFile():
 
         return d
 
-    def output_symbols(self, fname, symbols, source):
+    def output_symbols(self, fname, symbols):
         """
         Store source, symbols and output strings at self.tests.
         """
@@ -96,29 +97,41 @@ class KDocTestFile():
         kdoc_item = []
         expected = []
 
-        if not symbols and not source:
+        #
+        # Source code didn't produce any symbol
+        #
+        if not symbols:
             return
 
-        if not source or len(symbols) != len(source):
-            print(f"Warning: lengths are different. Ignoring {fname}")
-
-            # Folding without line numbers is too hard.
-            # The right thing to do here to proceed would be to delete
-            # not-handled source blocks, as len(source) should be bigger
-            # than len(symbols)
-            return
-
-        base_name = "test_" + fname.replace(".", "_").replace("/", "_")
         expected_dict = {}
         start_line=1
 
-        for i in range(0, len(symbols)):
-            arg = symbols[i]
+        for arg in symbols:
+            source = arg.get("source", "")
 
-            if "KdocItem" in self.yaml_content:
+            if arg and "KdocItem" in self.yaml_content:
                 msg = self.get_kdoc_item(arg)
 
+                other_stuff = msg.get("other_stuff", {})
+                if "source" in other_stuff:
+                    del other_stuff["source"]
+
                 expected_dict["kdoc_item"] = msg
+
+            base_name = arg.name
+            if not base_name:
+                base_name = fname
+            base_name = base_name.lower().replace(".", "_").replace("/", "_")
+
+
+            # Don't add duplicated names
+            i = 0
+            name = base_name
+            while name in self.test_names:
+                i += 1
+                name = f"{base_name}_{i:03d}"
+
+            self.test_names.add(name)
 
             for out_style in self.out_style:
                 if isinstance(out_style, ManFormat):
@@ -126,15 +139,13 @@ class KDocTestFile():
                 else:
                     key = "rst"
 
-                expected_dict[key]= out_style.output_symbols(fname, [arg])
-
-            name = f"{base_name}_{i:03d}"
+                expected_dict[key]= out_style.output_symbols(fname, [arg]).strip()
 
             test = {
                 "name": name,
-                "description": f"{fname} line {source[i]["ln"]}",
+                "description": f"{fname} line {arg.declaration_start_line}",
                 "fname": fname,
-                "source": source[i]["data"],
+                "source": source,
                 "expected": [expected_dict]
             }
 
@@ -148,8 +159,20 @@ class KDocTestFile():
         """
         import yaml
 
+        # Helper function to better handle multilines
+        def str_presenter(dumper, data):
+            if "\n" in data:
+                return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+
+            return dumper.represent_scalar("tag:yaml.org,2002:str", data)
+
+        # Register the representer
+        yaml.add_representer(str, str_presenter)
+
         data = {"tests": self.tests}
 
         with open(self.test_file, "w", encoding="utf-8") as fp:
-            yaml.safe_dump(data, fp, sort_keys=False, default_style="|",
-                           default_flow_style=False, allow_unicode=True)
+            yaml.dump(data, fp,
+                      sort_keys=False, width=120, indent=2,
+                      default_flow_style=False, allow_unicode=True,
+                      explicit_start=False, explicit_end=False)

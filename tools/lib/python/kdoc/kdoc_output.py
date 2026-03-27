@@ -513,7 +513,9 @@ class RestFormat(OutputFormat):
     def out_var(self, fname, name, args):
         oldprefix = self.lineprefix
         ln = args.declaration_start_line
-        full_proto = args.other_stuff["full_proto"]
+        full_proto = args.other_stuff.get("full_proto")
+        if not full_proto:
+            raise KeyError(f"Can't find full proto for {name} variable")
 
         self.lineprefix = "  "
 
@@ -846,14 +848,14 @@ class ManFormat(OutputFormat):
         colspec_row = None
 
         pos = []
-        for m in KernRe(r'\-+').finditer(lines[i]):
+        for m in KernRe(r'\=+').finditer(lines[i]):
             pos.append((m.start(), m.end() - 1))
 
         i += 1
         while i < len(lines):
             line = lines[i]
 
-            if KernRe(r"^\s*[\-]+[ \t\-]+$").match(line):
+            if KernRe(r"^\s*[\=]+[ \t\=]+$").match(line):
                 i += 1
                 break
 
@@ -969,7 +971,7 @@ class ManFormat(OutputFormat):
                     self.data += text
                     continue
 
-                if KernRe(r"^\-+[ \t]\-[ \t\-]+$").match(line):
+                if KernRe(r"^\=+[ \t]\=[ \t\=]+$").match(line):
                     i, text = self.simple_table(lines, i)
                     self.data += text
                     continue

@@ -130,53 +130,41 @@ static void dprint_array(const char *dir, int nla_type,
  *									{{{2
  */
 
+/* processing of generic netlink messages is serialized.
+ * use one static buffer for parsing of nested attributes */
+static struct nlattr *nested_attr_tb[128];
+
 #undef GENL_struct
 #define GENL_struct(tag_name, tag_number, s_name, s_fields)		\
+/* *_from_attrs functions are static, but potentially unused */		\
 static int __ ## s_name ## _from_attrs(struct s_name *s,		\
-		struct nlattr ***ret_nested_attribute_table,		\
 		struct genl_info *info, bool exclude_invariants)	\
 {									\
 	const int maxtype = ARRAY_SIZE(s_name ## _nl_policy)-1;		\
 	struct nlattr *tla = info->attrs[tag_number];			\
-	struct nlattr **ntb;						\
+	struct nlattr **ntb = nested_attr_tb;				\
 	struct nlattr *nla;						\
-	int err = 0;							\
-	if (ret_nested_attribute_table)					\
-		*ret_nested_attribute_table = NULL;			\
+	int err;							\
+	BUILD_BUG_ON(ARRAY_SIZE(s_name ## _nl_policy) > ARRAY_SIZE(nested_attr_tb));	\
 	if (!tla)							\
 		return -ENOMSG;						\
-	ntb = kcalloc(ARRAY_SIZE(s_name ## _nl_policy), sizeof(*ntb), GFP_KERNEL); \
-	if (!ntb)							\
-		return -ENOMEM;						\
 	DPRINT_TLA(#s_name, "<=-", #tag_name);				\
 	err = drbd_nla_parse_nested(ntb, maxtype, tla, s_name ## _nl_policy);	\
 	if (err)							\
-		goto out;						\
+		return err;						\
 									\
 	s_fields							\
- out:									\
-	if (!err && ret_nested_attribute_table)				\
-		*ret_nested_attribute_table = ntb;			\
-	else								\
-		kfree(ntb);						\
-	return err;							\
+	return 0;							\
 }					__attribute__((unused))		\
 static int s_name ## _from_attrs(struct s_name *s,			\
 						struct genl_info *info)	\
 {									\
-	return __ ## s_name ## _from_attrs(s, NULL, info, false);	\
-}					__attribute__((unused))		\
-static int s_name ## _ntb_from_attrs(					\
-			struct nlattr ***ret_nested_attribute_table,	\
-						struct genl_info *info)	\
-{									\
-	return __ ## s_name ## _from_attrs(NULL,			\
-			ret_nested_attribute_table, info, false);	\
+	return __ ## s_name ## _from_attrs(s, info, false);		\
 }					__attribute__((unused))		\
 static int s_name ## _from_attrs_for_change(struct s_name *s,		\
 						struct genl_info *info)	\
 {									\
-	return __ ## s_name ## _from_attrs(s, NULL, info, true);	\
+	return __ ## s_name ## _from_attrs(s, info, true);		\
 }					__attribute__((unused))		\
 
 #define __assign(attr_nr, attr_flag, name, nla_type, type, assignment...)	\
@@ -184,8 +172,7 @@ static int s_name ## _from_attrs_for_change(struct s_name *s,		\
 		if (nla) {						\
 			if (exclude_invariants && !!((attr_flag) & DRBD_F_INVARIANT)) {		\
 				pr_info("<< must not change invariant attr: %s\n", #name);	\
-				err = -EEXIST;				\
-				goto out;				\
+				return -EEXIST;				\
 			}						\
 			assignment;					\
 		} else if (exclude_invariants && !!((attr_flag) & DRBD_F_INVARIANT)) {		\
@@ -193,8 +180,7 @@ static int s_name ## _from_attrs_for_change(struct s_name *s,		\
 			/* which was expected */			\
 		} else if ((attr_flag) & DRBD_F_REQUIRED) {		\
 			pr_info("<< missing attr: %s\n", #name);	\
-			err = -ENOMSG;					\
-			goto out;					\
+			return -ENOMSG;					\
 		}
 
 #undef __field
@@ -285,12 +271,12 @@ enum CONCATENATE(GENL_MAGIC_FAMILY, group_ids) {
 #undef GENL_mc_group
 #define GENL_mc_group(group)						\
 static int CONCATENATE(GENL_MAGIC_FAMILY, _genl_multicast_ ## group)(	\
-	struct sk_buff *skb)						\
+	struct sk_buff *skb, gfp_t flags)				\
 {									\
 	unsigned int group_id =						\
 		CONCATENATE(GENL_MAGIC_FAMILY, _group_ ## group);		\
-	return genlmsg_multicast_allns(&ZZZ_genl_family, skb, 0,	\
-				 group_id);				\
+	return genlmsg_multicast(&ZZZ_genl_family, skb, 0,		\
+				 group_id, flags);			\
 }
 
 #include GENL_MAGIC_INCLUDE_FILE
@@ -316,8 +302,6 @@ static struct genl_family ZZZ_genl_family __ro_after_init = {
 	.resv_start_op = 42, /* drbd is currently the only user */
 	.n_mcgrps = ARRAY_SIZE(ZZZ_genl_mcgrps),
 	.module = THIS_MODULE,
-	.netnsok = false,
-	.parallel_ops = true,
 };
 
 int CONCATENATE(GENL_MAGIC_FAMILY, _genl_register)(void)

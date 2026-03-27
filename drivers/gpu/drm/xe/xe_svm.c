@@ -322,6 +322,7 @@ static void xe_vma_set_default_attributes(struct xe_vma *vma)
 		.preferred_loc.migration_policy = DRM_XE_MIGRATE_ALL_PAGES,
 		.pat_index = vma->attr.default_pat_index,
 		.atomic_access = DRM_XE_ATOMIC_UNDEFINED,
+		.purgeable_state = XE_MADV_PURGEABLE_WILLNEED,
 	};
 
 	xe_vma_mem_attr_copy(&vma->attr, &default_attr);
@@ -485,10 +486,33 @@ static void xe_svm_copy_kb_stats_incr(struct xe_gt *gt,
 				      const enum xe_svm_copy_dir dir,
 				      int kb)
 {
-	if (dir == XE_SVM_COPY_TO_VRAM)
+	if (dir == XE_SVM_COPY_TO_VRAM) {
+		switch (kb) {
+		case 4:
+			xe_gt_stats_incr(gt, XE_GT_STATS_ID_SVM_4K_DEVICE_COPY_KB, kb);
+			break;
+		case 64:
+			xe_gt_stats_incr(gt, XE_GT_STATS_ID_SVM_64K_DEVICE_COPY_KB, kb);
+			break;
+		case 2048:
+			xe_gt_stats_incr(gt, XE_GT_STATS_ID_SVM_2M_DEVICE_COPY_KB, kb);
+			break;
+		}
 		xe_gt_stats_incr(gt, XE_GT_STATS_ID_SVM_DEVICE_COPY_KB, kb);
-	else
+	} else {
+		switch (kb) {
+		case 4:
+			xe_gt_stats_incr(gt, XE_GT_STATS_ID_SVM_4K_CPU_COPY_KB, kb);
+			break;
+		case 64:
+			xe_gt_stats_incr(gt, XE_GT_STATS_ID_SVM_64K_CPU_COPY_KB, kb);
+			break;
+		case 2048:
+			xe_gt_stats_incr(gt, XE_GT_STATS_ID_SVM_2M_CPU_COPY_KB, kb);
+			break;
+		}
 		xe_gt_stats_incr(gt, XE_GT_STATS_ID_SVM_CPU_COPY_KB, kb);
+	}
 }
 
 static void xe_svm_copy_us_stats_incr(struct xe_gt *gt,

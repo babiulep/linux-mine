@@ -934,25 +934,25 @@ size_t smb_acl_sec_desc_scratch_len(struct smb_fattr *fattr,
 
 		if (dacl_offset < ppntsd_size &&
 		    check_add_overflow(len, ppntsd_size - dacl_offset, &len))
-			return -EFBIG;
+			return 0;
 	}
 
 	if (fattr->cf_acls) {
 		if (check_mul_overflow((size_t)fattr->cf_acls->a_count,
 					2 * sizeof(struct smb_ace), &tmp) ||
 		    check_add_overflow(len, tmp, &len))
-			return -EFBIG;
+			return 0;
 	} else {
 		/* default/minimum DACL */
 		if (check_add_overflow(len, 5 * sizeof(struct smb_ace), &len))
-			return -EFBIG;
+			return 0;
 	}
 
 	if (fattr->cf_dacls) {
 		if (check_mul_overflow((size_t)fattr->cf_dacls->a_count,
 					sizeof(struct smb_ace), &tmp) ||
 		    check_add_overflow(len, tmp, &len))
-			return -EFBIG;
+			return 0;
 	}
 
 	return len;

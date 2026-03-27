@@ -787,7 +787,7 @@ void __meminit init_deferred_page(unsigned long pfn, int nid)
 static bool __meminit
 overlap_memmap_init(unsigned long zone, unsigned long *pfn)
 {
-	static struct memblock_region *r;
+	static struct memblock_region *r __meminitdata;
 
 	if (mirrored_kernelcore && zone == ZONE_MOVABLE) {
 		if (!r || *pfn >= memblock_region_memory_end_pfn(r)) {
