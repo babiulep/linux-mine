@@ -137,6 +137,7 @@ rust-fixes	https://github.com/Rust-for-Linux/linux.git#rust-fixes
 w1-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux-w1.git#fixes
 pmdomain-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/ulfh/linux-pm.git#fixes
 i2c-host-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/andi.shyti/linux.git#i2c/i2c-host-fixes
+i2c-rust-fixes	https://github.com/ikrtn/rust-for-linux#rust-i2c-fixes
 sparc-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/alarsson/linux-sparc.git#for-linus
 clk-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/clk/linux.git#clk-fixes
 thead-clk-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/fustini/linux.git#thead-clk-fixes
@@ -239,6 +240,7 @@ pstore		https://git.kernel.org/pub/scm/linux/kernel/git/kees/linux.git#for-next/
 hid		https://git.kernel.org/pub/scm/linux/kernel/git/hid/hid.git#for-next
 i2c		https://git.kernel.org/pub/scm/linux/kernel/git/wsa/linux.git#i2c/for-next
 i2c-host	https://git.kernel.org/pub/scm/linux/kernel/git/andi.shyti/linux.git#i2c/i2c-host
+i2c-rust	https://github.com/ikrtn/rust-for-linux#rust-i2c-next
 i3c		https://git.kernel.org/pub/scm/linux/kernel/git/i3c/linux.git#i3c/next
 dmi		https://git.kernel.org/pub/scm/linux/kernel/git/jdelvare/staging.git#dmi-for-next
 hwmon-staging	https://git.kernel.org/pub/scm/linux/kernel/git/groeck/linux-staging.git#hwmon-next

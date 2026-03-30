@@ -7,7 +7,7 @@ config XOR_BLOCKS
 config XOR_BLOCKS_ARCH
 	depends on XOR_BLOCKS
 	default y if ALPHA
-	default y if ARM && KERNEL_MODE_NEON
+	default y if ARM
 	default y if ARM64
 	default y if CPU_HAS_LSX		# loongarch
 	default y if ALTIVEC			# powerpc

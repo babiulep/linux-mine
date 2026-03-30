@@ -48,13 +48,13 @@ static void xor_ref(void *dest, void **srcs, unsigned int src_cnt,
 /* Generate a random length that is a multiple of 512. */
 static unsigned int random_length(unsigned int max_length)
 {
-	return (rand32() % (max_length + 1)) & ~511;
+	return round_up((rand32() % max_length) + 1, 512);
 }
 
 /* Generate a random alignment that is a multiple of 64. */
 static unsigned int random_alignment(unsigned int max_alignment)
 {
-	return (rand32() % (max_alignment + 1)) & ~63;
+	return ((rand32() % max_alignment) + 1) & ~63;
 }
 
 static void xor_generate_random_data(void)

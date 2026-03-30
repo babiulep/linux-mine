@@ -24,7 +24,7 @@ DEFINE_STATIC_CALL_NULL(xor_gen_impl, *xor_block_8regs.xor_gen);
  * @bytes:	length in bytes of each vector
  *
  * Performs bit-wise XOR operation into @dest for each of the @src_cnt vectors
- * in @srcs for a length of @bytes bytes.  @src_count must be non-zero, and the
+ * in @srcs for a length of @bytes bytes.  @src_cnt must be non-zero, and the
  * memory pointed to by @dest and each member of @srcs must be at least 64-byte
  * aligned.  @bytes must be non-zero and a multiple of 512.
  *
@@ -33,7 +33,8 @@ DEFINE_STATIC_CALL_NULL(xor_gen_impl, *xor_block_8regs.xor_gen);
  */
 void xor_gen(void *dest, void **srcs, unsigned int src_cnt, unsigned int bytes)
 {
-	lockdep_assert_preemption_enabled();
+	WARN_ON_ONCE(!in_task() || irqs_disabled() || softirq_count());
+	WARN_ON_ONCE(bytes == 0);
 	WARN_ON_ONCE(bytes & 511);
 
 	static_call(xor_gen_impl)(dest, srcs, src_cnt, bytes);

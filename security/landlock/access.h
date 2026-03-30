@@ -50,7 +50,7 @@ struct access_masks {
 	access_mask_t fs : LANDLOCK_NUM_ACCESS_FS;
 	access_mask_t net : LANDLOCK_NUM_ACCESS_NET;
 	access_mask_t scope : LANDLOCK_NUM_SCOPE;
-};
+} __packed __aligned(sizeof(u32));
 
 union access_masks_all {
 	struct access_masks masks;

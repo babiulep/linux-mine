@@ -94,8 +94,7 @@ struct pagetable_move_control {
 	static bool __section(".data..once") __warned;			\
 	int __ret_warn_once = !!(cond);					\
 									\
-	if (unlikely(__ret_warn_once) &&				\
-	    unlikely(!(gfp & __GFP_NOWARN)) && unlikely(!__warned)) {	\
+	if (unlikely(!(gfp & __GFP_NOWARN) && __ret_warn_once && !__warned)) { \
 		__warned = true;					\
 		WARN_ON(1);						\
 	}								\

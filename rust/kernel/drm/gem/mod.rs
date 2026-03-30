@@ -26,6 +26,9 @@ use core::{
     ptr::NonNull, //
 };
 
+#[cfg(CONFIG_RUST_DRM_GEM_SHMEM_HELPER)]
+pub mod shmem;
+
 /// A macro for implementing [`AlwaysRefCounted`] for any GEM object type.
 ///
 /// Since all GEM objects use the same refcounting scheme.
@@ -60,6 +63,8 @@ macro_rules! impl_aref_for_gem_obj {
         }
     };
 }
+#[cfg_attr(not(CONFIG_RUST_DRM_GEM_SHMEM_HELPER), allow(unused))]
+pub(crate) use impl_aref_for_gem_obj;
 
 /// A type alias for retrieving a [`Driver`]s [`DriverFile`] implementation from its
 /// [`DriverObject`] implementation.
@@ -214,6 +219,18 @@ pub trait BaseObject: IntoGEMObject {
 }
 
 impl<T: IntoGEMObject> BaseObject for T {}
+
+/// Crate-private base operations shared by all GEM object classes.
+#[cfg_attr(not(CONFIG_RUST_DRM_GEM_SHMEM_HELPER), expect(unused))]
+pub(crate) trait BaseObjectPrivate: IntoGEMObject {
+    /// Return a pointer to this object's dma_resv.
+    fn raw_dma_resv(&self) -> *mut bindings::dma_resv {
+        // SAFETY: `self.as_raw()` always returns a valid pointer to the base DRM GEM object.
+        unsafe { (*self.as_raw()).resv }
+    }
+}
+
+impl<T: IntoGEMObject> BaseObjectPrivate for T {}
 
 /// A base GEM object.
 ///

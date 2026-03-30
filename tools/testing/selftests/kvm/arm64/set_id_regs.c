@@ -778,8 +778,8 @@ static void test_assert_id_reg_unchanged(struct kvm_vcpu *vcpu, uint32_t encodin
 	uint64_t observed;
 
 	observed = vcpu_get_reg(vcpu, KVM_ARM64_SYS_REG(encoding));
-	TEST_ASSERT_EQ(reset_mutable_bits(test_reg_vals[idx], encoding),
-		       reset_mutable_bits(observed, encoding));
+	TEST_ASSERT_EQ(reset_mutable_bits(encoding, test_reg_vals[idx]),
+		       reset_mutable_bits(encoding, observed));
 }
 
 static void test_reset_preserves_id_regs(struct kvm_vcpu *vcpu)

@@ -124,7 +124,7 @@ bool pagemap_is_huge_zero(int fd, char *start)
 {
 	uint64_t categories;
 
-	if (!pagemap_scan_supported(fd))
+	if (!pagemap_scan_supported(fd, start))
 		return false;
 
 	categories = pagemap_scan_get_categories(fd, start);
@@ -781,6 +781,7 @@ void write_file(const char *path, const char *buf, size_t buflen)
 {
 	int fd, saved_errno;
 	ssize_t numwritten;
+
 	if (buflen < 1)
 		ksft_exit_fail_msg("Incorrect buffer len: %zu\n", buflen);
 
