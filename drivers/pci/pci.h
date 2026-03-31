@@ -108,6 +108,8 @@ struct pcie_tlp_log;
 				 PCI_EXP_DEVCTL_FERE | PCI_EXP_DEVCTL_URRE)
 
 extern const unsigned char pcie_link_speed[];
+unsigned char pcie_get_link_speed(unsigned int speed);
+
 extern bool pci_early_dump;
 
 extern struct mutex pci_rescan_remove_lock;
@@ -1053,6 +1055,9 @@ static inline resource_size_t pci_resource_alignment(struct pci_dev *dev,
 		return pci_cardbus_resource_alignment(res);
 	return resource_alignment(res);
 }
+
+resource_size_t pci_min_window_alignment(struct pci_bus *bus,
+					 unsigned long type);
 
 void pci_acs_init(struct pci_dev *dev);
 void pci_enable_acs(struct pci_dev *dev);

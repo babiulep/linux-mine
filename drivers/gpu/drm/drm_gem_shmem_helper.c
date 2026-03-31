@@ -554,20 +554,24 @@ int drm_gem_shmem_dumb_create(struct drm_file *file, struct drm_device *dev,
 }
 EXPORT_SYMBOL_GPL(drm_gem_shmem_dumb_create);
 
-static vm_fault_t drm_gem_shmem_try_insert_pfn_pmd(struct vm_fault *vmf, unsigned long pfn)
+static vm_fault_t try_insert_pfn(struct vm_fault *vmf, unsigned int order,
+				 unsigned long pfn)
 {
+	if (!order) {
+		return vmf_insert_pfn(vmf->vma, vmf->address, pfn);
 #ifdef CONFIG_ARCH_SUPPORTS_PMD_PFNMAP
-	unsigned long paddr = pfn << PAGE_SHIFT;
-	bool aligned = (vmf->address & ~PMD_MASK) == (paddr & ~PMD_MASK);
+	} else if (order == PMD_ORDER) {
+		unsigned long paddr = pfn << PAGE_SHIFT;
+		bool aligned = (vmf->address & ~PMD_MASK) == (paddr & ~PMD_MASK);
 
-	if (aligned && pmd_none(*vmf->pmd)) {
-		/* Read-only mapping; split upon write fault */
-		pfn &= PMD_MASK >> PAGE_SHIFT;
-		return vmf_insert_pfn_pmd(vmf, pfn, false);
-	}
+		if (aligned &&
+		    folio_test_pmd_mappable(page_folio(pfn_to_page(pfn)))) {
+			pfn &= PMD_MASK >> PAGE_SHIFT;
+			return vmf_insert_pfn_pmd(vmf, pfn, false);
+		}
 #endif
-
-	return 0;
+	}
+	return VM_FAULT_FALLBACK;
 }
 
 static vm_fault_t drm_gem_shmem_any_fault(struct vm_fault *vmf, unsigned int order)
@@ -600,11 +604,7 @@ static vm_fault_t drm_gem_shmem_any_fault(struct vm_fault *vmf, unsigned int ord
 
 	pfn = page_to_pfn(page);
 
-	if (folio_test_pmd_mappable(folio))
-		ret = drm_gem_shmem_try_insert_pfn_pmd(vmf, pfn);
-	if (ret != VM_FAULT_NOPAGE)
-		ret = vmf_insert_pfn(vma, vmf->address, pfn);
-
+	ret = try_insert_pfn(vmf, order, pfn);
 	if (ret == VM_FAULT_NOPAGE)
 		folio_mark_accessed(folio);
 

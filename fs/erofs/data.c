@@ -41,7 +41,7 @@ void *erofs_bread(struct erofs_buf *buf, erofs_off_t offset, bool need_kmap)
 	if (buf->file) {
 		fpos = index << PAGE_SHIFT;
 		err = rw_verify_area(READ, buf->file, &fpos, PAGE_SIZE);
-		if (err)
+		if (err < 0)
 			return ERR_PTR(err);
 	}
 

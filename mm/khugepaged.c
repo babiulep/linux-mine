@@ -1081,7 +1081,6 @@ static enum scan_result alloc_charge_folio(struct folio **foliop, struct mm_stru
 	}
 
 	count_vm_event(THP_COLLAPSE_ALLOC);
-
 	if (unlikely(mem_cgroup_charge(folio, mm, gfp))) {
 		folio_put(folio);
 		*foliop = NULL;
@@ -1089,12 +1088,6 @@ static enum scan_result alloc_charge_folio(struct folio **foliop, struct mm_stru
 	}
 
 	count_memcg_folio_events(folio, THP_COLLAPSE_ALLOC, 1);
-
-	if (folio_memcg_list_lru_alloc(folio, &deferred_split_lru, gfp)) {
-		folio_put(folio);
-		*foliop = NULL;
-		return SCAN_CGROUP_CHARGE_FAIL;
-	}
 
 	*foliop = folio;
 	return SCAN_SUCCEED;
@@ -1166,7 +1159,10 @@ static enum scan_result collapse_huge_page(struct mm_struct *mm, unsigned long a
 	if (result != SCAN_SUCCEED)
 		goto out_up_write;
 	/* check if the pmd is still valid */
-	vma_start_write(vma);
+	if (vma_start_write_killable(vma)) {
+		result = SCAN_FAIL;
+		goto out_up_write;
+	}
 	result = check_pmd_still_valid(mm, address, pmd);
 	if (result != SCAN_SUCCEED)
 		goto out_up_write;

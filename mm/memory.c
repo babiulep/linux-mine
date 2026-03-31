@@ -366,6 +366,8 @@ void free_pgd_range(struct mmu_gather *tlb,
  * page tables that should be removed.  This can differ from the vma mappings on
  * some archs that may have mappings that need to be removed outside the vmas.
  * Note that the prev->vm_end and next->vm_start are often used.
+ * We don't use vma_start_write_killable() because page tables should be freed
+ * even if the task is being killed.
  *
  * The vma_end differs from the pg_end when a dup_mmap() failed and the tree has
  * unrelated data to the mm_struct being torn down.
@@ -4736,19 +4738,13 @@ static struct folio *alloc_swap_folio(struct vm_fault *vmf)
 	while (orders) {
 		addr = ALIGN_DOWN(vmf->address, PAGE_SIZE << order);
 		folio = vma_alloc_folio(gfp, order, vma, addr);
-		if (!folio)
-			goto next;
-		if (mem_cgroup_swapin_charge_folio(folio, vma->vm_mm, gfp, entry)) {
+		if (folio) {
+			if (!mem_cgroup_swapin_charge_folio(folio, vma->vm_mm,
+							    gfp, entry))
+				return folio;
 			count_mthp_stat(order, MTHP_STAT_SWPIN_FALLBACK_CHARGE);
 			folio_put(folio);
-			goto next;
 		}
-		if (folio_memcg_list_lru_alloc(folio, &deferred_split_lru, gfp)) {
-			folio_put(folio);
-			goto fallback;
-		}
-		return folio;
-next:
 		count_mthp_stat(order, MTHP_STAT_SWPIN_FALLBACK);
 		order = next_order(&orders, order);
 	}
@@ -5260,28 +5256,24 @@ static struct folio *alloc_anon_folio(struct vm_fault *vmf)
 	while (orders) {
 		addr = ALIGN_DOWN(vmf->address, PAGE_SIZE << order);
 		folio = vma_alloc_folio(gfp, order, vma, addr);
-		if (!folio)
-			goto next;
-		if (mem_cgroup_charge(folio, vma->vm_mm, gfp)) {
-			count_mthp_stat(order, MTHP_STAT_ANON_FAULT_FALLBACK_CHARGE);
-			folio_put(folio);
-			goto next;
+		if (folio) {
+			if (mem_cgroup_charge(folio, vma->vm_mm, gfp)) {
+				count_mthp_stat(order, MTHP_STAT_ANON_FAULT_FALLBACK_CHARGE);
+				folio_put(folio);
+				goto next;
+			}
+			folio_throttle_swaprate(folio, gfp);
+			/*
+			 * When a folio is not zeroed during allocation
+			 * (__GFP_ZERO not used) or user folios require special
+			 * handling, folio_zero_user() is used to make sure
+			 * that the page corresponding to the faulting address
+			 * will be hot in the cache after zeroing.
+			 */
+			if (user_alloc_needs_zeroing())
+				folio_zero_user(folio, vmf->address);
+			return folio;
 		}
-		if (folio_memcg_list_lru_alloc(folio, &deferred_split_lru, gfp)) {
-			folio_put(folio);
-			goto fallback;
-		}
-		folio_throttle_swaprate(folio, gfp);
-		/*
-		 * When a folio is not zeroed during allocation
-		 * (__GFP_ZERO not used) or user folios require special
-		 * handling, folio_zero_user() is used to make sure
-		 * that the page corresponding to the faulting address
-		 * will be hot in the cache after zeroing.
-		 */
-		if (user_alloc_needs_zeroing())
-			folio_zero_user(folio, vmf->address);
-		return folio;
 next:
 		count_mthp_stat(order, MTHP_STAT_ANON_FAULT_FALLBACK);
 		order = next_order(&orders, order);
@@ -5501,7 +5493,7 @@ static vm_fault_t __do_fault(struct vm_fault *vmf)
 	}
 
 	/*
-	 * If this is an userfaultfd trap, process it in advance before
+	 * If this is a userfault trap, process it in advance before
 	 * triggering the genuine fault handler.
 	 */
 	ret = __do_userfault(vmf);

@@ -1050,7 +1050,7 @@ static int rzg3s_pcie_set_max_link_speed(struct rzg3s_pcie_host *host)
 	if (host->max_link_speed > 0 && host->max_link_speed < hw_max_speed)
 		hw_max_speed = host->max_link_speed;
 
-	switch (pcie_link_speed[hw_max_speed]) {
+	switch (pcie_get_link_speed(hw_max_speed)) {
 	case PCIE_SPEED_8_0GT:
 		max_supported_link_speeds = GENMASK(PCI_EXP_LNKSTA_CLS_8_0GB - 1, 0);
 		link_speed = PCI_EXP_LNKCTL2_TLS_8_0GT;

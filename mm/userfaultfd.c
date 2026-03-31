@@ -502,7 +502,7 @@ static int __mfill_atomic_pte(struct mfill_state *state,
 	} else if (uffd_flags_mode_is(flags, MFILL_ATOMIC_ZEROPAGE)) {
 		clear_user_highpage(&folio->page, state->dst_addr);
 	} else {
-		VM_WARN_ONCE(1, "unknown UFFDIO operation");
+		VM_WARN_ONCE(1, "Unknown UFFDIO operation, flags: %x", flags);
 	}
 
 	/*
@@ -612,8 +612,10 @@ static int mfill_atomic_pte_continue(struct mfill_state *state)
 	struct page *page;
 	int ret;
 
-	if (!ops)
+	if (!ops) {
+		VM_WARN_ONCE(1, "UFFDIO_CONTINUE for unsupported VMA");
 		return -EOPNOTSUPP;
+	}
 
 	folio = ops->get_folio_noalloc(inode, pgoff);
 	/* Our caller expects us to return -EFAULT if we failed to find folio */
@@ -864,6 +866,7 @@ static __always_inline ssize_t mfill_atomic_pte(struct mfill_state *state)
 	if (uffd_flags_mode_is(flags, MFILL_ATOMIC_ZEROPAGE))
 		return mfill_atomic_pte_zeropage(state);
 
+	VM_WARN_ONCE(1, "Unknown UFFDIO operation, flags: %x", flags);
 	return -EOPNOTSUPP;
 }
 
@@ -2044,8 +2047,9 @@ bool vma_can_userfault(struct vm_area_struct *vma, vm_flags_t vm_flags,
 		return false;
 
 	/*
-	 * File backed memory with PTE level mappigns must implement
-	 * ops->get_folio_noalloc()
+	 * File backed VMAs (except HugeTLB) must implement
+	 * ops->get_folio_noalloc() because it's required by __do_userfault()
+	 * in page fault handling.
 	 */
 	if (!vma_is_anonymous(vma) && !is_vm_hugetlb_page(vma) &&
 	    !ops->get_folio_noalloc)

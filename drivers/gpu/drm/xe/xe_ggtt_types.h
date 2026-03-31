@@ -11,7 +11,6 @@
 
 struct xe_ggtt;
 struct xe_ggtt_node;
-struct xe_gt;
 
 typedef void (*xe_ggtt_set_pte_fn)(struct xe_ggtt *ggtt, u64 addr, u64 pte);
 typedef void (*xe_ggtt_transform_cb)(struct xe_ggtt *ggtt,

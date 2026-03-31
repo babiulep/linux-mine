@@ -96,14 +96,14 @@ struct vm_uffd_ops {
 	struct folio *(*get_folio_noalloc)(struct inode *inode, pgoff_t pgoff);
 	/*
 	 * Called during resolution of UFFDIO_COPY request.
-	 * Should allocate and return a folio or NULL if allocation
-	 * fails.
+	 * Should allocate and return a folio or NULL if allocation fails.
 	 */
 	struct folio *(*alloc_folio)(struct vm_area_struct *vma,
 				     unsigned long addr);
 	/*
 	 * Called during resolution of UFFDIO_COPY request.
-	 * Should lock the folio and add it to VMA's page cache.
+	 * Should only be called with a folio returned by alloc_folio() above.
+	 * The folio will be set to locked.
 	 * Returns 0 on success, error code on failure.
 	 */
 	int (*filemap_add)(struct folio *folio, struct vm_area_struct *vma,

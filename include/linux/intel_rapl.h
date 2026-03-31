@@ -135,36 +135,6 @@ struct rapl_defaults {
 	unsigned int dram_domain_energy_unit;
 	unsigned int psys_domain_energy_unit;
 	bool spr_psys_bits;
-	bool msr_pl4_support;
-	bool msr_pmu_support;
-};
-
-#define PRIMITIVE_INFO_INIT(p, m, s, i, u, f) {	\
-		.name = #p,			\
-		.mask = m,			\
-		.shift = s,			\
-		.id = i,			\
-		.unit = u,			\
-		.flag = f			\
-	}
-
-enum unit_type {
-	ARBITRARY_UNIT,		/* no translation */
-	POWER_UNIT,
-	ENERGY_UNIT,
-	TIME_UNIT,
-};
-
-/* per domain data. used to describe individual knobs such that access function
- * can be consolidated into one instead of many inline functions.
- */
-struct rapl_primitive_info {
-	const char *name;
-	u64 mask;
-	int shift;
-	enum rapl_domain_reg_id id;
-	enum unit_type unit;
-	u32 flag;
 };
 
 /**
@@ -182,7 +152,7 @@ struct rapl_primitive_info {
  * @write_raw:			Callback for writing RAPL interface specific
  *				registers.
  * @defaults:			pointer to default settings
- * @rpi:			pointer to interface primitive info
+ * @rpi:			internal pointer to interface primitive info
  */
 struct rapl_if_priv {
 	enum rapl_if_type type;
@@ -194,7 +164,7 @@ struct rapl_if_priv {
 	int (*read_raw)(int id, struct reg_action *ra, bool pmu_ctx);
 	int (*write_raw)(int id, struct reg_action *ra);
 	const struct rapl_defaults *defaults;
-	struct rapl_primitive_info *rpi;
+	void *rpi;
 };
 
 #ifdef CONFIG_PERF_EVENTS

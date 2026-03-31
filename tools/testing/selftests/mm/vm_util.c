@@ -782,21 +782,21 @@ void write_file(const char *path, const char *buf, size_t buflen)
 	int fd, saved_errno;
 	ssize_t numwritten;
 
-	if (buflen < 1)
+	if (buflen < 2)
 		ksft_exit_fail_msg("Incorrect buffer len: %zu\n", buflen);
 
 	fd = open(path, O_WRONLY);
 	if (fd == -1)
-		ksft_exit_fail_msg("%s open failed: %s\n", path, strerror(errno));
+		ksft_exit_fail_perror("%s open failed", path);
 
 	numwritten = write(fd, buf, buflen - 1);
 	saved_errno = errno;
 	close(fd);
 	errno = saved_errno;
-	if (numwritten < 1)
-		ksft_exit_fail_msg("%s write(%s) failed: %s\n", path, buf,
-				strerror(errno));
+	if (numwritten < 0)
+		ksft_exit_fail_perror("%s write(%.*s) failed", path, (int)(buflen - 1),
+				buf);
 	if (numwritten != buflen - 1)
-		ksft_exit_fail_msg("%s write(%s) is truncated, expected %zu bytes, got %zd bytes\n",
-				path, buf, buflen - 1, numwritten);
+		ksft_exit_fail_msg("%s write(%.*s) is truncated, expected %zu bytes, got %zd bytes\n",
+				path, (int)(buflen - 1), buf, buflen - 1, numwritten);
 }
