@@ -147,19 +147,19 @@ struct smb3_fs_context;
 struct dentry *cifs_smb3_do_mount(struct file_system_type *fs_type, int flags,
 				  struct smb3_fs_context *old_ctx);
 
-char *cifs_silly_filename(struct dentry *dentry);
-char *cifs_tmpfile_name(struct dentry *dentry);
+char *cifs_silly_fullpath(struct dentry *dentry);
 
-#define CIFS_TMPFILE_PREFIX		"%c.smb%04X__"
-#define CIFS_TMPFILE_PREFIX_LEN	sizeof(".smb1234__")
+#define CIFS_TMPNAME_PREFIX        ".__smbfile_tmp"
+#define CIFS_TMPNAME_PREFIX_LEN    ((int)sizeof(CIFS_TMPNAME_PREFIX) - 1)
+#define CIFS_TMPNAME_COUNTER_LEN   ((int)sizeof(cifs_tmpcounter) * 2)
+#define CIFS_TMPNAME_LEN \
+	(CIFS_TMPNAME_PREFIX_LEN + CIFS_TMPNAME_COUNTER_LEN)
 
-#define CIFS_SILLY_FILENAME_SUFFIX	"silly"
-#define CIFS_SILLY_FILENAME_SIZE \
-	(CIFS_TMPFILE_PREFIX_LEN + sizeof(CIFS_SILLY_FILENAME_SUFFIX))
-
-#define CIFS_TMP_FILENAME_SUFFIX	"tmp"
-#define CIFS_TMP_FILENAME_SIZE \
-	(CIFS_TMPFILE_PREFIX_LEN + sizeof(CIFS_TMP_FILENAME_SUFFIX))
+#define CIFS_SILLYNAME_PREFIX	    ".__smbfile_silly"
+#define CIFS_SILLYNAME_PREFIX_LEN  ((int)sizeof(CIFS_SILLYNAME_PREFIX) - 1)
+#define CIFS_SILLYNAME_COUNTER_LEN ((int)sizeof(cifs_sillycounter) * 2)
+#define CIFS_SILLYNAME_LEN \
+	(CIFS_SILLYNAME_PREFIX_LEN + CIFS_SILLYNAME_COUNTER_LEN)
 
 #ifdef CONFIG_CIFS_NFSD_EXPORT
 extern const struct export_operations cifs_export_ops;

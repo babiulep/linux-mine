@@ -1224,8 +1224,7 @@ static void dw_mci_set_data_timeout(struct dw_mci *host,
 		timeout_ns, tmout >> 8);
 }
 
-static void __dw_mci_start_request(struct dw_mci *host,
-				   struct mmc_command *cmd)
+static void dw_mci_start_request(struct dw_mci *host, struct mmc_command *cmd)
 {
 	struct mmc_request *mrq;
 	struct mmc_data	*data;
@@ -1284,23 +1283,30 @@ static void __dw_mci_start_request(struct dw_mci *host,
 	host->stop_cmdr = dw_mci_prep_stop_abort(host, cmd);
 }
 
-static void dw_mci_start_request(struct dw_mci *host)
+static void dw_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 {
-	struct mmc_request *mrq = host->mrq;
+	struct dw_mci *host = mmc_priv(mmc);
 	struct mmc_command *cmd;
 
-	cmd = mrq->sbc ? mrq->sbc : mrq->cmd;
-	__dw_mci_start_request(host, cmd);
-}
+	WARN_ON(host->mrq);
 
-/* must be called with host->lock held */
-static void dw_mci_queue_request(struct dw_mci *host, struct mmc_request *mrq)
-{
-	dev_vdbg(&host->mmc->class_dev, "queue request: state=%d\n",
+	/*
+	 * The check for card presence and queueing of the request must be
+	 * atomic, otherwise the card could be removed in between and the
+	 * request wouldn't fail until another card was inserted.
+	 */
+	if (!dw_mci_get_cd(mmc)) {
+		mrq->cmd->error = -ENOMEDIUM;
+		mmc_request_done(mmc, mrq);
+		return;
+	}
+
+	spin_lock_bh(&host->lock);
+
+	dev_vdbg(&host->mmc->class_dev, "request: state=%d\n",
 		 host->state);
 
 	host->mrq = mrq;
-
 	if (host->state == STATE_WAITING_CMD11_DONE) {
 		dev_warn(&host->mmc->class_dev,
 			 "Voltage change didn't complete\n");
@@ -1314,31 +1320,9 @@ static void dw_mci_queue_request(struct dw_mci *host, struct mmc_request *mrq)
 
 	if (host->state == STATE_IDLE) {
 		host->state = STATE_SENDING_CMD;
-		dw_mci_start_request(host);
+		cmd = mrq->sbc ? mrq->sbc : mrq->cmd;
+		dw_mci_start_request(host, cmd);
 	}
-}
-
-static void dw_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
-{
-	struct dw_mci *host = mmc_priv(mmc);
-
-	WARN_ON(host->mrq);
-
-	/*
-	 * The check for card presence and queueing of the request must be
-	 * atomic, otherwise the card could be removed in between and the
-	 * request wouldn't fail until another card was inserted.
-	 */
-
-	if (!dw_mci_get_cd(mmc)) {
-		mrq->cmd->error = -ENOMEDIUM;
-		mmc_request_done(mmc, mrq);
-		return;
-	}
-
-	spin_lock_bh(&host->lock);
-
-	dw_mci_queue_request(host, mrq);
 
 	spin_unlock_bh(&host->lock);
 }
@@ -1957,7 +1941,7 @@ static void dw_mci_work_func(struct work_struct *t)
 			set_bit(EVENT_CMD_COMPLETE, &host->completed_events);
 			err = dw_mci_command_complete(host, cmd);
 			if (cmd == mrq->sbc && !err) {
-				__dw_mci_start_request(host, mrq->cmd);
+				dw_mci_start_request(host, mrq->cmd);
 				goto unlock;
 			}
 

@@ -175,17 +175,17 @@ check_name(struct dentry *direntry, struct cifs_tcon *tcon)
 
 /* Inode operations in similar order to how they appear in Linux file fs.h */
 
-static int __cifs_do_create(struct file *file, struct inode *inode,
-			    struct dentry *direntry, const char *full_path,
-			    unsigned int xid, struct tcon_link *tlink,
-			    unsigned int oflags, umode_t mode, __u32 *oplock,
-			    struct cifs_fid *fid, struct cifs_open_info_data *buf)
+static int cifs_do_create(struct inode *inode, struct dentry *direntry, unsigned int xid,
+			  struct tcon_link *tlink, unsigned int oflags, umode_t mode, __u32 *oplock,
+			  struct cifs_fid *fid, struct cifs_open_info_data *buf)
 {
 	int rc = -ENOENT;
 	int create_options = CREATE_NOT_DIR;
 	int desired_access;
 	struct cifs_sb_info *cifs_sb = CIFS_SB(inode);
 	struct cifs_tcon *tcon = tlink_tcon(tlink);
+	const char *full_path;
+	void *page = alloc_dentry_path();
 	struct inode *newinode = NULL;
 	unsigned int sbflags = cifs_sb_flags(cifs_sb);
 	int disposition;
@@ -199,6 +199,11 @@ static int __cifs_do_create(struct file *file, struct inode *inode,
 	if (tcon->ses->server->oplocks)
 		*oplock = REQ_OPLOCK;
 
+	full_path = build_path_from_dentry(direntry, page);
+	if (IS_ERR(full_path)) {
+		rc = PTR_ERR(full_path);
+		goto out;
+	}
 
 	/* If we're caching, we need to be able to fill in around partial writes. */
 	if (cifs_fscache_enabled(inode) && (oflags & O_ACCMODE) == O_WRONLY)
@@ -220,7 +225,8 @@ static int __cifs_do_create(struct file *file, struct inode *inode,
 			if (S_ISDIR(newinode->i_mode)) {
 				CIFSSMBClose(xid, tcon, fid->netfid);
 				iput(newinode);
-				return -EISDIR;
+				rc = -EISDIR;
+				goto out;
 			}
 
 			if (!S_ISREG(newinode->i_mode)) {
@@ -263,7 +269,7 @@ static int __cifs_do_create(struct file *file, struct inode *inode,
 			break;
 
 		default:
-			return rc;
+			goto out;
 		}
 		/*
 		 * fallthrough to retry, using older open call, this is case
@@ -303,8 +309,10 @@ static int __cifs_do_create(struct file *file, struct inode *inode,
 	 * ACLs
 	 */
 
-	if (!server->ops->open)
-		return -EOPNOTSUPP;
+	if (!server->ops->open) {
+		rc = -ENOSYS;
+		goto out;
+	}
 
 	create_options |= cifs_open_create_options(oflags, create_options);
 	/*
@@ -356,7 +364,7 @@ retry_open:
 			rdwr_for_fscache = 2;
 			goto retry_open;
 		}
-		return rc;
+		goto out;
 	}
 	if (rdwr_for_fscache == 2)
 		cifs_invalidate_cache(inode, FSCACHE_INVAL_DIO_WRITE);
@@ -442,11 +450,14 @@ cifs_create_set_dentry:
 	d_drop(direntry);
 	inode_set_mtime_to_ts(inode, inode_set_ctime_current(inode));
 	if (oflags & O_TMPFILE) {
-		set_nlink(newinode, 1);
-		d_tmpfile(file, newinode);
+		set_nlink(newinode, 0);
+		mark_inode_dirty(newinode);
+		d_instantiate(direntry, newinode);
 	} else {
 		d_add(direntry, newinode);
 	}
+out:
+	free_dentry_path(page);
 	return rc;
 
 out_err:
@@ -454,49 +465,7 @@ out_err:
 		server->ops->close(xid, tcon, fid);
 	if (newinode)
 		iput(newinode);
-	return rc;
-}
-
-static int create_tmpfile(struct inode *inode, struct file *file,
-			  unsigned int xid, struct tcon_link *tlink,
-			  umode_t mode, __u32 *oplock, struct cifs_fid *fid)
-{
-	struct dentry *dentry = file->f_path.dentry;
-	char *path __free(kfree) = NULL;
-	int rc;
-
-	path = cifs_tmpfile_name(dentry);
-	if (IS_ERR(path)) {
-		rc =  PTR_ERR(path);
-		path = NULL;
-		return rc;
-	}
-
-	return __cifs_do_create(file, inode, dentry, path, xid, tlink,
-				file->f_flags, mode, oplock, fid, NULL);
-}
-
-static int create_file(struct inode *inode, struct dentry *direntry,
-		       unsigned int xid, struct tcon_link *tlink,
-		       unsigned int oflags, umode_t mode,
-		       __u32 *oplock, struct cifs_fid *fid,
-		       struct cifs_open_info_data *buf)
-{
-	void *page = alloc_dentry_path();
-	const char *path;
-	int rc;
-
-	path = build_path_from_dentry(direntry, page);
-	if (IS_ERR(path)) {
-		rc =  PTR_ERR(path);
-		goto out_free_path;
-	}
-
-	rc = __cifs_do_create(NULL, inode, direntry, path, xid,
-			      tlink, oflags, mode, oplock, fid, buf);
-out_free_path:
-	free_dentry_path(page);
-	return rc;
+	goto out;
 }
 
 int
@@ -565,8 +534,8 @@ cifs_atomic_open(struct inode *inode, struct dentry *direntry,
 
 	cifs_add_pending_open(&fid, tlink, &open);
 
-	rc = create_file(inode, direntry, xid, tlink,
-			 oflags, mode, &oplock, &fid, &buf);
+	rc = cifs_do_create(inode, direntry, xid, tlink, oflags, mode,
+			    &oplock, &fid, &buf);
 	if (rc) {
 		cifs_del_pending_open(&open);
 		goto out;
@@ -650,8 +619,7 @@ int cifs_create(struct mnt_idmap *idmap, struct inode *inode,
 	if (server->ops->new_lease_key)
 		server->ops->new_lease_key(&fid);
 
-	rc = create_file(inode, direntry, xid, tlink,
-			 oflags, mode, &oplock, &fid, &buf);
+	rc = cifs_do_create(inode, direntry, xid, tlink, oflags, mode, &oplock, &fid, &buf);
 	if (!rc && server->ops->close)
 		server->ops->close(xid, tcon, &fid);
 
@@ -1006,13 +974,63 @@ static int set_hidden_attr(const unsigned int xid,
 			   struct TCP_Server_Info *server,
 			   struct file *file)
 {
-	struct cifsInodeInfo *cinode = CIFS_I(file_inode(file));
+	struct dentry *dentry = file->f_path.dentry;
+	struct cifsInodeInfo *cinode = CIFS_I(d_inode(dentry));
 	FILE_BASIC_INFO fi = {
 		.Attributes = cpu_to_le32(cinode->cifsAttrs |
 					  ATTR_HIDDEN),
 	};
+	void *page = alloc_dentry_path();
+	const char *full_path;
+	int rc;
 
-	return server->ops->set_file_info(file_inode(file), NULL, &fi, xid);
+	full_path = build_path_from_dentry(dentry, page);
+	if (IS_ERR(full_path))
+		rc = PTR_ERR(full_path);
+	else
+		rc =  server->ops->set_file_info(d_inode(dentry),
+						 full_path, &fi, xid);
+	free_dentry_path(page);
+	return rc;
+}
+
+static void cifs_d_mark_tmpfile(struct file *file,
+				const unsigned char *name,
+				size_t namelen)
+{
+	struct dentry *dentry = file->f_path.dentry;
+
+	BUG_ON(dentry->d_name.name != dentry->d_shortname.string ||
+	       !hlist_unhashed(&dentry->d_u.d_alias) ||
+	       !d_unlinked(dentry) ||
+	       namelen > DNAME_INLINE_LEN - 1);
+	spin_lock(&dentry->d_parent->d_lock);
+	spin_lock_nested(&dentry->d_lock, DENTRY_D_LOCK_NESTED);
+	dentry->__d_name.len = sprintf(dentry->d_shortname.string, "%.*s",
+				       (int)namelen, name);
+	spin_unlock(&dentry->d_lock);
+	spin_unlock(&dentry->d_parent->d_lock);
+}
+
+static int set_tmpfile_name(struct file *file)
+{
+	struct dentry *dentry = file->f_path.dentry;
+	unsigned char name[CIFS_TMPNAME_LEN + 1];
+	struct dentry *sdentry = NULL;
+
+	do {
+		dput(sdentry);
+		scnprintf(name, sizeof(name),
+			  CIFS_TMPNAME_PREFIX "%0*x",
+			  CIFS_TMPNAME_COUNTER_LEN,
+			  atomic_inc_return(&cifs_tmpcounter));
+		sdentry = lookup_noperm_unlocked(&QSTR(name), dentry->d_parent);
+		if (IS_ERR(sdentry))
+			return -EBUSY;
+	} while (!d_is_negative(sdentry));
+	dput(sdentry);
+	cifs_d_mark_tmpfile(file, name, sizeof(name) - 1);
+	return 0;
 }
 
 int cifs_tmpfile(struct mnt_idmap *idmap, struct inode *dir,
@@ -1048,11 +1066,16 @@ int cifs_tmpfile(struct mnt_idmap *idmap, struct inode *dir,
 		goto out;
 	}
 
+	rc = set_tmpfile_name(file);
+	if (rc)
+		goto out;
+
 	if (server->ops->new_lease_key)
 		server->ops->new_lease_key(&fid);
 	cifs_add_pending_open(&fid, tlink, &open);
 
-	rc = create_tmpfile(dir, file, xid, tlink, mode, &oplock, &fid);
+	rc = cifs_do_create(dir, dentry, xid, tlink, file->f_flags,
+			    mode, &oplock, &fid, NULL);
 	if (rc) {
 		cifs_del_pending_open(&open);
 		goto out;
@@ -1078,7 +1101,7 @@ int cifs_tmpfile(struct mnt_idmap *idmap, struct inode *dir,
 
 	rc = set_hidden_attr(xid, server, file);
 	if (rc)
-		goto err_close;
+		goto out;
 
 	fscache_use_cookie(cifs_inode_cookie(file_inode(file)),
 			   file->f_mode & FMODE_WRITE);
@@ -1088,15 +1111,16 @@ out:
 	return rc;
 err_open:
 	cifs_del_pending_open(&open);
-err_close:
 	if (server->ops->close)
 		server->ops->close(xid, tcon, &fid);
 	goto out;
 }
 
-static char *tmp_fullpath(struct dentry *dentry,
-			  const unsigned char *name, size_t namesize)
+static char *__cifs_silly_fullpath(struct dentry *dentry,
+				   const unsigned char *name,
+				   size_t namelen)
 {
+	struct cifs_sb_info *cifs_sb = CIFS_SB(dentry);
 	char *page = alloc_dentry_path();
 	const char *path;
 	char *npath;
@@ -1108,60 +1132,37 @@ static char *tmp_fullpath(struct dentry *dentry,
 		goto out;
 	}
 
-	len = strlen(path) + namesize;
+	len = strlen(path) + namelen + 2;
 	npath = kmalloc(len, GFP_KERNEL);
-	if (npath)
-		scnprintf(npath, len, "%s%s", path, name);
-	else
+	if (npath) {
+		scnprintf(npath, len, "%s%c%s", path,
+			  CIFS_DIR_SEP(cifs_sb), name);
+	} else {
 		npath = ERR_PTR(-ENOMEM);
+	}
 out:
 	free_dentry_path(page);
 	return npath;
 }
 
-char *cifs_silly_filename(struct dentry *dentry)
+char *cifs_silly_fullpath(struct dentry *dentry)
 {
-	struct cifs_sb_info *cifs_sb = CIFS_SB(dentry);
-	unsigned char name[CIFS_SILLY_FILENAME_SIZE];
+	unsigned char name[CIFS_SILLYNAME_LEN + 1];
 	size_t namesize = sizeof(name);
 	struct dentry *sdentry = NULL;
 
 	do {
 		dput(sdentry);
 		scnprintf(name, namesize,
-			  CIFS_TMPFILE_PREFIX "%s",
-			  CIFS_DIR_SEP(cifs_sb),
-			  atomic_inc_return(&cifs_sillycounter) & 0xffff,
-			  CIFS_SILLY_FILENAME_SUFFIX);
-		sdentry = lookup_noperm(&QSTR(name + 1), dentry->d_parent);
+			  CIFS_SILLYNAME_PREFIX "%0*x",
+			  CIFS_SILLYNAME_COUNTER_LEN,
+			  atomic_inc_return(&cifs_sillycounter));
+		sdentry = lookup_noperm(&QSTR(name), dentry->d_parent);
 		if (IS_ERR(sdentry))
 			return ERR_PTR(-EBUSY);
 	} while (!d_is_negative(sdentry));
 	dput(sdentry);
-	return tmp_fullpath(dentry, name, namesize);
-}
-
-char *cifs_tmpfile_name(struct dentry *dentry)
-{
-	struct cifs_sb_info *cifs_sb = CIFS_SB(dentry);
-	unsigned char name[CIFS_TMP_FILENAME_SIZE];
-	size_t namesize = sizeof(name);
-	struct dentry *sdentry = NULL;
-
-	do {
-		dput(sdentry);
-		scnprintf(name, namesize,
-			  CIFS_TMPFILE_PREFIX "%s",
-			  CIFS_DIR_SEP(cifs_sb),
-			  atomic_inc_return(&cifs_tmpcounter) & 0xffff,
-			  CIFS_TMP_FILENAME_SUFFIX);
-		sdentry = lookup_noperm_unlocked(&QSTR(name + 1),
-						 dentry->d_parent);
-		if (IS_ERR(sdentry))
-			return ERR_PTR(-EBUSY);
-	} while (!d_is_negative(sdentry));
-	dput(sdentry);
-	return tmp_fullpath(dentry, name, namesize);
+	return __cifs_silly_fullpath(dentry, name, namesize - 1);
 }
 
 const struct dentry_operations cifs_ci_dentry_ops = {

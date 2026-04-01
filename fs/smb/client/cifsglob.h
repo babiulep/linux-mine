@@ -1535,7 +1535,7 @@ int cifs_file_set_size(const unsigned int xid, struct dentry *dentry,
 #define CIFS_CACHE_RHW_FLG	(CIFS_CACHE_RW_FLG | CIFS_CACHE_HANDLE_FLG)
 
 enum cifs_inode_flags {
-	CIFS_INODE_PENDING_OPLOCK_BREAK = 0,	/* oplock break in progress */
+	CIFS_INODE_PENDING_OPLOCK_BREAK,	/* oplock break in progress */
 	CIFS_INODE_PENDING_WRITERS,		/* Writes in progress */
 	CIFS_INODE_FLAG_UNUSED,			/* Unused flag */
 	CIFS_INO_DELETE_PENDING,		/* delete pending on server */

@@ -715,8 +715,6 @@ struct cifsFileInfo *cifs_new_fileinfo(struct cifs_fid *fid, struct file *file,
 
 	cifs_down_write(&cinode->lock_sem);
 	list_add(&fdlocks->llist, &cinode->llist);
-	if (file->f_flags & O_TMPFILE)
-		set_bit(CIFS_INO_TMPFILE, &cinode->flags);
 	up_write(&cinode->lock_sem);
 
 	spin_lock(&tcon->open_file_lock);
@@ -729,6 +727,8 @@ struct cifsFileInfo *cifs_new_fileinfo(struct cifs_fid *fid, struct file *file,
 
 	/* if readable file instance put first in list*/
 	spin_lock(&cinode->open_file_lock);
+	if (file->f_flags & O_TMPFILE)
+		set_bit(CIFS_INO_TMPFILE, &cinode->flags);
 	fid->purge_cache = false;
 	server->ops->set_fid(cfile, fid, oplock);
 
@@ -2580,13 +2580,12 @@ int __cifs_get_writable_file(struct cifsInodeInfo *cifs_inode,
 			     struct cifsFileInfo **ret_file)
 {
 	struct cifsFileInfo *open_file, *inv_file = NULL;
+	bool fsuid_only, with_delete;
 	struct cifs_sb_info *cifs_sb;
 	bool any_available = false;
-	int rc = -EBADF;
 	unsigned int refind = 0;
-	bool fsuid_only = find_flags & FIND_FSUID_ONLY;
-	bool with_delete = find_flags & FIND_WITH_DELETE;
 	*ret_file = NULL;
+	int rc = -EBADF;
 
 	/*
 	 * Having a null inode here (because mapping->host was set to zero by
@@ -2602,20 +2601,15 @@ int __cifs_get_writable_file(struct cifsInodeInfo *cifs_inode,
 
 	cifs_sb = CIFS_SB(cifs_inode);
 
+	spin_lock(&cifs_inode->open_file_lock);
+	if (test_bit(CIFS_INO_TMPFILE, &cifs_inode->flags))
+		find_flags = FIND_ANY;
+
+	with_delete = find_flags & FIND_WITH_DELETE;
+	fsuid_only = find_flags & FIND_FSUID_ONLY;
 	/* only filter by fsuid on multiuser mounts */
 	if (!(cifs_sb_flags(cifs_sb) & CIFS_MOUNT_MULTIUSER))
 		fsuid_only = false;
-
-	spin_lock(&cifs_inode->open_file_lock);
-	if (test_bit(CIFS_INO_TMPFILE, &cifs_inode->flags)) {
-		*ret_file = list_first_entry_or_null(&cifs_inode->openFileList,
-						     struct cifsFileInfo,
-						     flist);
-		if (*ret_file)
-			cifsFileInfo_get(*ret_file);
-		spin_unlock(&cifs_inode->open_file_lock);
-		return *ret_file ? 0 : -EBADF;
-	}
 refind_writable:
 	if (refind > MAX_REOPEN_ATT) {
 		spin_unlock(&cifs_inode->open_file_lock);
@@ -2698,19 +2692,11 @@ int cifs_get_writable_path(struct cifs_tcon *tcon, const char *name,
 			   struct inode *inode, int flags,
 			   struct cifsFileInfo **ret_file)
 {
-
 	struct cifsFileInfo *cfile;
-	void *page;
+	void *page = alloc_dentry_path();
 
 	*ret_file = NULL;
 
-	if (!name) {
-		if (WARN_ON_ONCE(!inode))
-			return -EBADF;
-		return cifs_get_writable_file(CIFS_I(inode), flags, ret_file);
-	}
-
-	page = alloc_dentry_path();
 	spin_lock(&tcon->open_file_lock);
 	list_for_each_entry(cfile, &tcon->openFileList, tlist) {
 		struct cifsInodeInfo *cinode;

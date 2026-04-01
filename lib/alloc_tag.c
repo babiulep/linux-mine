@@ -800,13 +800,13 @@ static void __init __alloc_tag_add_early_pfn(unsigned long pfn)
 	early_pfns[old_idx] = pfn;
 }
 
-typedef void (*alloc_tag_add_func)(unsigned long pfn);
-static alloc_tag_add_func __rcu alloc_tag_add_early_pfn_ptr __refdata =
-		__alloc_tag_add_early_pfn;
+typedef void alloc_tag_add_func(unsigned long pfn);
+static alloc_tag_add_func __rcu *alloc_tag_add_early_pfn_ptr __refdata =
+	RCU_INITIALIZER(__alloc_tag_add_early_pfn);
 
 void alloc_tag_add_early_pfn(unsigned long pfn)
 {
-	alloc_tag_add_func alloc_tag_add;
+	alloc_tag_add_func *alloc_tag_add;
 
 	if (static_key_enabled(&mem_profiling_compressed))
 		return;

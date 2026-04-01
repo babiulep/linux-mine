@@ -165,7 +165,7 @@ static int check_wsl_eas(struct kvec *rsp_iov)
 }
 
 /*
- * If @cfile is NULL, then need to account for additional open and close requests in
+ * If @cfile is NULL, then need to account for extra open and close requests in
  * the compound chain.
  */
 static void set_next_compound(struct cifs_tcon *tcon,
@@ -247,10 +247,6 @@ replay_again:
 	/* We already have a handle so we can skip the open */
 	if (cfile)
 		goto after_open;
-	if (WARN_ON_ONCE(!full_path)) {
-		rc = -EINVAL;
-		goto finished;
-	}
 
 	/* Open */
 	utf16_path = cifs_convert_path_to_utf16(full_path, cifs_sb);
@@ -1251,10 +1247,11 @@ int smb2_create_hardlink(const unsigned int xid,
 	__u32 co = file_create_options(source_dentry);
 	struct cifsFileInfo *cfile;
 
-	if (inode && !from_name) {
+	if (inode) {
 		struct cifsInodeInfo *cinode = CIFS_I(inode);
 		FILE_BASIC_INFO fi;
 		__u32 attrs;
+		int rc;
 
 		scoped_guard(spinlock, &cinode->open_file_lock) {
 			if (!test_bit(CIFS_INO_TMPFILE, &CIFS_I(inode)->flags))
@@ -1264,7 +1261,9 @@ int smb2_create_hardlink(const unsigned int xid,
 		fi = (FILE_BASIC_INFO) {
 			.Attributes = cpu_to_le32(attrs & ~ATTR_HIDDEN),
 		};
-		smb2_set_file_info(inode, NULL, &fi, xid);
+		rc = smb2_set_file_info(inode, from_name, &fi, xid);
+		if (rc)
+			return rc;
 	}
 
 no_tmpfile:
@@ -1506,7 +1505,7 @@ int smb2_rename_pending_delete(const char *full_path,
 		return PTR_ERR(tlink);
 	tcon = tlink_tcon(tlink);
 
-	to_name = cifs_silly_filename(dentry);
+	to_name = cifs_silly_fullpath(dentry);
 	if (IS_ERR(to_name)) {
 		rc = PTR_ERR(to_name);
 		to_name = NULL;
