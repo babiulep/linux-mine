@@ -11,7 +11,6 @@
 #include <linux/rmap.h>
 #include <linux/swap.h>
 #include <linux/leafops.h>
-#include <linux/file.h>
 #include <linux/userfaultfd_k.h>
 #include <linux/mmu_notifier.h>
 #include <linux/hugetlb.h>
@@ -444,54 +443,11 @@ static int mfill_copy_folio_locked(struct folio *folio, unsigned long src_addr)
 	return ret;
 }
 
-struct vma_snapshot {
-	struct file *file;
-	vma_flags_t flags;
-};
-
-static void vma_snapshot_take(struct vm_area_struct *vma,
-			      struct vma_snapshot *s)
-{
-	memcpy(&s->flags, &vma->flags, sizeof(s->flags));
-	if (vma->vm_file)
-		s->file = get_file(vma->vm_file);
-	else
-		s->file = NULL;
-}
-
-static bool vma_snapshot_changed(struct vm_area_struct *vma,
-				 struct vma_snapshot *s)
-{
-	if (memcmp(&s->flags, &vma->flags, sizeof(s->flags)))
-		return true;
-
-	if (s->file && (!vma->vm_file ||
-	    vma->vm_file->f_inode != s->file->f_inode))
-		return true;
-
-	if (!s->file && !vma_is_anonymous(vma))
-		return true;
-
-	return false;
-}
-
-static void vma_snapshot_release(struct vma_snapshot *s)
-{
-	if (s->file) {
-		fput(s->file);
-		s->file = NULL;
-	}
-}
-
 static int mfill_copy_folio_retry(struct mfill_state *state, struct folio *folio)
 {
 	unsigned long src_addr = state->src_addr;
-	struct vma_snapshot s;
 	void *kaddr;
 	int err;
-
-	/* Take a quick snapshot of the current vma */
-	vma_snapshot_take(state->vma, &s);
 
 	/* retry copying with mm_lock dropped */
 	mfill_put_vma(state);
@@ -499,27 +455,21 @@ static int mfill_copy_folio_retry(struct mfill_state *state, struct folio *folio
 	kaddr = kmap_local_folio(folio, 0);
 	err = copy_from_user(kaddr, (const void __user *) src_addr, PAGE_SIZE);
 	kunmap_local(kaddr);
-	if (unlikely(err)) {
-		err = -EFAULT;
-		goto out;
-	}
+	if (unlikely(err))
+		return -EFAULT;
 
 	flush_dcache_folio(folio);
 
 	/* reget VMA and PMD, they could change underneath us */
 	err = mfill_get_vma(state);
 	if (err)
-		goto out;
-
-	if (vma_snapshot_changed(state->vma, &s)) {
-		err = -EINVAL;
-		goto out;
-	}
+		return err;
 
 	err = mfill_establish_pmd(state);
-out:
-	vma_snapshot_release(&s);
-	return err;
+	if (err)
+		return err;
+
+	return 0;
 }
 
 static int __mfill_atomic_pte(struct mfill_state *state,

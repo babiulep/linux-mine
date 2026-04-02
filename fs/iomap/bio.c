@@ -73,7 +73,6 @@ static void iomap_read_end_io(struct bio *bio)
 	__iomap_read_end_io(bio, 0);
 }
 
-
 u32 iomap_finish_ioend_buffered_read(struct iomap_ioend *ioend)
 {
 	return __iomap_read_end_io(&ioend->io_bio, ioend->io_error);

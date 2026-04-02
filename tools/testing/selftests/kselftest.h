@@ -43,7 +43,7 @@
  * the program is aborting before finishing all tests):
  *
  *    ksft_exit_fail_msg(fmt, ...);
- *    ksft_exit_fail_perror(fmt, ...);
+ *    ksft_exit_fail_perror(msg);
  *
  */
 #ifndef __KSELFTEST_H
@@ -418,24 +418,9 @@ static inline __noreturn __printf(1, 2) void ksft_exit_fail_msg(const char *msg,
 	exit(KSFT_FAIL);
 }
 
-static inline __noreturn __printf(1, 2) void ksft_exit_fail_perror(const char *msg, ...)
+static inline __noreturn void ksft_exit_fail_perror(const char *msg)
 {
-	va_list args;
-	char *buf = NULL;
-	int saved_errno = errno;
-
-	va_start(args, msg);
-	if (vasprintf(&buf, msg, args) == -1) {
-		va_end(args);
-		ksft_exit_fail_msg("vasprintf failed: %s (%d)\n", strerror(saved_errno),
-				saved_errno);
-	}
-	va_end(args);
-
-	errno = saved_errno;
-	ksft_exit_fail_msg("%s: %s (%d)\n", buf, strerror(errno), errno);
-
-	free(buf);
+	ksft_exit_fail_msg("%s: %s (%d)\n", msg, strerror(errno), errno);
 }
 
 static inline __noreturn void ksft_exit_xfail(void)

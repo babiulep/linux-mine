@@ -16,7 +16,7 @@
 	    "	.popsection					\n" \
 	    "	.pushsection .rodata, \"a\"			\n" \
 	    "	.align	3					\n" \
-	    "1:	.quad	" #target "				\n" \
+	    "1:	.quad	" target "				\n" \
 	    "	.popsection					\n")
 
 #define ARCH_DEFINE_STATIC_CALL_TRAMP(name, func)			\

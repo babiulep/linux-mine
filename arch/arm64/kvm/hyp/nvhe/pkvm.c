@@ -309,14 +309,8 @@ struct pkvm_hyp_vm *get_pkvm_hyp_vm(pkvm_handle_t handle)
 
 	hyp_spin_lock(&vm_table_lock);
 	hyp_vm = get_vm_by_handle(handle);
-	if (!hyp_vm)
-		goto unlock;
-
-	if (hyp_vm->kvm.arch.pkvm.is_dying)
-		hyp_vm = NULL;
-	else
+	if (hyp_vm)
 		hyp_page_ref_inc(hyp_virt_to_page(hyp_vm));
-unlock:
 	hyp_spin_unlock(&vm_table_lock);
 
 	return hyp_vm;
@@ -924,16 +918,30 @@ teardown_donated_memory(struct kvm_hyp_memcache *mc, void *addr, size_t size)
 
 int __pkvm_reclaim_dying_guest_page(pkvm_handle_t handle, u64 gfn)
 {
-	struct pkvm_hyp_vm *hyp_vm;
+	struct pkvm_hyp_vm *hyp_vm = get_pkvm_hyp_vm(handle);
 	int ret = -EINVAL;
 
-	hyp_spin_lock(&vm_table_lock);
-	hyp_vm = get_vm_by_handle(handle);
-	if (hyp_vm && hyp_vm->kvm.arch.pkvm.is_dying)
-		ret = __pkvm_host_reclaim_page_guest(gfn, hyp_vm);
-	hyp_spin_unlock(&vm_table_lock);
+	if (!hyp_vm)
+		return ret;
 
+	if (hyp_vm->kvm.arch.pkvm.is_dying)
+		ret = __pkvm_host_reclaim_page_guest(gfn, hyp_vm);
+
+	put_pkvm_hyp_vm(hyp_vm);
 	return ret;
+}
+
+static struct pkvm_hyp_vm *get_pkvm_unref_hyp_vm_locked(pkvm_handle_t handle)
+{
+	struct pkvm_hyp_vm *hyp_vm;
+
+	hyp_assert_lock_held(&vm_table_lock);
+
+	hyp_vm = get_vm_by_handle(handle);
+	if (!hyp_vm || hyp_page_count(hyp_vm))
+		return NULL;
+
+	return hyp_vm;
 }
 
 int __pkvm_start_teardown_vm(pkvm_handle_t handle)
@@ -942,14 +950,8 @@ int __pkvm_start_teardown_vm(pkvm_handle_t handle)
 	int ret = 0;
 
 	hyp_spin_lock(&vm_table_lock);
-	hyp_vm = get_vm_by_handle(handle);
-	if (!hyp_vm) {
-		ret = -ENOENT;
-		goto unlock;
-	} else if (WARN_ON(hyp_page_count(hyp_vm))) {
-		ret = -EBUSY;
-		goto unlock;
-	} else if (hyp_vm->kvm.arch.pkvm.is_dying) {
+	hyp_vm = get_pkvm_unref_hyp_vm_locked(handle);
+	if (!hyp_vm || hyp_vm->kvm.arch.pkvm.is_dying) {
 		ret = -EINVAL;
 		goto unlock;
 	}
@@ -971,12 +973,9 @@ int __pkvm_finalize_teardown_vm(pkvm_handle_t handle)
 	int err;
 
 	hyp_spin_lock(&vm_table_lock);
-	hyp_vm = get_vm_by_handle(handle);
-	if (!hyp_vm) {
-		err = -ENOENT;
-		goto err_unlock;
-	} else if (!hyp_vm->kvm.arch.pkvm.is_dying) {
-		err = -EBUSY;
+	hyp_vm = get_pkvm_unref_hyp_vm_locked(handle);
+	if (!hyp_vm || !hyp_vm->kvm.arch.pkvm.is_dying) {
+		err = -EINVAL;
 		goto err_unlock;
 	}
 

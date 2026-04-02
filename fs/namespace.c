@@ -3086,8 +3086,13 @@ static struct file *open_detached_copy(struct path *path, unsigned int flags)
 	return file;
 }
 
+enum mount_copy_flags_t {
+	MOUNT_COPY_RECURSIVE    = (1 << 0),
+	MOUNT_COPY_NEW		= (1 << 1),
+};
+
 static struct mnt_namespace *create_new_namespace(struct path *path,
-						  bool recurse)
+						  enum mount_copy_flags_t flags)
 {
 	struct mnt_namespace *ns = current->nsproxy->mnt_ns;
 	struct user_namespace *user_ns = current_user_ns();
@@ -3096,7 +3101,7 @@ static struct mnt_namespace *create_new_namespace(struct path *path,
 	struct path to_path;
 	struct mount *mnt;
 	unsigned int copy_flags = 0;
-	bool locked = false;
+	bool locked = false, recurse = flags & MOUNT_COPY_RECURSIVE;
 
 	if (user_ns != ns->user_ns)
 		copy_flags |= CL_SLAVE;
@@ -3135,22 +3140,10 @@ static struct mnt_namespace *create_new_namespace(struct path *path,
 	 * the restrictions of creating detached bind-mounts. It has a
 	 * lot saner and simpler semantics.
 	 */
-	mnt = real_mount(path->mnt);
-	if (!mnt->mnt_ns) {
-		/*
-		 * If we're moving into a new mount namespace via
-		 * fsmount() swap the mount ids so the nullfs mount id
-		 * is the lowest in the mount namespace avoiding another
-		 * useless copy. This is fine we're not attached to any
-		 * mount namespace so the mount ids are pure decoration
-		 * at that point.
-		 */
-		swap(mnt->mnt_id_unique, new_ns_root->mnt_id_unique);
-		swap(mnt->mnt_id, new_ns_root->mnt_id);
-		mntget(&mnt->mnt);
-	} else {
+	if (flags & MOUNT_COPY_NEW)
+		mnt = clone_mnt(real_mount(path->mnt), path->dentry, copy_flags);
+	else
 		mnt = __do_loopback(path, recurse, copy_flags);
-	}
 	scoped_guard(mount_writer) {
 		if (IS_ERR(mnt)) {
 			emptied_ns = new_ns;
@@ -3179,11 +3172,12 @@ static struct mnt_namespace *create_new_namespace(struct path *path,
 	return new_ns;
 }
 
-static struct file *open_new_namespace(struct path *path, bool recurse)
+static struct file *open_new_namespace(struct path *path,
+				       enum mount_copy_flags_t flags)
 {
 	struct mnt_namespace *new_ns;
 
-	new_ns = create_new_namespace(path, recurse);
+	new_ns = create_new_namespace(path, flags);
 	if (IS_ERR(new_ns))
 		return ERR_CAST(new_ns);
 	return open_namespace_file(to_ns_common(new_ns));
@@ -3232,7 +3226,7 @@ static struct file *vfs_open_tree(int dfd, const char __user *filename, unsigned
 		return ERR_PTR(ret);
 
 	if (flags & OPEN_TREE_NAMESPACE)
-		return open_new_namespace(&path, (flags & AT_RECURSIVE));
+		return open_new_namespace(&path, (flags & AT_RECURSIVE) ? MOUNT_COPY_RECURSIVE : 0);
 
 	if (flags & OPEN_TREE_CLONE)
 		return open_detached_copy(&path, flags);
@@ -4232,8 +4226,8 @@ struct mnt_namespace *copy_mnt_ns(u64 flags, struct mnt_namespace *ns,
 		struct user_namespace *user_ns, struct fs_struct *new_fs)
 {
 	struct mnt_namespace *new_ns;
-	struct vfsmount *rootmnt __free(mntput) = NULL;
-	struct vfsmount *pwdmnt __free(mntput) = NULL;
+	struct path old_root __free(path_put) = {};
+	struct path old_pwd __free(path_put) = {};
 	struct mount *p, *q;
 	struct mount *old;
 	struct mount *new;
@@ -4253,11 +4247,18 @@ struct mnt_namespace *copy_mnt_ns(u64 flags, struct mnt_namespace *ns,
 		return new_ns;
 
 	guard(namespace_excl)();
-	/* First pass: copy the tree topology */
-	copy_flags = CL_COPY_UNBINDABLE | CL_EXPIRE;
+
+	if (flags & CLONE_EMPTY_MNTNS)
+		copy_flags = 0;
+	else
+		copy_flags = CL_COPY_UNBINDABLE | CL_EXPIRE;
 	if (user_ns != ns->user_ns)
 		copy_flags |= CL_SLAVE;
-	new = copy_tree(old, old->mnt.mnt_root, copy_flags);
+
+	if (flags & CLONE_EMPTY_MNTNS)
+		new = clone_mnt(old, old->mnt.mnt_root, copy_flags);
+	else
+		new = copy_tree(old, old->mnt.mnt_root, copy_flags);
 	if (IS_ERR(new)) {
 		emptied_ns = new_ns;
 		return ERR_CAST(new);
@@ -4269,42 +4270,68 @@ struct mnt_namespace *copy_mnt_ns(u64 flags, struct mnt_namespace *ns,
 	new_ns->root = new;
 
 	/*
-	 * Second pass: switch the tsk->fs->* elements and mark new vfsmounts
-	 * as belonging to new namespace.  We have already acquired a private
-	 * fs_struct, so tsk->fs->lock is not needed.
-	 */
-	if (new_fs)
-		WARN_ON_ONCE(new_fs->users != 1);
-
-	/*
 	 * Drain the pwd reference pool. The pool must be empty before we
 	 * update new_fs->pwd.mnt below since the pooled references belong
 	 * to the old mount. Safe to access without locking: new_fs->users == 1.
 	 */
-	if (new_fs)
+	if (new_fs) {
+		WARN_ON_ONCE(new_fs->users != 1);
 		drain_fs_pwd_pool(new_fs);
-	p = old;
-	q = new;
-	while (p) {
-		mnt_add_to_ns(new_ns, q);
-		new_ns->nr_mounts++;
+	}
+
+	if (flags & CLONE_EMPTY_MNTNS) {
+		/*
+		 * Empty mount namespace: only the root mount exists.
+		 * Reset root and pwd to the cloned mount's root dentry.
+		 */
 		if (new_fs) {
-			if (&p->mnt == new_fs->root.mnt) {
-				new_fs->root.mnt = mntget(&q->mnt);
-				rootmnt = &p->mnt;
-			}
-			if (&p->mnt == new_fs->pwd.mnt) {
-				new_fs->pwd.mnt = mntget(&q->mnt);
-				pwdmnt = &p->mnt;
-			}
+			old_root = new_fs->root;
+			old_pwd = new_fs->pwd;
+
+			new_fs->root.mnt = mntget(&new->mnt);
+			new_fs->root.dentry = dget(new->mnt.mnt_root);
+
+			new_fs->pwd.mnt = mntget(&new->mnt);
+			new_fs->pwd.dentry = dget(new->mnt.mnt_root);
 		}
-		p = next_mnt(p, old);
-		q = next_mnt(q, new);
-		if (!q)
-			break;
-		// an mntns binding we'd skipped?
-		while (p->mnt.mnt_root != q->mnt.mnt_root)
-			p = next_mnt(skip_mnt_tree(p), old);
+		mnt_add_to_ns(new_ns, new);
+		new_ns->nr_mounts++;
+	} else {
+		/*
+		 * Full copy: walk old and new trees in parallel, switching
+		 * the tsk->fs->* elements and marking new vfsmounts as
+		 * belonging to new namespace.  We have already acquired a
+		 * private fs_struct, so tsk->fs->lock is not needed.
+		 */
+		p = old;
+		q = new;
+		while (p) {
+			mnt_add_to_ns(new_ns, q);
+			new_ns->nr_mounts++;
+			/*
+			 * Second pass: switch the tsk->fs->* elements and mark
+			 * new vfsmounts as belonging to new namespace.  We
+			 * have already acquired a private fs_struct, so
+			 * tsk->fs->lock is not needed.
+			 */
+			if (new_fs) {
+				if (&p->mnt == new_fs->root.mnt) {
+					old_root.mnt = new_fs->root.mnt;
+					new_fs->root.mnt = mntget(&q->mnt);
+				}
+				if (&p->mnt == new_fs->pwd.mnt) {
+					old_pwd.mnt = new_fs->pwd.mnt;
+					new_fs->pwd.mnt = mntget(&q->mnt);
+				}
+			}
+			p = next_mnt(p, old);
+			q = next_mnt(q, new);
+			if (!q)
+				break;
+			// an mntns binding we'd skipped?
+			while (p->mnt.mnt_root != q->mnt.mnt_root)
+				p = next_mnt(skip_mnt_tree(p), old);
+		}
 	}
 	ns_tree_add_raw(new_ns);
 	return new_ns;
@@ -4502,7 +4529,7 @@ SYSCALL_DEFINE3(fsmount, int, fs_fd, unsigned int, flags,
 
 	if (flags & FSMOUNT_NAMESPACE)
 		return FD_ADD((flags & FSMOUNT_CLOEXEC) ? O_CLOEXEC : 0,
-			      open_new_namespace(&new_path, 0));
+			      open_new_namespace(&new_path, MOUNT_COPY_NEW));
 
 	ns = alloc_mnt_ns(current->nsproxy->mnt_ns->user_ns, true);
 	if (IS_ERR(ns))

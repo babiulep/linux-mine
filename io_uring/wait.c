@@ -306,7 +306,7 @@ int io_cqring_wait(struct io_ring_ctx *ctx, int min_events, u32 flags,
 		if (!iowq.hit_timeout)
 			scoped_guard(rcu)
 				nr_wait = (int) iowq.cq_tail -
-						READ_ONCE(ctx->rings_rcu->cq.tail);
+						READ_ONCE(io_get_rings(ctx)->cq.tail);
 		else
 			nr_wait = 1;
 	} while (1);
@@ -316,5 +316,5 @@ int io_cqring_wait(struct io_ring_ctx *ctx, int min_events, u32 flags,
 	restore_saved_sigmask_unless(ret == -EINTR);
 
 	guard(rcu)();
-	return READ_ONCE(ctx->rings_rcu->cq.head) == READ_ONCE(ctx->rings_rcu->cq.tail) ? ret : 0;
+	return READ_ONCE(io_get_rings(ctx)->cq.head) == READ_ONCE(io_get_rings(ctx)->cq.tail) ? ret : 0;
 }

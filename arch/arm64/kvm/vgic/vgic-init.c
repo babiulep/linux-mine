@@ -155,7 +155,7 @@ int kvm_vgic_create(struct kvm *kvm, u32 type)
 		INIT_LIST_HEAD(&kvm->arch.vgic.rd_regions);
 		break;
 	}
-	
+
 	/*
 	 * We've now created the GIC. Update the system register state
 	 * to accurately reflect what we've created.

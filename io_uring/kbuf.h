@@ -7,16 +7,9 @@
 
 enum {
 	/* ring mapped provided buffers */
-	IOBL_BUF_RING		= 1,
+	IOBL_BUF_RING	= 1,
 	/* buffers are consumed incrementally rather than always fully */
-	IOBL_INC		= 2,
-	/* buffers are kernel managed */
-	IOBL_KERNEL_MANAGED	= 4,
-	/*
-	 * buffer ring is pinned and cannot be unregistered by userspace until
-	 * it has been unpinned
-	 */
-	IOBL_PINNED		= 8,
+	IOBL_INC	= 2,
 };
 
 struct io_buffer_list {

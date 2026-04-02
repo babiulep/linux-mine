@@ -98,15 +98,13 @@ struct io_mapped_region {
  */
 struct io_br_sel {
 	struct io_buffer_list *buf_list;
+	/*
+	 * Some selection parts return the user address, others return an error.
+	 */
 	union {
-		/* for classic/ring provided buffers */
 		void __user *addr;
-		/* for kernel-managed buffers */
-		void *kaddr;
+		ssize_t val;
 	};
-	ssize_t val;
-	/* id of the selected buffer */
-	unsigned buf_id;
 };
 
 

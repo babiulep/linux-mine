@@ -176,6 +176,7 @@ perf		https://git.kernel.org/pub/scm/linux/kernel/git/perf/perf-tools-next.git#p
 compiler-attributes	https://github.com/ojeda/linux.git#compiler-attributes
 dma-mapping	https://git.kernel.org/pub/scm/linux/kernel/git/mszyprowski/linux.git#dma-mapping-for-next
 asm-generic	https://git.kernel.org/pub/scm/linux/kernel/git/arnd/asm-generic#master
+nocache-cleanup	https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git#nocache-cleanup
 alpha		https://git.kernel.org/pub/scm/linux/kernel/git/mattst88/alpha.git#alpha-next
 arm		https://git.kernel.org/pub/scm/linux/kernel/git/rmk/linux.git#for-next
 arm64		https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux#for-next/core

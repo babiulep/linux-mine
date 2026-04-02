@@ -18,6 +18,7 @@
 #include <linux/cred.h>
 #include <linux/err.h>
 #include <linux/mm.h>
+#include <linux/cleanup.h>
 
 #include "namespace_internal.h"
 
@@ -153,34 +154,32 @@ void free_time_ns(struct time_namespace *ns)
 
 static struct ns_common *timens_get(struct task_struct *task)
 {
-	struct time_namespace *ns = NULL;
+	struct time_namespace *ns;
 	struct nsproxy *nsproxy;
 
-	task_lock(task);
+	guard(task_lock)(task);
 	nsproxy = task->nsproxy;
-	if (nsproxy) {
-		ns = nsproxy->time_ns;
-		get_time_ns(ns);
-	}
-	task_unlock(task);
+	if (!nsproxy)
+		return NULL;
 
-	return ns ? &ns->ns : NULL;
+	ns = nsproxy->time_ns;
+	get_time_ns(ns);
+	return &ns->ns;
 }
 
 static struct ns_common *timens_for_children_get(struct task_struct *task)
 {
-	struct time_namespace *ns = NULL;
+	struct time_namespace *ns;
 	struct nsproxy *nsproxy;
 
-	task_lock(task);
+	guard(task_lock)(task);
 	nsproxy = task->nsproxy;
-	if (nsproxy) {
-		ns = nsproxy->time_ns_for_children;
-		get_time_ns(ns);
-	}
-	task_unlock(task);
+	if (!nsproxy)
+		return NULL;
 
-	return ns ? &ns->ns : NULL;
+	ns = nsproxy->time_ns_for_children;
+	get_time_ns(ns);
+	return &ns->ns;
 }
 
 static void timens_put(struct ns_common *ns)
@@ -251,36 +250,33 @@ static void show_offset(struct seq_file *m, int clockid, struct timespec64 *ts)
 
 void proc_timens_show_offsets(struct task_struct *p, struct seq_file *m)
 {
-	struct ns_common *ns;
-	struct time_namespace *time_ns;
+	struct time_namespace *time_ns __free(time_ns) = NULL;
+	struct ns_common *ns = timens_for_children_get(p);
 
-	ns = timens_for_children_get(p);
 	if (!ns)
 		return;
+
 	time_ns = to_time_ns(ns);
 
 	show_offset(m, CLOCK_MONOTONIC, &time_ns->offsets.monotonic);
 	show_offset(m, CLOCK_BOOTTIME, &time_ns->offsets.boottime);
-	put_time_ns(time_ns);
 }
 
 int proc_timens_set_offset(struct file *file, struct task_struct *p,
 			   struct proc_timens_offset *offsets, int noffsets)
 {
-	struct ns_common *ns;
-	struct time_namespace *time_ns;
+	struct time_namespace *time_ns __free(time_ns) = NULL;
+	struct ns_common *ns = timens_for_children_get(p);
 	struct timespec64 tp;
-	int i, err;
+	int i;
 
-	ns = timens_for_children_get(p);
 	if (!ns)
 		return -ESRCH;
+
 	time_ns = to_time_ns(ns);
 
-	if (!file_ns_capable(file, time_ns->user_ns, CAP_SYS_TIME)) {
-		put_time_ns(time_ns);
+	if (!file_ns_capable(file, time_ns->user_ns, CAP_SYS_TIME))
 		return -EPERM;
-	}
 
 	for (i = 0; i < noffsets; i++) {
 		struct proc_timens_offset *off = &offsets[i];
@@ -293,15 +289,12 @@ int proc_timens_set_offset(struct file *file, struct task_struct *p,
 			ktime_get_boottime_ts64(&tp);
 			break;
 		default:
-			err = -EINVAL;
-			goto out;
+			return -EINVAL;
 		}
-
-		err = -ERANGE;
 
 		if (off->val.tv_sec > KTIME_SEC_MAX ||
 		    off->val.tv_sec < -KTIME_SEC_MAX)
-			goto out;
+			return -ERANGE;
 
 		tp = timespec64_add(tp, off->val);
 		/*
@@ -309,16 +302,13 @@ int proc_timens_set_offset(struct file *file, struct task_struct *p,
 		 * still unreachable.
 		 */
 		if (tp.tv_sec < 0 || tp.tv_sec > KTIME_SEC_MAX / 2)
-			goto out;
+			return -ERANGE;
 	}
 
-	mutex_lock(&timens_offset_lock);
-	if (time_ns->frozen_offsets) {
-		err = -EACCES;
-		goto out_unlock;
-	}
+	guard(mutex)(&timens_offset_lock);
+	if (time_ns->frozen_offsets)
+		return -EACCES;
 
-	err = 0;
 	/* Don't report errors after this line */
 	for (i = 0; i < noffsets; i++) {
 		struct proc_timens_offset *off = &offsets[i];
@@ -336,12 +326,7 @@ int proc_timens_set_offset(struct file *file, struct task_struct *p,
 		*offset = off->val;
 	}
 
-out_unlock:
-	mutex_unlock(&timens_offset_lock);
-out:
-	put_time_ns(time_ns);
-
-	return err;
+	return 0;
 }
 
 const struct proc_ns_operations timens_operations = {

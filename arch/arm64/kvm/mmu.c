@@ -1665,7 +1665,7 @@ static int pkvm_mem_abort(const struct kvm_s2_fault_desc *s2fd)
 	struct kvm_vcpu *vcpu = s2fd->vcpu;
 	struct kvm_pgtable *pgt = vcpu->arch.hw_mmu->pgt;
 	struct mm_struct *mm = current->mm;
-	struct kvm *kvm = s2fd->vcpu->kvm;
+	struct kvm *kvm = vcpu->kvm;
 	void *hyp_memcache;
 	struct page *page;
 	int ret;
