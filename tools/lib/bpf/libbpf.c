@@ -9852,7 +9852,9 @@ int bpf_program__clone(struct bpf_program *prog, const struct bpf_prog_load_opts
 {
 	LIBBPF_OPTS(bpf_prog_load_opts, attr);
 	struct bpf_object *obj;
-	int err, fd;
+	const void *info;
+	__u32 info_cnt, info_rec_size;
+	int err, fd, prog_btf_fd;
 
 	if (!prog)
 		return libbpf_err(-EINVAL);
@@ -9878,19 +9880,41 @@ int bpf_program__clone(struct bpf_program *prog, const struct bpf_prog_load_opts
 	if (attr.token_fd)
 		attr.prog_flags |= BPF_F_TOKEN_FD;
 
-	/* BTF func/line info */
-	if (obj->btf && btf__fd(obj->btf) >= 0) {
-		attr.prog_btf_fd = OPTS_GET(opts, prog_btf_fd, 0) ?: btf__fd(obj->btf);
-		attr.func_info = OPTS_GET(opts, func_info, NULL) ?: prog->func_info;
-		attr.func_info_cnt = OPTS_GET(opts, func_info_cnt, 0) ?: prog->func_info_cnt;
-		attr.func_info_rec_size =
-			OPTS_GET(opts, func_info_rec_size, 0) ?: prog->func_info_rec_size;
-		attr.line_info = OPTS_GET(opts, line_info, NULL) ?: prog->line_info;
-		attr.line_info_cnt = OPTS_GET(opts, line_info_cnt, 0) ?: prog->line_info_cnt;
-		attr.line_info_rec_size =
-			OPTS_GET(opts, line_info_rec_size, 0) ?: prog->line_info_rec_size;
+	prog_btf_fd = OPTS_GET(opts, prog_btf_fd, 0);
+	if (!prog_btf_fd && obj->btf)
+		prog_btf_fd = btf__fd(obj->btf);
+
+	/* BTF func/line info: only pass if kernel supports it */
+	if (kernel_supports(obj, FEAT_BTF_FUNC) && prog_btf_fd > 0) {
+		attr.prog_btf_fd = prog_btf_fd;
+
+		/* func_info/line_info triples: all-or-nothing from caller */
+		info = OPTS_GET(opts, func_info, NULL);
+		info_cnt = OPTS_GET(opts, func_info_cnt, 0);
+		info_rec_size = OPTS_GET(opts, func_info_rec_size, 0);
+		if (!!info != !!info_cnt || !!info != !!info_rec_size) {
+			pr_warn("prog '%s': func_info, func_info_cnt, and func_info_rec_size must all be specified or all omitted\n",
+				prog->name);
+			return libbpf_err(-EINVAL);
+		}
+		attr.func_info = info ?: prog->func_info;
+		attr.func_info_cnt = info ? info_cnt : prog->func_info_cnt;
+		attr.func_info_rec_size = info ? info_rec_size : prog->func_info_rec_size;
+
+		info = OPTS_GET(opts, line_info, NULL);
+		info_cnt = OPTS_GET(opts, line_info_cnt, 0);
+		info_rec_size = OPTS_GET(opts, line_info_rec_size, 0);
+		if (!!info != !!info_cnt || !!info != !!info_rec_size) {
+			pr_warn("prog '%s': line_info, line_info_cnt, and line_info_rec_size must all be specified or all omitted\n",
+				prog->name);
+			return libbpf_err(-EINVAL);
+		}
+		attr.line_info = info ?: prog->line_info;
+		attr.line_info_cnt = info ? info_cnt : prog->line_info_cnt;
+		attr.line_info_rec_size = info ? info_rec_size : prog->line_info_rec_size;
 	}
 
+	/* Logging is caller-controlled; no fallback to prog/obj log settings */
 	attr.log_buf = OPTS_GET(opts, log_buf, NULL);
 	attr.log_size = OPTS_GET(opts, log_size, 0);
 	attr.log_level = OPTS_GET(opts, log_level, 0);
@@ -9912,14 +9936,17 @@ int bpf_program__clone(struct bpf_program *prog, const struct bpf_prog_load_opts
 
 	/* Re-apply caller overrides for output fields */
 	if (OPTS_GET(opts, expected_attach_type, 0))
-		attr.expected_attach_type =
-			OPTS_GET(opts, expected_attach_type, 0);
+		attr.expected_attach_type = OPTS_GET(opts, expected_attach_type, 0);
 	if (OPTS_GET(opts, attach_btf_id, 0))
 		attr.attach_btf_id = OPTS_GET(opts, attach_btf_id, 0);
 	if (OPTS_GET(opts, attach_btf_obj_fd, 0))
-		attr.attach_btf_obj_fd =
-			OPTS_GET(opts, attach_btf_obj_fd, 0);
+		attr.attach_btf_obj_fd = OPTS_GET(opts, attach_btf_obj_fd, 0);
 
+	/*
+	 * Unlike bpf_object_load_prog(), we intentionally do not call bpf_prog_bind_map()
+	 * for RODATA maps here to avoid mutating the object's state. Callers can bind the
+	 * required maps themselves using bpf_prog_bind_map().
+	 */
 	fd = bpf_prog_load(prog->type, prog->name, obj->license, prog->insns, prog->insns_cnt,
 			   &attr);
 
@@ -11816,6 +11843,8 @@ bpf_program__attach_kprobe_opts(const struct bpf_program *prog,
 	default:
 		return libbpf_err_ptr(-EINVAL);
 	}
+	if (!func_name && legacy)
+		return libbpf_err_ptr(-EOPNOTSUPP);
 
 	if (!legacy) {
 		pfd = perf_event_open_probe(false /* uprobe */, retprobe,
@@ -11835,21 +11864,21 @@ bpf_program__attach_kprobe_opts(const struct bpf_program *prog,
 						    offset, -1 /* pid */);
 	}
 	if (pfd < 0) {
-		err = -errno;
-		pr_warn("prog '%s': failed to create %s '%s+0x%zx' perf event: %s\n",
+		err = pfd;
+		pr_warn("prog '%s': failed to create %s '%s%s0x%zx' perf event: %s\n",
 			prog->name, retprobe ? "kretprobe" : "kprobe",
-			func_name, offset,
-			errstr(err));
+			func_name ?: "", func_name ? "+" : "",
+			offset, errstr(err));
 		goto err_out;
 	}
 	link = bpf_program__attach_perf_event_opts(prog, pfd, &pe_opts);
 	err = libbpf_get_error(link);
 	if (err) {
 		close(pfd);
-		pr_warn("prog '%s': failed to attach to %s '%s+0x%zx': %s\n",
+		pr_warn("prog '%s': failed to attach to %s '%s%s0x%zx': %s\n",
 			prog->name, retprobe ? "kretprobe" : "kprobe",
-			func_name, offset,
-			errstr(err));
+			func_name ?: "", func_name ? "+" : "",
+			offset, errstr(err));
 		goto err_clean_legacy;
 	}
 	if (legacy) {
@@ -12825,7 +12854,7 @@ bpf_program__attach_uprobe_opts(const struct bpf_program *prog, pid_t pid,
 						    binary_path, func_offset, pid);
 	}
 	if (pfd < 0) {
-		err = -errno;
+		err = pfd;
 		pr_warn("prog '%s': failed to create %s '%s:0x%zx' perf event: %s\n",
 			prog->name, retprobe ? "uretprobe" : "uprobe",
 			binary_path, func_offset,

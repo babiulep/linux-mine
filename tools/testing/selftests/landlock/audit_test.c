@@ -153,7 +153,7 @@ TEST_F(audit, layers)
 		EXPECT_EQ((*domain_stack)[i], deallocated_dom)
 		{
 			TH_LOG("Failed to match domain %llx (#%d)",
-			       (*domain_stack)[i], i);
+			       (unsigned long long)(*domain_stack)[i], i);
 		}
 	}
 	EXPECT_EQ(0, munmap(domain_stack, sizeof(*domain_stack)));

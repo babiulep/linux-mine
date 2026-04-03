@@ -37,16 +37,10 @@
 #include "libata.h"
 #include "libata-transport.h"
 
-struct scsi_transport_template;
-struct scsi_transport_template *ata_scsi_transport_template;
-
-struct ata_internal {
-	struct scsi_transport_template t;
-
-	struct transport_container link_attr_cont;
-	struct transport_container dev_attr_cont;
-};
-#define to_ata_internal(tmpl)	container_of(tmpl, struct ata_internal, t)
+static int ata_tlink_match(struct attribute_container *cont,
+			   struct device *dev);
+static int ata_tdev_match(struct attribute_container *cont,
+			  struct device *dev);
 
 #define tdev_to_device(d)					\
 	container_of((d), struct ata_device, tdev)
@@ -227,7 +221,7 @@ static int ata_tport_match(struct attribute_container *cont,
 {
 	if (!ata_is_port(dev))
 		return 0;
-	return &ata_scsi_transport_template->host_attrs.ac == cont;
+	return &ata_scsi_transportt.host_attrs.ac == cont;
 }
 
 /**
@@ -519,16 +513,6 @@ static bool ata_is_ata_dev(const struct device *dev)
 	return dev->release == ata_tdev_release;
 }
 
-static int ata_tdev_match(struct attribute_container *cont,
-			  struct device *dev)
-{
-	struct ata_internal *i = to_ata_internal(ata_scsi_transport_template);
-
-	if (!ata_is_ata_dev(dev))
-		return 0;
-	return &i->dev_attr_cont.ac == cont;
-}
-
 /**
  * ata_tdev_free  --  free an ATA transport device
  * @dev:	struct ata_device owning the transport device to free
@@ -660,16 +644,6 @@ static bool ata_is_link(const struct device *dev)
 	return dev->release == ata_tlink_release;
 }
 
-static int ata_tlink_match(struct attribute_container *cont,
-			    struct device *dev)
-{
-	struct ata_internal *i = to_ata_internal(ata_scsi_transport_template);
-
-	if (!ata_is_link(dev))
-		return 0;
-	return &i->link_attr_cont.ac == cont;
-}
-
 /**
  * ata_tlink_delete  --  remove an ATA link transport device
  * @link:	struct ata_link owning the link transport device to remove
@@ -745,56 +719,48 @@ int ata_tlink_add(struct ata_link *link)
 	return error;
 }
 
+struct scsi_transport_template ata_scsi_transportt = {
+	.eh_strategy_handler	= ata_scsi_error,
+	.user_scan		= ata_scsi_user_scan,
+
+	.host_attrs.ac.class	= &ata_port_class.class,
+	.host_attrs.ac.grp	= &ata_port_attr_group,
+	.host_attrs.ac.match	= ata_tport_match,
+};
+
+static struct transport_container ata_link_attr_cont = {
+	.ac.class	= &ata_link_class.class,
+	.ac.grp		= &ata_link_attr_group,
+	.ac.match	= ata_tlink_match,
+};
+
+static struct transport_container ata_dev_attr_cont = {
+	.ac.class	= &ata_dev_class.class,
+	.ac.grp		= &ata_device_attr_group,
+	.ac.match	= ata_tdev_match,
+};
+
+static int ata_tlink_match(struct attribute_container *cont,
+			   struct device *dev)
+{
+	if (!ata_is_link(dev))
+		return 0;
+
+	return &ata_link_attr_cont.ac == cont;
+}
+
+static int ata_tdev_match(struct attribute_container *cont,
+			  struct device *dev)
+{
+	if (!ata_is_ata_dev(dev))
+		return 0;
+
+	return &ata_dev_attr_cont.ac == cont;
+}
+
 /*
  * Setup / Teardown code
  */
-
-/**
- * ata_attach_transport  --  instantiate ATA transport template
- */
-struct scsi_transport_template *ata_attach_transport(void)
-{
-	struct ata_internal *i;
-
-	i = kzalloc_obj(struct ata_internal);
-	if (!i)
-		return NULL;
-
-	i->t.eh_strategy_handler	= ata_scsi_error;
-	i->t.user_scan			= ata_scsi_user_scan;
-
-	i->t.host_attrs.ac.class = &ata_port_class.class;
-	i->t.host_attrs.ac.grp   = &ata_port_attr_group;
-	i->t.host_attrs.ac.match = ata_tport_match;
-	transport_container_register(&i->t.host_attrs);
-
-	i->link_attr_cont.ac.class = &ata_link_class.class;
-	i->link_attr_cont.ac.grp   = &ata_link_attr_group;
-	i->link_attr_cont.ac.match = ata_tlink_match;
-	transport_container_register(&i->link_attr_cont);
-
-	i->dev_attr_cont.ac.class = &ata_dev_class.class;
-	i->dev_attr_cont.ac.grp   = &ata_device_attr_group;
-	i->dev_attr_cont.ac.match = ata_tdev_match;
-	transport_container_register(&i->dev_attr_cont);
-
-	return &i->t;
-}
-
-/**
- * ata_release_transport  --  release ATA transport template instance
- * @t:		transport template instance
- */
-void ata_release_transport(struct scsi_transport_template *t)
-{
-	struct ata_internal *i = to_ata_internal(t);
-
-	transport_container_unregister(&i->t.host_attrs);
-	transport_container_unregister(&i->link_attr_cont);
-	transport_container_unregister(&i->dev_attr_cont);
-
-	kfree(i);
-}
 
 __init int libata_transport_init(void)
 {
@@ -809,6 +775,11 @@ __init int libata_transport_init(void)
 	error = transport_class_register(&ata_dev_class);
 	if (error)
 		goto out_unregister_port;
+
+	transport_container_register(&ata_scsi_transportt.host_attrs);
+	transport_container_register(&ata_link_attr_cont);
+	transport_container_register(&ata_dev_attr_cont);
+
 	return 0;
 
  out_unregister_port:
@@ -822,6 +793,10 @@ __init int libata_transport_init(void)
 
 void __exit libata_transport_exit(void)
 {
+	transport_container_unregister(&ata_scsi_transportt.host_attrs);
+	transport_container_unregister(&ata_link_attr_cont);
+	transport_container_unregister(&ata_dev_attr_cont);
+
 	transport_class_unregister(&ata_link_class);
 	transport_class_unregister(&ata_port_class);
 	transport_class_unregister(&ata_dev_class);

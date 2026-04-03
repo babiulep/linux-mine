@@ -17,7 +17,6 @@
 #include <linux/freezer.h>
 #include <linux/sched/signal.h>
 #include <linux/random.h>
-#include <linux/fserror.h>
 
 #include "f2fs.h"
 #include "segment.h"
@@ -2897,7 +2896,6 @@ got_it:
 	/* set it as dirty segment in free segmap */
 	if (test_bit(segno, free_i->free_segmap)) {
 		ret = -EFSCORRUPTED;
-		fserror_report_metadata(sbi->sb, -EFSCORRUPTED, GFP_NOFS);
 		f2fs_stop_checkpoint(sbi, false, STOP_CP_REASON_CORRUPTED_FREE_BITMAP);
 		goto out_unlock;
 	}

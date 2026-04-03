@@ -352,7 +352,8 @@ matches_log_domain_deallocated(int audit_fd, unsigned int num_denials,
 	if (expected_domain_id)
 		log_match_len = snprintf(log_match, sizeof(log_match),
 					 log_template_with_id,
-					 expected_domain_id, num_denials);
+					 (unsigned long long)expected_domain_id,
+					 num_denials);
 	else
 		log_match_len = snprintf(log_match, sizeof(log_match),
 					 log_template, num_denials);

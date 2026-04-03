@@ -12,7 +12,6 @@
 #include <linux/blkdev.h>
 #include <linux/folio_batch.h>
 #include <linux/swap.h>
-#include <linux/fserror.h>
 
 #include "f2fs.h"
 #include "node.h"
@@ -1266,8 +1265,6 @@ skip_partial:
 		if (err == -ENOENT) {
 			set_sbi_flag(F2FS_F_SB(folio), SBI_NEED_FSCK);
 			f2fs_handle_error(sbi, ERROR_INVALID_BLKADDR);
-			fserror_report_file_metadata(dn.inode, -EFSCORRUPTED,
-								GFP_NOFS);
 			f2fs_err_ratelimited(sbi,
 				"truncate node fail, ino:%llu, nid:%u, "
 				"offset[0]:%d, offset[1]:%d, nofs:%d",
@@ -1559,8 +1556,6 @@ out_err:
 		next_blkaddr_of_node(folio));
 
 	f2fs_handle_error(sbi, ERROR_INCONSISTENT_FOOTER);
-	fserror_report_file_metadata(folio->mapping->host,
-			-EFSCORRUPTED, in_irq ? GFP_NOWAIT : GFP_NOFS);
 	return -EFSCORRUPTED;
 }
 
@@ -1783,7 +1778,6 @@ static bool __write_node_folio(struct folio *folio, bool atomic, bool do_fsync,
 
 	if (f2fs_sanity_check_node_footer(sbi, folio, nid,
 					NODE_TYPE_REGULAR, false)) {
-		fserror_report_metadata(sbi->sb, -EFSCORRUPTED, GFP_NOFS);
 		f2fs_stop_checkpoint(sbi, false, STOP_CP_REASON_CORRUPTED_NID);
 		goto redirty_out;
 	}
@@ -2709,8 +2703,6 @@ retry:
 			spin_unlock(&nm_i->nid_list_lock);
 			f2fs_err(sbi, "Corrupted nid %u in free_nid_list",
 								i->nid);
-			fserror_report_metadata(sbi->sb, -EFSCORRUPTED,
-								GFP_NOFS);
 			f2fs_stop_checkpoint(sbi, false,
 					STOP_CP_REASON_CORRUPTED_NID);
 			return false;

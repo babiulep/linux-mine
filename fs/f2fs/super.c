@@ -29,7 +29,6 @@
 #include <linux/lz4.h>
 #include <linux/ctype.h>
 #include <linux/fs_parser.h>
-#include <linux/fserror.h>
 
 #include "f2fs.h"
 #include "node.h"
@@ -1516,6 +1515,7 @@ static int f2fs_check_opt_consistency(struct fs_context *fc,
 			F2FS_OPTION(sbi).root_reserved_blocks);
 		ctx_clear_opt(ctx, F2FS_MOUNT_RESERVE_ROOT);
 		ctx->opt_mask &= ~BIT(F2FS_MOUNT_RESERVE_ROOT);
+		ctx->spec_mask &= ~F2FS_SPEC_reserve_root;
 	}
 	if (test_opt(sbi, RESERVE_NODE) &&
 			(ctx->opt_mask & BIT(F2FS_MOUNT_RESERVE_NODE)) &&
@@ -1524,6 +1524,7 @@ static int f2fs_check_opt_consistency(struct fs_context *fc,
 			F2FS_OPTION(sbi).root_reserved_nodes);
 		ctx_clear_opt(ctx, F2FS_MOUNT_RESERVE_NODE);
 		ctx->opt_mask &= ~BIT(F2FS_MOUNT_RESERVE_NODE);
+		ctx->spec_mask &= ~F2FS_SPEC_reserve_node;
 	}
 
 	err = f2fs_check_test_dummy_encryption(fc, sb);
@@ -2089,6 +2090,12 @@ static void f2fs_put_super(struct super_block *sb)
 #if IS_ENABLED(CONFIG_UNICODE)
 	utf8_unload(sb->s_encoding);
 #endif
+	sync_blockdev(sb->s_bdev);
+	invalidate_bdev(sb->s_bdev);
+	for (i = 1; i < sbi->s_ndevs; i++) {
+		sync_blockdev(FDEV(i).bdev);
+		invalidate_bdev(FDEV(i).bdev);
+	}
 }
 
 int f2fs_sync_fs(struct super_block *sb, int sync)
@@ -4625,8 +4632,6 @@ static void f2fs_record_stop_reason(struct f2fs_sb_info *sbi)
 		f2fs_err_ratelimited(sbi,
 			"f2fs_commit_super fails to record stop_reason, err:%d",
 			err);
-
-	fserror_report_shutdown(sbi->sb, GFP_NOFS);
 }
 
 void f2fs_save_errors(struct f2fs_sb_info *sbi, unsigned char flag)
@@ -4641,27 +4646,6 @@ void f2fs_save_errors(struct f2fs_sb_info *sbi, unsigned char flag)
 	spin_unlock_irqrestore(&sbi->error_lock, flags);
 }
 
-static void f2fs_report_fserror(struct f2fs_sb_info *sbi, unsigned char error)
-{
-	switch (error) {
-	case ERROR_INVALID_BLKADDR:
-	case ERROR_CORRUPTED_INODE:
-	case ERROR_INCONSISTENT_SUMMARY:
-	case ERROR_INCONSISTENT_SUM_TYPE:
-	case ERROR_CORRUPTED_JOURNAL:
-	case ERROR_INCONSISTENT_NODE_COUNT:
-	case ERROR_INCONSISTENT_BLOCK_COUNT:
-	case ERROR_INVALID_CURSEG:
-	case ERROR_INCONSISTENT_SIT:
-	case ERROR_INVALID_NODE_REFERENCE:
-	case ERROR_INCONSISTENT_NAT:
-		fserror_report_metadata(sbi->sb, -EFSCORRUPTED, GFP_NOFS);
-		break;
-	default:
-		return;
-	}
-}
-
 void f2fs_handle_error(struct f2fs_sb_info *sbi, unsigned char error)
 {
 	f2fs_save_errors(sbi, error);
@@ -4671,8 +4655,6 @@ void f2fs_handle_error(struct f2fs_sb_info *sbi, unsigned char error)
 	if (!test_bit(error, (unsigned long *)sbi->errors))
 		return;
 	schedule_work(&sbi->s_error_work);
-
-	f2fs_report_fserror(sbi, error);
 }
 
 static bool system_going_down(void)

@@ -7845,6 +7845,7 @@ F:	include/linux/fwnode.h
 F:	include/linux/kobj*
 F:	include/linux/property.h
 F:	include/linux/sysfs.h
+F:	kernel/ksysfs.c
 F:	lib/kobj*
 F:	rust/kernel/debugfs.rs
 F:	rust/kernel/debugfs/
@@ -19399,8 +19400,8 @@ F:	drivers/net/dsa/ocelot/ocelot_ext.c
 F:	include/linux/mfd/ocelot.h
 
 OCXL (Open Coherent Accelerator Processor Interface OpenCAPI) DRIVER
-M:	Frederic Barrat <fbarrat@linux.ibm.com>
-M:	Andrew Donnellan <ajd@linux.ibm.com>
+M:	Mahesh J Salgaonkar <mahesh@linux.ibm.com>
+R:	Andrew Donnellan <andrew+kernel@donnellan.id.au>
 L:	linuxppc-dev@lists.ozlabs.org
 S:	Odd Fixes
 F:	Documentation/userspace-api/accelerators/ocxl.rst
@@ -21255,8 +21256,7 @@ F:	include/uapi/linux/atmppp.h
 F:	net/atm/pppoatm.c
 
 PPP OVER ETHERNET
-M:	Michal Ostrowski <mostrows@earthlink.net>
-S:	Maintained
+S:	Orphan
 F:	drivers/net/ppp/pppoe.c
 F:	drivers/net/ppp/pppox.c
 
@@ -22311,7 +22311,7 @@ S:	Supported
 F:	drivers/infiniband/sw/rdmavt
 
 RDS - RELIABLE DATAGRAM SOCKETS
-M:	Allison Henderson <allison.henderson@oracle.com>
+M:	Allison Henderson <achender@kernel.org>
 L:	netdev@vger.kernel.org
 L:	linux-rdma@vger.kernel.org
 L:	rds-devel@oss.oracle.com (moderated for non-subscribers)
@@ -27936,6 +27936,12 @@ M:	Longfang Liu <liulongfang@huawei.com>
 L:	kvm@vger.kernel.org
 S:	Maintained
 F:	drivers/vfio/pci/hisilicon/
+
+VFIO ISM PCI DRIVER
+M:	Julian Ruess <julianr@linux.ibm.com>
+L:	kvm@vger.kernel.org
+S:	Maintained
+F:	drivers/vfio/pci/ism/
 
 VFIO MEDIATED DEVICE DRIVERS
 M:	Kirti Wankhede <kwankhede@nvidia.com>
