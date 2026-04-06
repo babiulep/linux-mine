@@ -2063,7 +2063,7 @@ static struct clk_alpha_pll *disp_cc_eliza_plls[] = {
 	&disp_cc_pll2,
 };
 
-static u32 disp_cc_eliza_critical_cbcrs[] = {
+static const u32 disp_cc_eliza_critical_cbcrs[] = {
 	0xe07c, /* DISP_CC_SLEEP_CLK */
 	0xe05c, /* DISP_CC_XO_CLK */
 	0xc00c, /* DISP_CC_MDSS_RSCC_AHB_CLK */
@@ -2076,7 +2076,7 @@ static void clk_eliza_regs_configure(struct device *dev, struct regmap *regmap)
 	regmap_set_bits(regmap, DISP_CC_MISC_CMD, BIT(4));
 }
 
-static struct qcom_cc_driver_data disp_cc_eliza_driver_data = {
+static const struct qcom_cc_driver_data disp_cc_eliza_driver_data = {
 	.alpha_plls = disp_cc_eliza_plls,
 	.num_alpha_plls = ARRAY_SIZE(disp_cc_eliza_plls),
 	.clk_cbcrs = disp_cc_eliza_critical_cbcrs,

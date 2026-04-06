@@ -32,7 +32,7 @@ you probably do not need to concern yourself with pcmciautils.
 ====================== ===============  ========================================
 bash                   4.2              bash --version
 bc                     1.06.95          bc --version
-bindgen (optional)     0.65.1           bindgen --version
+bindgen (optional)     0.71.1           bindgen --version
 binutils               2.30             ld -v
 bison                  2.0              bison --version
 btrfs-progs            0.18             btrfs --version
@@ -59,7 +59,7 @@ PPP                    2.4.0            pppd --version
 procps                 3.2.0            ps --version
 Python                 3.9.x            python3 --version
 quota-tools            3.09             quota -V
-Rust (optional)        1.78.0           rustc --version
+Rust (optional)        1.85.0           rustc --version
 Sphinx\ [#f1]_         3.4.3            sphinx-build --version
 squashfs-tools         4.0              mksquashfs -version
 udev                   081              udevadm --version

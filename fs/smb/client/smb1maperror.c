@@ -195,7 +195,7 @@ map_and_check_smb_error(struct TCP_Server_Info *server,
 }
 
 #define DEFINE_CHECK_SORT_FUNC(__array, __field)			\
-static int __array ## _is_sorted(void)					\
+static int __init __array ## _is_sorted(void)				\
 {									\
 	unsigned int i;							\
 									\

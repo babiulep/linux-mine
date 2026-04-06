@@ -1485,6 +1485,7 @@ int run_syscall(int min, int max)
 		CASE_TEST(select_fault);      EXPECT_SYSER(1, select(1, (void *)1, NULL, NULL, 0), -1, EFAULT); break;
 		CASE_TEST(stat_blah);         EXPECT_SYSER(1, stat("/proc/self/blah", &stat_buf), -1, ENOENT); break;
 		CASE_TEST(stat_fault);        EXPECT_SYSER(1, stat(NULL, &stat_buf), -1, EFAULT); break;
+		CASE_TEST(stat_rdev);         EXPECT_SYSZR(1, ({ int ret = stat("/dev/null", &stat_buf); ret ?: stat_buf.st_rdev != makedev(1, 3); })); break;
 		CASE_TEST(stat_timestamps);   EXPECT_SYSZR(1, test_stat_timestamps()); break;
 		CASE_TEST(symlink_root);      EXPECT_SYSER(1, symlink("/", "/"), -1, EEXIST); break;
 		CASE_TEST(timer);             EXPECT_SYSZR(1, test_timer()); break;
@@ -1551,6 +1552,60 @@ int test_time_types(void)
 		return 1;
 #endif /* NOLIBC */
 
+	return 0;
+}
+
+int test_malloc(void)
+{
+	size_t sz_array1, sz_array2, sz_array3;
+	int *array1, *array2, *array3;
+	int pagesize = getpagesize();
+	size_t idx;
+
+	if (pagesize < 0)
+		return 1;
+
+	/* Dependent on the page size, as that is the granularity of our allocator. */
+	sz_array1 = pagesize / 2;
+	array1 = malloc(sz_array1 * sizeof(*array1));
+	if (!array1)
+		return 2;
+
+	for (idx = 0; idx < sz_array1; idx++)
+		array1[idx] = idx;
+
+	sz_array2 = pagesize * 2;
+	array2 = calloc(sz_array2, sizeof(*array2));
+	if (!array2) {
+		free(array1);
+		return 3;
+	}
+
+	for (idx = 0; idx < sz_array2; idx++) {
+		if (array2[idx] != 0) {
+			free(array2);
+			return 4;
+		}
+		array2[idx] = idx + sz_array1;
+	}
+
+	/* Resize array1 into array3 and append array2 at the end. */
+	sz_array3 = sz_array1 + sz_array2;
+	array3 = realloc(array1, sz_array3 * sizeof(*array3));
+	if (!array3) {
+		free(array2);
+		free(array1);
+		return 5;
+	}
+	memcpy(array3 + sz_array1, array2, sizeof(*array2) * sz_array2);
+	free(array2);
+
+	/* The contents must be contiguous now. */
+	for (idx = 0; idx < sz_array3; idx++)
+		if (array3[idx] != (int)idx)
+			return 6;
+
+	free(array3);
 	return 0;
 }
 
@@ -1680,6 +1735,13 @@ int run_stdlib(int min, int max)
 		CASE_TEST(memchr_foobar6_o);        EXPECT_STREQ(1, memchr("foobar", 'o', 6), "oobar"); break;
 		CASE_TEST(memchr_foobar3_b);        EXPECT_STRZR(1, memchr("foobar", 'b', 3)); break;
 		CASE_TEST(time_types);              EXPECT_ZR(is_nolibc, test_time_types()); break;
+		CASE_TEST(makedev);                 EXPECT_EQ(1, makedev(0x12, 0x34), 0x1234); break;
+		CASE_TEST(major);                   EXPECT_EQ(1, major(0x1234), 0x12); break;
+		CASE_TEST(minor);                   EXPECT_EQ(1, minor(0x1234), 0x34); break;
+		CASE_TEST(makedev_big);             EXPECT_EQ(1, makedev(0x11223344, 0x55667788), 0x1122355667734488); break;
+		CASE_TEST(major_big);               EXPECT_EQ(1, major(0x1122355667734488), 0x11223344); break;
+		CASE_TEST(minor_big);               EXPECT_EQ(1, minor(0x1122355667734488), 0x55667788); break;
+		CASE_TEST(malloc);                  EXPECT_ZR(1, test_malloc()); break;
 
 		case __LINE__:
 			return ret; /* must be last */
@@ -1834,6 +1896,29 @@ static int test_printf_error(void)
 	return 0;
 }
 
+int test_asprintf(void)
+{
+	char *str;
+	int ret;
+
+	ret = asprintf(&str, "foo%s", "bar");
+	if (ret == -1)
+		return 1;
+
+	if (ret != 6) {
+		free(str);
+		return 2;
+	}
+
+	if (memcmp(str, "foobar", 6) != 0) {
+		free(str);
+		return 3;
+	}
+
+	free(str);
+	return 0;
+}
+
 static int run_printf(int min, int max)
 {
 	int test;
@@ -1897,6 +1982,7 @@ static int run_printf(int min, int max)
 		CASE_TEST(errno-neg);    errno = -22; EXPECT_VFPRINTF(is_nolibc, "errno=-22   ", "%-12m"); break;
 		CASE_TEST(scanf);        EXPECT_ZR(1, test_scanf()); break;
 		CASE_TEST(printf_error); EXPECT_ZR(1, test_printf_error()); break;
+		CASE_TEST(asprintf);     EXPECT_ZR(1, test_asprintf()); break;
 		case __LINE__:
 			return ret; /* must be last */
 		/* note: do not set any defaults so as to permit holes above */

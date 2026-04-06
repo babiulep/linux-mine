@@ -1921,7 +1921,7 @@ static struct clk_alpha_pll *disp_cc_glymur_plls[] = {
 	&disp_cc_pll1,
 };
 
-static u32 disp_cc_glymur_critical_cbcrs[] = {
+static const u32 disp_cc_glymur_critical_cbcrs[] = {
 	0xe07c, /* DISP_CC_SLEEP_CLK */
 	0xe05c, /* DISP_CC_XO_CLK */
 };
@@ -1934,7 +1934,7 @@ static const struct regmap_config disp_cc_glymur_regmap_config = {
 	.fast_io = true,
 };
 
-static struct qcom_cc_driver_data disp_cc_glymur_driver_data = {
+static const struct qcom_cc_driver_data disp_cc_glymur_driver_data = {
 	.alpha_plls = disp_cc_glymur_plls,
 	.num_alpha_plls = ARRAY_SIZE(disp_cc_glymur_plls),
 	.clk_cbcrs = disp_cc_glymur_critical_cbcrs,

@@ -124,9 +124,6 @@ MODULE_PARM_DESC(dir_cache_timeout, "Number of seconds to cache directory conten
 /* Module-wide total cached dirents (in bytes) across all tcons */
 atomic64_t cifs_dircache_bytes_used = ATOMIC64_INIT(0);
 
-atomic_t cifs_sillycounter;
-atomic_t cifs_tmpcounter;
-
 /*
  * Write-only module parameter to drop all cached directory entries across
  * all CIFS mounts. Echo a non-zero value to trigger.
@@ -1202,7 +1199,6 @@ MODULE_ALIAS("smb3");
 const struct inode_operations cifs_dir_inode_ops = {
 	.create = cifs_create,
 	.atomic_open = cifs_atomic_open,
-	.tmpfile = cifs_tmpfile,
 	.lookup = cifs_lookup,
 	.getattr = cifs_getattr,
 	.unlink = cifs_unlink,
@@ -2158,7 +2154,6 @@ MODULE_DESCRIPTION
 	("VFS to access SMB3 servers e.g. Samba, Macs, Azure and Windows (and "
 	"also older servers complying with the SNIA CIFS Specification)");
 MODULE_VERSION(CIFS_VERSION);
-MODULE_SOFTDEP("ecb");
 MODULE_SOFTDEP("nls");
 MODULE_SOFTDEP("aes");
 MODULE_SOFTDEP("cmac");

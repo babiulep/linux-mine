@@ -4647,7 +4647,7 @@ static struct gdsc *gcc_sc8180x_gdscs[] = {
 	[HLOS1_VOTE_TURING_MMU_TBU1_GDSC] = &hlos1_vote_turing_mmu_tbu1_gdsc,
 };
 
-static u32 gcc_sc8180x_critical_cbcrs[] = {
+static const u32 gcc_sc8180x_critical_cbcrs[] = {
 	0xb004,  /* GCC_VIDEO_AHB_CLK */
 	0xb008,  /* GCC_CAMERA_AHB_CLK */
 	0xb00c,  /* GCC_DISP_AHB_CLK */
@@ -4675,7 +4675,7 @@ static void clk_sc8180x_regs_configure(struct device *dev, struct regmap *regmap
 	regmap_update_bits(regmap, 0x71028, 0x3, 0x3);
 }
 
-static struct qcom_cc_driver_data gcc_sc8180x_driver_data = {
+static const struct qcom_cc_driver_data gcc_sc8180x_driver_data = {
 	.clk_cbcrs = gcc_sc8180x_critical_cbcrs,
 	.num_clk_cbcrs = ARRAY_SIZE(gcc_sc8180x_critical_cbcrs),
 	.dfs_rcgs = gcc_sc8180x_dfs_clocks,

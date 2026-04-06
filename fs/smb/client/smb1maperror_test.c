@@ -14,13 +14,6 @@
 #include "nterr.h"
 #include "smberr.h"
 
-extern const struct ntstatus_to_dos_err *ntstatus_to_dos_map_test;
-extern unsigned int ntstatus_to_dos_num;
-extern const struct smb_to_posix_error *mapping_table_ERRDOS_test;
-extern unsigned int mapping_table_ERRDOS_num;
-extern const struct smb_to_posix_error *mapping_table_ERRSRV_test;
-extern unsigned int mapping_table_ERRSRV_num;
-
 #define DEFINE_CHECK_SEARCH_FUNC(__struct_name, __field,		\
 				 __array, __num)			\
 static void check_search_ ## __array(struct kunit *test)		\
@@ -31,7 +24,7 @@ static void check_search_ ## __array(struct kunit *test)		\
 	for (i = 0; i < __num; i++) {					\
 		expect = &__array ## _test[i];				\
 		result = search_ ## __array ## _test(expect->__field);	\
-		KUNIT_EXPECT_PTR_NE(test, NULL, result);		\
+		KUNIT_ASSERT_NOT_NULL(test, result);			\
 		test_cmp_ ## __struct_name(test, expect, result);	\
 	}								\
 }

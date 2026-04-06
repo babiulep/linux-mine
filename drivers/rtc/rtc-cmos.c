@@ -1434,7 +1434,7 @@ static int __init cmos_platform_probe(struct platform_device *pdev)
 		irq = -1;
 #ifdef CONFIG_X86
 		/*
-		 * On some x86 systems the IRQ is not defined, but it should
+		 * On some x86 systems, the IRQ is not defined, but it should
 		 * always be safe to hardcode it on systems with a legacy PIC.
 		 */
 		if (nr_legacy_irqs())

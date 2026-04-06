@@ -3005,7 +3005,7 @@ static const struct qcom_reset_map gcc_eliza_resets[] = {
 	[GCC_VIDEO_BCR] = { 0x32000 },
 };
 
-static u32 gcc_eliza_critical_cbcrs[] = {
+static const u32 gcc_eliza_critical_cbcrs[] = {
 	0xa0004, /* GCC_CAM_BIST_MCLK_AHB_CLK */
 	0x26004, /* GCC_CAMERA_AHB_CLK */
 	0x26034, /* GCC_CAMERA_XO_CLK */
@@ -3051,7 +3051,7 @@ static void clk_eliza_regs_configure(struct device *dev, struct regmap *regmap)
 	qcom_branch_set_force_mem_core(regmap, gcc_ufs_phy_axi_clk, true);
 }
 
-static struct qcom_cc_driver_data gcc_eliza_driver_data = {
+static const struct qcom_cc_driver_data gcc_eliza_driver_data = {
 	.clk_cbcrs = gcc_eliza_critical_cbcrs,
 	.num_clk_cbcrs = ARRAY_SIZE(gcc_eliza_critical_cbcrs),
 	.dfs_rcgs = gcc_eliza_dfs_clocks,

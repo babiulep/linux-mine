@@ -164,6 +164,7 @@ struct smb_to_posix_error {
  * pathname that was not a link.
  */
 #define ErrNotALink		0x201	// -ENOLINK
+#define ERRnetlogonNotStarted	2455	// -ENOPROTOOPT
 
 /* Below errors are used internally (do not come over the wire) for passthrough
    from STATUS codes to POSIX only  */
@@ -294,5 +295,4 @@ struct smb_to_posix_error {
 /* logon hours do not allow this */
 #define ERRbadLogonTime		2241	// -EACCES
 #define ERRpasswordExpired	2242	// -EKEYEXPIRED
-#define ERRnetlogonNotStarted	2455	// -ENOPROTOOPT
 #define ERRnosupport		0xFFFF	// -EINVAL
