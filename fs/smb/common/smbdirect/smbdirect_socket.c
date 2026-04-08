@@ -166,6 +166,11 @@ int smbdirect_socket_set_initial_parameters(struct smbdirect_socket *sc,
 	if (sp->flags & ~SMBDIRECT_FLAG_PORT_RANGE_MASK)
 		return -EINVAL;
 
+	if (sp->initiator_depth > U8_MAX)
+		return -EINVAL;
+	if (sp->responder_resources > U8_MAX)
+		return -EINVAL;
+
 	if (sp->flags & SMBDIRECT_FLAG_PORT_RANGE_ONLY_IB &&
 	    sp->flags & SMBDIRECT_FLAG_PORT_RANGE_ONLY_IW)
 		return -EINVAL;
@@ -595,13 +600,20 @@ void smbdirect_socket_destroy_sync(struct smbdirect_socket *sc)
 	 */
 	WARN_ON_ONCE(in_interrupt());
 
-	smbdirect_log_rdma_event(sc, SMBDIRECT_LOG_INFO,
-		"cancelling and disable disconnect_work\n");
-	disable_work_sync(&sc->disconnect_work);
+	/*
+	 * First we try to disable the work
+	 * without disable_work_sync() in a
+	 * non blocking way, if it's already
+	 * running it will be handles by
+	 * disable_work_sync() below.
+	 *
+	 * Here we just want to make sure queue_work() in
+	 * smbdirect_socket_schedule_cleanup_lvl()
+	 * is a no-op.
+	 */
+	disable_work(&sc->disconnect_work);
 
-	smbdirect_log_rdma_event(sc, SMBDIRECT_LOG_INFO,
-		"destroying rdma session\n");
-	if (sc->status < SMBDIRECT_SOCKET_DISCONNECTING) {
+	if (!sc->first_error)
 		/*
 		 * SMBDIRECT_LOG_INFO is enough here
 		 * as this is the typical case where
@@ -610,8 +622,15 @@ void smbdirect_socket_destroy_sync(struct smbdirect_socket *sc)
 		smbdirect_socket_schedule_cleanup_lvl(sc,
 						      SMBDIRECT_LOG_INFO,
 						      -ESHUTDOWN);
+
+	smbdirect_log_rdma_event(sc, SMBDIRECT_LOG_INFO,
+		"cancelling and disable disconnect_work\n");
+	disable_work_sync(&sc->disconnect_work);
+
+	smbdirect_log_rdma_event(sc, SMBDIRECT_LOG_INFO,
+		"destroying rdma session\n");
+	if (sc->status < SMBDIRECT_SOCKET_DISCONNECTING)
 		smbdirect_socket_cleanup_work(&sc->disconnect_work);
-	}
 	if (sc->status < SMBDIRECT_SOCKET_DISCONNECTED) {
 		smbdirect_log_rdma_event(sc, SMBDIRECT_LOG_INFO,
 			"wait for transport being disconnected\n");

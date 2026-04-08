@@ -253,7 +253,7 @@ config GPIO_BY_PINCTRL
 	  create a simple GPIO device based on the pin control interface
 	  without doing anything custom.
 
-	  This driver used to do GPIO over the ARM SCMI protocol.
+	  This driver is used to access GPIOs over the ARM SCMI protocol.
 
 config GPIO_CADENCE
 	tristate "Cadence GPIO support"
@@ -1057,6 +1057,32 @@ config GPIO_SCH
 
 	  The Intel Quark X1000 SoC has 2 GPIOs powered by the core
 	  power well and 6 from the suspend power well.
+
+config GPIO_NOVALAKE
+	tristate "Intel Nova Lake GPIO-signaled ACPI events support"
+	depends on (X86 || COMPILE_TEST) && ACPI
+	select GPIOLIB_IRQCHIP
+	help
+	  Select this to enable GPIO-signaled ACPI events support on platforms
+	  with the following SoCs:
+
+	  - Intel Nova Lake
+
+	  This driver adds support for new mode of handling platform events,
+	  through the use of GPIO-signaled ACPI events. Main purpose is to
+	  handle platform IRQs that originate in PCH components, for example
+	  interrupt triggered by Power Management Event (PME).
+
+	  This driver, at this time, is not required to handle platform events.
+	  Listed platform(s) will stay in legacy mode, handling ACPI events as
+	  in previous generations. However, future platforms will eventually
+	  switch to new handling mode, requiring this driver to run events
+	  properly.
+
+	  Driver supports up to 128 GPIO pins per GPE block.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called gpio-novalake-events.
 
 config GPIO_SCH311X
 	tristate "SMSC SCH311x SuperI/O GPIO"
@@ -1985,7 +2011,6 @@ menu "Virtual GPIO drivers"
 config GPIO_AGGREGATOR
 	tristate "GPIO Aggregator"
 	select CONFIGFS_FS
-	select DEV_SYNC_PROBE
 	help
 	  Say yes here to enable the GPIO Aggregator, which provides a way to
 	  aggregate existing GPIO lines into a new virtual GPIO chip.
@@ -2037,7 +2062,6 @@ config GPIO_SIM
 	tristate "GPIO Simulator Module"
 	select IRQ_SIM
 	select CONFIGFS_FS
-	select DEV_SYNC_PROBE
 	help
 	  This enables the GPIO simulator - a configfs-based GPIO testing
 	  driver.
@@ -2075,7 +2099,6 @@ config GPIO_VIRTUSER
 	select DEBUG_FS
 	select CONFIGFS_FS
 	select IRQ_WORK
-	select DEV_SYNC_PROBE
 	help
 	  Say Y here to enable the configurable, configfs-based virtual GPIO
 	  consumer testing driver.
@@ -2086,6 +2109,3 @@ config GPIO_VIRTUSER
 endmenu
 
 endif
-
-config DEV_SYNC_PROBE
-	tristate

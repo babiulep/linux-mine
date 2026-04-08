@@ -5120,12 +5120,15 @@ void kmem_cache_return_sheaf(struct kmem_cache *s, gfp_t gfp,
 }
 
 /*
- * refill a sheaf previously returned by kmem_cache_prefill_sheaf to at least
- * the given size
+ * Refill a sheaf previously returned by kmem_cache_prefill_sheaf to at least
+ * the given size.
  *
- * the sheaf might be replaced by a new one when requesting more than
- * s->sheaf_capacity objects if such replacement is necessary, but the refill
- * fails (returning -ENOMEM), the existing sheaf is left intact
+ * Return: 0 on success. The sheaf will contain at least @size objects.
+ * The sheaf might have been replaced with a new one if more than
+ * sheaf->capacity objects are requested.
+ *
+ * Return: -ENOMEM on failure. Some objects might have been added to the sheaf
+ * but the sheaf will not be replaced.
  *
  * In practice we always refill to full sheaf's capacity.
  */
@@ -6022,14 +6025,15 @@ static __always_inline bool can_free_to_pcs(struct slab *slab)
 		goto check_pfmemalloc;
 
 	/*
-	 * Freed object isn't from this cpu's node, but that node is memoryless.
+	 * Freed object isn't from this cpu's node, but that node is memoryless
+	 * or only has ZONE_MOVABLE memory, which slab cannot allocate from.
 	 * Proceed as it's better to cache remote objects than falling back to
 	 * the slowpath for everything. The allocation side can never obtain
 	 * a local object anyway, if none exist. We don't have numa_mem_id() to
 	 * point to the closest node as we would on a proper memoryless node
 	 * setup.
 	 */
-	if (unlikely(!node_state(numa_node, N_MEMORY)))
+	if (unlikely(!node_state(numa_node, N_NORMAL_MEMORY)))
 		goto check_pfmemalloc;
 #endif
 

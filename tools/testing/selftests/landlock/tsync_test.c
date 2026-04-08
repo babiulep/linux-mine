@@ -302,6 +302,7 @@ FIXTURE_VARIANT_ADD(tsync_without_ruleset, subdomains_off) {
 
 FIXTURE_SETUP(tsync_without_ruleset)
 {
+	disable_caps(_metadata);
 }
 
 FIXTURE_TEARDOWN(tsync_without_ruleset)
@@ -311,6 +312,8 @@ FIXTURE_TEARDOWN(tsync_without_ruleset)
 TEST_F(tsync_without_ruleset, check)
 {
 	int ret;
+
+	ASSERT_EQ(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
 
 	ret = landlock_restrict_self(-1, variant->flags);
 	if (variant->expected_errno) {

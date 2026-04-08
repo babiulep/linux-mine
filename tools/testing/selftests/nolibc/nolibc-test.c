@@ -43,6 +43,8 @@
 #include <limits.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <byteswap.h>
+#include <endian.h>
 
 #pragma GCC diagnostic ignored "-Wmissing-prototypes"
 
@@ -66,6 +68,8 @@ static const char *argv0;
 
 /* will be used by constructor tests */
 static int constructor_test_value;
+
+static const int is_le = __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__;
 
 static const int is_nolibc =
 #ifdef NOLIBC
@@ -95,6 +99,8 @@ static const int is_glibc =
 /* readdir_r() is likely to be marked deprecated */
 #undef readdir_r
 #define readdir_r(dir, dirent, result) ((errno = EINVAL), -1)
+
+#define _syscall(...) 0
 #endif
 
 /* definition of a series of tests */
@@ -314,10 +320,7 @@ int expect_syszr(int expr, int llen)
 {
 	int ret = 0;
 
-	if (errno == ENOSYS) {
-		llen += printf(" = ENOSYS");
-		result(llen, SKIPPED);
-	} else if (expr) {
+	if (expr) {
 		ret = 1;
 		llen += printf(" = %d %s ", expr, errorname(errno));
 		result(llen, FAIL);
@@ -357,10 +360,7 @@ int expect_sysne(int expr, int llen, int val)
 {
 	int ret = 0;
 
-	if (errno == ENOSYS) {
-		llen += printf(" = ENOSYS");
-		result(llen, SKIPPED);
-	} else if (expr == val) {
+	if (expr == val) {
 		ret = 1;
 		llen += printf(" = %d %s ", expr, errorname(errno));
 		result(llen, FAIL);
@@ -385,9 +385,7 @@ int expect_syserr2(int expr, int expret, int experr1, int experr2, int llen)
 	int _errno = errno;
 
 	llen += printf(" = %d %s ", expr, errorname(_errno));
-	if (errno == ENOSYS) {
-		result(llen, SKIPPED);
-	} else if (expr != expret || (_errno != experr1 && _errno != experr2)) {
+	if (expr != expret || (_errno != experr1 && _errno != experr2)) {
 		ret = 1;
 		if (experr2 == 0)
 			llen += printf(" != (%d %s) ", expret, errorname(experr1));
@@ -1504,9 +1502,11 @@ int run_syscall(int min, int max)
 		CASE_TEST(readv_zero);        EXPECT_SYSZR(1, readv(0, NULL, 0)); break;
 		CASE_TEST(writev_badf);       EXPECT_SYSER(1, writev(-1, &iov_one, 1), -1, EBADF); break;
 		CASE_TEST(writev_zero);       EXPECT_SYSZR(1, writev(1, NULL, 0)); break;
-		CASE_TEST(ptrace);            EXPECT_SYSER(1, ptrace(PTRACE_CONT, getpid(), NULL, NULL), -1, ESRCH); break;
+		CASE_TEST(ptrace);            tmp = ptrace(PTRACE_CONT, getpid(), NULL, NULL); EXPECT_SYSER(tmp != -1 && errno != ENOSYS, tmp, -1, EFAULT); break;
 		CASE_TEST(syscall_noargs);    EXPECT_SYSEQ(1, syscall(__NR_getpid), getpid()); break;
 		CASE_TEST(syscall_args);      EXPECT_SYSER(1, syscall(__NR_statx, 0, NULL, 0, 0, NULL), -1, EFAULT); break;
+		CASE_TEST(_syscall_noargs);   EXPECT_SYSEQ(is_nolibc, _syscall(__NR_getpid), getpid()); break;
+		CASE_TEST(_syscall_args);     EXPECT_SYSEQ(is_nolibc, _syscall(__NR_statx, 0, NULL, 0, 0, NULL), -EFAULT); break;
 		CASE_TEST(namespace);         EXPECT_SYSZR(euid0 && proc, test_namespace()); break;
 		case __LINE__:
 			return ret; /* must be last */
@@ -1742,6 +1742,15 @@ int run_stdlib(int min, int max)
 		CASE_TEST(major_big);               EXPECT_EQ(1, major(0x1122355667734488), 0x11223344); break;
 		CASE_TEST(minor_big);               EXPECT_EQ(1, minor(0x1122355667734488), 0x55667788); break;
 		CASE_TEST(malloc);                  EXPECT_ZR(1, test_malloc()); break;
+		CASE_TEST(bswap_16);                EXPECT_EQ(1, bswap_16(0x0123), 0x2301); break;
+		CASE_TEST(bswap_32);                EXPECT_EQ(1, bswap_32(0x01234567), 0x67452301); break;
+		CASE_TEST(bswap_64);                EXPECT_EQ(1, bswap_64(0x0123456789abcdef), 0xefcdab8967452301); break;
+		CASE_TEST(htobe16);                 EXPECT_EQ(1, htobe16(is_le ? 0x0123 : 0x2301), 0x2301); break;
+		CASE_TEST(htole16);                 EXPECT_EQ(1, htole16(is_le ? 0x0123 : 0x2301), 0x0123); break;
+		CASE_TEST(htobe32);                 EXPECT_EQ(1, htobe32(is_le ? 0x01234567 : 0x67452301), 0x67452301); break;
+		CASE_TEST(htole32);                 EXPECT_EQ(1, htole32(is_le ? 0x01234567 : 0x67452301), 0x01234567); break;
+		CASE_TEST(htobe64);                 EXPECT_EQ(1, htobe64(is_le ? 0x0123456789000000 : 0x8967452301), 0x8967452301); break;
+		CASE_TEST(htole64);                 EXPECT_EQ(1, htole64(is_le ? 0x0123456789 : 0x8967452301000000), 0x0123456789); break;
 
 		case __LINE__:
 			return ret; /* must be last */

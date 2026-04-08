@@ -394,6 +394,7 @@ DEFINE_ZONE_EVENT(xfs_zone_full);
 DEFINE_ZONE_EVENT(xfs_zone_opened);
 DEFINE_ZONE_EVENT(xfs_zone_reset);
 DEFINE_ZONE_EVENT(xfs_zone_gc_target_opened);
+DEFINE_ZONE_EVENT(xfs_zone_gc_target_stolen);
 
 TRACE_EVENT(xfs_zone_free_blocks,
 	TP_PROTO(struct xfs_rtgroup *rtg, xfs_rgblock_t rgbno,
@@ -461,6 +462,7 @@ DEFINE_EVENT(xfs_zone_alloc_class, name,			\
 DEFINE_ZONE_ALLOC_EVENT(xfs_zone_record_blocks);
 DEFINE_ZONE_ALLOC_EVENT(xfs_zone_skip_blocks);
 DEFINE_ZONE_ALLOC_EVENT(xfs_zone_alloc_blocks);
+DEFINE_ZONE_ALLOC_EVENT(xfs_zone_spurious_open);
 
 TRACE_EVENT(xfs_zone_gc_select_victim,
 	TP_PROTO(struct xfs_rtgroup *rtg, unsigned int bucket),

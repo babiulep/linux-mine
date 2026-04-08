@@ -682,7 +682,7 @@ int efa_create_qp(struct ib_qp *ibqp, struct ib_qp_init_attr *init_attr,
 	struct efa_com_create_qp_result create_qp_resp;
 	struct efa_dev *dev = to_edev(ibqp->device);
 	struct efa_ibv_create_qp_resp resp = {};
-	struct efa_ibv_create_qp cmd = {};
+	struct efa_ibv_create_qp cmd;
 	struct efa_qp *qp = to_eqp(ibqp);
 	struct efa_ucontext *ucontext;
 	u16 supported_efa_flags = 0;
@@ -699,31 +699,11 @@ int efa_create_qp(struct ib_qp *ibqp, struct ib_qp_init_attr *init_attr,
 	if (err)
 		goto err_out;
 
-	if (offsetofend(typeof(cmd), driver_qp_type) > udata->inlen) {
-		ibdev_dbg(&dev->ibdev,
-			  "Incompatible ABI params, no input udata\n");
-		err = -EINVAL;
+	err = ib_copy_validate_udata_in_cm(udata, cmd, driver_qp_type, 0);
+	if (err)
 		goto err_out;
-	}
 
-	if (udata->inlen > sizeof(cmd) &&
-	    !ib_is_udata_cleared(udata, sizeof(cmd),
-				 udata->inlen - sizeof(cmd))) {
-		ibdev_dbg(&dev->ibdev,
-			  "Incompatible ABI params, unknown fields in udata\n");
-		err = -EINVAL;
-		goto err_out;
-	}
-
-	err = ib_copy_from_udata(&cmd, udata,
-				 min(sizeof(cmd), udata->inlen));
-	if (err) {
-		ibdev_dbg(&dev->ibdev,
-			  "Cannot copy udata for create_qp\n");
-		goto err_out;
-	}
-
-	if (cmd.comp_mask || !is_reserved_cleared(cmd.reserved_98)) {
+	if (!is_reserved_cleared(cmd.reserved_98)) {
 		ibdev_dbg(&dev->ibdev,
 			  "Incompatible ABI params, unknown fields in udata\n");
 		err = -EINVAL;
@@ -1141,7 +1121,7 @@ int efa_create_user_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 	struct efa_com_create_cq_result result;
 	struct ib_device *ibdev = ibcq->device;
 	struct efa_dev *dev = to_edev(ibdev);
-	struct efa_ibv_create_cq cmd = {};
+	struct efa_ibv_create_cq cmd;
 	struct efa_cq *cq = to_ecq(ibcq);
 	int entries = attr->cqe;
 	bool set_src_addr;
@@ -1160,30 +1140,11 @@ int efa_create_user_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 		goto err_out;
 	}
 
-	if (offsetofend(typeof(cmd), num_sub_cqs) > udata->inlen) {
-		ibdev_dbg(ibdev,
-			  "Incompatible ABI params, no input udata\n");
-		err = -EINVAL;
+	err = ib_copy_validate_udata_in_cm(udata, cmd, num_sub_cqs, 0);
+	if (err)
 		goto err_out;
-	}
 
-	if (udata->inlen > sizeof(cmd) &&
-	    !ib_is_udata_cleared(udata, sizeof(cmd),
-				 udata->inlen - sizeof(cmd))) {
-		ibdev_dbg(ibdev,
-			  "Incompatible ABI params, unknown fields in udata\n");
-		err = -EINVAL;
-		goto err_out;
-	}
-
-	err = ib_copy_from_udata(&cmd, udata,
-				 min(sizeof(cmd), udata->inlen));
-	if (err) {
-		ibdev_dbg(ibdev, "Cannot copy udata for create_cq\n");
-		goto err_out;
-	}
-
-	if (cmd.comp_mask || !is_reserved_cleared(cmd.reserved_58)) {
+	if (!is_reserved_cleared(cmd.reserved_58)) {
 		ibdev_dbg(ibdev,
 			  "Incompatible ABI params, unknown fields in udata\n");
 		err = -EINVAL;

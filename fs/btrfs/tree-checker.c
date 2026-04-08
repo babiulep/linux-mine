@@ -777,6 +777,47 @@ static int check_block_group_item(struct extent_buffer *leaf,
 			BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_DATA);
 		return -EUCLEAN;
 	}
+
+	if (unlikely(!btrfs_fs_incompat(fs_info, REMAP_TREE) &&
+		     type == BTRFS_BLOCK_GROUP_METADATA_REMAP)) {
+		block_group_err(leaf, slot,
+		"invalid type, METADATA_REMAP set but REMAP_TREE incompat flag not set");
+		return -EUCLEAN;
+	}
+
+	if (unlikely(!btrfs_fs_incompat(fs_info, REMAP_TREE) &&
+		     flags & BTRFS_BLOCK_GROUP_REMAPPED)) {
+		block_group_err(leaf, slot,
+		"invalid flags, REMAPPED set but REMAP_TREE incompat flag not set");
+		return -EUCLEAN;
+	}
+
+	if (item_size == sizeof(struct btrfs_block_group_item_v2)) {
+		struct btrfs_block_group_item_v2 *bgi2;
+		u64 remap_bytes;
+		u32 identity_remap_count;
+
+		bgi2 = btrfs_item_ptr(leaf, slot, struct btrfs_block_group_item_v2);
+		remap_bytes = btrfs_block_group_v2_remap_bytes(leaf, bgi2);
+
+		if (unlikely(remap_bytes > key->offset)) {
+			block_group_err(leaf, slot,
+				"invalid remap_bytes, have %llu expect [0, %llu]",
+					remap_bytes, key->offset);
+			return -EUCLEAN;
+		}
+
+		identity_remap_count = btrfs_block_group_v2_identity_remap_count(leaf, bgi2);
+		if (unlikely((u64)identity_remap_count >
+			     key->offset >> fs_info->sectorsize_bits)) {
+			block_group_err(leaf, slot,
+				"invalid identity_remap_count, have %u expect [0, %llu]",
+					identity_remap_count,
+					key->offset >> fs_info->sectorsize_bits);
+			return -EUCLEAN;
+		}
+	}
+
 	return 0;
 }
 
@@ -997,6 +1038,20 @@ int btrfs_check_chunk_valid(const struct btrfs_fs_info *fs_info,
 			"mixed chunk type in non-mixed mode: 0x%llx", type);
 			return -EUCLEAN;
 		}
+	}
+
+	if (unlikely((type & BTRFS_BLOCK_GROUP_METADATA_REMAP) &&
+		     !(features & BTRFS_FEATURE_INCOMPAT_REMAP_TREE))) {
+		chunk_err(fs_info, leaf, chunk, logical,
+		"METADATA_REMAP chunk type without REMAP_TREE incompat bit");
+		return -EUCLEAN;
+	}
+
+	if (unlikely(remapped &&
+		     !(features & BTRFS_FEATURE_INCOMPAT_REMAP_TREE))) {
+		chunk_err(fs_info, leaf, chunk, logical,
+		"REMAPPED chunk flag without REMAP_TREE incompat bit");
+		return -EUCLEAN;
 	}
 
 	if (!remapped &&
@@ -1879,6 +1934,71 @@ static int check_raid_stripe_extent(const struct extent_buffer *leaf,
 	return 0;
 }
 
+static int check_remap_key(const struct extent_buffer *leaf,
+			   const struct btrfs_key *key, int slot)
+{
+	const u32 item_size = btrfs_item_size(leaf, slot);
+	const u32 sectorsize = leaf->fs_info->sectorsize;
+	u64 end;
+
+	if (unlikely(!btrfs_fs_incompat(leaf->fs_info, REMAP_TREE))) {
+		generic_err(leaf, slot,
+		"remap key type %u present but REMAP_TREE incompat bit unset",
+			    key->type);
+		return -EUCLEAN;
+	}
+
+	switch (key->type) {
+	case BTRFS_IDENTITY_REMAP_KEY:
+		if (unlikely(item_size != 0)) {
+			generic_err(leaf, slot,
+			"invalid item size for IDENTITY_REMAP, have %u expect 0",
+				    item_size);
+			return -EUCLEAN;
+		}
+	break;
+	case BTRFS_REMAP_KEY:
+	case BTRFS_REMAP_BACKREF_KEY:
+		if (unlikely(item_size != sizeof(struct btrfs_remap_item))) {
+			generic_err(leaf, slot,
+			"invalid item size for remap key type %u, have %u expect %zu",
+				    key->type, item_size,
+				    sizeof(struct btrfs_remap_item));
+			return -EUCLEAN;
+		}
+		break;
+	}
+
+	if (unlikely(key->offset == 0)) {
+		generic_err(leaf, slot,
+			    "invalid remap key length, have 0 expect nonzero");
+		return -EUCLEAN;
+	}
+
+	if (unlikely(!IS_ALIGNED(key->objectid, sectorsize))) {
+		generic_err(leaf, slot,
+		"invalid remap key objectid, have %llu expect aligned to %u",
+			    key->objectid, sectorsize);
+		return -EUCLEAN;
+	}
+
+	if (unlikely(!IS_ALIGNED(key->offset, sectorsize))) {
+		generic_err(leaf, slot,
+		"invalid remap key offset (length), have %llu expect aligned to %u",
+			    key->offset, sectorsize);
+		return -EUCLEAN;
+	}
+
+	if (unlikely(check_add_overflow(key->objectid, key->offset, &end))) {
+		generic_err(leaf, slot,
+		"remap key overflow, objectid %llu + offset %llu wraps",
+			    key->objectid, key->offset);
+		return -EUCLEAN;
+	}
+
+	return 0;
+}
+
 static int check_dev_extent_item(const struct extent_buffer *leaf,
 				 const struct btrfs_key *key,
 				 int slot,
@@ -2129,6 +2249,11 @@ static enum btrfs_tree_block_status check_leaf_item(struct extent_buffer *leaf,
 		break;
 	case BTRFS_FREE_SPACE_BITMAP_KEY:
 		ret = check_free_space_bitmap(leaf, key, slot);
+		break;
+	case BTRFS_IDENTITY_REMAP_KEY:
+	case BTRFS_REMAP_KEY:
+	case BTRFS_REMAP_BACKREF_KEY:
+		ret = check_remap_key(leaf, key, slot);
 		break;
 	}
 

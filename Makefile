@@ -854,6 +854,11 @@ export WARN_ON_UNUSED_TRACEPOINTS
 
 # Per-version Rust flags. These are like `rust_common_flags`, but may
 # depend on the Rust compiler version (e.g. using `rustc-min-version`).
+#
+# `-Aclippy::precedence`: the lint was extended in Rust 1.85.0 to
+# include bitmasking and shift operations. However, because it generated
+# many hits, in Rust 1.86.0 it was split into a new `precedence_bits`
+# lint which is not enabled by default.
 rust_common_flags_per_version := \
     $(if $(call rustc-min-version,108600),,-Aclippy::precedence)
 
@@ -999,6 +1004,10 @@ KBUILD_CFLAGS	+= $(call cc-option, -fno-stack-clash-protection)
 
 # Get details on warnings generated due to GCC value tracking.
 KBUILD_CFLAGS	+= $(call cc-option, -fdiagnostics-show-context=2)
+
+# Show inlining notes for __attribute__((warning/error)) call chains.
+# GCC supports this unconditionally while Clang 23+ provides a flag.
+KBUILD_CFLAGS	+= $(call cc-option, -fdiagnostics-show-inlining-chain)
 
 # Clear used registers at func exit (to reduce data lifetime and ROP gadgets).
 ifdef CONFIG_ZERO_CALL_USED_REGS

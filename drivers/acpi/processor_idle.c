@@ -1267,16 +1267,15 @@ static int acpi_processor_get_power_info(struct acpi_processor *pr)
 
 int acpi_processor_hotplug(struct acpi_processor *pr)
 {
+	struct cpuidle_device *dev = per_cpu(acpi_cpuidle_device, pr->id);
 	int ret = 0;
-	struct cpuidle_device *dev;
 
 	if (disabled_by_idle_boot_param())
 		return 0;
 
-	if (!pr->flags.power_setup_done)
+	if (!pr->flags.power_setup_done || !dev)
 		return -ENODEV;
 
-	dev = per_cpu(acpi_cpuidle_device, pr->id);
 	cpuidle_pause_and_lock();
 	cpuidle_disable_device(dev);
 	ret = acpi_processor_get_power_info(pr);
@@ -1379,6 +1378,7 @@ void acpi_processor_register_idle_driver(void)
 
 	ret = cpuidle_register_driver(&acpi_idle_driver);
 	if (ret) {
+		pr->flags.power_setup_done = 0;
 		pr_debug("register %s failed.\n", acpi_idle_driver.name);
 		return;
 	}
@@ -1387,7 +1387,16 @@ void acpi_processor_register_idle_driver(void)
 
 void acpi_processor_unregister_idle_driver(void)
 {
+	struct acpi_processor *pr;
+	int cpu;
+
 	cpuidle_unregister_driver(&acpi_idle_driver);
+	for_each_possible_cpu(cpu) {
+		pr = per_cpu(processors, cpu);
+		if (!pr)
+			continue;
+		pr->flags.power_setup_done = 0;
+	}
 }
 
 void acpi_processor_power_init(struct acpi_processor *pr)
@@ -1424,6 +1433,7 @@ void acpi_processor_power_init(struct acpi_processor *pr)
 	 */
 	if (cpuidle_register_device(dev)) {
 		per_cpu(acpi_cpuidle_device, pr->id) = NULL;
+		pr->flags.power_setup_done = 0;
 		kfree(dev);
 	}
 }

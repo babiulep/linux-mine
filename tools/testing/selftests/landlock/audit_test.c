@@ -452,7 +452,7 @@ TEST_F(audit, log_subdomains_off_tsync)
 		.scoped = LANDLOCK_SCOPE_SIGNAL,
 	};
 	struct audit_records records;
-	struct thread_data child_data;
+	struct thread_data child_data = {};
 	int pipe_child[2], pipe_parent[2];
 	char buffer;
 	pthread_t thread;
@@ -535,7 +535,7 @@ TEST_F(audit, tsync_override_log_subdomains_off)
 		.scoped = LANDLOCK_SCOPE_SIGNAL,
 	};
 	struct audit_records records;
-	struct thread_data child_data;
+	struct thread_data child_data = {};
 	int pipe_child[2], pipe_parent[2];
 	char buffer;
 	pthread_t thread;

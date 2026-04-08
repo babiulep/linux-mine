@@ -25,6 +25,7 @@
 
 #include <linux/acpi.h>
 #include <linux/kernel.h>
+#include <linux/ktime.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
@@ -151,13 +152,9 @@ out_free:
 	return ret;
 }
 
-static int acpi_tad_get_real_time(struct device *dev, struct acpi_tad_rt *rt)
+static int __acpi_tad_get_real_time(struct device *dev, struct acpi_tad_rt *rt)
 {
 	int ret;
-
-	PM_RUNTIME_ACQUIRE(dev, pm);
-	if (PM_RUNTIME_ACQUIRE_ERR(&pm))
-		return -ENXIO;
 
 	ret = acpi_tad_evaluate_grt(dev, rt);
 	if (ret)
@@ -165,6 +162,62 @@ static int acpi_tad_get_real_time(struct device *dev, struct acpi_tad_rt *rt)
 
 	if (acpi_tad_rt_is_invalid(rt))
 		return -ENODATA;
+
+	return 0;
+}
+
+static int acpi_tad_get_real_time(struct device *dev, struct acpi_tad_rt *rt)
+{
+	PM_RUNTIME_ACQUIRE(dev, pm);
+	if (PM_RUNTIME_ACQUIRE_ERR(&pm))
+		return -ENXIO;
+
+	return __acpi_tad_get_real_time(dev, rt);
+}
+
+static int __acpi_tad_wake_set(struct device *dev, char *method, u32 timer_id,
+			       u32 value)
+{
+	acpi_handle handle = ACPI_HANDLE(dev);
+	union acpi_object args[] = {
+		{ .type = ACPI_TYPE_INTEGER, },
+		{ .type = ACPI_TYPE_INTEGER, },
+	};
+	struct acpi_object_list arg_list = {
+		.pointer = args,
+		.count = ARRAY_SIZE(args),
+	};
+	unsigned long long retval;
+	acpi_status status;
+
+	args[0].integer.value = timer_id;
+	args[1].integer.value = value;
+
+	status = acpi_evaluate_integer(handle, method, &arg_list, &retval);
+	if (ACPI_FAILURE(status) || retval)
+		return -EIO;
+
+	return 0;
+}
+
+static int __acpi_tad_wake_read(struct device *dev, char *method, u32 timer_id,
+				unsigned long long *retval)
+{
+	acpi_handle handle = ACPI_HANDLE(dev);
+	union acpi_object args[] = {
+		{ .type = ACPI_TYPE_INTEGER, },
+	};
+	struct acpi_object_list arg_list = {
+		.pointer = args,
+		.count = ARRAY_SIZE(args),
+	};
+	acpi_status status;
+
+	args[0].integer.value = timer_id;
+
+	status = acpi_evaluate_integer(handle, method, &arg_list, retval);
+	if (ACPI_FAILURE(status))
+		return -EIO;
 
 	return 0;
 }
@@ -271,30 +324,11 @@ static DEVICE_ATTR_RW(time);
 static int acpi_tad_wake_set(struct device *dev, char *method, u32 timer_id,
 			     u32 value)
 {
-	acpi_handle handle = ACPI_HANDLE(dev);
-	union acpi_object args[] = {
-		{ .type = ACPI_TYPE_INTEGER, },
-		{ .type = ACPI_TYPE_INTEGER, },
-	};
-	struct acpi_object_list arg_list = {
-		.pointer = args,
-		.count = ARRAY_SIZE(args),
-	};
-	unsigned long long retval;
-	acpi_status status;
-
-	args[0].integer.value = timer_id;
-	args[1].integer.value = value;
-
 	PM_RUNTIME_ACQUIRE(dev, pm);
 	if (PM_RUNTIME_ACQUIRE_ERR(&pm))
 		return -ENXIO;
 
-	status = acpi_evaluate_integer(handle, method, &arg_list, &retval);
-	if (ACPI_FAILURE(status) || retval)
-		return -EIO;
-
-	return 0;
+	return __acpi_tad_wake_set(dev, method, timer_id, value);
 }
 
 static int acpi_tad_wake_write(struct device *dev, const char *buf, char *method,
@@ -320,26 +354,16 @@ static int acpi_tad_wake_write(struct device *dev, const char *buf, char *method
 static ssize_t acpi_tad_wake_read(struct device *dev, char *buf, char *method,
 				  u32 timer_id, const char *specval)
 {
-	acpi_handle handle = ACPI_HANDLE(dev);
-	union acpi_object args[] = {
-		{ .type = ACPI_TYPE_INTEGER, },
-	};
-	struct acpi_object_list arg_list = {
-		.pointer = args,
-		.count = ARRAY_SIZE(args),
-	};
 	unsigned long long retval;
-	acpi_status status;
-
-	args[0].integer.value = timer_id;
+	int ret;
 
 	PM_RUNTIME_ACQUIRE(dev, pm);
 	if (PM_RUNTIME_ACQUIRE_ERR(&pm))
 		return -ENXIO;
 
-	status = acpi_evaluate_integer(handle, method, &arg_list, &retval);
-	if (ACPI_FAILURE(status))
-		return -EIO;
+	ret = __acpi_tad_wake_read(dev, method, timer_id, &retval);
+	if (ret)
+		return ret;
 
 	if ((u32)retval == ACPI_TAD_WAKE_DISABLED)
 		return sprintf(buf, "%s\n", specval);
@@ -594,6 +618,17 @@ static const struct attribute_group *acpi_tad_attr_groups[] = {
 #ifdef CONFIG_RTC_CLASS
 /* RTC class device interface */
 
+static void acpi_tad_rt_to_tm(struct acpi_tad_rt *rt, struct rtc_time *tm)
+{
+	tm->tm_year = rt->year - 1900;
+	tm->tm_mon = rt->month - 1;
+	tm->tm_mday = rt->day;
+	tm->tm_hour = rt->hour;
+	tm->tm_min = rt->minute;
+	tm->tm_sec = rt->second;
+	tm->tm_isdst = rt->daylight == ACPI_TAD_TIME_ISDST;
+}
+
 static int acpi_tad_rtc_set_time(struct device *dev, struct rtc_time *tm)
 {
 	struct acpi_tad_rt rt;
@@ -619,13 +654,106 @@ static int acpi_tad_rtc_read_time(struct device *dev, struct rtc_time *tm)
 	if (ret)
 		return ret;
 
-	tm->tm_year = rt.year - 1900;
-	tm->tm_mon = rt.month - 1;
-	tm->tm_mday = rt.day;
-	tm->tm_hour = rt.hour;
-	tm->tm_min = rt.minute;
-	tm->tm_sec = rt.second;
-	tm->tm_isdst = rt.daylight == ACPI_TAD_TIME_ISDST;
+	acpi_tad_rt_to_tm(&rt, tm);
+
+	return 0;
+}
+
+static int acpi_tad_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *t)
+{
+	struct acpi_tad_driver_data *dd = dev_get_drvdata(dev);
+	s64 value = ACPI_TAD_WAKE_DISABLED;
+	struct rtc_time tm_now;
+	struct acpi_tad_rt rt;
+	int ret;
+
+	PM_RUNTIME_ACQUIRE(dev, pm);
+	if (PM_RUNTIME_ACQUIRE_ERR(&pm))
+		return -ENXIO;
+
+	if (t->enabled) {
+		/*
+		 * The value to pass to _STV is expected to be the number of
+		 * seconds between the time when the timer is programmed and the
+		 * time when it expires represented as a 32-bit integer.
+		 */
+		ret = __acpi_tad_get_real_time(dev, &rt);
+		if (ret)
+			return ret;
+
+		acpi_tad_rt_to_tm(&rt, &tm_now);
+
+		value = ktime_divns(ktime_sub(rtc_tm_to_ktime(t->time),
+					      rtc_tm_to_ktime(tm_now)), NSEC_PER_SEC);
+		if (value <= 0 || value > U32_MAX)
+			return -EINVAL;
+	}
+
+	ret = __acpi_tad_wake_set(dev, "_STV", ACPI_TAD_AC_TIMER, value);
+	if (ret && t->enabled)
+		return ret;
+
+	/*
+	 * If a separate DC alarm timer is supported, set it to the same value
+	 * as the AC alarm timer.
+	 */
+	if (dd->capabilities & ACPI_TAD_DC_WAKE) {
+		ret = __acpi_tad_wake_set(dev, "_STV", ACPI_TAD_DC_TIMER, value);
+		if (ret && t->enabled) {
+			__acpi_tad_wake_set(dev, "_STV", ACPI_TAD_AC_TIMER,
+					    ACPI_TAD_WAKE_DISABLED);
+			return ret;
+		}
+	}
+
+	/* Assume success if the alarm is being disabled. */
+	return 0;
+}
+
+static int acpi_tad_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *t)
+{
+	unsigned long long retval;
+	struct rtc_time tm_now;
+	struct acpi_tad_rt rt;
+	int ret;
+
+	PM_RUNTIME_ACQUIRE(dev, pm);
+	if (PM_RUNTIME_ACQUIRE_ERR(&pm))
+		return -ENXIO;
+
+	ret = __acpi_tad_get_real_time(dev, &rt);
+	if (ret)
+		return ret;
+
+	acpi_tad_rt_to_tm(&rt, &tm_now);
+
+	/*
+	 * Assume that the alarm was set by acpi_tad_rtc_set_alarm(), so the AC
+	 * and DC alarm timer settings are the same and it is sufficient to read
+	 * the former.
+	 *
+	 * The value returned by _TIV should be the number of seconds till the
+	 * expiration of the timer, represented as a 32-bit integer, or the
+	 * special ACPI_TAD_WAKE_DISABLED value meaning that the timer has
+	 * been disabled.
+	 */
+	ret = __acpi_tad_wake_read(dev, "_TIV", ACPI_TAD_AC_TIMER, &retval);
+	if (ret)
+		return ret;
+
+	if (retval > U32_MAX)
+		return -ENODATA;
+
+	t->pending = 0;
+
+	if (retval != ACPI_TAD_WAKE_DISABLED) {
+		t->enabled = 1;
+		t->time = rtc_ktime_to_tm(ktime_add_ns(rtc_tm_to_ktime(tm_now),
+						       (u64)retval * NSEC_PER_SEC));
+	} else {
+		t->enabled = 0;
+		t->time = tm_now;
+	}
 
 	return 0;
 }
@@ -633,9 +761,11 @@ static int acpi_tad_rtc_read_time(struct device *dev, struct rtc_time *tm)
 static const struct rtc_class_ops acpi_tad_rtc_ops = {
 	.read_time = acpi_tad_rtc_read_time,
 	.set_time = acpi_tad_rtc_set_time,
+	.set_alarm = acpi_tad_rtc_set_alarm,
+	.read_alarm = acpi_tad_rtc_read_alarm,
 };
 
-static void acpi_tad_register_rtc(struct device *dev)
+static void acpi_tad_register_rtc(struct device *dev, unsigned long long caps)
 {
 	struct rtc_device *rtc;
 
@@ -648,10 +778,14 @@ static void acpi_tad_register_rtc(struct device *dev)
 
 	rtc->ops = &acpi_tad_rtc_ops;
 
+	if (!(caps & ACPI_TAD_AC_WAKE))
+		clear_bit(RTC_FEATURE_ALARM, rtc->features);
+
 	devm_rtc_register_device(rtc);
 }
 #else /* !CONFIG_RTC_CLASS */
-static inline void acpi_tad_register_rtc(struct device *dev) {}
+static inline void acpi_tad_register_rtc(struct device *dev,
+					 unsigned long long caps) {}
 #endif /* !CONFIG_RTC_CLASS */
 
 /* Platform driver interface */
@@ -737,7 +871,7 @@ static int acpi_tad_probe(struct platform_device *pdev)
 	pm_runtime_suspend(dev);
 
 	if (caps & ACPI_TAD_RT)
-		acpi_tad_register_rtc(dev);
+		acpi_tad_register_rtc(dev, caps);
 
 	return 0;
 }

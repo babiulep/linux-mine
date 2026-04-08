@@ -213,7 +213,7 @@ static void *bnxtctl_fw_rpc(struct fwctl_uctx *uctx,
 			/* bnxt_send_msg() returned much before FW
 			 * received the command.
 			 */
-			resp->error_code = rc;
+			resp->error_code = cpu_to_le16(rc);
 	}
 
 	return rpc_in.resp;

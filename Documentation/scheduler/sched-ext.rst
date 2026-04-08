@@ -375,9 +375,9 @@ The following briefly shows how a waking task is scheduled and executed.
      rather than performing them immediately. There can be up to
      ``ops.dispatch_max_batch`` pending tasks.
 
-   * ``scx_bpf_move_to_local()`` moves a task from the specified non-local
+   * ``scx_bpf_dsq_move_to_local()`` moves a task from the specified non-local
      DSQ to the dispatching DSQ. This function cannot be called with any BPF
-     locks held. ``scx_bpf_move_to_local()`` flushes the pending insertions
+     locks held. ``scx_bpf_dsq_move_to_local()`` flushes the pending insertions
      tasks before trying to move from the specified DSQ.
 
 4. After ``ops.dispatch()`` returns, if there are tasks in the local DSQ,
@@ -422,23 +422,29 @@ by a sched_ext scheduler:
 
         ops.runnable();         /* Task becomes ready to run */
 
-        while (task is runnable) {
+        while (task_is_runnable(task)) {
             if (task is not in a DSQ && task->scx.slice == 0) {
                 ops.enqueue();  /* Task can be added to a DSQ */
 
-                /* Any usable CPU becomes available */
-
-                ops.dispatch(); /* Task is moved to a local DSQ */
-
-                ops.dequeue(); /* Exiting BPF scheduler */
+                /* Task property change (i.e., affinity, nice, etc.)? */
+                if (sched_change(task)) {
+                    ops.dequeue(); /* Exiting BPF scheduler custody */
+                    continue;
+                }
             }
+
+            /* Any usable CPU becomes available */
+
+            ops.dispatch();     /* Task is moved to a local DSQ */
+            ops.dequeue();      /* Exiting BPF scheduler custody */
+
             ops.running();      /* Task starts running on its assigned CPU */
 
-            while task_is_runnable(p) {
-                while (task->scx.slice > 0 && task_is_runnable(p))
-                    ops.tick();     /* Called every 1/HZ seconds */
+            while (task_is_runnable(task) && task->scx.slice > 0) {
+                ops.tick();     /* Called every 1/HZ seconds */
 
-                ops.dispatch();     /* task->scx.slice can be refilled */
+                if (task->scx.slice == 0)
+                    ops.dispatch(); /* task->scx.slice can be refilled */
             }
 
             ops.stopping();     /* Task stops running (time slice expires or wait) */

@@ -467,8 +467,9 @@ void gfs2_log_release(struct gfs2_sbd *sdp, unsigned int blks)
 {
 	atomic_add(blks, &sdp->sd_log_blks_free);
 	trace_gfs2_log_blocks(sdp, blks);
-	gfs2_assert_withdraw(sdp, atomic_read(&sdp->sd_log_blks_free) <=
-				  sdp->sd_jdesc->jd_blocks);
+	gfs2_assert_withdraw(sdp, !sdp->sd_jdesc ||
+			atomic_read(&sdp->sd_log_blks_free) <=
+			sdp->sd_jdesc->jd_blocks);
 	if (atomic_read(&sdp->sd_log_blks_needed))
 		wake_up(&sdp->sd_log_waitq);
 }
@@ -931,7 +932,6 @@ void gfs2_ail_drain(struct gfs2_sbd *sdp)
 {
 	struct gfs2_trans *tr;
 
-	down_write(&sdp->sd_log_flush_lock);
 	spin_lock(&sdp->sd_ail_lock);
 	/*
 	 * For transactions on the sd_ail1_list we need to drain both the
@@ -957,7 +957,6 @@ void gfs2_ail_drain(struct gfs2_sbd *sdp)
 	}
 	gfs2_drain_revokes(sdp);
 	spin_unlock(&sdp->sd_ail_lock);
-	up_write(&sdp->sd_log_flush_lock);
 }
 
 /**
@@ -1004,6 +1003,7 @@ static void gfs2_trans_drain_list(struct gfs2_sbd *sdp, struct list_head *list)
 
 /**
  * gfs2_trans_drain - drain the buf and databuf queue for a failed transaction
+ * @sdp: the filesystem
  * @tr: the transaction to drain
  *
  * When this is called, we're taking an error exit for a log write that failed

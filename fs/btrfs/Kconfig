@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: GPL-2.0
-# misc-next marker
 
 config BTRFS_FS
 	tristate "Btrfs filesystem support"
@@ -112,8 +111,6 @@ config BTRFS_EXPERIMENTAL
 	  - extent tree v2 - complex rework of extent tracking
 
 	  - large folio and block size (> page size) support
-
-	  - shutdown ioctl and auto-degradation support
 
 	  - asynchronous checksum generation for data writes
 
