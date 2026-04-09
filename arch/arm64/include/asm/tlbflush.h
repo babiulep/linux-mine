@@ -106,8 +106,8 @@ static inline void sme_dvmsync_add_pending(struct arch_tlbflush_unmap_batch *bat
 		return;
 
 	/*
-	 * Allocate the batch cpumask on first use. If this fails, fall back to
-	 * an immediate IPI for this mm.
+	 * Allocate the batch cpumask on first use. Fall back to an immediate
+	 * IPI for this mm in case of failure.
 	 */
 	if (!cpumask_available(batch->cpumask) &&
 	    !zalloc_cpumask_var(&batch->cpumask, GFP_ATOMIC)) {

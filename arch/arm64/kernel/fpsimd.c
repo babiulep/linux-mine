@@ -1363,10 +1363,9 @@ void do_sve_acc(unsigned long esr, struct pt_regs *regs)
 #ifdef CONFIG_ARM64_ERRATUM_4193714
 
 /*
- * SME/CME erratum handling
+ * SME/CME erratum handling.
  */
-static cpumask_var_t sme_dvmsync_cpus;
-static DEFINE_RAW_SPINLOCK(sme_dvmsync_init_lock);
+static cpumask_t sme_dvmsync_cpus;
 
 /*
  * These helpers are only called from non-preemptible contexts, so
@@ -1376,7 +1375,7 @@ void sme_set_active(void)
 {
 	unsigned int cpu = smp_processor_id();
 
-	if (!cpumask_test_cpu(cpu, sme_dvmsync_cpus))
+	if (!cpumask_test_cpu(cpu, &sme_dvmsync_cpus))
 		return;
 
 	cpumask_set_cpu(cpu, mm_cpumask(current->mm));
@@ -1396,7 +1395,7 @@ void sme_clear_active(void)
 {
 	unsigned int cpu = smp_processor_id();
 
-	if (!cpumask_test_cpu(cpu, sme_dvmsync_cpus))
+	if (!cpumask_test_cpu(cpu, &sme_dvmsync_cpus))
 		return;
 
 	/*
@@ -1433,17 +1432,7 @@ void sme_do_dvmsync(const struct cpumask *mask)
 
 void sme_enable_dvmsync(void)
 {
-	/*
-	 * stop_machine() will invoke this function concurrently on all
-	 * affected CPUs. Serialise the initialisation.
-	 */
-	raw_spin_lock(&sme_dvmsync_init_lock);
-	if (!cpumask_available(sme_dvmsync_cpus) &&
-	    !zalloc_cpumask_var(&sme_dvmsync_cpus, GFP_ATOMIC))
-		panic("Unable to allocate cpumasks for the SME DVMSync erratum");
-	raw_spin_unlock(&sme_dvmsync_init_lock);
-
-	cpumask_set_cpu(smp_processor_id(), sme_dvmsync_cpus);
+	cpumask_set_cpu(smp_processor_id(), &sme_dvmsync_cpus);
 }
 
 #endif /* CONFIG_ARM64_ERRATUM_4193714 */

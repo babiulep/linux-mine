@@ -1290,6 +1290,7 @@ F:	include/uapi/drm/amdxdna_accel.h
 
 AMD XGBE DRIVER
 M:	Raju Rangoju <Raju.Rangoju@amd.com>
+M:	Prashanth Kumar K R <PrashanthKumar.K.R@amd.com>
 L:	netdev@vger.kernel.org
 S:	Maintained
 F:	arch/arm64/boot/dts/amd/amd-seattle-xgbe*.dtsi
@@ -10133,6 +10134,29 @@ S:	Maintained
 W:	https://floatingpoint.billm.au/
 F:	arch/x86/math-emu/
 
+FRAMEBUFFER CONSOLE
+M:	Helge Deller <deller@gmx.de>
+M:	Thomas Zimmermann <tzimmermann@suse.de>
+L:	dri-devel@lists.freedesktop.org
+L:	linux-fbdev@vger.kernel.org
+S:	Maintained
+T:	git https://gitlab.freedesktop.org/drm/misc/kernel.git
+F:	Documentation/fb/fbcon.rst
+F:	drivers/video/fbdev/core/bitblit.c
+F:	drivers/video/fbdev/core/fb_logo.c
+F:	drivers/video/fbdev/core/fbcon.c
+F:	drivers/video/fbdev/core/fbcon.h
+F:	drivers/video/fbdev/core/fbcon_ccw.c
+F:	drivers/video/fbdev/core/fbcon_cw.c
+F:	drivers/video/fbdev/core/fbcon_rotate.c
+F:	drivers/video/fbdev/core/fbcon_rotate.h
+F:	drivers/video/fbdev/core/fbcon_ud.c
+F:	drivers/video/fbdev/core/softcursor.c
+F:	drivers/video/fbdev/core/tileblit.c
+F:	include/linux/fbcon.h
+F:	include/linux/font.h
+F:	lib/fonts/
+
 FRAMEBUFFER CORE
 M:	Simona Vetter <simona@ffwll.ch>
 S:	Odd Fixes
@@ -10320,7 +10344,7 @@ F:	drivers/net/ethernet/freescale/dpaa
 
 FREESCALE QORIQ DPAA FMAN DRIVER
 M:	Madalin Bucur <madalin.bucur@nxp.com>
-R:	Sean Anderson <sean.anderson@seco.com>
+R:	Sean Anderson <sean.anderson@linux.dev>
 L:	netdev@vger.kernel.org
 S:	Maintained
 F:	Documentation/devicetree/bindings/net/fsl,fman*.yaml
@@ -22341,11 +22365,13 @@ F:	tools/testing/selftests/net/rds/
 RDT - RESOURCE ALLOCATION
 M:	Tony Luck <tony.luck@intel.com>
 M:	Reinette Chatre <reinette.chatre@intel.com>
+M:	x86@kernel.org
 R:	Dave Martin <Dave.Martin@arm.com>
 R:	James Morse <james.morse@arm.com>
 R:	Babu Moger <babu.moger@amd.com>
 L:	linux-kernel@vger.kernel.org
 S:	Supported
+P:	Documentation/process/maintainer-tip.rst
 F:	Documentation/filesystems/resctrl.rst
 F:	arch/x86/include/asm/resctrl.h
 F:	arch/x86/kernel/cpu/resctrl/
@@ -29156,7 +29182,7 @@ S:	Orphan
 F:	drivers/net/ethernet/xilinx/ll_temac*
 
 XILINX PWM DRIVER
-M:	Sean Anderson <sean.anderson@seco.com>
+M:	Sean Anderson <sean.anderson@linux.dev>
 S:	Maintained
 F:	drivers/pwm/pwm-xilinx.c
 F:	include/clocksource/timer-xilinx.h

@@ -83,7 +83,7 @@ static void __font_glyph_rotate_90(const unsigned char *glyph,
  * The caller has to provide the output buffer @out of sufficient size to hold
  * the rotated glyph. Rotating by 90° flips the width and height for the output
  * glyph. Depending on the glyph pitch, the size of the output glyph can be
- * different then the size of the input. Caller shave to take this into account
+ * different than the size of the input. Callers have to take this into account
  * when allocating the output memory.
  */
 void font_glyph_rotate_90(const unsigned char *glyph, unsigned int width, unsigned int height,
@@ -162,7 +162,7 @@ static void __font_glyph_rotate_270(const unsigned char *glyph,
  * The caller has to provide the output buffer @out of sufficient size to hold
  * the rotated glyph. Rotating by 270° flips the width and height for the output
  * glyph. Depending on the glyph pitch, the size of the output glyph can be
- * different then the size of the input. Caller shave to take this into account
+ * different than the size of the input. Callers have to take this into account
  * when allocating the output memory.
  */
 void font_glyph_rotate_270(const unsigned char *glyph, unsigned int width, unsigned int height,
@@ -190,13 +190,13 @@ EXPORT_SYMBOL_GPL(font_glyph_rotate_270);
  * but only 0 to 3 produce distinct results. With 4 or higher, a full rotation
  * has been performed. You can pass any value for @steps and the helper will
  * perform the appropriate rotation. Note that the returned buffer is not
- * compatible with font_data_t. It only contains glphy data in the same format
+ * compatible with font_data_t. It only contains glyph data in the same format
  * as returned by font_data_buf(). Callers are responsible to free the returned
  * buffer with kfree(). Font rotation typically happens when displays get
  * re-oriented. To avoid unnecessary re-allocation of the memory buffer, the
- * caller can pass in an earlier result buffer in @buf for reuse. The buffer
- * size of given and returned in @bufsize. The allocation semantics are compatible
- * with krealloc().
+ * caller can pass in an earlier result buffer in @buf for reuse. The old and
+ * new buffer sizes are given and retrieved by the caller in @bufsize. The
+ * allocation semantics are compatible with krealloc().
  *
  * Returns:
  * A buffer with rotated glyphs on success, or an error pointer otherwise

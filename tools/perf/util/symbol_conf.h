@@ -51,7 +51,7 @@ struct symbol_conf {
 			report_block,
 			report_individual_block,
 			inline_name,
-			disable_add2line_warn,
+			addr2line_disable_warn,
 			no_buildid_mmap2,
 			guest_code,
 			lazy_load_kernel_maps,
@@ -80,6 +80,7 @@ struct symbol_conf {
 			*bt_stop_list_str;
 	const char		*addr2line_path;
 	enum a2l_style	addr2line_style[MAX_A2L_STYLE];
+	int             addr2line_timeout_ms;
 	unsigned long	time_quantum;
        struct strlist	*dso_list,
 			*comm_list,

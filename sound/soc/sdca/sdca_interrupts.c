@@ -117,9 +117,7 @@ static irqreturn_t function_status_handler(int irq, void *data)
 
 	status = val;
 	for_each_set_bit(mask, &status, BITS_PER_BYTE) {
-		mask = 1 << mask;
-
-		switch (mask) {
+		switch (BIT(mask)) {
 		case SDCA_CTL_ENTITY_0_FUNCTION_NEEDS_INITIALIZATION:
 			//FIXME: Add init writes
 			break;
@@ -140,7 +138,7 @@ static irqreturn_t function_status_handler(int irq, void *data)
 		}
 	}
 
-	ret = regmap_write(interrupt->function_regmap, reg, val);
+	ret = regmap_write(interrupt->function_regmap, reg, val & 0x7F);
 	if (ret < 0) {
 		dev_err(dev, "failed to clear function status: %d\n", ret);
 		goto error;
@@ -557,17 +555,16 @@ EXPORT_SYMBOL_NS_GPL(sdca_irq_populate, "SND_SOC_SDCA");
 
 /**
  * sdca_irq_cleanup - Free all the individual IRQs for an SDCA Function
+ * @sdev: Device pointer against which the sdca_interrupt_info was allocated.
  * @function: Pointer to the SDCA Function.
- * @component: Pointer to the ASoC component for the Function.
  * @info: Pointer to the SDCA interrupt info for this device.
  *
  * Typically this would be called from the driver for a single SDCA Function.
  */
-void sdca_irq_cleanup(struct sdca_function_data *function,
-		      struct snd_soc_component *component,
+void sdca_irq_cleanup(struct device *dev,
+		      struct sdca_function_data *function,
 		      struct sdca_interrupt_info *info)
 {
-	struct device *dev = component->dev;
 	int i;
 
 	guard(mutex)(&info->irq_lock);

@@ -84,7 +84,7 @@ struct fbcon_par {
 #ifdef CONFIG_FRAMEBUFFER_CONSOLE_ROTATION
 	struct {
 		font_data_t *fontdata;  /* source font */
-		u8 *buf;                /* rotated glphys */
+		u8 *buf;                /* rotated glyphs */
 		size_t bufsize;
 		int buf_rotate;         /* rotation of buf */
 	} rotated;

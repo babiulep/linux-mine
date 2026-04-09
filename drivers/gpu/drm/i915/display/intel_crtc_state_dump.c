@@ -328,11 +328,12 @@ void intel_crtc_state_dump(const struct intel_crtc_state *pipe_config,
 		   pipe_config->linetime, pipe_config->ips_linetime);
 
 	if (DISPLAY_VER(display) >= 9)
-		drm_printf(&p, "num_scalers: %d, scaler_users: 0x%x, scaler_id: %d, scaling_filter: %d\n",
+		drm_printf(&p, "num_scalers: %d, scaler_users: 0x%x, scaler_id: %d, scaling_filter: %d, sharpness_strength: %d\n",
 			   crtc->num_scalers,
 			   pipe_config->scaler_state.scaler_users,
 			   pipe_config->scaler_state.scaler_id,
-			   pipe_config->hw.scaling_filter);
+			   pipe_config->hw.scaling_filter,
+			   pipe_config->hw.sharpness_strength);
 
 	drm_printf(&p, "pipe src: " DRM_RECT_FMT "\n",
 		   DRM_RECT_ARG(&pipe_config->pipe_src));
@@ -349,9 +350,9 @@ void intel_crtc_state_dump(const struct intel_crtc_state *pipe_config,
 			   str_yes_no(pipe_config->pch_pfit.force_thru));
 
 	drm_printf(&p, "sharpness strength: %d, sharpness tap size: %d, sharpness enable: %d\n",
-		   pipe_config->hw.casf_params.strength,
-		   pipe_config->hw.casf_params.win_size,
-		   pipe_config->hw.casf_params.casf_enable);
+		   pipe_config->pch_pfit.casf.strength,
+		   pipe_config->pch_pfit.casf.win_size,
+		   pipe_config->pch_pfit.casf.enable);
 
 	drm_printf(&p, "ips: %i, double wide: %i, drrs: %i\n",
 		   pipe_config->ips_enabled, pipe_config->double_wide,

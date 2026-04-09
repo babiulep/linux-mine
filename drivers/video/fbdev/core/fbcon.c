@@ -448,7 +448,7 @@ static void fbcon_del_cursor_work(struct fb_info *info)
 
 void fbcon_fill_cursor_mask(struct fbcon_par *par, struct vc_data *vc, unsigned char *mask)
 {
-	static const unsigned char pattern = 0xff;
+	static const unsigned int pattern = 0xffffffff;
 	unsigned int pitch = vc_font_pitch(&vc->vc_font);
 	unsigned int cur_height, size;
 
@@ -483,7 +483,7 @@ void fbcon_fill_cursor_mask(struct fbcon_par *par, struct vc_data *vc, unsigned 
 
 	size = cur_height * pitch;
 	while (size--)
-		*mask++ = pattern;
+		*mask++ = (unsigned char)pattern;
 }
 
 #ifndef MODULE

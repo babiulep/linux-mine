@@ -343,15 +343,16 @@ void flush_thread(void)
 
 #ifdef CONFIG_ARM64_ERRATUM_4193714
 
-static int arch_dup_tlbbatch_mask(struct task_struct *dst)
+static void arch_dup_tlbbatch_mask(struct task_struct *dst)
 {
-	if (!alternative_has_cap_unlikely(ARM64_WORKAROUND_4193714))
-		return 0;
-
-	if (!zalloc_cpumask_var(&dst->tlb_ubc.arch.cpumask, GFP_KERNEL))
-		return -ENOMEM;
-
-	return 0;
+	/*
+	 * Clear the inherited cpumask with memset() to cover both cases where
+	 * cpumask_var_t is a pointer or an array. It will be allocated lazily
+	 * in sme_dvmsync_add_pending() if CPUMASK_OFFSTACK=y.
+	 */
+	if (alternative_has_cap_unlikely(ARM64_WORKAROUND_4193714))
+		memset(&dst->tlb_ubc.arch.cpumask, 0,
+		       sizeof(dst->tlb_ubc.arch.cpumask));
 }
 
 static void arch_release_tlbbatch_mask(struct task_struct *tsk)
@@ -362,9 +363,8 @@ static void arch_release_tlbbatch_mask(struct task_struct *tsk)
 
 #else
 
-static int arch_dup_tlbbatch_mask(struct task_struct *dst)
+static void arch_dup_tlbbatch_mask(struct task_struct *dst)
 {
-	return 0;
 }
 
 static void arch_release_tlbbatch_mask(struct task_struct *tsk)
@@ -391,8 +391,7 @@ int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
 
 	*dst = *src;
 
-	if (arch_dup_tlbbatch_mask(dst))
-		return -ENOMEM;
+	arch_dup_tlbbatch_mask(dst);
 
 	/*
 	 * Drop stale reference to src's sve_state and convert dst to
@@ -737,6 +736,29 @@ void update_sctlr_el1(u64 sctlr)
 	isb();
 }
 
+static inline void debug_switch_state(void)
+{
+	if (system_uses_irq_prio_masking()) {
+		unsigned long daif_expected = 0;
+		unsigned long daif_actual = read_sysreg(daif);
+		unsigned long pmr_expected = GIC_PRIO_IRQOFF;
+		unsigned long pmr_actual = read_sysreg_s(SYS_ICC_PMR_EL1);
+
+		WARN_ONCE(daif_actual != daif_expected ||
+			  pmr_actual != pmr_expected,
+			  "Unexpected DAIF + PMR: 0x%lx + 0x%lx (expected 0x%lx + 0x%lx)\n",
+			  daif_actual, pmr_actual,
+			  daif_expected, pmr_expected);
+	} else {
+		unsigned long daif_expected = DAIF_PROCCTX_NOIRQ;
+		unsigned long daif_actual = read_sysreg(daif);
+
+		WARN_ONCE(daif_actual != daif_expected,
+			  "Unexpected DAIF value: 0x%lx (expected 0x%lx)\n",
+			  daif_actual, daif_expected);
+	}
+}
+
 /*
  * Thread switching.
  */
@@ -745,6 +767,8 @@ struct task_struct *__switch_to(struct task_struct *prev,
 				struct task_struct *next)
 {
 	struct task_struct *last;
+
+	debug_switch_state();
 
 	fpsimd_thread_switch(next);
 	tls_thread_switch(next);
