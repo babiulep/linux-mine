@@ -18,7 +18,6 @@
 
 #include <kvm/arm_psci.h>
 
-#include <asm/arch_timer.h>
 #include <asm/barrier.h>
 #include <asm/cpufeature.h>
 #include <asm/extable.h>

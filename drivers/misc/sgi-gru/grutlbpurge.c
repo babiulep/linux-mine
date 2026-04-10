@@ -22,11 +22,12 @@
 #include <linux/delay.h>
 #include <linux/timex.h>
 #include <linux/srcu.h>
-#include <linux/random.h>
 #include <asm/processor.h>
 #include "gru.h"
 #include "grutables.h"
 #include <asm/uv/uv_hub.h>
+
+#define gru_random()	get_cycles()
 
 /* ---------------------------------- TLB Invalidation functions --------
  * get_tgh_handle
@@ -48,7 +49,7 @@ static inline int get_off_blade_tgh(struct gru_state *gru)
 	int n;
 
 	n = GRU_NUM_TGH - gru->gs_tgh_first_remote;
-	n = get_random_u32() % n;
+	n = gru_random() % n;
 	n += gru->gs_tgh_first_remote;
 	return n;
 }

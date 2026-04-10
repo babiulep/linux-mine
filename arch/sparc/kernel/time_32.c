@@ -37,6 +37,7 @@
 
 #include <asm/mc146818rtc.h>
 #include <asm/oplib.h>
+#include <asm/timex.h>
 #include <asm/timer.h>
 #include <asm/irq.h>
 #include <asm/io.h>

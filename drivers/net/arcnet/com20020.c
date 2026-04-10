@@ -70,7 +70,8 @@ static void com20020_copy_from_card(struct net_device *dev, int bufnum,
 	arcnet_outb(ofs & 0xff, ioaddr, COM20020_REG_W_ADDR_LO);
 
 	/* copy the data */
-	arcnet_insb(ioaddr, COM20020_REG_RW_MEMDATA, buf, count);
+	TIME(dev, "insb", count,
+	     arcnet_insb(ioaddr, COM20020_REG_RW_MEMDATA, buf, count));
 }
 
 static void com20020_copy_to_card(struct net_device *dev, int bufnum,
@@ -83,7 +84,8 @@ static void com20020_copy_to_card(struct net_device *dev, int bufnum,
 	arcnet_outb(ofs & 0xff, ioaddr, COM20020_REG_W_ADDR_LO);
 
 	/* copy the data */
-	arcnet_outsb(ioaddr, COM20020_REG_RW_MEMDATA, buf, count);
+	TIME(dev, "outsb", count,
+	     arcnet_outsb(ioaddr, COM20020_REG_RW_MEMDATA, buf, count));
 }
 
 /* Reset the card and check some basic stuff during the detection stage. */

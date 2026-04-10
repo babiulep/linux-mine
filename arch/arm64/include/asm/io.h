@@ -100,13 +100,12 @@ static __always_inline u64 __raw_readq(const volatile void __iomem *addr)
 ({									\
 	unsigned long tmp;						\
 									\
-	dma_rmb();							\
+	dma_rmb();								\
 									\
 	/*								\
 	 * Create a dummy control dependency from the IO read to any	\
 	 * later instructions. This ensures that a subsequent call to	\
-	 * udelay() will be ordered due to the ISB in			\
-	 * arm_timer_read_counter().					\
+	 * udelay() will be ordered due to the ISB in get_cycles().	\
 	 */								\
 	asm volatile("eor	%0, %1, %1\n"				\
 		     "cbnz	%0, ."					\

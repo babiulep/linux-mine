@@ -13,7 +13,6 @@
 #include <asm/asm-offsets.h>
 #include <asm/cacheflush.h>
 #include <asm/cacheops.h>
-#include <asm/cpu-type.h>
 #include <asm/idle.h>
 #include <asm/mips-cps.h>
 #include <asm/mipsmtregs.h>

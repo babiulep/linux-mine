@@ -332,13 +332,15 @@ static void com90io_setmask(struct net_device *dev, int mask)
 static void com90io_copy_to_card(struct net_device *dev, int bufnum,
 				 int offset, void *buf, int count)
 {
-	put_whole_buffer(dev, bufnum * 512 + offset, count, buf);
+	TIME(dev, "put_whole_buffer", count,
+	     put_whole_buffer(dev, bufnum * 512 + offset, count, buf));
 }
 
 static void com90io_copy_from_card(struct net_device *dev, int bufnum,
 				   int offset, void *buf, int count)
 {
-	get_whole_buffer(dev, bufnum * 512 + offset, count, buf);
+	TIME(dev, "get_whole_buffer", count,
+	     get_whole_buffer(dev, bufnum * 512 + offset, count, buf));
 }
 
 static int io;			/* use the insmod io= irq= shmem= options */

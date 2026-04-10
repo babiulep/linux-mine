@@ -48,7 +48,6 @@
 #include <linux/vmcore_info.h>
 
 #include <asm/fred.h>
-#include <asm/cpumask.h>
 #include <asm/cpu_device_id.h>
 #include <asm/processor.h>
 #include <asm/traps.h>

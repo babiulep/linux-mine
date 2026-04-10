@@ -17,7 +17,6 @@
 #include <linux/platform_device.h>
 #include <asm/processor.h>
 #include <asm/pdcpat.h>
-#include <asm/timex.h>
 
 static u64 cr16_clock_freq;
 static unsigned long clocktick;

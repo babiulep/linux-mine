@@ -7,7 +7,6 @@
 #include <linux/kvm.h>
 #include <linux/kvm_host.h>
 
-#include <asm/arch_timer.h>
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_nested.h>
 

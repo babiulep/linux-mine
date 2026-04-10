@@ -28,8 +28,6 @@
 
 #include <linux/ptp_clock_kernel.h>
 
-#include <asm/ptp_vmclock.h>
-
 #ifdef CONFIG_X86
 #include <asm/pvclock.h>
 #include <asm/kvmclock.h>
@@ -146,11 +144,11 @@ static int vmclock_get_crosststamp(struct vmclock_state *st,
 			if (systime_snapshot.cs_id == st->cs_id) {
 				cycle = systime_snapshot.cycles;
 			} else {
-				cycle = ptp_vmclock_read_cpu_counter();
+				cycle = get_cycles();
 				ptp_read_system_postts(sts);
 			}
 		} else {
-			cycle = ptp_vmclock_read_cpu_counter();
+			cycle = get_cycles();
 		}
 
 		delta = cycle - le64_to_cpu(st->clk->counter_value);

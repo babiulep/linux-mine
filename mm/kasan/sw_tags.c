@@ -41,7 +41,7 @@ void __init kasan_init_sw_tags(void)
 	int cpu;
 
 	for_each_possible_cpu(cpu)
-		per_cpu(prng_state, cpu) = (u32)random_get_entropy();
+		per_cpu(prng_state, cpu) = (u32)get_cycles();
 
 	kasan_init_tags();
 	kasan_enable();

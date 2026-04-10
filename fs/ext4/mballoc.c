@@ -1289,7 +1289,7 @@ void ext4_mb_generate_buddy(struct super_block *sb,
 	ext4_grpblk_t len;
 	unsigned free = 0;
 	unsigned fragments = 0;
-	ktime_t period = ktime_get();
+	unsigned long long period = get_cycles();
 
 	/* initialize buddy from bitmap which is aggregation
 	 * of on-disk bitmap and preallocations */
@@ -1328,7 +1328,7 @@ void ext4_mb_generate_buddy(struct super_block *sb,
 
 	clear_bit(EXT4_GROUP_INFO_NEED_INIT_BIT, &(grp->bb_state));
 
-	period = ktime_get() - period;
+	period = get_cycles() - period;
 	atomic_inc(&sbi->s_mb_buddies_generated);
 	atomic64_add(period, &sbi->s_mb_generation_time);
 }

@@ -4,6 +4,7 @@
 #include <linux/interval_tree.h>
 #include <linux/prandom.h>
 #include <linux/slab.h>
+#include <asm/timex.h>
 #include <linux/bitmap.h>
 #include <linux/maple_tree.h>
 
@@ -64,13 +65,13 @@ static void init(void)
 static int basic_check(void)
 {
 	int i, j;
-	ktime_t time1, time2, time;
+	cycles_t time1, time2, time;
 
 	printk(KERN_ALERT "interval tree insert/remove");
 
 	init();
 
-	time1 = ktime_get();
+	time1 = get_cycles();
 
 	for (i = 0; i < perf_loops; i++) {
 		for (j = 0; j < nnodes; j++)
@@ -79,11 +80,11 @@ static int basic_check(void)
 			interval_tree_remove(nodes + j, &root);
 	}
 
-	time2 = ktime_get();
+	time2 = get_cycles();
 	time = time2 - time1;
 
 	time = div_u64(time, perf_loops);
-	printk(" -> %llu nsecs\n", (unsigned long long)time);
+	printk(" -> %llu cycles\n", (unsigned long long)time);
 
 	return 0;
 }
@@ -92,7 +93,7 @@ static int search_check(void)
 {
 	int i, j;
 	unsigned long results;
-	ktime_t time1, time2, time;
+	cycles_t time1, time2, time;
 
 	printk(KERN_ALERT "interval tree search");
 
@@ -101,7 +102,7 @@ static int search_check(void)
 	for (j = 0; j < nnodes; j++)
 		interval_tree_insert(nodes + j, &root);
 
-	time1 = ktime_get();
+	time1 = get_cycles();
 
 	results = 0;
 	for (i = 0; i < search_loops; i++)
@@ -112,12 +113,12 @@ static int search_check(void)
 			results += search(&root, start, last);
 		}
 
-	time2 = ktime_get();
+	time2 = get_cycles();
 	time = time2 - time1;
 
 	time = div_u64(time, search_loops);
 	results = div_u64(results, search_loops);
-	printk(" -> %llu nsecs (%lu results)\n",
+	printk(" -> %llu cycles (%lu results)\n",
 	       (unsigned long long)time, results);
 
 	for (j = 0; j < nnodes; j++)

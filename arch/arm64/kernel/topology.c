@@ -21,7 +21,6 @@
 #include <linux/sched/isolation.h>
 #include <linux/xarray.h>
 
-#include <asm/arch_timer.h>
 #include <asm/cpu.h>
 #include <asm/cputype.h>
 #include <asm/topology.h>

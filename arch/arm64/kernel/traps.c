@@ -30,7 +30,6 @@
 #include <linux/ubsan.h>
 #include <linux/cfi.h>
 
-#include <asm/arch_timer.h>
 #include <asm/atomic.h>
 #include <asm/bug.h>
 #include <asm/cpufeature.h>

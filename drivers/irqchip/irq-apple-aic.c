@@ -55,7 +55,6 @@
 #include <linux/jump_label.h>
 #include <linux/limits.h>
 #include <linux/of_address.h>
-#include <asm/arch_timer.h>
 #include <linux/slab.h>
 #include <asm/apple_m1_pmu.h>
 #include <asm/cputype.h>

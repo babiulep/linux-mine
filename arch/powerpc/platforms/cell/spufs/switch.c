@@ -34,7 +34,6 @@
 #include <asm/spu_priv1.h>
 #include <asm/spu_csa.h>
 #include <asm/mmu_context.h>
-#include <asm/time.h>
 
 #include "spufs.h"
 
@@ -280,7 +279,7 @@ static inline void save_timebase(struct spu_state *csa, struct spu *spu)
 	 *    Read PPE Timebase High and Timebase low registers
 	 *    and save in CSA.  TBD.
 	 */
-	csa->suspend_time = mftb();
+	csa->suspend_time = get_cycles();
 }
 
 static inline void remove_other_spu_access(struct spu_state *csa,
@@ -1262,7 +1261,7 @@ static inline void setup_decr(struct spu_state *csa, struct spu *spu)
 	 *     in LSCSA.
 	 */
 	if (csa->priv2.mfc_control_RW & MFC_CNTL_DECREMENTER_RUNNING) {
-		cycles_t resume_time = mftb();
+		cycles_t resume_time = get_cycles();
 		cycles_t delta_time = resume_time - csa->suspend_time;
 
 		csa->lscsa->decr_status.slot[0] = SPU_DECR_STATUS_RUNNING;

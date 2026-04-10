@@ -2,7 +2,6 @@
 #ifndef _ASM_RQSPINLOCK_H
 #define _ASM_RQSPINLOCK_H
 
-#include <asm/arch_timer.h>
 #include <asm/barrier.h>
 
 /*

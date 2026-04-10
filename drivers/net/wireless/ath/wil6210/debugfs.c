@@ -151,7 +151,7 @@ static int ring_show(struct seq_file *s, void *data)
 			char name[10];
 			char sidle[10];
 			/* performance monitoring */
-			ktime_t now = ktime_get();
+			cycles_t now = get_cycles();
 			uint64_t idle = txdata->idle * 100;
 			uint64_t total = now - txdata->begin;
 

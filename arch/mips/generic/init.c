@@ -12,7 +12,6 @@
 #include <linux/of_fdt.h>
 
 #include <asm/bootinfo.h>
-#include <asm/cpu-type.h>
 #include <asm/fw/fw.h>
 #include <asm/irq_cpu.h>
 #include <asm/machine.h>
