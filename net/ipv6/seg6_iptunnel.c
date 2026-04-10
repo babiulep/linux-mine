@@ -739,7 +739,7 @@ static int seg6_build_state(struct net *net, struct nlattr *nla,
 		    ipv6_addr_loopback(&slwt->tunsrc)) {
 			NL_SET_ERR_MSG(extack, "invalid tunsrc address");
 			err = -EINVAL;
-			goto free_dst_cache;
+			goto err_destroy_output;
 		}
 	}
 
@@ -755,7 +755,7 @@ static int seg6_build_state(struct net *net, struct nlattr *nla,
 
 	return 0;
 
-free_dst_cache:
+err_destroy_output:
 	dst_cache_destroy(&slwt->cache_output);
 err_destroy_input:
 	dst_cache_destroy(&slwt->cache_input);

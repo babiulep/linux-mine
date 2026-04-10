@@ -453,7 +453,7 @@ static int record__aio_pushfn(struct mmap *map, void *to, void *buf, size_t size
 static int record__aio_push(struct record *rec, struct mmap *map, off_t *off)
 {
 	int ret, idx;
-	int trace_fd = rec->session->data->file.fd;
+	int trace_fd = perf_data__fd(rec->session->data);
 	struct record_aio aio = { .rec = rec, .size = 0 };
 
 	/*
@@ -1070,12 +1070,12 @@ static int record__thread_data_init_maps(struct record_thread *thread_data, stru
 		thread_data->nr_mmaps = bitmap_weight(thread_data->mask->maps.bits,
 						      thread_data->mask->maps.nbits);
 	if (mmap) {
-		thread_data->maps = zalloc(thread_data->nr_mmaps * sizeof(struct mmap *));
+		thread_data->maps = calloc(thread_data->nr_mmaps, sizeof(struct mmap *));
 		if (!thread_data->maps)
 			return -ENOMEM;
 	}
 	if (overwrite_mmap) {
-		thread_data->overwrite_maps = zalloc(thread_data->nr_mmaps * sizeof(struct mmap *));
+		thread_data->overwrite_maps = calloc(thread_data->nr_mmaps, sizeof(struct mmap *));
 		if (!thread_data->overwrite_maps) {
 			zfree(&thread_data->maps);
 			return -ENOMEM;
@@ -1220,7 +1220,7 @@ static int record__alloc_thread_data(struct record *rec, struct evlist *evlist)
 	int t, ret;
 	struct record_thread *thread_data;
 
-	rec->thread_data = zalloc(rec->nr_threads * sizeof(*(rec->thread_data)));
+	rec->thread_data = calloc(rec->nr_threads, sizeof(*(rec->thread_data)));
 	if (!rec->thread_data) {
 		pr_err("Failed to allocate thread data\n");
 		return -ENOMEM;
@@ -1640,7 +1640,7 @@ static int record__mmap_read_evlist(struct record *rec, struct evlist *evlist,
 	int rc = 0;
 	int nr_mmaps;
 	struct mmap **maps;
-	int trace_fd = rec->data.file.fd;
+	int trace_fd = perf_data__fd(&rec->data);
 	off_t off = 0;
 
 	if (!evlist)
@@ -1845,10 +1845,12 @@ record__finish_output(struct record *rec)
 	}
 
 	rec->session->header.data_size += rec->bytes_written;
-	data->file.size = lseek(perf_data__fd(data), 0, SEEK_CUR);
+	data->file.size = perf_data__seek(data, 0, SEEK_CUR);
 	if (record__threads_enabled(rec)) {
-		for (i = 0; i < data->dir.nr; i++)
-			data->dir.files[i].size = lseek(data->dir.files[i].fd, 0, SEEK_CUR);
+		for (i = 0; i < data->dir.nr; i++) {
+			data->dir.files[i].size =
+				perf_data_file__seek(&data->dir.files[i], 0, SEEK_CUR);
+		}
 	}
 
 	/* Buildid scanning disabled or build ID in kernel and synthesized map events. */
@@ -3710,7 +3712,7 @@ static int record__alloc_thread_masks(struct record *rec, int nr_threads, int nr
 {
 	int t, ret;
 
-	rec->thread_masks = zalloc(nr_threads * sizeof(*(rec->thread_masks)));
+	rec->thread_masks = calloc(nr_threads, sizeof(*(rec->thread_masks)));
 	if (!rec->thread_masks) {
 		pr_err("Failed to allocate thread masks\n");
 		return -ENOMEM;
@@ -3920,7 +3922,7 @@ static int record__init_thread_numa_masks(struct record *rec, struct perf_cpu_ma
 		return -ENOMEM;
 	}
 
-	spec = zalloc(topo->nr * sizeof(char *));
+	spec = calloc(topo->nr, sizeof(char *));
 	if (!spec) {
 		pr_err("Failed to allocate NUMA spec\n");
 		ret = -ENOMEM;

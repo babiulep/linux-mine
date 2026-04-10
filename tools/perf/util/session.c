@@ -2559,7 +2559,7 @@ static int __perf_session__process_dir_events(struct perf_session *session)
 			nr_readers++;
 	}
 
-	rd = zalloc(nr_readers * sizeof(struct reader));
+	rd = calloc(nr_readers, sizeof(struct reader));
 	if (!rd)
 		return -ENOMEM;
 
@@ -2583,7 +2583,7 @@ static int __perf_session__process_dir_events(struct perf_session *session)
 		if (!data->dir.files[i].size)
 			continue;
 		rd[readers] = (struct reader) {
-			.fd		 = data->dir.files[i].fd,
+			.fd		 = perf_data_file__fd(&data->dir.files[i]),
 			.path		 = data->dir.files[i].path,
 			.data_size	 = data->dir.files[i].size,
 			.data_offset	 = 0,

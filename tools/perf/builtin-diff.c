@@ -113,7 +113,7 @@ enum {
 	COMPUTE_STREAM,	/* After COMPUTE_MAX to avoid use current compute arrays */
 };
 
-const char *compute_names[COMPUTE_MAX] = {
+static const char *compute_names[COMPUTE_MAX] = {
 	[COMPUTE_DELTA] = "delta",
 	[COMPUTE_DELTA_ABS] = "delta-abs",
 	[COMPUTE_RATIO] = "ratio",
@@ -382,7 +382,7 @@ static void block_hist_free(void *he)
 	free(bh);
 }
 
-struct hist_entry_ops block_hist_ops = {
+static struct hist_entry_ops block_hist_ops = {
 	.new    = block_hist_zalloc,
 	.free   = block_hist_free,
 };
@@ -1891,7 +1891,7 @@ static int data_init(int argc, const char **argv)
 		return -EINVAL;
 	}
 
-	data__files = zalloc(sizeof(*data__files) * data__files_cnt);
+	data__files = calloc(data__files_cnt, sizeof(*data__files));
 	if (!data__files)
 		return -ENOMEM;
 

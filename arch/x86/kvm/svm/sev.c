@@ -2512,12 +2512,12 @@ static int snp_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
 
 		ret = sev_es_sync_vmsa(svm);
 		if (ret)
-			goto err;
+			goto out;
 
 		/* Transition the VMSA page to a firmware state. */
 		ret = rmp_make_private(pfn, INITIAL_VMSA_GPA, PG_LEVEL_4K, sev->asid, true);
 		if (ret)
-			goto err;
+			goto out;
 
 		/* Issue the SNP command to encrypt the VMSA */
 		data.address = __sme_pa(svm->sev_es.vmsa);
@@ -2526,7 +2526,7 @@ static int snp_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
 		if (ret) {
 			snp_page_reclaim(kvm, pfn);
 
-			goto err;
+			goto out;
 		}
 
 		svm->vcpu.arch.guest_state_protected = true;
@@ -2540,9 +2540,7 @@ static int snp_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
 		svm_enable_lbrv(vcpu);
 	}
 
-	return 0;
-
-err:
+out:
 	kvm_unlock_all_vcpus(kvm);
 	return ret;
 }
@@ -2951,7 +2949,7 @@ void sev_vm_init(struct kvm *kvm)
 		to_kvm_sev_info(kvm)->need_init = true;
 		break;
 	default:
-		WARN_ONCE(1, "Unsupported VM type %lu", kvm->arch.vm_type);
+		WARN_ONCE(1, "Unsupported VM type %u", kvm->arch.vm_type);
 		break;
 	}
 }

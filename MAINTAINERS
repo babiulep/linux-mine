@@ -6398,7 +6398,6 @@ R:	Paulo Alcantara <pc@manguebit.org> (DFS, global name space)
 R:	Ronnie Sahlberg <ronniesahlberg@gmail.com> (directory leases, sparse files)
 R:	Shyam Prasad N <sprasad@microsoft.com> (multichannel)
 R:	Tom Talpey <tom@talpey.com> (RDMA, smbdirect)
-R:	Stefan Metzmacher <metze@samba.org> (RDMA, smbdirect)
 R:	Bharath SM <bharathsm@microsoft.com> (deferred close, directory leases)
 L:	linux-cifs@vger.kernel.org
 L:	samba-technical@lists.samba.org (moderated for non-subscribers)
@@ -11635,7 +11634,6 @@ F:	drivers/bus/hisi_lpc.c
 
 HISILICON NETWORK SUBSYSTEM 3 DRIVER (HNS3)
 M:	Jian Shen <shenjian15@huawei.com>
-M:	Salil Mehta <salil.mehta@huawei.com>
 M:	Jijie Shao <shaojijie@huawei.com>
 L:	netdev@vger.kernel.org
 S:	Maintained
@@ -11650,7 +11648,6 @@ F:	drivers/net/ethernet/hisilicon/hibmcge/
 
 HISILICON NETWORK SUBSYSTEM DRIVER
 M:	Jian Shen <shenjian15@huawei.com>
-M:	Salil Mehta <salil.mehta@huawei.com>
 L:	netdev@vger.kernel.org
 S:	Maintained
 W:	http://www.hisilicon.com
@@ -12129,11 +12126,12 @@ F:	include/uapi/linux/i2c-*.h
 F:	include/uapi/linux/i2c.h
 
 I2C SUBSYSTEM [RUST]
-M:	Igor Korotin <igor.korotin.linux@gmail.com>
+M:	Igor Korotin <igor.korotin@linux.dev>
 R:	Danilo Krummrich <dakr@kernel.org>
 R:	Daniel Almeida <daniel.almeida@collabora.com>
 L:	rust-for-linux@vger.kernel.org
 S:	Maintained
+T:	git https://github.com/ikrtn/linux.git rust-i2c-next
 F:	rust/kernel/i2c.rs
 F:	samples/rust/rust_driver_i2c.rs
 F:	samples/rust/rust_i2c_client.rs
@@ -14058,7 +14056,6 @@ M:	Steve French <smfrench@gmail.com>
 M:	Steve French <sfrench@samba.org>
 R:	Sergey Senozhatsky <senozhatsky@chromium.org>
 R:	Tom Talpey <tom@talpey.com>
-R:	Stefan Metzmacher <metze@samba.org> (RDMA, smbdirect)
 L:	linux-cifs@vger.kernel.org
 S:	Maintained
 T:	git git://git.samba.org/ksmbd.git
@@ -20589,9 +20586,11 @@ C:	irc://irc.oftc.net/linux-pci
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/pci/pci.git
 F:	Documentation/ABI/testing/debugfs-pcie-ptm
 F:	Documentation/devicetree/bindings/pci/
+F:	Documentation/trace/events-pci-controller.rst
 F:	drivers/pci/controller/
 F:	drivers/pci/pci-bridge-emul.c
 F:	drivers/pci/pci-bridge-emul.h
+F:	include/trace/events/pci_controller.h
 
 PCI PEER-TO-PEER DMA (P2PDMA)
 M:	Bjorn Helgaas <bhelgaas@google.com>
@@ -24641,6 +24640,20 @@ T:	git https://github.com/cschaufler/smack-next.git
 F:	Documentation/admin-guide/LSM/Smack.rst
 F:	security/smack/
 
+SMBDIRECT (RDMA Stream Transport with Read/Write-Offload, MS-SMBD)
+M:	Steve French <smfrench@gmail.com>
+M:	Steve French <sfrench@samba.org>
+M:	Namjae Jeon <linkinjeon@kernel.org>
+M:	Namjae Jeon <linkinjeon@samba.org>
+R:	Stefan Metzmacher <metze@samba.org>
+R:	Tom Talpey <tom@talpey.com>
+L:	linux-cifs@vger.kernel.org
+L:	samba-technical@lists.samba.org (moderated for non-subscribers)
+S:	Maintained
+F:	fs/smb/client/smbdirect.*
+F:	fs/smb/common/smbdirect/
+F:	fs/smb/server/transport_rdma.*
+
 SMC91x ETHERNET DRIVER
 M:	Nicolas Pitre <nico@fluxnic.net>
 S:	Odd Fixes
@@ -27272,7 +27285,7 @@ F:	Documentation/filesystems/ubifs.rst
 F:	fs/ubifs/
 
 UBLK USERSPACE BLOCK DRIVER
-M:	Ming Lei <ming.lei@redhat.com>
+M:	Ming Lei <tom.leiming@gmail.com>
 L:	linux-block@vger.kernel.org
 S:	Maintained
 F:	Documentation/block/ublk.rst

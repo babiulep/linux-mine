@@ -2795,6 +2795,9 @@ process_event_desc(struct feat_fd *ff, void *data __maybe_unused)
 	return 0;
 }
 
+// Some reasonable arbitrary max for the number of command line arguments
+#define MAX_CMDLINE_NR 32768
+
 static int process_cmdline(struct feat_fd *ff, void *data __maybe_unused)
 {
 	struct perf_env *env = &ff->ph->env;
@@ -2804,13 +2807,16 @@ static int process_cmdline(struct feat_fd *ff, void *data __maybe_unused)
 	if (do_read_u32(ff, &nr))
 		return -1;
 
+	if (nr > MAX_CMDLINE_NR)
+		return -1;
+
 	env->nr_cmdline = nr;
 
 	cmdline = zalloc(ff->size + nr + 1);
 	if (!cmdline)
 		return -1;
 
-	argv = zalloc(sizeof(char *) * (nr + 1));
+	argv = calloc(nr + 1, sizeof(char *));
 	if (!argv)
 		goto error;
 
@@ -2964,7 +2970,7 @@ static int process_numa_topology(struct feat_fd *ff, void *data __maybe_unused)
 	if (do_read_u32(ff, &nr))
 		return -1;
 
-	nodes = zalloc(sizeof(*nodes) * nr);
+	nodes = calloc(nr, sizeof(*nodes));
 	if (!nodes)
 		return -ENOMEM;
 
@@ -3162,7 +3168,7 @@ static int process_cache(struct feat_fd *ff, void *data __maybe_unused)
 	if (do_read_u32(ff, &cnt))
 		return -1;
 
-	caches = zalloc(sizeof(*caches) * cnt);
+	caches = calloc(cnt, sizeof(*caches));
 	if (!caches)
 		return -1;
 
@@ -3254,7 +3260,7 @@ static int process_mem_topology(struct feat_fd *ff,
 	if (do_read_u64(ff, &nr))
 		return -1;
 
-	nodes = zalloc(sizeof(*nodes) * nr);
+	nodes = calloc(nr, sizeof(*nodes));
 	if (!nodes)
 		return -1;
 
@@ -3344,7 +3350,7 @@ static int process_hybrid_topology(struct feat_fd *ff,
 	if (do_read_u32(ff, &nr))
 		return -1;
 
-	nodes = zalloc(sizeof(*nodes) * nr);
+	nodes = calloc(nr, sizeof(*nodes));
 	if (!nodes)
 		return -ENOMEM;
 
@@ -3559,7 +3565,7 @@ static int __process_pmu_caps(struct feat_fd *ff, int *nr_caps,
 	if (!nr_pmu_caps)
 		return 0;
 
-	*caps = zalloc(sizeof(char *) * nr_pmu_caps);
+	*caps = calloc(nr_pmu_caps, sizeof(char *));
 	if (!*caps)
 		return -1;
 
@@ -3636,7 +3642,7 @@ static int process_pmu_caps(struct feat_fd *ff, void *data __maybe_unused)
 		return 0;
 	}
 
-	pmu_caps = zalloc(sizeof(*pmu_caps) * nr_pmu);
+	pmu_caps = calloc(nr_pmu, sizeof(*pmu_caps));
 	if (!pmu_caps)
 		return -ENOMEM;
 
@@ -3689,7 +3695,7 @@ static int process_cpu_domain_info(struct feat_fd *ff, void *data __maybe_unused
 	nra = env->nr_cpus_avail;
 	nr = env->nr_cpus_online;
 
-	cd_map = zalloc(sizeof(*cd_map) * nra);
+	cd_map = calloc(nra, sizeof(*cd_map));
 	if (!cd_map)
 		return -1;
 
@@ -3711,6 +3717,11 @@ static int process_cpu_domain_info(struct feat_fd *ff, void *data __maybe_unused
 		if (do_read_u32(ff, &cpu))
 			return -1;
 
+		if (cpu >= nra) {
+			pr_err("Invalid HEADER_CPU_DOMAIN_INFO: cpu %d >= nr_cpus_avail (%d)\n", cpu, nra);
+			return -1;
+		}
+
 		cd_map[cpu] = zalloc(sizeof(*cd_map[cpu]));
 		if (!cd_map[cpu])
 			return -1;
@@ -3722,13 +3733,19 @@ static int process_cpu_domain_info(struct feat_fd *ff, void *data __maybe_unused
 
 		cd_map[cpu]->nr_domains = nr_domains;
 
-		cd_map[cpu]->domains = zalloc(sizeof(*d_info) * max_sched_domains);
+		cd_map[cpu]->domains = calloc(max_sched_domains, sizeof(*d_info));
 		if (!cd_map[cpu]->domains)
 			return -1;
 
 		for (j = 0; j < nr_domains; j++) {
 			if (do_read_u32(ff, &domain))
 				return -1;
+
+			if (domain >= max_sched_domains) {
+				pr_err("Invalid HEADER_CPU_DOMAIN_INFO: domain %d >= max_sched_domains (%d)\n",
+				       domain, max_sched_domains);
+				return -1;
+			}
 
 			d_info = zalloc(sizeof(*d_info));
 			if (!d_info)
