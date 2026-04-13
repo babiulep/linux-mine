@@ -1238,15 +1238,21 @@ int smbdirect_connection_send_single_iter(struct smbdirect_socket *sc,
 	if (ret)
 		goto err;
 
+	/*
+	 * From here msg is moved to send_ctx
+	 * and we should not free it explicitly.
+	 */
+
 	if (batch == &_batch) {
 		ret = smbdirect_connection_send_batch_flush(sc, batch, true);
 		if (ret)
-			goto err;
+			goto flush_failed;
 	}
 
 	return data_length;
 err:
 	smbdirect_connection_free_send_io(msg);
+flush_failed:
 alloc_failed:
 	atomic_inc(&sc->send_io.credits.count);
 credit_failed:

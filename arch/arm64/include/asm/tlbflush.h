@@ -80,71 +80,6 @@ static inline unsigned long get_trans_granule(void)
 	}
 }
 
-#ifdef CONFIG_ARM64_ERRATUM_4193714
-
-void sme_do_dvmsync(const struct cpumask *mask);
-
-static inline void sme_dvmsync(struct mm_struct *mm)
-{
-	if (!alternative_has_cap_unlikely(ARM64_WORKAROUND_4193714))
-		return;
-
-	sme_do_dvmsync(mm_cpumask(mm));
-}
-
-static inline void sme_dvmsync_add_pending(struct arch_tlbflush_unmap_batch *batch,
-					   struct mm_struct *mm)
-{
-	if (!alternative_has_cap_unlikely(ARM64_WORKAROUND_4193714))
-		return;
-
-	/*
-	 * Order the mm_cpumask() read after the hardware DVMSync.
-	 */
-	dsb(ish);
-	if (cpumask_empty(mm_cpumask(mm)))
-		return;
-
-	/*
-	 * Allocate the batch cpumask on first use. Fall back to an immediate
-	 * IPI for this mm in case of failure.
-	 */
-	if (!cpumask_available(batch->cpumask) &&
-	    !zalloc_cpumask_var(&batch->cpumask, GFP_ATOMIC)) {
-		sme_do_dvmsync(mm_cpumask(mm));
-		return;
-	}
-
-	cpumask_or(batch->cpumask, batch->cpumask, mm_cpumask(mm));
-}
-
-static inline void sme_dvmsync_batch(struct arch_tlbflush_unmap_batch *batch)
-{
-	if (!alternative_has_cap_unlikely(ARM64_WORKAROUND_4193714))
-		return;
-
-	if (!cpumask_available(batch->cpumask))
-		return;
-
-	sme_do_dvmsync(batch->cpumask);
-	cpumask_clear(batch->cpumask);
-}
-
-#else
-
-static inline void sme_dvmsync(struct mm_struct *mm)
-{
-}
-static inline void sme_dvmsync_add_pending(struct arch_tlbflush_unmap_batch *batch,
-					   struct mm_struct *mm)
-{
-}
-static inline void sme_dvmsync_batch(struct arch_tlbflush_unmap_batch *batch)
-{
-}
-
-#endif /* CONFIG_ARM64_ERRATUM_4193714 */
-
 /*
  * Level-based TLBI operations.
  *
@@ -278,21 +213,7 @@ do {										\
  * Complete broadcast TLB maintenance issued by the host which invalidates
  * stage 1 information in the host's own translation regime.
  */
-static inline void __tlbi_sync_s1ish(struct mm_struct *mm)
-{
-	dsb(ish);
-	__repeat_tlbi_sync(vale1is, 0);
-	sme_dvmsync(mm);
-}
-
-static inline void __tlbi_sync_s1ish_batch(struct arch_tlbflush_unmap_batch *batch)
-{
-	dsb(ish);
-	__repeat_tlbi_sync(vale1is, 0);
-	sme_dvmsync_batch(batch);
-}
-
-static inline void __tlbi_sync_s1ish_kernel(void)
+static inline void __tlbi_sync_s1ish(void)
 {
 	dsb(ish);
 	__repeat_tlbi_sync(vale1is, 0);
@@ -401,7 +322,7 @@ static inline void flush_tlb_all(void)
 {
 	dsb(ishst);
 	__tlbi(vmalle1is);
-	__tlbi_sync_s1ish_kernel();
+	__tlbi_sync_s1ish();
 	isb();
 }
 
@@ -413,7 +334,7 @@ static inline void flush_tlb_mm(struct mm_struct *mm)
 	asid = __TLBI_VADDR(0, ASID(mm));
 	__tlbi(aside1is, asid);
 	__tlbi_user(aside1is, asid);
-	__tlbi_sync_s1ish(mm);
+	__tlbi_sync_s1ish();
 	mmu_notifier_arch_invalidate_secondary_tlbs(mm, 0, -1UL);
 }
 
@@ -434,7 +355,7 @@ static inline bool arch_tlbbatch_should_defer(struct mm_struct *mm)
  */
 static inline void arch_tlbbatch_flush(struct arch_tlbflush_unmap_batch *batch)
 {
-	__tlbi_sync_s1ish_batch(batch);
+	__tlbi_sync_s1ish();
 }
 
 /*
@@ -636,7 +557,7 @@ static __always_inline void __do_flush_tlb_range(struct vm_area_struct *vma,
 
 	if (!(flags & TLBF_NOSYNC)) {
 		if (!(flags & TLBF_NOBROADCAST))
-			__tlbi_sync_s1ish(mm);
+			__tlbi_sync_s1ish();
 		else
 			dsb(nsh);
 	}
@@ -697,7 +618,7 @@ static inline void flush_tlb_kernel_range(unsigned long start, unsigned long end
 	dsb(ishst);
 	__flush_s1_tlb_range_op(vaale1is, start, pages, stride, 0,
 				TLBI_TTL_UNKNOWN);
-	__tlbi_sync_s1ish_kernel();
+	__tlbi_sync_s1ish();
 	isb();
 }
 
@@ -711,7 +632,7 @@ static inline void __flush_tlb_kernel_pgtable(unsigned long kaddr)
 
 	dsb(ishst);
 	__tlbi(vaae1is, addr);
-	__tlbi_sync_s1ish_kernel();
+	__tlbi_sync_s1ish();
 	isb();
 }
 
@@ -722,7 +643,6 @@ static inline void arch_tlbbatch_add_pending(struct arch_tlbflush_unmap_batch *b
 
 	__flush_tlb_range(&vma, start, end, PAGE_SIZE, 3,
 			  TLBF_NOWALKCACHE | TLBF_NOSYNC);
-	sme_dvmsync_add_pending(batch, mm);
 }
 
 static inline bool __pte_flags_need_flush(ptdesc_t oldval, ptdesc_t newval)

@@ -538,7 +538,7 @@ bool fuse_dev_is_installed(struct fuse_dev *fud)
 	return fch != NULL && fch != FUSE_DEV_CHAN_DISCONNECTED;
 }
 
-/**
+/*
  * Checks if @fc matches the one installed in @fud
  */
 bool fuse_dev_verify(struct fuse_dev *fud, struct fuse_chan *fch)

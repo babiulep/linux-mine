@@ -1475,7 +1475,7 @@ struct sk_buff *inet_gro_receive(struct list_head *head, struct sk_buff *skb)
 	struct sk_buff *p;
 	unsigned int hlen;
 	unsigned int off;
-	__u16 flush = 1;
+	u16 flush = 1;
 	int proto;
 
 	off = skb_gro_offset(skb);
@@ -1516,10 +1516,8 @@ struct sk_buff *inet_gro_receive(struct list_head *head, struct sk_buff *skb)
 		 * at the same offset.
 		 */
 		if ((iph->protocol ^ iph2->protocol) |
-		    (get_unaligned_be32(&iph->saddr) ^
-				get_unaligned_be32(&iph2->saddr)) |
-		    (get_unaligned_be32(&iph->daddr) ^
-				get_unaligned_be32(&iph2->daddr))) {
+		    ((__force u32)iph->saddr ^ (__force u32)iph2->saddr) |
+		    ((__force u32)iph->daddr ^ (__force u32)iph2->daddr)) {
 			NAPI_GRO_CB(p)->same_flow = 0;
 			continue;
 		}

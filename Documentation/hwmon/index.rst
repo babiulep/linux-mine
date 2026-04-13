@@ -41,6 +41,7 @@ Hardware Monitoring Kernel Drivers
    adt7475
    aht10
    amc6821
+   aps-379
    aquacomputer_d5next
    asb100
    asc7621
@@ -174,6 +175,7 @@ Hardware Monitoring Kernel Drivers
    mc33xs2410_hwmon
    mc34vr500
    mcp3021
+   mcp9982
    menf21bmc
    mlxreg-fan
    mp2856

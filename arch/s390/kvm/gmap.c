@@ -1090,6 +1090,7 @@ static void gmap_unshadow_level(struct gmap *sg, gfn_t r_gfn, int level)
 	if (level > TABLE_TYPE_PAGE_TABLE)
 		align = 1UL << (11 * level + _SEGMENT_SHIFT);
 	kvm_s390_vsie_gmap_notifier(sg, ALIGN_DOWN(gaddr, align), ALIGN(gaddr + 1, align));
+	sg->invalidated = true;
 	if (dat_entry_walk(NULL, r_gfn, sg->asce, 0, level, &crstep, &ptep))
 		return;
 	if (ptep) {

@@ -365,7 +365,7 @@ int clockevents_program_event(struct clock_event_device *dev, ktime_t expires, b
 
 	if (delta > (int64_t)dev->min_delta_ns) {
 		delta = min(delta, (int64_t) dev->max_delta_ns);
-		cycles = ((u64) delta * dev->mult) >> dev->shift;
+		cycles = ((u64)delta * dev->mult) >> dev->shift;
 		if (!dev->set_next_event((unsigned long) cycles, dev))
 			return 0;
 	}

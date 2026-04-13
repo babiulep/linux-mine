@@ -1250,7 +1250,7 @@ out:
 	return rc;
 }
 
-/**
+/*
  * Prepare a type6 CPRB message for random number generation
  *
  * @ap_dev: AP device pointer

@@ -2570,15 +2570,14 @@ static void device_release(struct kobject *kobj)
 	kfree(p);
 }
 
-static const void *device_namespace(const struct kobject *kobj)
+static const struct ns_common *device_namespace(const struct kobject *kobj)
 {
 	const struct device *dev = kobj_to_dev(kobj);
-	const void *ns = NULL;
 
 	if (dev->class && dev->class->namespace)
-		ns = dev->class->namespace(dev);
+		return dev->class->namespace(dev);
 
-	return ns;
+	return NULL;
 }
 
 static void device_get_ownership(const struct kobject *kobj, kuid_t *uid, kgid_t *gid)
@@ -3688,6 +3687,21 @@ int device_add(struct device *dev)
 		dev->fwnode->dev = dev;
 		fw_devlink_link_device(dev);
 	}
+
+	/*
+	 * The moment the device was linked into the bus's "klist_devices" in
+	 * bus_add_device() then it's possible that probe could have been
+	 * attempted in a different thread via userspace loading a driver
+	 * matching the device. "ready_to_probe" being unset would have
+	 * blocked those attempts. Now that all of the above initialization has
+	 * happened, unblock probe. If probe happens through another thread
+	 * after this point but before bus_probe_device() runs then it's fine.
+	 * bus_probe_device() -> device_initial_probe() -> __device_attach()
+	 * will notice (under device_lock) that the device is already bound.
+	 */
+	device_lock(dev);
+	dev_set_ready_to_probe(dev);
+	device_unlock(dev);
 
 	bus_probe_device(dev);
 

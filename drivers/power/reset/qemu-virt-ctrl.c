@@ -36,18 +36,18 @@ static inline void virt_ctrl_write32(u32 val, void __iomem *addr)
 
 static int qemu_virt_ctrl_power_off(struct sys_off_data *data)
 {
-	void __iomem *base = data->cb_data;
+	struct qemu_virt_ctrl *ctrl = data->cb_data;
 
-	virt_ctrl_write32(CMD_HALT, base + VIRT_CTRL_REG_CMD);
+	virt_ctrl_write32(CMD_HALT, ctrl->base + VIRT_CTRL_REG_CMD);
 
 	return NOTIFY_DONE;
 }
 
 static int qemu_virt_ctrl_restart(struct sys_off_data *data)
 {
-	void __iomem *base = data->cb_data;
+	struct qemu_virt_ctrl *ctrl = data->cb_data;
 
-	virt_ctrl_write32(CMD_RESET, base + VIRT_CTRL_REG_CMD);
+	virt_ctrl_write32(CMD_RESET, ctrl->base + VIRT_CTRL_REG_CMD);
 
 	return NOTIFY_DONE;
 }
@@ -80,7 +80,7 @@ static int qemu_virt_ctrl_probe(struct platform_device *pdev)
 					    SYS_OFF_MODE_RESTART,
 					    SYS_OFF_PRIO_DEFAULT,
 					    qemu_virt_ctrl_restart,
-					    ctrl->base);
+					    ctrl);
 	if (ret)
 		return dev_err_probe(&pdev->dev, ret,
 				     "cannot register restart handler\n");
@@ -89,7 +89,7 @@ static int qemu_virt_ctrl_probe(struct platform_device *pdev)
 					    SYS_OFF_MODE_POWER_OFF,
 					    SYS_OFF_PRIO_DEFAULT,
 					    qemu_virt_ctrl_power_off,
-					    ctrl->base);
+					    ctrl);
 	if (ret)
 		return dev_err_probe(&pdev->dev, ret,
 				     "cannot register power-off handler\n");

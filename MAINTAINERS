@@ -313,7 +313,7 @@ F:	drivers/firmware/efi/cper*
 
 ACPI COMPONENT ARCHITECTURE (ACPICA)
 M:	"Rafael J. Wysocki" <rafael@kernel.org>
-M:	Robert Moore <robert.moore@intel.com>
+M:	Saket Dumbre <saket.dumbre@intel.com>
 L:	linux-acpi@vger.kernel.org
 L:	acpica-devel@lists.linux.dev
 S:	Supported
@@ -17358,6 +17358,12 @@ S:	Supported
 F:	Documentation/devicetree/bindings/serial/atmel,at91-usart.yaml
 F:	drivers/spi/spi-at91-usart.c
 
+MICROCHIP ATSHA204A DRIVER
+M:	Thorsten Blum <thorsten.blum@linux.dev>
+L:	linux-crypto@vger.kernel.org
+S:	Maintained
+F:	drivers/crypto/atmel-sha204a.c
+
 MICROCHIP AUDIO ASOC DRIVERS
 M:	Claudiu Beznea <claudiu.beznea@tuxon.dev>
 M:	Andrei Simion <andrei.simion@microchip.com>
@@ -17377,9 +17383,10 @@ F:	Documentation/devicetree/bindings/media/microchip,csi2dc.yaml
 F:	drivers/media/platform/microchip/microchip-csi2dc.c
 
 MICROCHIP ECC DRIVER
+M:	Thorsten Blum <thorsten.blum@linux.dev>
 L:	linux-crypto@vger.kernel.org
-S:	Orphan
-F:	drivers/crypto/atmel-ecc.*
+S:	Maintained
+F:	drivers/crypto/atmel-ecc.c
 
 MICROCHIP EIC DRIVER
 M:	Claudiu Beznea <claudiu.beznea@tuxon.dev>
@@ -17504,6 +17511,14 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/iio/adc/microchip,mcp3911.yaml
 F:	drivers/iio/adc/mcp3911.c
 
+MICROCHIP MCP9982 TEMPERATURE DRIVER
+M:	Victor Duicu <victor.duicu@microchip.com>
+L:	linux-hwmon@vger.kernel.org
+S:	Supported
+F:	Documentation/devicetree/bindings/hwmon/microchip,mcp9982.yaml
+F:	Documentation/hwmon/mcp9982.rst
+F:	drivers/hwmon/mcp9982.c
+
 MICROCHIP MMC/SD/SDIO MCI DRIVER
 M:	Aubin Constans <aubin.constans@microchip.com>
 S:	Maintained
@@ -17559,6 +17574,12 @@ M:	Kumaravel Thiagarajan <kumaravel.thiagarajan@microchip.com>
 L:	linux-serial@vger.kernel.org
 S:	Maintained
 F:	drivers/tty/serial/8250/8250_pci1xxxx.c
+
+MICROCHIP PIC64-HPSC/HX DRIVERS
+M:	Charles Perry <charles.perry@microchip.com>
+S:	Supported
+F:	Documentation/devicetree/bindings/net/microchip,pic64hpsc-mdio.yaml
+F:	drivers/net/mdio/mdio-pic64hpsc.c
 
 MICROCHIP POLARFIRE FPGA DRIVERS
 M:	Conor Dooley <conor.dooley@microchip.com>
@@ -25521,10 +25542,11 @@ F:	Documentation/devicetree/bindings/reset/starfive,jh7100-reset.yaml
 F:	drivers/reset/starfive/reset-starfive-jh71*
 F:	include/dt-bindings/reset/starfive?jh71*.h
 
-STARFIVE JH71X0 USB DRIVERS
+STARFIVE USB DRIVERS
 M:	Minda Chen <minda.chen@starfivetech.com>
 S:	Maintained
 F:	Documentation/devicetree/bindings/usb/starfive,jh7110-usb.yaml
+F:	Documentation/devicetree/bindings/usb/starfive,jhb100-dwc3.yaml
 F:	drivers/usb/cdns3/cdns3-starfive.c
 
 STARFIVE JH71XX PMU CONTROLLER DRIVER

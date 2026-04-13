@@ -443,9 +443,7 @@ static int mfill_copy_folio_locked(struct folio *folio, unsigned long src_addr)
 	return ret;
 }
 
-static int mfill_copy_folio_retry(struct mfill_state *state,
-				  const struct vm_uffd_ops *ops,
-				  struct folio *folio)
+static int mfill_copy_folio_retry(struct mfill_state *state, struct folio *folio)
 {
 	unsigned long src_addr = state->src_addr;
 	void *kaddr;
@@ -466,14 +464,6 @@ static int mfill_copy_folio_retry(struct mfill_state *state,
 	err = mfill_get_vma(state);
 	if (err)
 		return err;
-
-	/*
-	 * The VMA type may have changed while the lock was dropped
-	 * (e.g. replaced with a hugetlb mapping), making the caller's
-	 * ops pointer stale.
-	 */
-	if (vma_uffd_ops(state->vma) != ops)
-		return -EAGAIN;
 
 	err = mfill_establish_pmd(state);
 	if (err)
@@ -505,7 +495,7 @@ static int __mfill_atomic_pte(struct mfill_state *state,
 		 * will take care of unlocking if needed.
 		 */
 		if (unlikely(ret)) {
-			ret = mfill_copy_folio_retry(state, ops, folio);
+			ret = mfill_copy_folio_retry(state, folio);
 			if (ret)
 				goto err_folio_put;
 		}
@@ -1209,7 +1199,10 @@ static long move_present_ptes(struct mm_struct *mm,
 			orig_dst_pte = pte_mksoft_dirty(orig_dst_pte);
 		if (pte_dirty(orig_src_pte))
 			orig_dst_pte = pte_mkdirty(orig_dst_pte);
-		orig_dst_pte = pte_mkwrite(orig_dst_pte, dst_vma);
+		if (pte_write(orig_src_pte))
+			orig_dst_pte = pte_mkwrite(orig_dst_pte, dst_vma);
+		if (pte_uffd_wp(orig_src_pte))
+			orig_dst_pte = pte_mkuffd_wp(orig_dst_pte);
 		set_pte_at(mm, dst_addr, dst_pte, orig_dst_pte);
 
 		src_addr += PAGE_SIZE;

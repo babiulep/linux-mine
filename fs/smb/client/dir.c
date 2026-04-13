@@ -502,7 +502,8 @@ static int cifs_do_create(struct inode *dir, struct dentry *direntry,
  * Look up, create and open a CIFS file.
  *
  * The initial dentry state is in-lookup or hashed-negative.  On success, dentry
- * will become hashed-positive by calling d_splice_alias().
+ * will become hashed-positive by calling d_splice_alias() if in-lookup,
+ * otherwise d_instantiate().
  */
 int cifs_atomic_open(struct inode *dir, struct dentry *direntry,
 		     struct file *file, unsigned int oflags, umode_t mode)
@@ -578,10 +579,13 @@ int cifs_atomic_open(struct inode *dir, struct dentry *direntry,
 		goto out;
 	}
 
-	alias = d_splice_alias(inode, direntry);
-	/* can't fail - it's a non-directory */
-	if (alias)
-		direntry = alias;
+	if (d_in_lookup(direntry)) {
+		alias = d_splice_alias(inode, direntry);
+		if (!IS_ERR_OR_NULL(alias))
+			direntry = alias;
+	} else {
+		d_instantiate(direntry, inode);
+	}
 
 	if ((oflags & (O_CREAT | O_EXCL)) == (O_CREAT | O_EXCL))
 		file->f_mode |= FMODE_CREATED;
