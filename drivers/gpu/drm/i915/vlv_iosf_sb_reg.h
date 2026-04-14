@@ -3,20 +3,8 @@
  * Copyright © 2022 Intel Corporation
  */
 
-#ifndef _VLV_IOSF_SB_REGS_H_
-#define _VLV_IOSF_SB_REGS_H_
-
-enum vlv_iosf_sb_unit {
-	VLV_IOSF_SB_BUNIT,
-	VLV_IOSF_SB_CCK,
-	VLV_IOSF_SB_CCU,
-	VLV_IOSF_SB_DPIO,
-	VLV_IOSF_SB_DPIO_2,
-	VLV_IOSF_SB_FLISDSI,
-	VLV_IOSF_SB_GPIO,
-	VLV_IOSF_SB_NC,
-	VLV_IOSF_SB_PUNIT,
-};
+#ifndef _VLV_IOSF_SB_REG_H_
+#define _VLV_IOSF_SB_REG_H_
 
 /* See configdb bunit SB addr map */
 #define BUNIT_REG_BISOC				0x11
@@ -189,4 +177,4 @@ enum vlv_iosf_sb_unit {
 #define  CCK_FREQUENCY_STATUS_SHIFT		8
 #define  CCK_FREQUENCY_VALUES			(0x1f << 0)
 
-#endif /* _VLV_IOSF_SB_REGS_H_ */
+#endif /* _VLV_IOSF_SB_REG_H_ */

@@ -100,6 +100,7 @@ static int ext4_fsync_nojournal(struct file *file, loff_t start, loff_t end,
 		return ret;
 
 	ret = ext4_sync_parent(inode);
+
 	if (test_opt(inode->i_sb, BARRIER))
 		*needs_barrier = true;
 

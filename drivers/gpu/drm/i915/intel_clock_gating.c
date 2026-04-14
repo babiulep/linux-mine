@@ -26,9 +26,8 @@
  */
 
 #include <drm/drm_print.h>
-#include <drm/intel/intel_gmd_interrupt_regs.h>
 #include <drm/intel/intel_gmd_misc_regs.h>
-#include <drm/intel/mchbar_regs.h>
+#include <drm/intel/intel_gmd_interrupt_regs.h>
 
 #include "display/i9xx_plane_regs.h"
 #include "display/intel_display.h"
@@ -43,6 +42,7 @@
 #include "i915_drv.h"
 #include "i915_reg.h"
 #include "intel_clock_gating.h"
+#include "intel_mchbar_regs.h"
 #include "vlv_iosf_sb.h"
 
 struct drm_i915_clock_gating_funcs {

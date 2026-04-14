@@ -318,6 +318,7 @@ static int orangefs_bufmap_map(struct orangefs_bufmap *bufmap,
 	int remaining_pages;
 	int need_avail_min;
 	int pages_assigned_to_this_desc;
+	int allocated_descs = 0;
 	size_t current_offset;
 	size_t adjust_offset;
 	struct folio *folio;
@@ -385,6 +386,7 @@ static int orangefs_bufmap_map(struct orangefs_bufmap *bufmap,
 		if (!bufmap->desc_array[i].folio_offsets) {
 			ret = -ENOMEM;
 			kfree(bufmap->desc_array[i].folio_array);
+			bufmap->desc_array[i].folio_array = NULL;
 			goto unpin;
 		}
 
@@ -438,6 +440,8 @@ static int orangefs_bufmap_map(struct orangefs_bufmap *bufmap,
 			"pages_assigned=%d (should be %d)\n",
 			i, desc_folio_count, pages_assigned_to_this_desc,
 			pages_per_desc);
+
+		allocated_descs = i + 1;
 	}
 
 	return 0;
@@ -447,7 +451,7 @@ unpin:
 	 * Memory pressure, like in generic/340, led me
 	 * to write the rollback this way.
 	 */
-	for (j = 0; j <= i; j++) {
+	for (j = 0; j < allocated_descs; j++) {
 		if (bufmap->desc_array[j].folio_array) {
 			kfree(bufmap->desc_array[j].folio_array);
 			bufmap->desc_array[j].folio_array = NULL;
@@ -662,7 +666,8 @@ int orangefs_bufmap_copy_from_iovec(struct iov_iter *iter,
 	to = &__orangefs_bufmap->desc_array[buffer_index];
 
 	/* shouldn't happen... */
-	if (size > 4194304) pr_info("%s: size:%zu\n", __func__, size);
+	if (size > 4194304)
+		pr_info("%s: size:%zu\n", __func__, size);
 
 	gossip_debug(GOSSIP_BUFMAP_DEBUG,
 		"%s: buffer_index:%d size:%zu folio_count:%d\n",
@@ -756,7 +761,8 @@ int orangefs_bufmap_copy_to_iovec(struct iov_iter *iter,
 	from = &__orangefs_bufmap->desc_array[buffer_index];
 
 	/* shouldn't happen... */
-	if (size > 4194304) pr_info("%s: size:%ld\n", __func__, size);
+	if (size > 4194304)
+		pr_info("%s: size:%zu\n", __func__, size);
 
 	gossip_debug(GOSSIP_BUFMAP_DEBUG,
 		"%s: buffer_index:%d size:%zu folio_count:%d\n",

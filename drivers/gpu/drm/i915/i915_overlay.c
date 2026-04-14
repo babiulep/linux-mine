@@ -7,7 +7,6 @@
 
 #include <drm/intel/display_parent_interface.h>
 #include <drm/intel/intel_gmd_interrupt_regs.h>
-#include <drm/intel/pci_config.h>
 
 #include "gem/i915_gem_internal.h"
 #include "gem/i915_gem_object_frontbuffer.h"
@@ -19,6 +18,7 @@
 #include "i915_drv.h"
 #include "i915_overlay.h"
 #include "i915_reg.h"
+#include "intel_pci_config.h"
 
 #include "display/intel_frontbuffer.h"
 

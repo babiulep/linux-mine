@@ -2380,9 +2380,11 @@ int intel_hdmi_compute_config(struct intel_encoder *encoder,
 		return ret;
 	}
 
-	ret = intel_pfit_compute_config(pipe_config, conn_state);
-	if (ret)
-		return ret;
+	if (intel_hdmi_is_ycbcr420(pipe_config)) {
+		ret = intel_pfit_compute_config(pipe_config, conn_state);
+		if (ret)
+			return ret;
+	}
 
 	pipe_config->limited_color_range =
 		intel_hdmi_limited_color_range(pipe_config, conn_state);

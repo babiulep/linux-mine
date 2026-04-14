@@ -149,7 +149,6 @@ struct drm_dp_tunnel {
 	bool bw_alloc_enabled:1;
 	bool has_io_error:1;
 	bool destroyed:1;
-	bool pr_optimization_support:1;
 };
 
 struct drm_dp_tunnel_group_state;
@@ -509,8 +508,6 @@ create_tunnel(struct drm_dp_tunnel_mgr *mgr,
 
 	tunnel->bw_alloc_supported = tunnel_reg_bw_alloc_supported(regs);
 	tunnel->bw_alloc_enabled = tunnel_reg_bw_alloc_enabled(regs);
-	tunnel->pr_optimization_support = tunnel_reg(regs, DP_TUNNELING_CAPABILITIES) &
-					  DP_PANEL_REPLAY_OPTIMIZATION_SUPPORT;
 
 	if (!add_tunnel_to_group(mgr, drv_group_id, tunnel)) {
 		kfree(tunnel);
@@ -1038,20 +1035,6 @@ bool drm_dp_tunnel_bw_alloc_is_enabled(const struct drm_dp_tunnel *tunnel)
 	return tunnel && tunnel->bw_alloc_enabled;
 }
 EXPORT_SYMBOL(drm_dp_tunnel_bw_alloc_is_enabled);
-
-/**
- * drm_dp_tunnel_pr_optimization_supported - Query the PR BW optimization support
- * @tunnel: Tunnel object
- *
- * Query if the PR BW optimization is supported for @tunnel.
- *
- * Returns %true if the PR BW optimiation is supported for @tunnel.
- */
-bool drm_dp_tunnel_pr_optimization_supported(const struct drm_dp_tunnel *tunnel)
-{
-	return tunnel && tunnel->pr_optimization_support;
-}
-EXPORT_SYMBOL(drm_dp_tunnel_pr_optimization_supported);
 
 static int clear_bw_req_state(struct drm_dp_aux *aux)
 {

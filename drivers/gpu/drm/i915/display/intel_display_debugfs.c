@@ -416,12 +416,11 @@ static void intel_scaler_info(struct seq_file *m, struct intel_crtc *crtc)
 
 	/* Not all platforms have a scaler */
 	if (num_scalers) {
-		seq_printf(m, "\tnum_scalers=%d, scaler_users=%x scaler_id=%d scaling_filter=%d sharpness_strength=%d",
+		seq_printf(m, "\tnum_scalers=%d, scaler_users=%x scaler_id=%d scaling_filter=%d",
 			   num_scalers,
 			   crtc_state->scaler_state.scaler_users,
 			   crtc_state->scaler_state.scaler_id,
-			   crtc_state->hw.scaling_filter,
-			   crtc_state->hw.sharpness_strength);
+			   crtc_state->hw.scaling_filter);
 
 		for (i = 0; i < num_scalers; i++) {
 			const struct intel_scaler *sc =

@@ -122,6 +122,7 @@
 #include "intel_cpu_info.h"
 #include "intel_gvt.h"
 #include "intel_memory_region.h"
+#include "intel_pci_config.h"
 #include "intel_pcode.h"
 #include "intel_region_ttm.h"
 #include "vlv_iosf_sb.h"
@@ -779,7 +780,6 @@ static const struct intel_display_parent_interface parent = {
 	.rpm = &i915_display_rpm_interface,
 	.rps = &i915_display_rps_interface,
 	.stolen = &i915_display_stolen_interface,
-	.vlv_iosf = &i915_display_vlv_iosf_interface,
 	.vma = &i915_display_vma_interface,
 
 	.fence_priority_display = fence_priority_display,
