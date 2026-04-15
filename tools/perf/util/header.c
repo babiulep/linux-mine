@@ -63,6 +63,15 @@
 #include <event-parse.h>
 #endif
 
+#define MAX_BPF_DATA_LEN	(256 * 1024 * 1024)
+#define MAX_BPF_PROGS		131072
+#define MAX_CACHE_ENTRIES	32768
+#define MAX_GROUP_DESC		32768
+#define MAX_NUMA_NODES		4096
+#define MAX_PMU_CAPS		512
+#define MAX_PMU_MAPPINGS	4096
+#define MAX_SCHED_DOMAINS	64
+
 /*
  * magic2 = "PERFILE2"
  * must be a numerical value to let the endianness
@@ -2722,6 +2731,13 @@ static int process_nrcpus(struct feat_fd *ff, void *data __maybe_unused)
 	ret = do_read_u32(ff, &nr_cpus_online);
 	if (ret)
 		return ret;
+
+	if (nr_cpus_online > nr_cpus_avail) {
+		pr_err("Invalid HEADER_NRCPUS: nr_cpus_online (%u) > nr_cpus_avail (%u)\n",
+		       nr_cpus_online, nr_cpus_avail);
+		return -1;
+	}
+
 	env->nr_cpus_avail = (int)nr_cpus_avail;
 	env->nr_cpus_online = (int)nr_cpus_online;
 	return 0;
@@ -2795,8 +2811,11 @@ process_event_desc(struct feat_fd *ff, void *data __maybe_unused)
 	return 0;
 }
 
-// Some reasonable arbitrary max for the number of command line arguments
-#define MAX_CMDLINE_NR 32768
+/*
+ * Some arbitrary max for the number of command line arguments,
+ * Wildcards can expand and end up with tons of command line args.
+ */
+#define MAX_CMDLINE_NR 1048576
 
 static int process_cmdline(struct feat_fd *ff, void *data __maybe_unused)
 {
@@ -2849,12 +2868,23 @@ static int process_cpu_topology(struct feat_fd *ff, void *data __maybe_unused)
 	int cpu_nr = env->nr_cpus_avail;
 	u64 size = 0;
 
+	if (cpu_nr == 0) {
+		pr_err("Invalid HEADER_CPU_TOPOLOGY: missing HEADER_NRCPUS\n");
+		return -1;
+	}
+
 	env->cpu = calloc(cpu_nr, sizeof(*env->cpu));
 	if (!env->cpu)
 		return -1;
 
 	if (do_read_u32(ff, &nr))
 		goto free_cpu;
+
+	if (nr > (u32)cpu_nr) {
+		pr_err("Invalid HEADER_CPU_TOPOLOGY: nr_sibling_cores (%u) > nr_cpus_avail (%d)\n",
+		       nr, cpu_nr);
+		goto free_cpu;
+	}
 
 	env->nr_sibling_cores = nr;
 	size += sizeof(u32);
@@ -2875,7 +2905,13 @@ static int process_cpu_topology(struct feat_fd *ff, void *data __maybe_unused)
 	env->sibling_cores = strbuf_detach(&sb, NULL);
 
 	if (do_read_u32(ff, &nr))
-		return -1;
+		goto free_cpu;
+
+	if (nr > (u32)cpu_nr) {
+		pr_err("Invalid HEADER_CPU_TOPOLOGY: nr_sibling_threads (%u) > nr_cpus_avail (%d)\n",
+		       nr, cpu_nr);
+		goto free_cpu;
+	}
 
 	env->nr_sibling_threads = nr;
 	size += sizeof(u32);
@@ -2924,7 +2960,13 @@ static int process_cpu_topology(struct feat_fd *ff, void *data __maybe_unused)
 		return 0;
 
 	if (do_read_u32(ff, &nr))
-		return -1;
+		goto free_cpu;
+
+	if (nr > (u32)cpu_nr) {
+		pr_err("Invalid HEADER_CPU_TOPOLOGY: nr_sibling_dies (%u) > nr_cpus_avail (%d)\n",
+		       nr, cpu_nr);
+		goto free_cpu;
+	}
 
 	env->nr_sibling_dies = nr;
 	size += sizeof(u32);
@@ -2969,6 +3011,18 @@ static int process_numa_topology(struct feat_fd *ff, void *data __maybe_unused)
 	/* nr nodes */
 	if (do_read_u32(ff, &nr))
 		return -1;
+
+	if (nr > MAX_NUMA_NODES) {
+		pr_err("Invalid HEADER_NUMA_TOPOLOGY: nr_nodes (%u) > %u\n",
+		       nr, MAX_NUMA_NODES);
+		return -1;
+	}
+
+	if (ff->size < sizeof(u32) + nr * (sizeof(u32) + 2 * sizeof(u64))) {
+		pr_err("Invalid HEADER_NUMA_TOPOLOGY: section too small (%zu) for %u nodes\n",
+		       ff->size, nr);
+		return -1;
+	}
 
 	nodes = calloc(nr, sizeof(*nodes));
 	if (!nodes)
@@ -3021,6 +3075,18 @@ static int process_pmu_mappings(struct feat_fd *ff, void *data __maybe_unused)
 		return 0;
 	}
 
+	if (pmu_num > MAX_PMU_MAPPINGS) {
+		pr_err("Invalid HEADER_PMU_MAPPINGS: pmu_num (%u) > %u\n",
+		       pmu_num, MAX_PMU_MAPPINGS);
+		return -1;
+	}
+
+	if (ff->size < sizeof(u32) + pmu_num * 2 * sizeof(u32)) {
+		pr_err("Invalid HEADER_PMU_MAPPINGS: section too small (%zu) for %u PMUs\n",
+		       ff->size, pmu_num);
+		return -1;
+	}
+
 	env->nr_pmu_mappings = pmu_num;
 	if (strbuf_init(&sb, 128) < 0)
 		return -1;
@@ -3071,11 +3137,24 @@ static int process_group_desc(struct feat_fd *ff, void *data __maybe_unused)
 	if (do_read_u32(ff, &nr_groups))
 		return -1;
 
-	env->nr_groups = nr_groups;
 	if (!nr_groups) {
 		pr_debug("group desc not available\n");
 		return 0;
 	}
+
+	if (nr_groups > MAX_GROUP_DESC) {
+		pr_err("Invalid HEADER_GROUP_DESC: nr_groups (%u) > %u\n",
+		       nr_groups, MAX_GROUP_DESC);
+		return -1;
+	}
+
+	if (ff->size < sizeof(u32) + nr_groups * 3 * sizeof(u32)) {
+		pr_err("Invalid HEADER_GROUP_DESC: section too small (%zu) for %u groups\n",
+		       ff->size, nr_groups);
+		return -1;
+	}
+
+	env->nr_groups = nr_groups;
 
 	desc = calloc(nr_groups, sizeof(*desc));
 	if (!desc)
@@ -3167,6 +3246,18 @@ static int process_cache(struct feat_fd *ff, void *data __maybe_unused)
 
 	if (do_read_u32(ff, &cnt))
 		return -1;
+
+	if (cnt > MAX_CACHE_ENTRIES) {
+		pr_err("Invalid HEADER_CACHE: cnt (%u) > %u\n",
+		       cnt, MAX_CACHE_ENTRIES);
+		return -1;
+	}
+
+	if (ff->size < 2 * sizeof(u32) + cnt * 7 * sizeof(u32)) {
+		pr_err("Invalid HEADER_CACHE: section too small (%zu) for %u entries\n",
+		       ff->size, cnt);
+		return -1;
+	}
 
 	caches = calloc(cnt, sizeof(*caches));
 	if (!caches)
@@ -3260,6 +3351,18 @@ static int process_mem_topology(struct feat_fd *ff,
 	if (do_read_u64(ff, &nr))
 		return -1;
 
+	if (nr > MAX_NUMA_NODES) {
+		pr_err("Invalid HEADER_MEM_TOPOLOGY: nr_nodes (%llu) > %u\n",
+		       (unsigned long long)nr, MAX_NUMA_NODES);
+		return -1;
+	}
+
+	if (ff->size < 3 * sizeof(u64) + nr * 2 * sizeof(u64)) {
+		pr_err("Invalid HEADER_MEM_TOPOLOGY: section too small (%zu) for %llu nodes\n",
+		       ff->size, (unsigned long long)nr);
+		return -1;
+	}
+
 	nodes = calloc(nr, sizeof(*nodes));
 	if (!nodes)
 		return -1;
@@ -3350,6 +3453,18 @@ static int process_hybrid_topology(struct feat_fd *ff,
 	if (do_read_u32(ff, &nr))
 		return -1;
 
+	if (nr > MAX_PMU_MAPPINGS) {
+		pr_err("Invalid HEADER_HYBRID_TOPOLOGY: nr_nodes (%u) > %u\n",
+		       nr, MAX_PMU_MAPPINGS);
+		return -1;
+	}
+
+	if (ff->size < sizeof(u32) + nr * 2 * sizeof(u32)) {
+		pr_err("Invalid HEADER_HYBRID_TOPOLOGY: section too small (%zu) for %u nodes\n",
+		       ff->size, nr);
+		return -1;
+	}
+
 	nodes = calloc(nr, sizeof(*nodes));
 	if (!nodes)
 		return -ENOMEM;
@@ -3412,6 +3527,18 @@ static int process_bpf_prog_info(struct feat_fd *ff __maybe_unused, void *data _
 	if (do_read_u32(ff, &count))
 		return -1;
 
+	if (count > MAX_BPF_PROGS) {
+		pr_err("Invalid HEADER_BPF_PROG_INFO: count (%u) > %u\n",
+		       count, MAX_BPF_PROGS);
+		return -1;
+	}
+
+	if (ff->size < sizeof(u32) + count * (2 * sizeof(u32) + sizeof(u64))) {
+		pr_err("Invalid HEADER_BPF_PROG_INFO: section too small (%zu) for %u entries\n",
+		       ff->size, count);
+		return -1;
+	}
+
 	down_write(&env->bpf_progs.lock);
 
 	for (i = 0; i < count; ++i) {
@@ -3426,6 +3553,12 @@ static int process_bpf_prog_info(struct feat_fd *ff __maybe_unused, void *data _
 
 		if (info_len > sizeof(struct bpf_prog_info)) {
 			pr_warning("detected invalid bpf_prog_info\n");
+			goto out;
+		}
+
+		if (data_len > MAX_BPF_DATA_LEN) {
+			pr_warning("Invalid HEADER_BPF_PROG_INFO: data_len (%u) too large\n",
+				   data_len);
 			goto out;
 		}
 
@@ -3489,6 +3622,17 @@ static int process_bpf_btf(struct feat_fd *ff  __maybe_unused, void *data __mayb
 	if (do_read_u32(ff, &count))
 		return -1;
 
+	if (count > MAX_BPF_PROGS) {
+		pr_err("bpf btf count %u too large (max %u)\n", count, MAX_BPF_PROGS);
+		return -1;
+	}
+
+	if (ff->size < sizeof(u32) + count * 2 * sizeof(u32)) {
+		pr_err("Invalid HEADER_BPF_BTF: section too small (%zu) for %u entries\n",
+		       ff->size, count);
+		return -1;
+	}
+
 	down_write(&env->bpf_progs.lock);
 
 	for (i = 0; i < count; ++i) {
@@ -3498,6 +3642,12 @@ static int process_bpf_btf(struct feat_fd *ff  __maybe_unused, void *data __mayb
 			goto out;
 		if (do_read_u32(ff, &data_size))
 			goto out;
+
+		if (data_size > MAX_BPF_DATA_LEN) {
+			pr_err("bpf btf data size %u too large (max %u)\n",
+			       data_size, MAX_BPF_DATA_LEN);
+			goto out;
+		}
 
 		node = malloc(sizeof(struct btf_node) + data_size);
 		if (!node)
@@ -3564,6 +3714,12 @@ static int __process_pmu_caps(struct feat_fd *ff, int *nr_caps,
 
 	if (!nr_pmu_caps)
 		return 0;
+
+	if (nr_pmu_caps > MAX_PMU_CAPS) {
+		pr_err("Invalid pmu caps: nr_pmu_caps (%u) > %u\n",
+		       nr_pmu_caps, MAX_PMU_CAPS);
+		return -1;
+	}
 
 	*caps = calloc(nr_pmu_caps, sizeof(char *));
 	if (!*caps)
@@ -3642,6 +3798,18 @@ static int process_pmu_caps(struct feat_fd *ff, void *data __maybe_unused)
 		return 0;
 	}
 
+	if (nr_pmu > MAX_PMU_MAPPINGS) {
+		pr_err("Invalid HEADER_PMU_CAPS: nr_pmu (%u) > %u\n",
+		       nr_pmu, MAX_PMU_MAPPINGS);
+		return -1;
+	}
+
+	if (ff->size < sizeof(u32) + nr_pmu * sizeof(u32)) {
+		pr_err("Invalid HEADER_PMU_CAPS: section too small (%zu) for %u PMUs\n",
+		       ff->size, nr_pmu);
+		return -1;
+	}
+
 	pmu_caps = calloc(nr_pmu, sizeof(*pmu_caps));
 	if (!pmu_caps)
 		return -ENOMEM;
@@ -3695,6 +3863,17 @@ static int process_cpu_domain_info(struct feat_fd *ff, void *data __maybe_unused
 	nra = env->nr_cpus_avail;
 	nr = env->nr_cpus_online;
 
+	if (nra == 0 || nr == 0) {
+		pr_err("Invalid HEADER_CPU_DOMAIN_INFO: missing HEADER_NRCPUS\n");
+		return -1;
+	}
+
+	if (ff->size < 2 * sizeof(u32) + nr * 2 * sizeof(u32)) {
+		pr_err("Invalid HEADER_CPU_DOMAIN_INFO: section too small (%zu) for %u CPUs\n",
+		       (size_t)ff->size, nr);
+		return -1;
+	}
+
 	cd_map = calloc(nra, sizeof(*cd_map));
 	if (!cd_map)
 		return -1;
@@ -3711,6 +3890,18 @@ static int process_cpu_domain_info(struct feat_fd *ff, void *data __maybe_unused
 	if (ret)
 		return ret;
 
+	/*
+	 * Sanity check: real systems have at most ~10 sched domain levels
+	 * (SMT, CLS, MC, PKG + NUMA hops). Reject obviously bogus values
+	 * from malformed perf.data files before they cause excessive
+	 * allocation in the per-CPU loop.
+	 */
+	if (max_sched_domains > MAX_SCHED_DOMAINS) {
+		pr_err("Invalid HEADER_CPU_DOMAIN_INFO: max_sched_domains %u > %u\n",
+		       max_sched_domains, MAX_SCHED_DOMAINS);
+		return -1;
+	}
+
 	env->max_sched_domains = max_sched_domains;
 
 	for (i = 0; i < nr; i++) {
@@ -3722,6 +3913,11 @@ static int process_cpu_domain_info(struct feat_fd *ff, void *data __maybe_unused
 			return -1;
 		}
 
+		if (cd_map[cpu]) {
+			pr_err("Invalid HEADER_CPU_DOMAIN_INFO: duplicate cpu %u\n", cpu);
+			return -1;
+		}
+
 		cd_map[cpu] = zalloc(sizeof(*cd_map[cpu]));
 		if (!cd_map[cpu])
 			return -1;
@@ -3730,6 +3926,12 @@ static int process_cpu_domain_info(struct feat_fd *ff, void *data __maybe_unused
 
 		if (do_read_u32(ff, &nr_domains))
 			return -1;
+
+		if (nr_domains > max_sched_domains) {
+			pr_err("Invalid HEADER_CPU_DOMAIN_INFO: nr_domains %u > max_sched_domains (%u)\n",
+			       nr_domains, max_sched_domains);
+			return -1;
+		}
 
 		cd_map[cpu]->nr_domains = nr_domains;
 
@@ -3751,7 +3953,13 @@ static int process_cpu_domain_info(struct feat_fd *ff, void *data __maybe_unused
 			if (!d_info)
 				return -1;
 
-			assert(cd_map[cpu]->domains[domain] == NULL);
+			if (cd_map[cpu]->domains[domain]) {
+				pr_err("Invalid HEADER_CPU_DOMAIN_INFO: duplicate domain %u for cpu %u\n",
+				       domain, cpu);
+				free(d_info);
+				return -1;
+			}
+
 			cd_map[cpu]->domains[domain] = d_info;
 			d_info->domain = domain;
 

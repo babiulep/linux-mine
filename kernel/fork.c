@@ -2964,9 +2964,10 @@ static inline bool clone3_stack_valid(struct kernel_clone_args *kargs)
 static bool clone3_args_valid(struct kernel_clone_args *kargs)
 {
 	/* Verify that no unknown flags are passed along. */
-	if (kargs->flags & ~(CLONE_LEGACY_FLAGS | CLONE_CLEAR_SIGHAND |
-			     CLONE_INTO_CGROUP | CLONE_AUTOREAP | CLONE_NNP |
-			     CLONE_PIDFD_AUTOKILL | CLONE_EMPTY_MNTNS))
+	if (kargs->flags &
+	    ~(CLONE_LEGACY_FLAGS | CLONE_CLEAR_SIGHAND |
+	      CLONE_INTO_CGROUP | CLONE_AUTOREAP | CLONE_NNP |
+	      CLONE_PIDFD_AUTOKILL | CLONE_EMPTY_MNTNS))
 		return false;
 
 	/*

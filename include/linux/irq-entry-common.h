@@ -469,13 +469,11 @@ static __always_inline irqentry_state_t irqentry_enter_from_kernel_mode(struct p
 static inline void irqentry_exit_to_kernel_mode_preempt(struct pt_regs *regs,
 							irqentry_state_t state)
 {
-	if (regs_irqs_disabled(regs))
+	if (regs_irqs_disabled(regs) || state.exit_rcu)
 		return;
 
-	if (IS_ENABLED(CONFIG_PREEMPTION) && !state.exit_rcu)
+	if (IS_ENABLED(CONFIG_PREEMPTION))
 		irqentry_exit_cond_resched();
-
-	hrtimer_rearm_deferred();
 }
 
 /**
@@ -501,6 +499,7 @@ irqentry_exit_to_kernel_mode_after_preempt(struct pt_regs *regs, irqentry_state_
 		 */
 		if (state.exit_rcu) {
 			instrumentation_begin();
+			hrtimer_rearm_deferred();
 			/* Tell the tracer that IRET will enable interrupts */
 			trace_hardirqs_on_prepare();
 			lockdep_hardirqs_on_prepare();
@@ -511,6 +510,7 @@ irqentry_exit_to_kernel_mode_after_preempt(struct pt_regs *regs, irqentry_state_
 		}
 
 		instrumentation_begin();
+		hrtimer_rearm_deferred();
 		/* Covers both tracing and lockdep */
 		trace_hardirqs_on();
 		instrumentation_end();

@@ -10,7 +10,6 @@
 #include <linux/acpi.h>
 #include <linux/array_size.h>
 #include <linux/bits.h>
-#include <linux/cleanup.h>
 #include <linux/container_of.h>
 #include <linux/dev_printk.h>
 #include <linux/device.h>
@@ -172,18 +171,15 @@ static int bitland_mifs_wmi_call(struct bitland_mifs_wmi_data *data,
 
 	guard(mutex)(&data->lock);
 
-	ret = wmidev_invoke_method(data->wdev, 0, 1, &in_buf, output ? &out_buf : NULL);
+	if (!output)
+		return wmidev_invoke_procedure(data->wdev, 0, 1, &in_buf);
+
+	ret = wmidev_invoke_method(data->wdev, 0, 1, &in_buf, &out_buf, sizeof(*output));
 	if (ret)
 		return ret;
 
-	if (output) {
-		void *out_data __free(kfree) = out_buf.data;
-
-		if (out_buf.length < sizeof(*output))
-			return -EIO;
-
-		memcpy(output, out_data, sizeof(*output));
-	}
+	memcpy(output, out_buf.data, sizeof(*output));
+	kfree(out_buf.data);
 
 	return 0;
 }
@@ -738,14 +734,9 @@ static void bitland_mifs_wmi_notify(struct wmi_device *wdev,
 				    const struct wmi_buffer *buffer)
 {
 	struct bitland_mifs_wmi_data *data = dev_get_drvdata(&wdev->dev);
-	const struct bitland_mifs_event *event;
+	const struct bitland_mifs_event *event = buffer->data;
 	struct bitland_fan_notify_data fan_data;
 	u8 brightness;
-
-	if (buffer->length < sizeof(*event))
-		return;
-
-	event = buffer->data;
 
 	/* Validate event type */
 	if (event->event_type != WMI_EVENT_TYPE_HOTKEY)
@@ -834,6 +825,7 @@ static struct wmi_driver bitland_mifs_wmi_driver = {
 		.pm = pm_sleep_ptr(&bitland_mifs_wmi_pm_ops),
 	},
 	.id_table = bitland_mifs_wmi_id_table,
+	.min_event_size = sizeof(struct bitland_mifs_event),
 	.probe = bitland_mifs_wmi_probe,
 	.notify_new = bitland_mifs_wmi_notify,
 };

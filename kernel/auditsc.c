@@ -931,9 +931,6 @@ static inline void audit_free_names(struct audit_context *context)
 {
 	struct audit_names *n, *next;
 
-	if (!context->name_count)
-		return;	/* audit_alloc_name() has not been called */
-
 	list_for_each_entry_safe(n, next, &context->names_list, list) {
 		list_del(&n->list);
 		if (n->name)
@@ -942,7 +939,7 @@ static inline void audit_free_names(struct audit_context *context)
 			kfree(n);
 	}
 	context->name_count = 0;
-	put_fs_pwd_pool(current->fs, &context->pwd);
+	path_put(&context->pwd);
 	context->pwd.dentry = NULL;
 	context->pwd.mnt = NULL;
 }
@@ -2168,7 +2165,7 @@ static struct audit_names *audit_alloc_name(struct audit_context *context,
 
 	context->name_count++;
 	if (!context->pwd.dentry)
-		get_fs_pwd_pool(current->fs, &context->pwd);
+		get_fs_pwd(current->fs, &context->pwd);
 	return aname;
 }
 
