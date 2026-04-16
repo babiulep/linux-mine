@@ -151,6 +151,8 @@ tracefs-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/trace/linux-trace.
 spacemit-fixes	https://github.com/spacemit-com/linux#fixes
 tip-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git#tip/urgent
 slab-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/vbabka/slab.git#slab/for-next-fixes
+kexec-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/liveupdate/linux.git#kexec-fixes
+liveupdate-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/liveupdate/linux.git#fixes
 drm-msm-fixes	https://gitlab.freedesktop.org/drm/msm.git#msm-fixes
 uml-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/uml/linux.git#fixes
 fwctl-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/fwctl/fwctl.git#for-rc
@@ -315,6 +317,8 @@ dt-krzk		https://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux-dt.git#for-n
 mailbox		https://git.kernel.org/pub/scm/linux/kernel/git/jassibrar/mailbox.git#for-next
 spi		https://git.kernel.org/pub/scm/linux/kernel/git/broonie/spi.git#for-next
 tip		https://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git#master
+kexec		https://git.kernel.org/pub/scm/linux/kernel/git/liveupdate/linux.git#kexec-next
+liveupdate	https://git.kernel.org/pub/scm/linux/kernel/git/liveupdate/linux.git#next
 clockevents	https://git.kernel.org/pub/scm/linux/kernel/git/daniel.lezcano/linux.git#timers/drivers/next
 edac		https://git.kernel.org/pub/scm/linux/kernel/git/ras/ras.git#edac-for-next
 ftrace		https://git.kernel.org/pub/scm/linux/kernel/git/trace/linux-trace.git#for-next

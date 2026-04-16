@@ -597,11 +597,11 @@ int ring_buffer_print_page_header(struct trace_buffer *buffer, struct trace_seq 
 			 (unsigned int)sizeof(field.commit),
 			 (unsigned int)is_signed_type(long));
 
-	trace_seq_printf(s, "\tfield: int overwrite;\t"
+	trace_seq_printf(s, "\tfield: char overwrite;\t"
 			 "offset:%u;\tsize:%u;\tsigned:%u;\n",
 			 (unsigned int)offsetof(typeof(field), commit),
 			 1,
-			 (unsigned int)is_signed_type(long));
+			 (unsigned int)is_signed_type(char));
 
 	trace_seq_printf(s, "\tfield: char data;\t"
 			 "offset:%u;\tsize:%u;\tsigned:%u;\n",
@@ -2238,9 +2238,9 @@ static struct ring_buffer_desc *ring_buffer_desc(struct trace_buffer_desc *trace
 	return NULL;
 }
 
-static void *ring_buffer_desc_page(struct ring_buffer_desc *desc, int page_id)
+static void *ring_buffer_desc_page(struct ring_buffer_desc *desc, unsigned int page_id)
 {
-	return page_id > desc->nr_page_va ? NULL : (void *)desc->page_va[page_id];
+	return page_id >= desc->nr_page_va ? NULL : (void *)desc->page_va[page_id];
 }
 
 static int __rb_allocate_pages(struct ring_buffer_per_cpu *cpu_buffer,

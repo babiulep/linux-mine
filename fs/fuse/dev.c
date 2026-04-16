@@ -501,7 +501,7 @@ struct fuse_dev *fuse_dev_alloc_install(struct fuse_chan *fch)
 {
 	struct fuse_dev *fud;
 
-	fud = fuse_dev_alloc();
+	fud = fuse_dev_alloc_no_pq();
 	if (!fud)
 		return NULL;
 
