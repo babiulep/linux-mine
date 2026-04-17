@@ -46,6 +46,7 @@ vfs-brauner	https://git.kernel.org/pub/scm/linux/kernel/git/vfs/vfs.git#vfs.all
 vfs		https://git.kernel.org/pub/scm/linux/kernel/git/viro/vfs.git#for-next
 mm-hotfixes	https://git.kernel.org/pub/scm/linux/kernel/git/akpm/mm#mm-hotfixes-unstable
 kbuild-current	https://git.kernel.org/pub/scm/linux/kernel/git/kbuild/linux.git#kbuild-fixes-for-next
+clang-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/nathan/linux.git#clang-fixes-for-next
 arc-current	https://git.kernel.org/pub/scm/linux/kernel/git/vgupta/arc.git#for-curr
 arm-current	https://git.kernel.org/pub/scm/linux/kernel/git/rmk/linux.git#fixes
 arm64-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux#for-next/fixes
