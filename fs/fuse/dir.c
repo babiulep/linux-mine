@@ -318,7 +318,7 @@ void fuse_invalidate_attr(struct inode *inode)
 
 static void fuse_dir_changed(struct inode *dir)
 {
-	fuse_invalidate_attr(dir);
+	fuse_invalidate_attr_mask(dir, FUSE_STATX_MODDIR);
 	inode_maybe_inc_iversion(dir, false);
 }
 
@@ -838,7 +838,6 @@ static int fuse_create_open(struct mnt_idmap *idmap, struct inode *dir,
 	if (!forget)
 		goto out_err;
 
-	err = -ENOMEM;
 	ff = fuse_file_alloc(fm, true);
 	if (!ff)
 		goto out_put_forget_req;

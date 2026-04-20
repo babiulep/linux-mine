@@ -474,7 +474,6 @@ static bool fuse_dev_install_with_pq(struct fuse_dev *fud, struct fuse_chan *fch
 		 *  - it was already set to a different fc
 		 *  - it was set to disconneted
 		 */
-		fch->connected = 0;
 		kfree(pq);
 		return false;
 	}
@@ -493,7 +492,10 @@ void fuse_dev_install(struct fuse_dev *fud, struct fuse_chan *fch)
 	struct list_head *pq = fch->pq_prealloc;
 
 	fch->pq_prealloc = NULL;
-	fuse_dev_install_with_pq(fud, fch, pq);
+	if (!fuse_dev_install_with_pq(fud, fch, pq)) {
+		/* Channel is not usable without a dev */
+		fuse_chan_abort(fch, false);
+	}
 }
 EXPORT_SYMBOL_GPL(fuse_dev_install);
 

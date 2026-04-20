@@ -241,7 +241,7 @@ linux_gateway_entry:
 	/* Note!  We cannot use the syscall table that is mapped
 	nearby since the gateway page is mapped execute-only. */
 
-#if defined(CONFIG_COMPAT)
+#ifdef CONFIG_COMPAT
 	ldil	L%sys_call_table, %r1
 	or,ev	%r2,%r2,%r2
 	ldil	L%sys_call_table64, %r1
@@ -374,7 +374,7 @@ tracesys_next:
 	/* Note!  We cannot use the syscall table that is mapped
 	nearby since the gateway page is mapped execute-only. */
 
-#if defined(CONFIG_COMPAT)
+#ifdef CONFIG_COMPAT
 	LDREG	TASK_PT_GR30(%r1), %r19		/* get users sp back */
 	extrd,u	%r19,63,1,%r2			/* W hidden in bottom bit */
 
