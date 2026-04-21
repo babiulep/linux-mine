@@ -46,7 +46,6 @@
 #include "data_direct.h"
 #include "dmah.h"
 
-
 static int mkey_max_umr_order(struct mlx5_ib_dev *dev)
 {
 	if (MLX5_CAP_GEN(dev->mdev, umr_extended_translation_offset))
