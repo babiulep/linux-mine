@@ -309,7 +309,8 @@ integrity	https://git.kernel.org/pub/scm/linux/kernel/git/zohar/linux-integrity#
 selinux		https://git.kernel.org/pub/scm/linux/kernel/git/pcmoore/selinux.git#next
 smack		https://github.com/cschaufler/smack-next#next
 tomoyo		git://git.code.sf.net/p/tomoyo/tomoyo.git#master
-tpmdd		https://git.kernel.org/pub/scm/linux/kernel/git/jarkko/linux-tpmdd.git#next
+tpmdd-tpm	https://git.kernel.org/pub/scm/linux/kernel/git/jarkko/linux-tpmdd.git#for-next-tpm
+tpmdd-keys	https://git.kernel.org/pub/scm/linux/kernel/git/jarkko/linux-tpmdd.git#for-next-keys
 watchdog	git://www.linux-watchdog.org/linux-watchdog-next.git#master
 iommu		https://git.kernel.org/pub/scm/linux/kernel/git/iommu/linux.git#next
 audit		https://git.kernel.org/pub/scm/linux/kernel/git/pcmoore/audit.git#next

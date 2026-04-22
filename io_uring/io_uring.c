@@ -2575,7 +2575,8 @@ struct file *io_uring_ctx_get_file(unsigned int fd, bool registered)
 		return ERR_PTR(-EBADF);
 	if (io_is_uring_fops(file))
 		return file;
-	fput(file);
+	if (!registered)
+		fput(file);
 	return ERR_PTR(-EOPNOTSUPP);
 }
 
@@ -3233,7 +3234,7 @@ static int __init io_uring_init(void)
 	io_uring_optable_init();
 
 	/* imu->dir is u8 */
-	BUILD_BUG_ON((IO_BUF_DEST | IO_BUF_SOURCE) > U8_MAX);
+	BUILD_BUG_ON((IO_IMU_DEST | IO_IMU_SOURCE) > U8_MAX);
 
 	/*
 	 * Allow user copy in the per-command field, which starts after the

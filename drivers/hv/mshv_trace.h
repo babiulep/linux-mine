@@ -524,16 +524,16 @@ TRACE_EVENT(mshv_handle_gpa_intercept,
 		    __entry->partition_id = partition_id;
 		    __entry->vp_index = vp_index;
 		    __entry->gfn = gfn;
-		    __entry->access_type = access_type;
+		    __entry->access_type = access_type == HV_INTERCEPT_ACCESS_READ ? 'R' :
+					   (access_type == HV_INTERCEPT_ACCESS_WRITE ? 'W' :
+					    (access_type == HV_INTERCEPT_ACCESS_EXECUTE ? 'X' : '?'));
 		    __entry->handled = handled;
 	    ),
 	    TP_printk("partition_id=%llu vp_index=%u gfn=0x%llx access_type=%c handled=%d",
 		    __entry->partition_id,
 		    __entry->vp_index,
 		    __entry->gfn,
-		    __entry->access_type == HV_INTERCEPT_ACCESS_READ ? 'R' :
-				    (__entry->access_type == HV_INTERCEPT_ACCESS_WRITE ? 'W' :
-				    (__entry->access_type == HV_INTERCEPT_ACCESS_READ ? 'X' : '?')),
+		    __entry->access_type,
 		    __entry->handled
 	    )
 );
