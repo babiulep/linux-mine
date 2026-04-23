@@ -1361,7 +1361,6 @@ pnfs_send_layoutreturn(struct pnfs_layout_hdr *lo,
 	if (unlikely(lrp == NULL)) {
 		status = -ENOMEM;
 		spin_lock(&ino->i_lock);
-		pnfs_clear_layoutreturn_info(lo);
 		pnfs_clear_layoutreturn_waitbit(lo);
 		spin_unlock(&ino->i_lock);
 		put_cred(cred);

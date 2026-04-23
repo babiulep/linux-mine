@@ -72,15 +72,15 @@ static void __fuse_put_request(struct fuse_req *req)
 
 void fuse_chan_set_initialized(struct fuse_chan *fch, struct fuse_chan_param *param)
 {
-	/* Make sure stores before this are seen on another CPU */
-	smp_wmb();
-	fch->initialized = 1;
 	if (param) {
 		fch->minor = param->minor;
 		fch->max_write = param->max_write;
 		fch->max_pages = param->max_pages;
 	}
 
+	/* Make sure stores before this are seen on another CPU */
+	smp_wmb();
+	fch->initialized = 1;
 	wake_up_all(&fch->blocked_waitq);
 }
 
@@ -355,7 +355,7 @@ struct fuse_chan *fuse_chan_new(void)
 }
 EXPORT_SYMBOL_GPL(fuse_chan_new);
 
-static struct list_head *fuse_pqueue_alloc(void)
+struct list_head *fuse_pqueue_alloc(void)
 {
 	struct list_head *pq = kzalloc_objs(struct list_head, FUSE_PQ_HASH_SIZE);
 
@@ -1683,9 +1683,15 @@ struct fuse_dev *fuse_get_dev(struct file *file)
 	struct fuse_dev *fud = fuse_file_to_fud(file);
 	int err;
 
-	err = wait_event_interruptible(fuse_dev_waitq, fuse_dev_chan_get(fud) != NULL);
-	if (err)
-		return ERR_PTR(err);
+	if (unlikely(!fuse_dev_chan_get(fud))) {
+		/* only block waiting for mount if sync init was requested */
+		if (!fud->sync_init)
+			return ERR_PTR(-EPERM);
+
+		err = wait_event_interruptible(fuse_dev_waitq, fuse_dev_chan_get(fud) != NULL);
+		if (err)
+			return ERR_PTR(err);
+	}
 
 	return fud;
 }

@@ -2471,7 +2471,6 @@ int has_allowed_lower_ht_sibling(int cpu)
 	return 0;
 }
 
-
 int for_all_cpus(int (func) (struct thread_data *, struct core_data *, struct pkg_data *),
 		 struct thread_data *thread_base, struct core_data *core_base, struct pkg_data *pkg_base)
 {
@@ -2489,7 +2488,7 @@ int for_all_cpus(int (func) (struct thread_data *, struct core_data *, struct pk
 		if (cpu_is_not_allowed(cpu))
 			continue;
 
-		if (has_allowed_lower_ht_sibling(cpu))		/* skip HT sibling */
+		if (has_allowed_lower_ht_sibling(cpu))	/* skip HT sibling */
 			continue;
 
 		t = &thread_base[cpu];
@@ -6243,7 +6242,7 @@ int for_all_cpus_2(int (func) (struct thread_data *, struct core_data *,
 		if (cpu_is_not_allowed(cpu))
 			continue;
 
-		if (has_allowed_lower_ht_sibling(cpu))		/* skip HT sibling */
+		if (has_allowed_lower_ht_sibling(cpu))	/* skip HT sibling */
 			continue;
 
 		t = &thread_base[cpu];
@@ -9501,7 +9500,7 @@ int set_thread_siblings(struct cpu_topology *thiscpu)
 
 	thiscpu->put_ids = CPU_ALLOC((topo.max_cpu_num + 1));
 	if (thiscpu->ht_id < 0)
-		thiscpu->ht_id = 0; /* first CPU in core */
+		thiscpu->ht_id = 0;	/* first CPU in core */
 	if (!thiscpu->put_ids)
 		return -1;
 

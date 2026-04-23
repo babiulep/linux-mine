@@ -217,8 +217,7 @@ struct fuse_chan {
 	/** The list of background requests set aside for later queuing */
 	struct list_head bg_queue;
 
-	/** Protects: max_background, congestion_threshold, num_background,
-	 * active_background, bg_queue, blocked */
+	/** Protects: max_background, num_background, active_background, bg_queue, blocked */
 	spinlock_t bg_lock;
 
 	/** Flag indicating that INIT reply has been received. Allocating
@@ -405,6 +404,8 @@ struct fuse_dev *fuse_dev_alloc_install(struct fuse_chan *fch);
 struct fuse_dev *fuse_dev_alloc(void);
 
 int fuse_dev_release(struct inode *inode, struct file *file);
+
+struct list_head *fuse_pqueue_alloc(void);
 
 /*
  * Initialize the fuse processing queue

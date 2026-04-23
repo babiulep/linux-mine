@@ -933,11 +933,11 @@ cifs_proc_init(void)
 	proc_create_single("open_files", 0400, proc_fs_cifs,
 			cifs_debug_files_proc_show);
 
-#ifdef CONFIG_CIFS_DEBUG2
-	proc_create("open_dirs", 0644, proc_fs_cifs, &cifs_debug_dirs_proc_ops);
-#else /* CONFIG_CIFS_DEBUG2 */
+#ifdef CONFIG_CIFS_DEBUG
+	proc_create("open_dirs", 0600, proc_fs_cifs, &cifs_debug_dirs_proc_ops);
+#else /* CONFIG_CIFS_DEBUG */
 	proc_create_single("open_dirs", 0400, proc_fs_cifs, cifs_debug_dirs_proc_show);
-#endif /* !CONFIG_CIFS_DEBUG2 */
+#endif /* !CONFIG_CIFS_DEBUG */
 	proc_create("Stats", 0644, proc_fs_cifs, &cifs_stats_proc_ops);
 	proc_create("cifsFYI", 0644, proc_fs_cifs, &cifsFYI_proc_ops);
 	proc_create("traceSMB", 0644, proc_fs_cifs, &traceSMB_proc_ops);
