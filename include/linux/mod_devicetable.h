@@ -61,10 +61,7 @@ struct ieee1394_device_id {
 	__u32 model_id;
 	__u32 specifier_id;
 	__u32 version;
-	union {
-		kernel_ulong_t driver_data;
-		const void *driver_data_ptr;
-	};
+	kernel_ulong_t driver_data;
 };
 
 
