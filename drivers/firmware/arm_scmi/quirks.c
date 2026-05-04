@@ -219,9 +219,9 @@ static unsigned int scmi_quirk_signature(const char *vend, const char *sub_vend)
 static int scmi_quirk_range_parse(struct scmi_quirk *quirk)
 {
 	const char *last, *first __free(kfree) = NULL;
+	int ret = 0;
 	size_t len;
 	char *sep;
-	int ret;
 
 	quirk->start_range = 0;
 	quirk->end_range = 0xFFFFFFFF;

@@ -98,6 +98,8 @@
 
 #define ROUND_UP_TO_PAGE_SIZE(n) (((n) + 0x1000UL-1UL) & ~(0x1000UL-1UL))
 
+FILE *outf;
+
 enum counter_scope { SCOPE_CPU, SCOPE_CORE, SCOPE_PACKAGE };
 enum counter_type { COUNTER_ITEMS, COUNTER_CYCLES, COUNTER_SECONDS, COUNTER_USEC, COUNTER_K2M };
 enum counter_format { FORMAT_RAW, FORMAT_DELTA, FORMAT_PERCENT, FORMAT_AVERAGE };
@@ -292,20 +294,23 @@ enum bic_names {
 
 #define bic_set_t cpu_set_t	/* implement bic_set_t using cpu_set_t */
 
-void print_bic_set(char *s, bic_set_t *set)
+/*
+ * debug helper
+ */
+static void print_bic_set(const char *s, const bic_set_t *set)
 {
 	int i;
 
 	assert(MAX_BIC < CPU_SETSIZE);
 
-	printf("%s:", s);
+	fprintf(outf, "%s:", s);
 
 	for (i = 0; i < MAX_BIC; ++i) {
 
 		if (CPU_ISSET(i, set))
-			printf(" %s", bic[i].name);
+			fprintf(outf, " %s", bic[i].name);
 	}
-	putchar('\n');
+	fputc('\n', outf);
 }
 
 static bic_set_t bic_group_topology;
@@ -319,6 +324,20 @@ static bic_set_t bic_group_other;
 static bic_set_t bic_group_disabled_by_default;
 static bic_set_t bic_enabled;
 static bic_set_t bic_present;
+
+static void dump_bic_sets(void) {
+	print_bic_set("bic_enabled", &bic_enabled);
+	print_bic_set("bic_present", &bic_present);
+	print_bic_set("bic_group_topology", &bic_group_topology);
+	print_bic_set("bic_group_thermal_pwr", &bic_group_thermal_pwr);
+	print_bic_set("bic_group_frequency", &bic_group_frequency);
+	print_bic_set("bic_group_hw_idle", &bic_group_hw_idle);
+	print_bic_set("bic_group_sw_idle", &bic_group_sw_idle);
+	print_bic_set("bic_group_idle", &bic_group_idle);
+	print_bic_set("bic_group_cache", &bic_group_cache);
+	print_bic_set("bic_group_other", &bic_group_other);
+	print_bic_set("bic_group_disabled_by_default", &bic_group_disabled_by_default);
+}
 
 /* modify */
 #define BIC_INIT(set) CPU_ZERO(set)
@@ -485,7 +504,6 @@ static void bic_groups_init(void)
 #define PCLUNL 15		/* Unlimited */
 
 char *proc_stat = "/proc/stat";
-FILE *outf;
 int *fd_percpu;
 int *fd_instr_count_percpu;
 int *fd_llc_percpu;
@@ -571,8 +589,7 @@ struct gfx_sysfs_info {
 static struct gfx_sysfs_info gfx_info[GFX_MAX];
 
 int get_msr(int cpu, off_t offset, unsigned long long *msr);
-int add_counter(unsigned int msr_num, char *path, char *name,
-		unsigned int width, enum counter_scope scope, enum counter_type type, enum counter_format format, int flags, int package_num);
+int add_counter(unsigned int, const char *, const char *, unsigned int, enum counter_scope, enum counter_type, enum counter_format, int, int);
 
 /* Model specific support Start */
 
@@ -2032,8 +2049,11 @@ const struct dirent *pmt_diriter_begin(struct pmt_diriter_t *iter, const char *p
 			return NULL;
 
 		num_names = scandir(pmt_root_path, &iter->namelist, pmt_telemdir_filter, pmt_telemdir_sort);
-		if (num_names == -1)
+		if (num_names == -1) {
+			closedir(iter->dir);
+			iter->dir = NULL;
 			return NULL;
+		}
 	}
 
 	iter->current_name_idx = 0;
@@ -2061,8 +2081,10 @@ void pmt_diriter_remove(struct pmt_diriter_t *iter)
 	iter->num_names = 0;
 	iter->current_name_idx = 0;
 
-	closedir(iter->dir);
-	iter->dir = NULL;
+	if (iter->dir) {
+		closedir(iter->dir);
+		iter->dir = NULL;
+	}
 }
 
 unsigned int pmt_counter_get_width(const struct pmt_counter *p)
@@ -5829,7 +5851,7 @@ void free_fd_percpu(void)
 	if (!fd_percpu)
 		return;
 
-	for (i = 0; i < topo.max_cpu_num + 1; ++i) {
+	for (i = 0; i <= topo.max_cpu_num; ++i) {
 		if (fd_percpu[i] != 0)
 			close(fd_percpu[i]);
 	}
@@ -5843,7 +5865,7 @@ void free_fd_instr_count_percpu(void)
 	if (!fd_instr_count_percpu)
 		return;
 
-	for (int i = 0; i < topo.max_cpu_num + 1; ++i) {
+	for (int i = 0; i <= topo.max_cpu_num; ++i) {
 		if (fd_instr_count_percpu[i] != 0)
 			close(fd_instr_count_percpu[i]);
 	}
@@ -5857,7 +5879,7 @@ void free_fd_llc_percpu(void)
 	if (!fd_llc_percpu)
 		return;
 
-	for (int i = 0; i < topo.max_cpu_num + 1; ++i) {
+	for (int i = 0; i <= topo.max_cpu_num; ++i) {
 		if (fd_llc_percpu[i] != 0)
 			close(fd_llc_percpu[i]);
 	}
@@ -5874,7 +5896,7 @@ void free_fd_l2_percpu(void)
 	if (!fd_l2_percpu)
 		return;
 
-	for (int i = 0; i < topo.max_cpu_num + 1; ++i) {
+	for (int i = 0; i <= topo.max_cpu_num; ++i) {
 		if (fd_l2_percpu[i] != 0)
 			close(fd_l2_percpu[i]);
 	}
@@ -5911,7 +5933,7 @@ void free_fd_msr(void)
 	if (!msr_counter_info)
 		return;
 
-	for (int cpu = 0; cpu < topo.max_cpu_num; ++cpu) {
+	for (int cpu = 0; cpu <= topo.max_cpu_num; ++cpu) {
 		if (msr_counter_info[cpu].fd_perf != -1)
 			close(msr_counter_info[cpu].fd_perf);
 	}
@@ -7948,7 +7970,7 @@ static int print_rapl_sysfs(void)
 
 		snprintf(path, PATH_MAX, "%s/%s", PATH_RAPL_SYSFS, entry->d_name);
 		if ((cdir = opendir(path)) == NULL) {
-			perror("opendir() error");
+			warn("%s", path);
 			return 1;
 		}
 
@@ -8663,7 +8685,7 @@ void rapl_perf_init(void)
 
 		memset(domain_visited, 0, num_domains * sizeof(*domain_visited));
 
-		for (int cpu = 0; cpu < topo.max_cpu_num + 1; ++cpu) {
+		for (int cpu = 0; cpu <= topo.max_cpu_num; ++cpu) {
 
 			if (cpu_is_not_allowed(cpu))
 				continue;
@@ -9499,27 +9521,27 @@ int set_thread_siblings(struct cpu_topology *thiscpu)
  */
 static int get_max_cpu_num(char *path)
 {
-        FILE *filep;
-        int retval, num;
-        char c;
+	FILE *filep;
+	int retval, num;
+	char c;
 
-        filep = fopen(path, "r");
-        if (filep == NULL) {
-                warn("%s", path);
-                return 255;
-        }
+	filep = fopen(path, "r");
+	if (filep == NULL) {
+		warn("%s", path);
+		return 255;
+	}
 
-        while ((retval = fscanf(filep, "%d%c", &num, &c)) == 2) {
-                if (c == '\n')
-                        break;
-                if (c != ',' && c != '-')
-                        errx(1, "Bad Format '%s'", path);
-        }
-        if (retval != 2)
-                errx(1, "Bad format '%s'", path);
+	while ((retval = fscanf(filep, "%d%c", &num, &c)) == 2) {
+		if (c == '\n')
+			break;
+		if (c != ',' && c != '-')
+			errx(1, "Bad Format '%s'", path);
+	}
+	if (retval != 2)
+		errx(1, "Bad format '%s'", path);
 
-        fclose(filep);
-        return num;
+	fclose(filep);
+	return num;
 }
 
 void topology_probe(bool startup)
@@ -9777,7 +9799,7 @@ void allocate_counters(struct counters *counters)
 	if (counters->threads == NULL)
 		goto error;
 
-	for (i = 0; i < topo.max_cpu_num + 1; i++)
+	for (i = 0; i <= topo.max_cpu_num; i++)
 		(counters->threads)[i].cpu_id = -1;
 
 	counters->cores = calloc(num_cores, sizeof(struct core_data));
@@ -9906,7 +9928,7 @@ void set_master_cpu(void)
 {
 	int i;
 
-	for (i = 0; i < topo.max_cpu_num + 1; ++i) {
+	for (i = 0; i <= topo.max_cpu_num; ++i) {
 		if (cpu_is_not_allowed(i))
 			continue;
 		master_cpu = i;
@@ -10023,7 +10045,7 @@ int added_perf_counters_init_(struct perf_counter_info *pinfo)
 
 		memset(domain_visited, 0, max_num_domains * sizeof(*domain_visited));
 
-		for (int cpu = 0; cpu < topo.max_cpu_num + 1; ++cpu) {
+		for (int cpu = 0; cpu <= topo.max_cpu_num; ++cpu) {
 
 			next_domain = cpu_to_domain(pinfo, cpu);
 
@@ -10434,7 +10456,7 @@ void pmt_init(void)
 		mod_num = 0;	/* Relative module number for current PMT file. */
 
 		/* Open the counter for each CPU. */
-		for (cpu_num = 0; cpu_num < topo.max_cpu_num;) {
+		for (cpu_num = 0; cpu_num <= topo.max_cpu_num;) {
 
 			if (cpu_is_not_allowed(cpu_num))
 				goto next_loop_iter;
@@ -10629,7 +10651,7 @@ void print_bootcmd(void)
 	fclose(fp);
 }
 
-struct msr_counter *find_msrp_by_name(struct msr_counter *head, char *name)
+struct msr_counter *find_msrp_by_name(struct msr_counter *head, const char *name)
 {
 	struct msr_counter *mp;
 
@@ -10642,7 +10664,7 @@ struct msr_counter *find_msrp_by_name(struct msr_counter *head, char *name)
 	return NULL;
 }
 
-int add_counter(unsigned int msr_num, char *path, char *name,
+int add_counter(unsigned int msr_num, const char *path, const char *name,
 		unsigned int width, enum counter_scope scope, enum counter_type type, enum counter_format format, int flags, int id)
 {
 	struct msr_counter *msrp;
@@ -10663,10 +10685,11 @@ int add_counter(unsigned int msr_num, char *path, char *name,
 				fprintf(stderr, "%s: %s FOUND\n", __func__, name);
 			break;
 		}
-		if (sys.added_thread_counters++ >= MAX_ADDED_THREAD_COUNTERS) {
+		if (sys.added_thread_counters >= MAX_ADDED_THREAD_COUNTERS) {
 			warnx("ignoring thread counter %s", name);
 			return -1;
 		}
+		sys.added_thread_counters++;
 		break;
 	case SCOPE_CORE:
 		msrp = find_msrp_by_name(sys.cp, name);
@@ -10675,10 +10698,11 @@ int add_counter(unsigned int msr_num, char *path, char *name,
 				fprintf(stderr, "%s: %s FOUND\n", __func__, name);
 			break;
 		}
-		if (sys.added_core_counters++ >= MAX_ADDED_CORE_COUNTERS) {
+		if (sys.added_core_counters >= MAX_ADDED_CORE_COUNTERS) {
 			warnx("ignoring core counter %s", name);
 			return -1;
 		}
+		sys.added_core_counters++;
 		break;
 	case SCOPE_PACKAGE:
 		msrp = find_msrp_by_name(sys.pp, name);
@@ -10687,10 +10711,11 @@ int add_counter(unsigned int msr_num, char *path, char *name,
 				fprintf(stderr, "%s: %s FOUND\n", __func__, name);
 			break;
 		}
-		if (sys.added_package_counters++ >= MAX_ADDED_PACKAGE_COUNTERS) {
+		if (sys.added_package_counters >= MAX_ADDED_PACKAGE_COUNTERS) {
 			warnx("ignoring package counter %s", name);
 			return -1;
 		}
+		sys.added_package_counters++;
 		break;
 	default:
 		warnx("ignoring counter %s with unknown scope", name);
@@ -10729,10 +10754,8 @@ int add_counter(unsigned int msr_num, char *path, char *name,
 		struct sysfs_path *sp;
 
 		sp = calloc(1, sizeof(struct sysfs_path));
-		if (sp == NULL) {
-			perror("calloc");
-			exit(1);
-		}
+		if (sp == NULL)
+			err(-1, "%s", path);
 		strncpy(sp->path, path, PATH_BYTES - 1);
 		sp->id = id;
 		sp->next = msrp->sp;
@@ -11675,7 +11698,7 @@ int main(int argc, char **argv)
 
 	ret = write(fd, "0\n", 2);
 	if (ret == -1)
-		perror("Can't update cgroup\n");
+		warn("/sys/fs/cgroup/cgroup.procs");
 
 	close(fd);
 
@@ -11707,8 +11730,10 @@ skip_cgroup_setting:
 		msr_sum_record();
 
 	/* dump counters and exit */
-	if (dump_only)
+	if (dump_only) {
+		dump_bic_sets();
 		return get_and_dump_counters();
+	}
 
 	/* list header and exit */
 	if (list_header_only) {

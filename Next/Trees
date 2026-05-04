@@ -160,6 +160,7 @@ fwctl-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/fwctl/fwctl.git#for-
 devsec-tsm-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/devsec/tsm.git#fixes
 drm-rust-fixes	https://gitlab.freedesktop.org/drm/rust/kernel.git#drm-rust-fixes
 tenstorrent-dt-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/tenstorrent/linux.git#tenstorrent-dt-fixes
+nfc-fixes	https://codeberg.org/linux-nfc/linux.git#for-linus
 drm-misc-fixes	https://gitlab.freedesktop.org/drm/misc/kernel.git#for-linux-next-fixes
 rust		https://github.com/Rust-for-Linux/linux.git#rust-next
 rust-interop	https://github.com/Rust-for-Linux/linux.git#interop-next
@@ -420,3 +421,4 @@ fwctl		https://git.kernel.org/pub/scm/linux/kernel/git/fwctl/fwctl.git#for-next
 devsec-tsm	https://git.kernel.org/pub/scm/linux/kernel/git/devsec/tsm.git#next
 hisilicon	https://github.com/hisilicon/linux-hisi.git#for-next
 kthread		https://git.kernel.org/pub/scm/linux/kernel/git/frederic/linux-dynticks.git#for-next
+nfc		https://codeberg.org/linux-nfc/linux.git#for-next
