@@ -199,16 +199,7 @@ static void ipi_rseq(void *info)
 	 * is negligible.
 	 */
 	smp_mb();
-	/*
-	 * Legacy mode requires that IDs are written and the critical section is
-	 * evaluated. V2 optimized mode handles the critical section and IDs are
-	 * only updated if they change as a consequence of preemption after
-	 * return from this IPI.
-	 */
-	if (rseq_v2(current))
-		rseq_sched_switch_event(current);
-	else
-		rseq_force_update();
+	rseq_sched_switch_event(current);
 }
 
 static void ipi_sync_rq_state(void *info)
