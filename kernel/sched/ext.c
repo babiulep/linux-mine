@@ -856,7 +856,8 @@ static void scx_task_iter_start(struct scx_task_iter *iter, struct cgroup *cgrp)
 		lockdep_assert_held(&cgroup_mutex);
 		iter->cgrp = cgrp;
 		iter->css_pos = css_next_descendant_pre(NULL, &iter->cgrp->self);
-		css_task_iter_start(iter->css_pos, 0, &iter->css_iter);
+		css_task_iter_start(iter->css_pos, CSS_TASK_ITER_WITH_DEAD,
+				    &iter->css_iter);
 		return;
 	}
 #endif
@@ -956,7 +957,8 @@ static struct task_struct *scx_task_iter_next(struct scx_task_iter *iter)
 			iter->css_pos = css_next_descendant_pre(iter->css_pos,
 								&iter->cgrp->self);
 			if (iter->css_pos)
-				css_task_iter_start(iter->css_pos, 0, &iter->css_iter);
+				css_task_iter_start(iter->css_pos, CSS_TASK_ITER_WITH_DEAD,
+						    &iter->css_iter);
 		}
 		return NULL;
 	}
@@ -1016,16 +1018,27 @@ static struct task_struct *scx_task_iter_next_locked(struct scx_task_iter *iter)
 		 *
 		 * Test for idle_sched_class as only init_tasks are on it.
 		 */
-		if (p->sched_class != &idle_sched_class)
-			break;
+		if (p->sched_class == &idle_sched_class)
+			continue;
+
+		iter->rq = task_rq_lock(p, &iter->rf);
+		iter->locked_task = p;
+
+		/*
+		 * cgroup_task_dead() removes the dead tasks from cset->tasks
+		 * after sched_ext_dead() and cgroup iteration may see tasks
+		 * which already finished sched_ext_dead(). %SCX_TASK_OFF_TASKS
+		 * is set by sched_ext_dead() under @p's rq lock. Test it to
+		 * avoid visiting tasks which are already dead from SCX POV.
+		 */
+		if (p->scx.flags & SCX_TASK_OFF_TASKS) {
+			__scx_task_iter_rq_unlock(iter);
+			continue;
+		}
+
+		return p;
 	}
-	if (!p)
-		return NULL;
-
-	iter->rq = task_rq_lock(p, &iter->rf);
-	iter->locked_task = p;
-
-	return p;
+	return NULL;
 }
 
 /**
@@ -3976,6 +3989,11 @@ void sched_ext_dead(struct task_struct *p)
 	/*
 	 * @p is off scx_tasks and wholly ours. scx_root_enable()'s READY ->
 	 * ENABLED transitions can't race us. Disable ops for @p.
+	 *
+	 * %SCX_TASK_OFF_TASKS synchronizes against cgroup task iteration - see
+	 * scx_task_iter_next_locked(). NONE tasks need no marking: cgroup
+	 * iteration is only used from sub-sched paths, which require root
+	 * enabled. Root enable transitions every live task to at least READY.
 	 */
 	if (scx_get_task_state(p) != SCX_TASK_NONE) {
 		struct rq_flags rf;
@@ -3983,6 +4001,7 @@ void sched_ext_dead(struct task_struct *p)
 
 		rq = task_rq_lock(p, &rf);
 		scx_disable_and_exit_task(scx_task_sched(p), p);
+		p->scx.flags |= SCX_TASK_OFF_TASKS;
 		task_rq_unlock(rq, p, &rf);
 	}
 }
@@ -6486,7 +6505,7 @@ static void scx_dump_state(struct scx_sched *sch, struct scx_exit_info *ei,
 		dump_line(&s, "Debug dump triggered by %s", ei->reason);
 	} else {
 		if (ei->exit_cpu >= 0)
-			dump_line(&s, "%s[%d] triggered exit kind %d on cpu %d:",
+			dump_line(&s, "%s[%d] triggered exit kind %d on CPU %d:",
 				  current->comm, current->pid, ei->kind,
 				  ei->exit_cpu);
 		else
@@ -7953,13 +7972,11 @@ static void sysrq_handle_sched_ext_reset(u8 key)
 {
 	struct scx_sched *sch;
 
-	rcu_read_lock();
 	sch = rcu_dereference(scx_root);
 	if (likely(sch))
 		scx_disable(sch, SCX_EXIT_SYSRQ);
 	else
 		pr_info("sched_ext: BPF schedulers not loaded\n");
-	rcu_read_unlock();
 }
 
 static const struct sysrq_key_op sysrq_sched_ext_reset_op = {
@@ -9379,6 +9396,7 @@ __bpf_kfunc void scx_bpf_reenqueue_local___v2(const struct bpf_prog_aux *aux)
 
 __bpf_kfunc_end_defs();
 
+__printf(5, 0)
 static s32 __bstr_format(struct scx_sched *sch, u64 *data_buf, char *line_buf,
 			 size_t line_size, char *fmt, unsigned long long *data,
 			 u32 data__sz)
@@ -9416,6 +9434,7 @@ static s32 __bstr_format(struct scx_sched *sch, u64 *data_buf, char *line_buf,
 	return ret;
 }
 
+__printf(3, 0)
 static s32 bstr_format(struct scx_sched *sch, struct scx_bstr_buf *buf,
 		       char *fmt, unsigned long long *data, u32 data__sz)
 {
@@ -9436,6 +9455,7 @@ __bpf_kfunc_start_defs();
  * Indicate that the BPF scheduler wants to exit gracefully, and initiate ops
  * disabling.
  */
+__printf(2, 0)
 __bpf_kfunc void scx_bpf_exit_bstr(s64 exit_code, char *fmt,
 				   unsigned long long *data, u32 data__sz,
 				   const struct bpf_prog_aux *aux)
@@ -9461,6 +9481,7 @@ __bpf_kfunc void scx_bpf_exit_bstr(s64 exit_code, char *fmt,
  * Indicate that the BPF scheduler encountered a fatal error and initiate ops
  * disabling.
  */
+__printf(1, 0)
 __bpf_kfunc void scx_bpf_error_bstr(char *fmt, unsigned long long *data,
 				    u32 data__sz, const struct bpf_prog_aux *aux)
 {
@@ -9488,6 +9509,7 @@ __bpf_kfunc void scx_bpf_error_bstr(char *fmt, unsigned long long *data,
  * The extra dump may be multiple lines. A single line may be split over
  * multiple calls. The last line is automatically terminated.
  */
+__printf(1, 0)
 __bpf_kfunc void scx_bpf_dump_bstr(char *fmt, unsigned long long *data,
 				   u32 data__sz, const struct bpf_prog_aux *aux)
 {

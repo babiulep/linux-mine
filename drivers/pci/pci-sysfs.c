@@ -1268,13 +1268,13 @@ static const struct bin_attribute dev_resource##_bar##_uc_attr = {	\
 	.mmap = pci_mmap_resource_uc,					\
 }
 
-#define pci_dev_resource_wc_attr(_bar)						\
-static const struct bin_attribute dev_resource##_bar##_wc_attr = {		\
-	.attr = { .name = "resource" __stringify(_bar) "_wc", .mode = 0600 },	\
-	.private = (void *)(unsigned long)(_bar),				\
-	.f_mapping = iomem_get_mapping,						\
-	.llseek = pci_llseek_resource,						\
-	.mmap = pci_mmap_resource_wc,						\
+#define pci_dev_resource_wc_attr(_bar)					      \
+static const struct bin_attribute dev_resource##_bar##_wc_attr = {	      \
+	.attr = { .name = "resource" __stringify(_bar) "_wc", .mode = 0600 }, \
+	.private = (void *)(unsigned long)(_bar),			      \
+	.f_mapping = iomem_get_mapping,					      \
+	.llseek = pci_llseek_resource,					      \
+	.mmap = pci_mmap_resource_wc,					      \
 }
 
 static inline umode_t
