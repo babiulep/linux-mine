@@ -738,7 +738,7 @@ static void hal_ReadEFuse_BT(
 	Hal_GetEfuseDefinition(padapter, EFUSE_BT, TYPE_AVAILABLE_EFUSE_BYTES_BANK, &total);
 
 	for (bank = 1; bank < 3; bank++) { /*  8723b Max bake 0~2 */
-		if (hal_EfuseSwitchToBank(padapter, bank) == false)
+		if (!hal_EfuseSwitchToBank(padapter, bank))
 			goto exit;
 
 		eFuse_Addr = 0;
@@ -825,26 +825,19 @@ void Hal_ReadEFuse(
 		hal_ReadEFuse_BT(padapter, _offset, _size_byte, pbuf);
 }
 
-static struct hal_version ReadChipVersion8723B(struct adapter *padapter)
+static void ReadChipVersion8723B(struct adapter *padapter)
 {
 	u32 value32;
-	struct hal_version ChipVersion;
 	struct hal_com_data *pHalData;
 
 /* YJ, TODO, move read chip type here */
 	pHalData = GET_HAL_DATA(padapter);
 
 	value32 = rtw_read32(padapter, REG_SYS_CFG);
-	ChipVersion.ICType = CHIP_8723B;
-	ChipVersion.ChipType = ((value32 & RTL_ID) ? TEST_CHIP : NORMAL_CHIP);
-	ChipVersion.VendorType = ((value32 & VENDOR_ID) ? CHIP_VENDOR_UMC : CHIP_VENDOR_TSMC);
-	ChipVersion.CUTVersion = (value32 & CHIP_VER_RTL_MASK)>>CHIP_VER_RTL_SHIFT; /*  IC version (CUT) */
+	pHalData->chip_normal = ((value32 & RTL_ID) ? false : true);
 
 	/*  For regulator mode. by tynli. 2011.01.14 */
 	pHalData->RegulatorMode = ((value32 & SPS_SEL) ? RT_LDO_REGULATOR : RT_SWITCHING_REGULATOR);
-
-	value32 = rtw_read32(padapter, REG_GPIO_OUTSTS);
-	ChipVersion.ROMVer = ((value32 & RF_RL_ID) >> 20);	/*  ROM code version. */
 
 	/*  For multi-function consideration. Added by Roger, 2010.10.06. */
 	pHalData->MultiFunc = RT_MULTI_FUNC_NONE;
@@ -853,10 +846,6 @@ static struct hal_version ReadChipVersion8723B(struct adapter *padapter)
 	pHalData->MultiFunc |= ((value32 & BT_FUNC_EN) ? RT_MULTI_FUNC_BT : 0);
 	pHalData->MultiFunc |= ((value32 & GPS_FUNC_EN) ? RT_MULTI_FUNC_GPS : 0);
 	pHalData->PolarityCtl = ((value32 & WL_HWPDN_SL) ? RT_POLARITY_HIGH_ACT : RT_POLARITY_LOW_ACT);
-
-	pHalData->VersionID = ChipVersion;
-
-	return ChipVersion;
 }
 
 void rtl8723b_read_chip_version(struct adapter *padapter)
@@ -882,7 +871,7 @@ void rtl8723b_InitBeaconParameters(struct adapter *padapter)
 	rtw_write16(padapter, REG_TBTT_PROHIBIT, 0x6404);/*  ms */
 	/*  Firmware will control REG_DRVERLYINT when power saving is enable, */
 	/*  so don't set this register on STA mode. */
-	if (check_fwstate(&padapter->mlmepriv, WIFI_STATION_STATE) == false)
+	if (!check_fwstate(&padapter->mlmepriv, WIFI_STATION_STATE))
 		rtw_write8(padapter, REG_DRVERLYINT, DRIVER_EARLY_INT_TIME_8723B); /*  5ms */
 	rtw_write8(padapter, REG_BCNDMATIM, BCN_DMA_ATIME_INT_TIME_8723B); /*  2ms */
 
@@ -912,7 +901,7 @@ void _InitBurstPktLen_8723BS(struct adapter *Adapter)
 
 	/*  ARFB table 9 for 11ac 5G 2SS */
 	rtw_write32(Adapter, REG_ARFR0_8723B, 0x00000010);
-	if (IS_NORMAL_CHIP(pHalData->VersionID))
+	if (pHalData->chip_normal)
 		rtw_write32(Adapter, REG_ARFR0_8723B+4, 0xfffff000);
 	else
 		rtw_write32(Adapter, REG_ARFR0_8723B+4, 0x3e0ff000);
@@ -998,7 +987,8 @@ void rtl8723b_SetBeaconRelatedRegisters(struct adapter *padapter)
 	rtw_write32(padapter, REG_TCR, value32);
 
 	/*  NOTE: Fix test chip's bug (about contention windows's randomness) */
-	if (check_fwstate(&padapter->mlmepriv, WIFI_ADHOC_STATE|WIFI_ADHOC_MASTER_STATE|WIFI_AP_STATE) == true) {
+	if (check_fwstate(&padapter->mlmepriv, WIFI_ADHOC_STATE |
+					       WIFI_ADHOC_MASTER_STATE | WIFI_AP_STATE)) {
 		rtw_write8(padapter, REG_RXTSF_OFFSET_CCK, 0x50);
 		rtw_write8(padapter, REG_RXTSF_OFFSET_OFDM, 0x50);
 	}
@@ -2119,7 +2109,7 @@ static void hw_var_set_mlme_sitesurvey(struct adapter *padapter, u8 variable, u8
 	/*  config RCR to receive different BSSID & not to receive data frame */
 	value_rxfltmap2 = 0;
 
-	if ((check_fwstate(pmlmepriv, WIFI_AP_STATE) == true))
+	if (check_fwstate(pmlmepriv, WIFI_AP_STATE))
 		rcr_clear_bit = RCR_CBSSID_BCN;
 
 	value_rcr = rtw_read32(padapter, REG_RCR);
@@ -2186,7 +2176,7 @@ static void hw_var_set_mlme_join(struct adapter *padapter, u8 variable, u8 *val)
 			val32 |= RCR_CBSSID_DATA|RCR_CBSSID_BCN;
 		rtw_write32(padapter, REG_RCR, val32);
 
-		if (check_fwstate(pmlmepriv, WIFI_STATION_STATE) == true)
+		if (check_fwstate(pmlmepriv, WIFI_STATION_STATE))
 			RetryLimit = (pEEPROM->CustomerID == RT_CID_CCX) ? 7 : 48;
 		else /*  Ad-hoc Mode */
 			RetryLimit = 0x7;
@@ -2724,7 +2714,7 @@ void SetHwReg8723B(struct adapter *padapter, u8 variable, u8 *val)
 		break;
 
 	case HW_VAR_DL_RSVD_PAGE:
-		if (check_fwstate(&padapter->mlmepriv, WIFI_AP_STATE) == true)
+		if (check_fwstate(&padapter->mlmepriv, WIFI_AP_STATE))
 			rtl8723b_download_BTCoex_AP_mode_rsvd_page(padapter);
 		else
 			rtl8723b_download_rsvd_page(padapter, RT_MEDIA_CONNECT);

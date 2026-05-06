@@ -297,7 +297,7 @@ void expire_timeout_chk(struct adapter *padapter)
 
 			psta->keep_alive_trycnt = 0;
 			spin_lock_bh(&pstapriv->asoc_list_lock);
-			if (list_empty(&psta->asoc_list) == false) {
+			if (!list_empty(&psta->asoc_list)) {
 				list_del_init(&psta->asoc_list);
 				pstapriv->asoc_list_cnt--;
 				updated = ap_free_sta(padapter, psta, false,
@@ -2039,5 +2039,5 @@ void stop_ap_mode(struct adapter *padapter)
 
 	rtw_free_mlme_priv_ie_data(pmlmepriv);
 
-	rtw_btcoex_MediaStatusNotify(padapter, 0); /* disconnect */
+	rtw_btcoex_media_status_notify(padapter, 0); /* disconnect */
 }

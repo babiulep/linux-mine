@@ -651,18 +651,6 @@ static void do_vio_entry(struct module *mod, void *symval)
 	module_alias_printf(mod, true, "%s", alias);
 }
 
-/*
- * alias_append() — bounded printf-append into a fixed-size alias buffer.
- *
- * Replaces the historical pattern  sprintf(alias + strlen(alias), ...)
- * used across this file. That pattern silently corrupts the stack when
- * the formatted output exceeds the destination size; the worst-case
- * emission in do_input_entry() with a maximally-populated keybit[] is
- * about 12x the on-stack 256-byte buffer, and do_dmi_entry() can also
- * exceed its 256 bytes for four maximal-length DMI matches. Use
- * snprintf with a remaining-space check and abort the build on
- * overflow.
- */
 static void __attribute__((format(printf, 3, 4)))
 alias_append(char *alias, size_t size, const char *fmt, ...)
 {

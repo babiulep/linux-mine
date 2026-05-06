@@ -1116,10 +1116,9 @@ S:	Orphan
 F:	drivers/usb/gadget/udc/amd5536udc.*
 
 AMD GEODE PROCESSOR/CHIPSET SUPPORT
-M:	Andres Salomon <dilinger@queued.net>
 L:	linux-geode@lists.infradead.org (moderated for non-subscribers)
-S:	Supported
-W:	http://www.amd.com/us-en/ConnectivitySolutions/TechnicalResources/0,,50_2334_2452_11363,00.html
+S:	Orphaned
+F:	arch/x86/platform/geode/
 F:	arch/x86/include/asm/geode.h
 F:	drivers/char/hw_random/geode-rng.c
 F:	drivers/crypto/geode*
@@ -8158,6 +8157,12 @@ T:	git https://gitlab.freedesktop.org/drm/misc/kernel.git
 F:	Documentation/devicetree/bindings/display/panel/novatek,nt35510.yaml
 F:	drivers/gpu/drm/panel/panel-novatek-nt35510.c
 
+DRM DRIVER FOR NOVATEK NT35532 PANELS
+M:	Cristian Cozzolino <cristian_ci@protonmail.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/display/panel/novatek,nt35532.yaml
+F:	drivers/gpu/drm/panel/panel-novatek-nt35532.c
+
 DRM DRIVER FOR NOVATEK NT35560 PANELS
 M:	Linus Walleij <linusw@kernel.org>
 S:	Maintained
@@ -8566,6 +8571,7 @@ M:	Robert Foss <rfoss@kernel.org>
 R:	Laurent Pinchart <Laurent.pinchart@ideasonboard.com>
 R:	Jonas Karlman <jonas@kwiboo.se>
 R:	Jernej Skrabec <jernej.skrabec@gmail.com>
+R:	Luca Ceresoli <luca.ceresoli@bootlin.com>
 S:	Maintained
 T:	git https://gitlab.freedesktop.org/drm/misc/kernel.git
 F:	Documentation/devicetree/bindings/display/bridge/
@@ -11380,13 +11386,6 @@ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/vdubeyko/hfs.git
 F:	Documentation/filesystems/hfsplus.rst
 F:	fs/hfsplus/
 F:	include/linux/hfs_common.h
-
-HGA FRAMEBUFFER DRIVER
-M:	Ferenc Bakonyi <fero@drama.obuda.kando.hu>
-L:	linux-nvidia@lists.surfsouth.com
-S:	Maintained
-W:	http://drama.obuda.kando.hu/~fero/cgi-bin/hgafb.shtml
-F:	drivers/video/fbdev/hgafb.c
 
 HIBERNATION (aka Software Suspend, aka swsusp)
 M:	"Rafael J. Wysocki" <rafael@kernel.org>
@@ -15029,7 +15028,7 @@ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/hid/hid.git
 F:	drivers/hid/hid-lg-g15.c
 
 LONTIUM LT8912B MIPI TO HDMI BRIDGE
-M:	Adrien Grassein <adrien.grassein@gmail.com>
+M:	Francesco Dolcini <francesco@dolcini.it>
 S:	Maintained
 F:	Documentation/devicetree/bindings/display/bridge/lontium,lt8912b.yaml
 F:	drivers/gpu/drm/bridge/lontium-lt8912b.c
@@ -15355,7 +15354,7 @@ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/wireless/wireless.git
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/wireless/wireless-next.git
 F:	Documentation/networking/mac80211-injection.rst
 F:	Documentation/networking/mac80211_hwsim/mac80211_hwsim.rst
-F:	drivers/net/wireless/virtual/mac80211_hwsim.[ch]
+F:	drivers/net/wireless/virtual/mac80211_hwsim*.[ch]
 F:	include/net/mac80211.h
 F:	net/mac80211/
 
@@ -15673,6 +15672,15 @@ W:	https://ez.analog.com/linux-software-drivers
 F:	Documentation/devicetree/bindings/hwmon/pmbus/adi,max17616.yaml
 F:	Documentation/hwmon/max17616.rst
 F:	drivers/hwmon/pmbus/max17616.c
+
+MAX20830 HARDWARE MONITOR DRIVER
+M:	Alexis Czezar Torreno <alexisczezar.torreno@analog.com>
+L:	linux-hwmon@vger.kernel.org
+S:	Supported
+W:	https://ez.analog.com/linux-software-drivers
+F:	Documentation/devicetree/bindings/hwmon/pmbus/adi,max20830.yaml
+F:	Documentation/hwmon/max20830.rst
+F:	drivers/hwmon/pmbus/max20830.c
 
 MAX2175 SDR TUNER DRIVER
 M:	Ramesh Shanmugasundaram <rashanmu@gmail.com>

@@ -325,7 +325,8 @@ static bic_set_t bic_group_disabled_by_default;
 static bic_set_t bic_enabled;
 static bic_set_t bic_present;
 
-static void dump_bic_sets(void) {
+static void dump_bic_sets(void)
+{
 	print_bic_set("bic_enabled", &bic_enabled);
 	print_bic_set("bic_present", &bic_present);
 	print_bic_set("bic_group_topology", &bic_group_topology);
@@ -511,6 +512,11 @@ int *fd_l2_percpu;
 struct timeval interval_tv = { 5, 0 };
 struct timespec interval_ts = { 5, 0 };
 
+void print_intel_patch_version(void)
+{
+	fprintf(outf, "Intel internal patch version 2026.01.14 - Len Brown <len.brown@intel.com>\n");
+}
+
 unsigned int num_iterations;
 unsigned int header_iterations;
 unsigned int debug;
@@ -522,7 +528,7 @@ unsigned int valid_rapl_msrs;
 unsigned int summary_only;
 unsigned int list_header_only;
 unsigned int dump_only;
-unsigned int force_load;
+bool force_load;
 unsigned int cpuid_has_aperf_mperf;
 unsigned int cpuid_has_hv;
 unsigned int has_aperf_access;
@@ -588,7 +594,7 @@ struct gfx_sysfs_info {
 
 static struct gfx_sysfs_info gfx_info[GFX_MAX];
 
-int get_msr(int cpu, off_t offset, unsigned long long *msr);
+void get_msr(int cpu, off_t offset, unsigned long long *msr);
 int add_counter(unsigned int, const char *, const char *, unsigned int, enum counter_scope, enum counter_type, enum counter_format, int, int);
 
 /* Model specific support Start */
@@ -646,8 +652,8 @@ double slm_bclk(void)
 	unsigned int i;
 	double freq;
 
-	if (get_msr(master_cpu, MSR_FSB_FREQ, &msr))
-		fprintf(outf, "SLM BCLK: unknown\n");
+	get_msr(master_cpu, MSR_FSB_FREQ, &msr);
+	fprintf(outf, "SLM BCLK: unknown\n");
 
 	i = msr & 0xf;
 	if (i >= SLM_BCLK_FREQS) {
@@ -657,7 +663,7 @@ double slm_bclk(void)
 	freq = slm_freq_table[i];
 
 	if (!quiet)
-		fprintf(outf, "SLM BCLK: %.1f Mhz\n", freq);
+		fprintf(outf, "SLM BCLK: %.1f MHz\n", freq);
 
 	return freq;
 }
@@ -1192,6 +1198,52 @@ static const struct platform_features amd_features_with_rapl = {
 	.rapl_quirk_tdp = 280,	/* This is the max stock TDP of HEDT/Server Fam17h+ chips */
 };
 
+#ifndef	INTEL_BEASTLAKE
+#define INTEL_BEASTLAKE			IFM(18, 0x02)	/* BST */
+#endif
+#ifndef	INTEL_RAZORLAKE
+#define INTEL_RAZORLAKE			IFM(18, 0x06)	/* RZL */
+#endif
+#ifndef	INTEL_RAZORLAKE_L
+#define INTEL_RAZORLAKE_L		IFM(18, 0x07)	/* RZL */
+#endif
+#ifndef	INTEL_RAZORLAKE_U
+#define INTEL_RAZORLAKE_U		IFM(18, 0x09)	/* RZL */
+#endif
+#ifndef	INTEL_ATOM_PALMRIDGE
+#define INTEL_ATOM_PALMRIDGE		IFM(19, 0x04)	/* PMR */
+#endif
+#ifndef	INTEL_DIAMONDRAPIDS_RS
+#define INTEL_DIAMONDRAPIDS_RS		IFM(19, 0x05)	/* NWP */
+#endif
+#ifndef	INTEL_CORALRAPIDS_X
+#define INTEL_CORALRAPIDS_X		IFM(19, 0x08)	/* COR */
+#endif
+#ifndef	INTEL_CORALRAPIDS_HD
+#define INTEL_CORALRAPIDS_HD		IFM(19, 0x09)	/* COR */
+#endif
+#ifndef	INTEL_CORALRAPIDS_D
+#define INTEL_CORALRAPIDS_D		IFM(19, 0x0A)	/* COR-D */
+#endif
+#ifndef	INTEL_TITANLAKE_U
+#define INTEL_TITANLAKE_U		IFM(18, 0x0C)	/* TTL */
+#endif
+#ifndef	INTEL_TITANLAKE
+#define INTEL_TITANLAKE			IFM(18, 0x0D)	/* TTL */
+#endif
+#ifndef	INTEL_TITANLAKE_L
+#define INTEL_TITANLAKE_L		IFM(18, 0x0E)	/* TTL */
+#endif
+#ifndef	INTEL_TITANLAKE_P
+#define INTEL_TITANLAKE_P		IFM(20, 0x01)	/* TTL */
+#endif
+#ifndef	INTEL_HAMMERLAKE_L
+#define INTEL_HAMMERLAKE_L		IFM(20, 0x02)	/* HML */
+#endif
+#ifndef	INTEL_HAMMERLAKE
+#define INTEL_HAMMERLAKE		IFM(20, 0x03)	/* HML */
+#endif
+
 static const struct platform_data turbostat_pdata[] = {
 	{ INTEL_NEHALEM, &nhm_features },
 	{ INTEL_NEHALEM_G, &nhm_features },
@@ -1232,6 +1284,10 @@ static const struct platform_data turbostat_pdata[] = {
 	{ INTEL_GRANITERAPIDS_X, &spr_features },
 	{ INTEL_GRANITERAPIDS_D, &spr_features },
 	{ INTEL_DIAMONDRAPIDS_X, &dmr_features },
+	{ INTEL_DIAMONDRAPIDS_RS, &dmr_features },
+	{ INTEL_CORALRAPIDS_X, &dmr_features },
+	{ INTEL_CORALRAPIDS_HD, &dmr_features },
+	{ INTEL_CORALRAPIDS_D, &dmr_features },
 	{ INTEL_LAKEFIELD, &cnl_features },
 	{ INTEL_ALDERLAKE, &adl_features },
 	{ INTEL_ALDERLAKE_L, &adl_features },
@@ -1249,6 +1305,16 @@ static const struct platform_data turbostat_pdata[] = {
 	{ INTEL_NOVALAKE, &lnl_features },
 	{ INTEL_NOVALAKE_L, &lnl_features },
 	{ INTEL_WILDCATLAKE_L, &lnl_features },
+	{ INTEL_BEASTLAKE, &lnl_features },
+	{ INTEL_RAZORLAKE, &lnl_features },
+	{ INTEL_RAZORLAKE_L, &lnl_features },
+	{ INTEL_RAZORLAKE_U, &lnl_features },
+	{ INTEL_TITANLAKE_U, &lnl_features },
+	{ INTEL_TITANLAKE, &lnl_features },
+	{ INTEL_TITANLAKE_L, &lnl_features },
+	{ INTEL_TITANLAKE_P, &lnl_features },
+	{ INTEL_HAMMERLAKE_L, &lnl_features },
+	{ INTEL_HAMMERLAKE, &lnl_features },
 	{ INTEL_ATOM_SILVERMONT, &slv_features },
 	{ INTEL_ATOM_SILVERMONT_D, &slvd_features },
 	{ INTEL_ATOM_AIRMONT, &amt_features },
@@ -1261,6 +1327,7 @@ static const struct platform_data turbostat_pdata[] = {
 	{ INTEL_ATOM_GRACEMONT, &adl_features },
 	{ INTEL_ATOM_CRESTMONT_X, &srf_features },
 	{ INTEL_ATOM_CRESTMONT, &grr_features },
+	{ INTEL_ATOM_PALMRIDGE, &grr_features },
 	{ INTEL_ATOM_DARKMONT_X, &srf_features },
 	{ INTEL_XEON_PHI_KNL, &knl_features },
 	{ INTEL_XEON_PHI_KNM, &knl_features },
@@ -1359,7 +1426,7 @@ void probe_platform_features(unsigned int family, unsigned int model)
 
 	if (authentic_amd || hygon_genuine) {
 		/* fallback to default features on unsupported models */
-		force_load++;
+		force_load = true;
 		if (max_extended_level >= 0x80000007) {
 			unsigned int eax, ebx, ecx, edx;
 
@@ -1382,7 +1449,7 @@ void probe_platform_features(unsigned int family, unsigned int model)
 	}
 
 end:
-	if (force_load && !platform) {
+	if ((force_load == true) && !platform) {
 		fprintf(outf, "Forced to run on unsupported platform!\n");
 		platform = &default_features;
 	}
@@ -2645,18 +2712,12 @@ int get_instr_count_fd(int cpu)
 	return fd_instr_count_percpu[cpu];
 }
 
-int get_msr(int cpu, off_t offset, unsigned long long *msr)
+void get_msr(int cpu, off_t offset, unsigned long long *msr)
 {
-	ssize_t retval;
-
 	assert(!no_msr);
 
-	retval = pread(get_msr_fd(cpu), msr, sizeof(*msr), offset);
-
-	if (retval != sizeof *msr)
+	if (pread(get_msr_fd(cpu), msr, sizeof(*msr), offset) != sizeof *msr)
 		err(-1, "cpu%d: msr offset 0x%llx read failed", cpu, (unsigned long long)offset);
-
-	return 0;
 }
 
 int add_msr_counter(int cpu, off_t offset)
@@ -4550,8 +4611,7 @@ int get_mp(int cpu, struct msr_counter *mp, unsigned long long *counterp, char *
 {
 	if (mp->msr_num != 0) {
 		assert(!no_msr);
-		if (get_msr(cpu, mp->msr_num, counterp))
-			return -1;
+		get_msr(cpu, mp->msr_num, counterp);
 	} else {
 		char path[128 + PATH_BYTES];
 
@@ -4915,13 +4975,10 @@ int get_rapl_counters(int cpu, unsigned int domain, struct core_data *c, struct 
 				fprintf(stderr, "Reading rapl counter via msr at %u\n", i);
 
 			assert(!no_msr);
-			if (rci->flags[i] & RAPL_COUNTER_FLAG_USE_MSR_SUM) {
-				if (get_msr_sum(cpu, rci->msr[i], &rci->data[i]))
-					return -13 - i;
-			} else {
-				if (get_msr(cpu, rci->msr[i], &rci->data[i]))
-					return -13 - i;
-			}
+			if (rci->flags[i] & RAPL_COUNTER_FLAG_USE_MSR_SUM)
+				get_msr_sum(cpu, rci->msr[i], &rci->data[i]);
+			else
+				get_msr(cpu, rci->msr[i], &rci->data[i]);
 
 			rci->data[i] &= rci->msr_mask[i];
 			if (rci->msr_shift[i] >= 0)
@@ -5050,8 +5107,7 @@ int get_cstate_counters(unsigned int cpu, PER_THREAD_PARAMS)
 
 		case COUNTER_SOURCE_MSR:
 			assert(!no_msr);
-			if (get_msr(cpu, cci->msr[i], &cci->data[i]))
-				return -13 - i;
+			get_msr(cpu, cci->msr[i], &cci->data[i]);
 
 			if (debug >= 2)
 				fprintf(stderr, "cstate via %s0x%llx %u: %llu\n", "msr", cci->msr[i], i, cci->data[i]);
@@ -5149,8 +5205,7 @@ int get_smi_aperf_mperf(unsigned int cpu, struct thread_data *t)
 		case COUNTER_SOURCE_MSR:
 			assert(!no_msr);
 
-			if (get_msr(cpu, mci->msr[i], &mci->data[i]))
-				return -2 - i;
+			get_msr(cpu, mci->msr[i], &mci->data[i]);
 
 			mci->data[i] &= mci->msr_mask[i];
 
@@ -5315,12 +5370,10 @@ int get_counters(PER_THREAD_PARAMS)
 	}
 
 	if (DO_BIC(BIC_Mod_c6))
-		if (get_msr(cpu, MSR_MODULE_C6_RES_MS, &c->mc6_us))
-			return -8;
+		get_msr(cpu, MSR_MODULE_C6_RES_MS, &c->mc6_us);
 
 	if (DO_BIC(BIC_CoreTmp)) {
-		if (get_msr(cpu, MSR_IA32_THERM_STATUS, &msr))
-			return -9;
+		get_msr(cpu, MSR_IA32_THERM_STATUS, &msr);
 		c->core_temp_c = tj_max - ((msr >> 16) & 0x7F);
 	}
 
@@ -5342,22 +5395,14 @@ int get_counters(PER_THREAD_PARAMS)
 	if (!is_cpu_first_core_in_package(t, p))
 		goto done;
 
-	if (DO_BIC(BIC_Totl_c0)) {
-		if (get_msr(cpu, MSR_PKG_WEIGHTED_CORE_C0_RES, &p->pkg_wtd_core_c0))
-			return -10;
-	}
-	if (DO_BIC(BIC_Any_c0)) {
-		if (get_msr(cpu, MSR_PKG_ANY_CORE_C0_RES, &p->pkg_any_core_c0))
-			return -11;
-	}
-	if (DO_BIC(BIC_GFX_c0)) {
-		if (get_msr(cpu, MSR_PKG_ANY_GFXE_C0_RES, &p->pkg_any_gfxe_c0))
-			return -12;
-	}
-	if (DO_BIC(BIC_CPUGFX)) {
-		if (get_msr(cpu, MSR_PKG_BOTH_CORE_GFXE_C0_RES, &p->pkg_both_core_gfxe_c0))
-			return -13;
-	}
+	if (DO_BIC(BIC_Totl_c0))
+		get_msr(cpu, MSR_PKG_WEIGHTED_CORE_C0_RES, &p->pkg_wtd_core_c0);
+	if (DO_BIC(BIC_Any_c0))
+		get_msr(cpu, MSR_PKG_ANY_CORE_C0_RES, &p->pkg_any_core_c0);
+	if (DO_BIC(BIC_GFX_c0))
+		get_msr(cpu, MSR_PKG_ANY_GFXE_C0_RES, &p->pkg_any_gfxe_c0);
+	if (DO_BIC(BIC_CPUGFX))
+		get_msr(cpu, MSR_PKG_BOTH_CORE_GFXE_C0_RES, &p->pkg_both_core_gfxe_c0);
 
 	if (DO_BIC(BIC_CPU_LPI))
 		p->cpu_lpi = cpuidle_cur_cpu_lpi_us;
@@ -5371,8 +5416,7 @@ int get_counters(PER_THREAD_PARAMS)
 	}
 
 	if (DO_BIC(BIC_PkgTmp)) {
-		if (get_msr(cpu, MSR_IA32_PACKAGE_THERM_STATUS, &msr))
-			return -17;
+		get_msr(cpu, MSR_IA32_PACKAGE_THERM_STATUS, &msr);
 		p->pkg_temp_c = tj_max - ((msr >> 16) & 0x7F);
 	}
 
@@ -6704,7 +6748,7 @@ void do_sleep(void)
 
 int get_msr_sum(int cpu, off_t offset, unsigned long long *msr)
 {
-	int ret, idx;
+	int idx;
 	unsigned long long msr_cur, msr_last;
 
 	assert(!no_msr);
@@ -6716,9 +6760,7 @@ int get_msr_sum(int cpu, off_t offset, unsigned long long *msr)
 	if (idx < 0)
 		return idx;
 	/* get_msr_sum() = sum + (get_msr() - last) */
-	ret = get_msr(cpu, offset, &msr_cur);
-	if (ret)
-		return ret;
+	get_msr(cpu, offset, &msr_cur);
 	msr_last = per_cpu_msr_sum[cpu].entries[idx].last;
 	DELTA_WRAP32(msr_cur, msr_last);
 	*msr = msr_last + per_cpu_msr_sum[cpu].entries[idx].sum;
@@ -6731,7 +6773,7 @@ timer_t timerid;
 /* Timer callback, update the sum of MSRs periodically. */
 static int update_msr_sum(PER_THREAD_PARAMS)
 {
-	int i, ret;
+	int i;
 	int cpu = t->cpu_id;
 
 	UNUSED(c);
@@ -6748,11 +6790,7 @@ static int update_msr_sum(PER_THREAD_PARAMS)
 		offset = idx_to_offset(i);
 		if (offset < 0)
 			continue;
-		ret = get_msr(cpu, offset, &msr_cur);
-		if (ret) {
-			fprintf(outf, "Can not update msr(0x%llx)\n", (unsigned long long)offset);
-			continue;
-		}
+		get_msr(cpu, offset, &msr_cur);
 
 		msr_last = per_cpu_msr_sum[cpu].entries[i].last;
 		per_cpu_msr_sum[cpu].entries[i].last = msr_cur & 0xffffffff;
@@ -7562,27 +7600,21 @@ int print_hwp(PER_THREAD_PARAMS)
 		return -1;
 	}
 
-	if (get_msr(cpu, MSR_PM_ENABLE, &msr))
-		return 0;
-
+	get_msr(cpu, MSR_PM_ENABLE, &msr);
 	fprintf(outf, "cpu%d: MSR_PM_ENABLE: 0x%08llx (%sHWP)\n", cpu, msr, (msr & (1 << 0)) ? "" : "No-");
 
 	/* MSR_PM_ENABLE[1] == 1 if HWP is enabled and MSRs visible */
 	if ((msr & (1 << 0)) == 0)
 		return 0;
 
-	if (get_msr(cpu, MSR_HWP_CAPABILITIES, &msr))
-		return 0;
-
+	get_msr(cpu, MSR_HWP_CAPABILITIES, &msr);
 	fprintf(outf, "cpu%d: MSR_HWP_CAPABILITIES: 0x%08llx "
 		"(high %d guar %d eff %d low %d)\n",
 		cpu, msr,
 		(unsigned int)HWP_HIGHEST_PERF(msr),
 		(unsigned int)HWP_GUARANTEED_PERF(msr), (unsigned int)HWP_MOSTEFFICIENT_PERF(msr), (unsigned int)HWP_LOWEST_PERF(msr));
 
-	if (get_msr(cpu, MSR_HWP_REQUEST, &msr))
-		return 0;
-
+	get_msr(cpu, MSR_HWP_REQUEST, &msr);
 	fprintf(outf, "cpu%d: MSR_HWP_REQUEST: 0x%08llx "
 		"(min %d max %d des %d epp 0x%x window 0x%x pkg 0x%x)\n",
 		cpu, msr,
@@ -7592,9 +7624,7 @@ int print_hwp(PER_THREAD_PARAMS)
 		(unsigned int)(((msr) >> 24) & 0xff), (unsigned int)(((msr) >> 32) & 0xff3), (unsigned int)(((msr) >> 42) & 0x1));
 
 	if (has_hwp_pkg) {
-		if (get_msr(cpu, MSR_HWP_REQUEST_PKG, &msr))
-			return 0;
-
+		get_msr(cpu, MSR_HWP_REQUEST_PKG, &msr);
 		fprintf(outf, "cpu%d: MSR_HWP_REQUEST_PKG: 0x%08llx "
 			"(min %d max %d des %d epp 0x%x window 0x%x)\n",
 			cpu, msr,
@@ -7603,15 +7633,11 @@ int print_hwp(PER_THREAD_PARAMS)
 			(unsigned int)(((msr) >> 16) & 0xff), (unsigned int)(((msr) >> 24) & 0xff), (unsigned int)(((msr) >> 32) & 0xff3));
 	}
 	if (has_hwp_notify) {
-		if (get_msr(cpu, MSR_HWP_INTERRUPT, &msr))
-			return 0;
-
+		get_msr(cpu, MSR_HWP_INTERRUPT, &msr);
 		fprintf(outf, "cpu%d: MSR_HWP_INTERRUPT: 0x%08llx "
 			"(%s_Guaranteed_Perf_Change, %s_Excursion_Min)\n", cpu, msr, ((msr) & 0x1) ? "EN" : "Dis", ((msr) & 0x2) ? "EN" : "Dis");
 	}
-	if (get_msr(cpu, MSR_HWP_STATUS, &msr))
-		return 0;
-
+	get_msr(cpu, MSR_HWP_STATUS, &msr);
 	fprintf(outf, "cpu%d: MSR_HWP_STATUS: 0x%08llx "
 		"(%sGuaranteed_Perf_Change, %sExcursion_Min)\n", cpu, msr, ((msr) & 0x1) ? "" : "No-", ((msr) & 0x4) ? "" : "No-");
 
@@ -7724,9 +7750,10 @@ double get_tdp_intel(void)
 {
 	unsigned long long msr;
 
-	if (valid_rapl_msrs & RAPL_PKG_POWER_INFO)
-		if (!get_msr(master_cpu, MSR_PKG_POWER_INFO, &msr))
-			return ((msr >> 0) & RAPL_POWER_GRANULARITY) * rapl_power_units;
+	if (valid_rapl_msrs & RAPL_PKG_POWER_INFO) {
+		get_msr(master_cpu, MSR_PKG_POWER_INFO, &msr);
+		return ((msr >> 0) & RAPL_POWER_GRANULARITY) * rapl_power_units;
+	}
 	return get_quirk_tdp();
 }
 
@@ -7764,8 +7791,7 @@ void rapl_probe_intel(void)
 		CLR_BIC(BIC_RAM__, &bic_enabled);
 
 	/* units on package 0, verify later other packages match */
-	if (get_msr(master_cpu, MSR_RAPL_POWER_UNIT, &msr))
-		return;
+	get_msr(master_cpu, MSR_RAPL_POWER_UNIT, &msr);
 
 	rapl_power_units = 1.0 / (1 << (msr & 0xF));
 	if (platform->has_rapl_divisor)
@@ -7812,9 +7838,7 @@ void rapl_probe_amd(void)
 	if (!valid_rapl_msrs || no_msr)
 		return;
 
-	if (get_msr(master_cpu, MSR_RAPL_PWR_UNIT, &msr))
-		return;
-
+	get_msr(master_cpu, MSR_RAPL_PWR_UNIT, &msr);
 	rapl_time_units = ldexp(1.0, -(msr >> 16 & 0xf));
 	rapl_energy_units = ldexp(1.0, -(msr >> 8 & 0x1f));
 	rapl_power_units = ldexp(1.0, -(msr & 0xf));
@@ -8013,21 +8037,17 @@ int print_rapl(PER_THREAD_PARAMS)
 
 	if (valid_rapl_msrs & RAPL_AMD_F17H) {
 		msr_name = "MSR_RAPL_PWR_UNIT";
-		if (get_msr(cpu, MSR_RAPL_PWR_UNIT, &msr))
-			return -1;
+		get_msr(cpu, MSR_RAPL_PWR_UNIT, &msr);
 	} else {
 		msr_name = "MSR_RAPL_POWER_UNIT";
-		if (get_msr(cpu, MSR_RAPL_POWER_UNIT, &msr))
-			return -1;
+		get_msr(cpu, MSR_RAPL_POWER_UNIT, &msr);
 	}
 
 	fprintf(outf, "cpu%d: %s: 0x%08llx (%f Watts, %f Joules, %f sec.)\n", cpu, msr_name, msr, rapl_power_units, rapl_energy_units, rapl_time_units);
 
 	if (valid_rapl_msrs & RAPL_PKG_POWER_INFO) {
 
-		if (get_msr(cpu, MSR_PKG_POWER_INFO, &msr))
-			return -5;
-
+		get_msr(cpu, MSR_PKG_POWER_INFO, &msr);
 		fprintf(outf, "cpu%d: MSR_PKG_POWER_INFO: 0x%08llx (%.0f W TDP, RAPL %.0f - %.0f W, %f sec.)\n",
 			cpu, msr,
 			((msr >> 0) & RAPL_POWER_GRANULARITY) * rapl_power_units,
@@ -8037,9 +8057,7 @@ int print_rapl(PER_THREAD_PARAMS)
 	}
 	if (valid_rapl_msrs & RAPL_PKG) {
 
-		if (get_msr(cpu, MSR_PKG_POWER_LIMIT, &msr))
-			return -9;
-
+		get_msr(cpu, MSR_PKG_POWER_LIMIT, &msr);
 		fprintf(outf, "cpu%d: MSR_PKG_POWER_LIMIT: 0x%08llx (%slocked)\n", cpu, msr, (msr >> 63) & 1 ? "" : "UN");
 
 		print_power_limit_msr(cpu, msr, "PKG Limit #1");
@@ -8049,17 +8067,13 @@ int print_rapl(PER_THREAD_PARAMS)
 			((msr >> 32) & 0x7FFF) * rapl_power_units,
 			(1.0 + (((msr >> 54) & 0x3) / 4.0)) * (1 << ((msr >> 49) & 0x1F)) * rapl_time_units, ((msr >> 48) & 1) ? "EN" : "DIS");
 
-		if (get_msr(cpu, MSR_VR_CURRENT_CONFIG, &msr))
-			return -9;
-
+		get_msr(cpu, MSR_VR_CURRENT_CONFIG, &msr);
 		fprintf(outf, "cpu%d: MSR_VR_CURRENT_CONFIG: 0x%08llx\n", cpu, msr);
 		fprintf(outf, "cpu%d: PKG Limit #4: %f Watts (%slocked)\n", cpu, ((msr >> 0) & 0x1FFF) * rapl_power_units, (msr >> 31) & 1 ? "" : "UN");
 	}
 
 	if (valid_rapl_msrs & RAPL_DRAM_POWER_INFO) {
-		if (get_msr(cpu, MSR_DRAM_POWER_INFO, &msr))
-			return -6;
-
+		get_msr(cpu, MSR_DRAM_POWER_INFO, &msr);
 		fprintf(outf, "cpu%d: MSR_DRAM_POWER_INFO,: 0x%08llx (%.0f W TDP, RAPL %.0f - %.0f W, %f sec.)\n",
 			cpu, msr,
 			((msr >> 0) & RAPL_POWER_GRANULARITY) * rapl_power_units,
@@ -8067,32 +8081,25 @@ int print_rapl(PER_THREAD_PARAMS)
 			((msr >> 32) & RAPL_POWER_GRANULARITY) * rapl_power_units, ((msr >> 48) & RAPL_TIME_GRANULARITY) * rapl_time_units);
 	}
 	if (valid_rapl_msrs & RAPL_DRAM) {
-		if (get_msr(cpu, MSR_DRAM_POWER_LIMIT, &msr))
-			return -9;
+		get_msr(cpu, MSR_DRAM_POWER_LIMIT, &msr);
 		fprintf(outf, "cpu%d: MSR_DRAM_POWER_LIMIT: 0x%08llx (%slocked)\n", cpu, msr, (msr >> 31) & 1 ? "" : "UN");
 
 		print_power_limit_msr(cpu, msr, "DRAM Limit");
 	}
 	if (valid_rapl_msrs & RAPL_CORE_POLICY) {
-		if (get_msr(cpu, MSR_PP0_POLICY, &msr))
-			return -7;
-
+		get_msr(cpu, MSR_PP0_POLICY, &msr);
 		fprintf(outf, "cpu%d: MSR_PP0_POLICY: %lld\n", cpu, msr & 0xF);
 	}
 	if (valid_rapl_msrs & RAPL_CORE_POWER_LIMIT) {
-		if (get_msr(cpu, MSR_PP0_POWER_LIMIT, &msr))
-			return -9;
+		get_msr(cpu, MSR_PP0_POWER_LIMIT, &msr);
 		fprintf(outf, "cpu%d: MSR_PP0_POWER_LIMIT: 0x%08llx (%slocked)\n", cpu, msr, (msr >> 31) & 1 ? "" : "UN");
 		print_power_limit_msr(cpu, msr, "Cores Limit");
 	}
 	if (valid_rapl_msrs & RAPL_GFX) {
-		if (get_msr(cpu, MSR_PP1_POLICY, &msr))
-			return -8;
-
+		get_msr(cpu, MSR_PP1_POLICY, &msr);
 		fprintf(outf, "cpu%d: MSR_PP1_POLICY: %lld\n", cpu, msr & 0xF);
 
-		if (get_msr(cpu, MSR_PP1_POWER_LIMIT, &msr))
-			return -9;
+		get_msr(cpu, MSR_PP1_POWER_LIMIT, &msr);
 		fprintf(outf, "cpu%d: MSR_PP1_POWER_LIMIT: 0x%08llx (%slocked)\n", cpu, msr, (msr >> 31) & 1 ? "" : "UN");
 		print_power_limit_msr(cpu, msr, "GFX Limit");
 	}
@@ -8107,7 +8114,6 @@ int print_rapl(PER_THREAD_PARAMS)
  */
 void probe_rapl_msrs(void)
 {
-	int ret;
 	off_t offset;
 	unsigned long long msr_value;
 
@@ -8121,12 +8127,7 @@ void probe_rapl_msrs(void)
 	if (offset < 0)
 		return;
 
-	ret = get_msr(master_cpu, offset, &msr_value);
-	if (ret) {
-		if (debug)
-			fprintf(outf, "Can not read RAPL_PKG_ENERGY MSR(0x%llx)\n", (unsigned long long)offset);
-		return;
-	}
+	get_msr(master_cpu, offset, &msr_value);
 	if (msr_value == 0) {
 		if (debug)
 			fprintf(outf, "RAPL_PKG_ENERGY MSR(0x%llx) == ZERO: disabling all RAPL MSRs\n", (unsigned long long)offset);
@@ -8206,17 +8207,17 @@ int set_temperature_target(PER_THREAD_PARAMS)
 	if (!platform->has_nhm_msrs || no_msr)
 		goto guess;
 
-	if (get_msr(master_cpu, MSR_IA32_TEMPERATURE_TARGET, &msr))
-		goto guess;
-
+	get_msr(master_cpu, MSR_IA32_TEMPERATURE_TARGET, &msr);
 	tcc_default = (msr >> 16) & 0xFF;
 
 	if (!quiet) {
 		int bits = platform->tcc_offset_bits;
 		unsigned long long enabled = 0;
 
-		if (bits && !get_msr(master_cpu, MSR_PLATFORM_INFO, &enabled))
+		if (bits) {
+			get_msr(master_cpu, MSR_PLATFORM_INFO, &enabled);
 			enabled = (enabled >> 30) & 1;
+		}
 
 		if (bits && enabled) {
 			tcc_offset = (msr >> 24) & GENMASK(bits - 1, 0);
@@ -8268,15 +8269,11 @@ int print_thermal(PER_THREAD_PARAMS)
 	}
 
 	if (do_ptm && is_cpu_first_core_in_package(t, p)) {
-		if (get_msr(cpu, MSR_IA32_PACKAGE_THERM_STATUS, &msr))
-			return 0;
-
+		get_msr(cpu, MSR_IA32_PACKAGE_THERM_STATUS, &msr);
 		dts = (msr >> 16) & 0x7F;
 		fprintf(outf, "cpu%d: MSR_IA32_PACKAGE_THERM_STATUS: 0x%08llx (%d C)\n", cpu, msr, tj_max - dts);
 
-		if (get_msr(cpu, MSR_IA32_PACKAGE_THERM_INTERRUPT, &msr))
-			return 0;
-
+		get_msr(cpu, MSR_IA32_PACKAGE_THERM_INTERRUPT, &msr);
 		dts = (msr >> 16) & 0x7F;
 		dts2 = (msr >> 8) & 0x7F;
 		fprintf(outf, "cpu%d: MSR_IA32_PACKAGE_THERM_INTERRUPT: 0x%08llx (%d C, %d C)\n", cpu, msr, tj_max - dts, tj_max - dts2);
@@ -8285,16 +8282,12 @@ int print_thermal(PER_THREAD_PARAMS)
 	if (do_dts && debug) {
 		unsigned int resolution;
 
-		if (get_msr(cpu, MSR_IA32_THERM_STATUS, &msr))
-			return 0;
-
+		get_msr(cpu, MSR_IA32_THERM_STATUS, &msr);
 		dts = (msr >> 16) & 0x7F;
 		resolution = (msr >> 27) & 0xF;
 		fprintf(outf, "cpu%d: MSR_IA32_THERM_STATUS: 0x%08llx (%d C +/- %d)\n", cpu, msr, tj_max - dts, resolution);
 
-		if (get_msr(cpu, MSR_IA32_THERM_INTERRUPT, &msr))
-			return 0;
-
+		get_msr(cpu, MSR_IA32_THERM_INTERRUPT, &msr);
 		dts = (msr >> 16) & 0x7F;
 		dts2 = (msr >> 8) & 0x7F;
 		fprintf(outf, "cpu%d: MSR_IA32_THERM_INTERRUPT: 0x%08llx (%d C, %d C)\n", cpu, msr, tj_max - dts, tj_max - dts2);
@@ -8353,9 +8346,9 @@ void decode_feature_control_msr(void)
 	if (quiet)
 		return;
 
-	if (!get_msr(master_cpu, MSR_IA32_FEAT_CTL, &msr))
-		fprintf(outf, "cpu%d: MSR_IA32_FEATURE_CONTROL: 0x%08llx (%sLocked %s)\n",
-			master_cpu, msr, msr & FEAT_CTL_LOCKED ? "" : "UN-", msr & (1 << 18) ? "SGX" : "");
+	get_msr(master_cpu, MSR_IA32_FEAT_CTL, &msr);
+	fprintf(outf, "cpu%d: MSR_IA32_FEATURE_CONTROL: 0x%08llx (%sLocked %s)\n",
+		master_cpu, msr, msr & FEAT_CTL_LOCKED ? "" : "UN-", msr & (1 << 18) ? "SGX" : "");
 }
 
 void decode_misc_enable_msr(void)
@@ -8368,13 +8361,13 @@ void decode_misc_enable_msr(void)
 	if (!genuine_intel)
 		return;
 
-	if (!get_msr(master_cpu, MSR_IA32_MISC_ENABLE, &msr))
-		fprintf(outf, "cpu%d: MSR_IA32_MISC_ENABLE: 0x%08llx (%sTCC %sEIST %sMWAIT %sPREFETCH %sTURBO)\n",
-			master_cpu, msr,
-			msr & MSR_IA32_MISC_ENABLE_TM1 ? "" : "No-",
-			msr & MSR_IA32_MISC_ENABLE_ENHANCED_SPEEDSTEP ? "" : "No-",
-			msr & MSR_IA32_MISC_ENABLE_MWAIT ? "" : "No-",
-			msr & MSR_IA32_MISC_ENABLE_PREFETCH_DISABLE ? "No-" : "", msr & MSR_IA32_MISC_ENABLE_TURBO_DISABLE ? "No-" : "");
+	get_msr(master_cpu, MSR_IA32_MISC_ENABLE, &msr);
+	fprintf(outf, "cpu%d: MSR_IA32_MISC_ENABLE: 0x%08llx (%sTCC %sEIST %sMWAIT %sPREFETCH %sTURBO)\n",
+		master_cpu, msr,
+		msr & MSR_IA32_MISC_ENABLE_TM1 ? "" : "No-",
+		msr & MSR_IA32_MISC_ENABLE_ENHANCED_SPEEDSTEP ? "" : "No-",
+		msr & MSR_IA32_MISC_ENABLE_MWAIT ? "" : "No-",
+		msr & MSR_IA32_MISC_ENABLE_PREFETCH_DISABLE ? "No-" : "", msr & MSR_IA32_MISC_ENABLE_TURBO_DISABLE ? "No-" : "");
 }
 
 void decode_misc_feature_control(void)
@@ -8387,10 +8380,10 @@ void decode_misc_feature_control(void)
 	if (!platform->has_msr_misc_feature_control)
 		return;
 
-	if (!get_msr(master_cpu, MSR_MISC_FEATURE_CONTROL, &msr))
-		fprintf(outf,
-			"cpu%d: MSR_MISC_FEATURE_CONTROL: 0x%08llx (%sL2-Prefetch %sL2-Prefetch-pair %sL1-Prefetch %sL1-IP-Prefetch)\n",
-			master_cpu, msr, msr & (0 << 0) ? "No-" : "", msr & (1 << 0) ? "No-" : "", msr & (2 << 0) ? "No-" : "", msr & (3 << 0) ? "No-" : "");
+	get_msr(master_cpu, MSR_MISC_FEATURE_CONTROL, &msr);
+	fprintf(outf,
+		"cpu%d: MSR_MISC_FEATURE_CONTROL: 0x%08llx (%sL2-Prefetch %sL2-Prefetch-pair %sL1-Prefetch %sL1-IP-Prefetch)\n",
+		master_cpu, msr, msr & (0 << 0) ? "No-" : "", msr & (1 << 0) ? "No-" : "", msr & (2 << 0) ? "No-" : "", msr & (3 << 0) ? "No-" : "");
 }
 
 /*
@@ -8410,9 +8403,9 @@ void decode_misc_pwr_mgmt_msr(void)
 	if (!platform->has_msr_misc_pwr_mgmt)
 		return;
 
-	if (!get_msr(master_cpu, MSR_MISC_PWR_MGMT, &msr))
-		fprintf(outf, "cpu%d: MSR_MISC_PWR_MGMT: 0x%08llx (%sable-EIST_Coordination %sable-EPB %sable-OOB)\n",
-			master_cpu, msr, msr & (1 << 0) ? "DIS" : "EN", msr & (1 << 1) ? "EN" : "DIS", msr & (1 << 8) ? "EN" : "DIS");
+	get_msr(master_cpu, MSR_MISC_PWR_MGMT, &msr);
+	fprintf(outf, "cpu%d: MSR_MISC_PWR_MGMT: 0x%08llx (%sable-EIST_Coordination %sable-EPB %sable-OOB)\n",
+		master_cpu, msr, msr & (1 << 0) ? "DIS" : "EN", msr & (1 << 1) ? "EN" : "DIS", msr & (1 << 8) ? "EN" : "DIS");
 }
 
 /*
@@ -8431,11 +8424,11 @@ void decode_c6_demotion_policy_msr(void)
 	if (!platform->has_msr_c6_demotion_policy_config)
 		return;
 
-	if (!get_msr(master_cpu, MSR_CC6_DEMOTION_POLICY_CONFIG, &msr))
-		fprintf(outf, "cpu%d: MSR_CC6_DEMOTION_POLICY_CONFIG: 0x%08llx (%sable-CC6-Demotion)\n", master_cpu, msr, msr & (1 << 0) ? "EN" : "DIS");
+	get_msr(master_cpu, MSR_CC6_DEMOTION_POLICY_CONFIG, &msr);
+	fprintf(outf, "cpu%d: MSR_CC6_DEMOTION_POLICY_CONFIG: 0x%08llx (%sable-CC6-Demotion)\n", master_cpu, msr, msr & (1 << 0) ? "EN" : "DIS");
 
-	if (!get_msr(master_cpu, MSR_MC6_DEMOTION_POLICY_CONFIG, &msr))
-		fprintf(outf, "cpu%d: MSR_MC6_DEMOTION_POLICY_CONFIG: 0x%08llx (%sable-MC6-Demotion)\n", master_cpu, msr, msr & (1 << 0) ? "EN" : "DIS");
+	get_msr(master_cpu, MSR_MC6_DEMOTION_POLICY_CONFIG, &msr);
+	fprintf(outf, "cpu%d: MSR_MC6_DEMOTION_POLICY_CONFIG: 0x%08llx (%sable-MC6-Demotion)\n", master_cpu, msr, msr & (1 << 0) ? "EN" : "DIS");
 }
 
 void print_dev_latency(void)
@@ -9130,13 +9123,10 @@ void process_cpuid()
 	cpuid_has_hv = ecx_flags & (1 << 31);
 
 	if (!no_msr) {
-		if (get_msr(sched_getcpu(), MSR_IA32_UCODE_REV, &ucode_patch)) {
-			warnx("get_msr(UCODE)");
-		} else {
-			ucode_patch_valid = true;
-			if (!authentic_amd && !hygon_genuine)
-				ucode_patch >>= 32;
-		}
+		get_msr(sched_getcpu(), MSR_IA32_UCODE_REV, &ucode_patch);
+		ucode_patch_valid = true;
+		if (!authentic_amd && !hygon_genuine)
+			ucode_patch >>= 32;
 	}
 
 	/*
@@ -11492,7 +11482,6 @@ void parse_cpu_command(char *optarg)
 	if (debug)
 		print_cpu_set("--cpu", cpuset_cmdline);
 
-
 	return;
 
 error:
@@ -11573,7 +11562,7 @@ void cmdline(int argc, char **argv)
 			bic_lookup(&bic_enabled, optarg, SHOW_LIST);
 			break;
 		case 'f':
-			force_load++;
+			force_load = true;
 			break;
 		case 'd':
 			debug++;
@@ -11661,6 +11650,7 @@ void cmdline(int argc, char **argv)
 			break;
 		case 'v':
 			print_version();
+			print_intel_patch_version();
 			exit(0);
 			break;
 		default:
@@ -11713,6 +11703,7 @@ skip_cgroup_setting:
 
 	if (!quiet) {
 		print_version();
+		print_intel_patch_version();
 		print_bootcmd();
 	}
 

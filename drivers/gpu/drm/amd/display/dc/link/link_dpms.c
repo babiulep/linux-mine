@@ -2016,9 +2016,7 @@ static enum dc_status enable_link_dp_mst(
 	return enable_link_dp(state, pipe_ctx);
 }
 
-static enum dc_status enable_link_analog(
-		struct dc_state *state,
-		struct pipe_ctx *pipe_ctx)
+static enum dc_status enable_link_analog(struct pipe_ctx *pipe_ctx)
 {
 	struct dc_link *link = pipe_ctx->stream->link;
 
@@ -2083,7 +2081,7 @@ static enum dc_status enable_link(
 		status = DC_OK;
 		break;
 	case SIGNAL_TYPE_RGB:
-		status = enable_link_analog(state, pipe_ctx);
+		status = enable_link_analog(pipe_ctx);
 		break;
 	case SIGNAL_TYPE_VIRTUAL:
 		status = enable_link_virtual(pipe_ctx);
@@ -2111,7 +2109,7 @@ static bool allocate_usb4_bandwidth_for_stream(struct dc_stream_state *stream, i
 
 	if (stream->signal == SIGNAL_TYPE_DISPLAY_PORT_MST) {
 		int sink_index = 0;
-		int i = 0;
+		unsigned int i = 0;
 
 		for (i = 0; i < link->sink_count; i++) {
 			if (link->remote_sinks[i] == NULL)
@@ -2132,7 +2130,7 @@ static bool allocate_usb4_bandwidth_for_stream(struct dc_stream_state *stream, i
 	link_dp_dpia_allocate_usb4_bandwidth_for_stream(link, req_bw);
 
 	if (stream->signal == SIGNAL_TYPE_DISPLAY_PORT_MST) {
-		int i = 0;
+		unsigned int i = 0;
 
 		for (i = 0; i < link->sink_count; i++) {
 			if (link->remote_sinks[i] == NULL)
