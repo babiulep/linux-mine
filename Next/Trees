@@ -158,7 +158,7 @@ drm-msm-fixes	https://gitlab.freedesktop.org/drm/msm.git#msm-fixes
 uml-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/uml/linux.git#fixes
 fwctl-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/fwctl/fwctl.git#for-rc
 devsec-tsm-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/devsec/tsm.git#fixes
-drm-rust-fixes	https://gitlab.freedesktop.org/drm/rust/kernel.git#drm-rust-fixes
+drm-rust-fixes	https://gitlab.freedesktop.org/drm/rust/kernel.git#for-linux-next-fixes
 tenstorrent-dt-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/tenstorrent/linux.git#tenstorrent-dt-fixes
 nfc-fixes	https://codeberg.org/linux-nfc/linux.git#for-linus
 drm-misc-fixes	https://gitlab.freedesktop.org/drm/misc/kernel.git#for-linux-next-fixes
@@ -286,7 +286,7 @@ drm-msm		https://gitlab.freedesktop.org/drm/msm.git#msm-next
 drm-msm-lumag	https://gitlab.freedesktop.org/lumag/msm.git#msm-next-lumag
 drm-xe		https://gitlab.freedesktop.org/drm/xe/kernel.git#drm-xe-next
 etnaviv		https://git.pengutronix.de/git/lst/linux#etnaviv/next
-drm-rust	https://gitlab.freedesktop.org/drm/rust/kernel.git#drm-rust-next
+drm-rust	https://gitlab.freedesktop.org/drm/rust/kernel.git#for-linux-next
 drm-nova	https://gitlab.freedesktop.org/drm/nova.git#nova-next
 fbdev		https://git.kernel.org/pub/scm/linux/kernel/git/deller/linux-fbdev.git#for-next
 regmap		https://git.kernel.org/pub/scm/linux/kernel/git/broonie/regmap.git#for-next

@@ -41,17 +41,17 @@ static int hpage_acct_ref(struct io_ring_ctx *ctx, struct page *hpage,
 	lockdep_assert_held(&ctx->uring_lock);
 
 	entry = xa_load(&ctx->hpage_acct, key);
-	if (!entry) {
+	if (entry) {
+		*acct_new = false;
+		count = xa_to_value(entry) + 1;
+	} else {
 		ret = xa_reserve(&ctx->hpage_acct, key, GFP_KERNEL_ACCOUNT);
 		if (ret)
 			return ret;
+		*acct_new = true;
+		count = 1;
 	}
-
-	count = 1;
-	if (entry)
-		count = xa_to_value(entry) + 1;
 	xa_store(&ctx->hpage_acct, key, xa_mk_value(count), GFP_KERNEL_ACCOUNT);
-	*acct_new = (count == 1);
 	return 0;
 }
 
@@ -67,11 +67,12 @@ static bool hpage_acct_unref(struct io_ring_ctx *ctx, struct page *hpage)
 	if (WARN_ON_ONCE(!entry))
 		return false;
 	count = xa_to_value(entry);
-	if (count == 1)
+	if (count == 1) {
 		xa_erase(&ctx->hpage_acct, key);
-	else
-		xa_store(&ctx->hpage_acct, key, xa_mk_value(count - 1), GFP_KERNEL_ACCOUNT);
-	return count == 1;
+		return true;
+	}
+	xa_store(&ctx->hpage_acct, key, xa_mk_value(count - 1), GFP_KERNEL_ACCOUNT);
+	return false;
 }
 
 /* only define max */
@@ -132,9 +133,14 @@ int io_validate_user_buf_range(u64 uaddr, u64 ulen)
 	unsigned long tmp, base = (unsigned long)uaddr;
 	unsigned long acct_len = (unsigned long)PAGE_ALIGN(ulen);
 
-	/* arbitrary limit, but we need something */
-	if (ulen > SZ_1G || !ulen)
+	if (!ulen)
 		return -EFAULT;
+	/* 32-bit sanity checking */
+	if (ulen > ULONG_MAX || uaddr > ULONG_MAX)
+		return -EFAULT;
+	/* cap to 1TB for 64-bit */
+	if (ulen > SZ_1T)
+		return -EINVAL;
 	if (check_add_overflow(base, acct_len, &tmp))
 		return -EOVERFLOW;
 	return 0;
@@ -1217,7 +1223,6 @@ int io_import_reg_buf(struct io_kiocb *req, struct iov_iter *iter,
 	return io_import_fixed(ddir, iter, node->buf, buf_addr, len);
 }
 
-/* Lock two rings at once. The rings must be different! */
 static int io_buffer_acct_cloned_hpages(struct io_ring_ctx *ctx,
 					struct io_mapped_ubuf *imu)
 {
@@ -1268,6 +1273,7 @@ static int io_buffer_acct_cloned_hpages(struct io_ring_ctx *ctx,
 	return ret;
 }
 
+/* Lock two rings at once. The rings must be different! */
 static void lock_two_rings(struct io_ring_ctx *ctx1, struct io_ring_ctx *ctx2)
 {
 	if (ctx1 > ctx2)

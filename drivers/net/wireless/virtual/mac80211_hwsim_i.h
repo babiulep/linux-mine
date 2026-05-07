@@ -4,7 +4,7 @@
  * Copyright (c) 2008, Jouni Malinen <j@w1.fi>
  * Copyright (c) 2011, Javier Lopez <jlopex@gmail.com>
  * Copyright (c) 2016 - 2017 Intel Deutschland GmbH
- * Copyright (C) 2018 - 2025 Intel Corporation
+ * Copyright (C) 2018 - 2026 Intel Corporation
  */
 
 #ifndef __MAC80211_HWSIM_I_H
@@ -13,6 +13,27 @@
 #include <net/mac80211.h>
 #include "mac80211_hwsim.h"
 #include "mac80211_hwsim_nan.h"
+
+struct hwsim_sta_nan_sched {
+	/* Later members are protected by this lock */
+	spinlock_t lock;
+	u16 committed_dw;
+	struct {
+		u8 map_id;
+		struct cfg80211_chan_def chans[CFG80211_NAN_SCHED_NUM_TIME_SLOTS];
+	} maps[CFG80211_NAN_MAX_PEER_MAPS];
+};
+
+struct hwsim_sta_priv {
+	u32 magic;
+	unsigned int last_link;
+	u16 active_links_rx;
+
+	/* NAN peer schedule - must be accessed under nan_sched.lock */
+	struct hwsim_sta_nan_sched nan_sched;
+};
+
+#define HWSIM_STA_MAGIC	0x6d537749
 
 struct mac80211_hwsim_link_data {
 	u32 link_id;
@@ -39,7 +60,7 @@ struct mac80211_hwsim_data {
 	struct ieee80211_channel channels_s1g[HWSIM_NUM_S1G_CHANNELS_US];
 	struct ieee80211_rate rates[HWSIM_NUM_RATES];
 	struct ieee80211_iface_combination if_combination;
-	struct ieee80211_iface_limit if_limits[4];
+	struct ieee80211_iface_limit if_limits[5];
 	int n_if_limits;
 	/* Storage space for channels, etc. */
 	struct mac80211_hwsim_phy_data *phy_data;
@@ -102,6 +123,7 @@ struct mac80211_hwsim_data {
 	u32 wmediumd;
 
 	/* difference between this hw's clock and the real clock, in usecs */
+	spinlock_t tsf_offset_lock;
 	s64 tsf_offset;
 
 	/* Stats */
@@ -135,5 +157,12 @@ u64 mac80211_hwsim_boottime_to_tsf(struct mac80211_hwsim_data *data,
 
 u64 mac80211_hwsim_get_tsf(struct ieee80211_hw *hw,
 			   struct ieee80211_vif *vif);
+
+void mac80211_hwsim_tx_frame(struct ieee80211_hw *hw,
+			     struct sk_buff *skb,
+			     struct ieee80211_channel *chan);
+
+void ieee80211_hwsim_wake_tx_queue(struct ieee80211_hw *hw,
+				   struct ieee80211_txq *txq);
 
 #endif /* __MAC80211_HWSIM_I_H */

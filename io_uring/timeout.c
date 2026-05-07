@@ -52,11 +52,6 @@ static clockid_t io_flags_to_clock(unsigned flags)
 	}
 }
 
-static clockid_t io_timeout_get_clock(struct io_timeout_data *data)
-{
-	return io_flags_to_clock(data->flags);
-}
-
 static int io_parse_user_time(ktime_t *time, u64 arg, unsigned flags)
 {
 	struct timespec64 ts;
@@ -74,12 +69,6 @@ static int io_parse_user_time(ktime_t *time, u64 arg, unsigned flags)
 		return -EINVAL;
 	*time = timespec64_to_ktime(ts);
 out:
-	/*
-	 * Absolute deadlines are interpreted in the submitter's time
-	 * namespace; translate to the host clock to match other ABS
-	 * interfaces (timer_settime, clock_nanosleep, timerfd_settime).
-	 * SQPOLL is fine: the kthread shares the submitter's nsproxy.
-	 */
 	if (flags & IORING_TIMEOUT_ABS)
 		*time = timens_ktime_to_host(io_flags_to_clock(flags), *time);
 	return 0;
@@ -426,6 +415,11 @@ static enum hrtimer_restart io_link_timeout_fn(struct hrtimer *timer)
 	req->io_task_work.func = io_req_task_link_timeout;
 	io_req_task_work_add(req);
 	return HRTIMER_NORESTART;
+}
+
+static clockid_t io_timeout_get_clock(struct io_timeout_data *data)
+{
+	return io_flags_to_clock(data->flags);
 }
 
 static int io_linked_timeout_update(struct io_ring_ctx *ctx, __u64 user_data,

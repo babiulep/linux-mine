@@ -10679,7 +10679,7 @@ static void amdgpu_dm_mod_power_setup_streams(struct drm_atomic_commit *state,
 }
 
 static void amdgpu_dm_commit_streams(struct drm_atomic_commit *state,
-				     struct dc_state *dc_state)
+					struct dc_state *dc_state)
 {
 	struct drm_device *dev = state->dev;
 	struct amdgpu_device *adev = drm_to_adev(dev);
