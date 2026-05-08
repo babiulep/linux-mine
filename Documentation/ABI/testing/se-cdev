@@ -11,6 +11,7 @@ Description:
 		The ioctl(2)-based ABI is defined and documented in
 		[include]<linux/firmware/imx/ele_mu_ioctl.h>.
 		ioctl(s) are used primarily for:
+
 			- shared memory management
 			- allocation of I/O buffers
 			- getting mu info
@@ -38,6 +39,6 @@ Description:
 		  with the file descriptor.
 
 Users:		https://github.com/nxp-imx/imx-secure-enclave.git,
-		https://github.com/nxp-imx/imx-smw.git
+		https://github.com/nxp-imx/imx-smw.git,
 		crypto/skcipher,
 		drivers/nvmem/imx-ocotp-ele.c

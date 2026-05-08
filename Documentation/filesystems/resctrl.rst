@@ -480,12 +480,6 @@ with the following files:
 	"1":
 		Auto assignment is enabled.
 
-	Automatic counter assignment is done with best effort. If auto
-	assignment is enabled but there are not enough available counters then
-	monitor group creation could succeed while one or more events belonging
-	to the group may not have a counter assigned in all domains. Consult
-	mbm_L3_assignments for counter assignment states of the new groups.
-
 	Example::
 
 	  # echo 0 > /sys/fs/resctrl/info/L3_MON/mbm_assign_on_mkdir
@@ -576,11 +570,6 @@ All groups contain the following files:
 	then the task must already belong to the CTRL_MON parent of this
 	group. The task is removed from any previous MON group.
 
-	When writing to this file, a task id of 0 is interpreted as the
-	task id of the currently running task. On reading the file, a task
-	id of 0 will never be shown and there is no representation of the
-	idle tasks. Instead, a CPU's idle task is always considered as a
-	member of the group owning the CPU.
 
 "cpus":
 	Reading this file shows a bitmask of the logical CPUs owned by

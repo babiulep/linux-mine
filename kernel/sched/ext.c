@@ -325,7 +325,6 @@ static void scx_set_task_sched(struct task_struct *p, struct scx_sched *sch)
 #else	/* CONFIG_EXT_SUB_SCHED */
 static struct scx_sched *scx_parent(struct scx_sched *sch) { return NULL; }
 static struct scx_sched *scx_next_descendant_pre(struct scx_sched *pos, struct scx_sched *root) { return pos ? NULL : root; }
-static struct scx_sched *scx_find_sub_sched(u64 cgroup_id) { return NULL; }
 static void scx_set_task_sched(struct task_struct *p, struct scx_sched *sch) {}
 #endif	/* CONFIG_EXT_SUB_SCHED */
 
@@ -5714,10 +5713,12 @@ static void refresh_watchdog(void)
 
 static s32 scx_link_sched(struct scx_sched *sch)
 {
+	const char *err_msg = "";
+	s32 ret = 0;
+
 	scoped_guard(raw_spinlock_irq, &scx_sched_lock) {
 #ifdef CONFIG_EXT_SUB_SCHED
 		struct scx_sched *parent = scx_parent(sch);
-		s32 ret;
 
 		if (parent) {
 			/*
@@ -5727,15 +5728,16 @@ static s32 scx_link_sched(struct scx_sched *sch)
 			 * parent can shoot us down.
 			 */
 			if (atomic_read(&parent->exit_kind) != SCX_EXIT_NONE) {
-				scx_error(sch, "parent disabled");
-				return -ENOENT;
+				err_msg = "parent disabled";
+				ret = -ENOENT;
+				break;
 			}
 
 			ret = rhashtable_lookup_insert_fast(&scx_sched_hash,
 					&sch->hash_node, scx_sched_hash_params);
 			if (ret) {
-				scx_error(sch, "failed to insert into scx_sched_hash (%d)", ret);
-				return ret;
+				err_msg = "failed to insert into scx_sched_hash";
+				break;
 			}
 
 			list_add_tail(&sch->sibling, &parent->children);
@@ -5743,6 +5745,15 @@ static s32 scx_link_sched(struct scx_sched *sch)
 #endif	/* CONFIG_EXT_SUB_SCHED */
 
 		list_add_tail_rcu(&sch->all, &scx_sched_all);
+	}
+
+	/*
+	 * scx_error() takes scx_sched_lock via scx_claim_exit(), so it must run after
+	 * the guard above is released.
+	 */
+	if (ret) {
+		scx_error(sch, "%s (%d)", err_msg, ret);
+		return ret;
 	}
 
 	refresh_watchdog();
@@ -6833,8 +6844,10 @@ static struct scx_sched *scx_alloc_and_add_sched(struct scx_enable_cmd *cmd,
 #endif	/* CONFIG_EXT_SUB_SCHED */
 	return sch;
 
+#ifdef CONFIG_EXT_SUB_SCHED
 err_free_lb_resched:
 	free_cpumask_var(sch->bypass_lb_resched_cpumask);
+#endif
 err_free_lb_cpumask:
 	free_cpumask_var(sch->bypass_lb_donee_cpumask);
 err_stop_helper:

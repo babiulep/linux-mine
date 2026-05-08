@@ -646,6 +646,7 @@ static int se_ioctl_setup_iobuf_handler(struct se_if_device_ctx *dev_ctx,
 {
 	struct se_shared_mem *shared_mem = NULL;
 	struct se_ioctl_setup_iobuf io = {0};
+	size_t aligned_len;
 	int err = 0;
 	u32 pos;
 
@@ -669,16 +670,23 @@ static int se_ioctl_setup_iobuf_handler(struct se_if_device_ctx *dev_ctx,
 		goto copy;
 	}
 
+	if (io.length > SIZE_MAX - 7) {
+		dev_err(dev_ctx->priv->dev, "%s: Invalid buffer length.",
+			dev_ctx->devname);
+		return -EINVAL;
+	}
+	aligned_len = round_up((size_t)io.length, 8);
+
 	/* No specific requirement for this buffer. */
 	shared_mem = &dev_ctx->se_shared_mem_mgmt.non_secure_mem;
 
 	/* Check there is enough space in the shared memory. */
-	dev_dbg(dev_ctx->priv->dev, "%s: req_size = %d, max_size= %d, curr_pos = %d",
-		dev_ctx->devname, round_up(io.length, 8u), shared_mem->size,
+	dev_dbg(dev_ctx->priv->dev, "%s: req_size = %zd, max_size= %d, curr_pos = %d",
+		dev_ctx->devname, aligned_len, shared_mem->size,
 		shared_mem->pos);
 
 	if (shared_mem->size < shared_mem->pos ||
-	    round_up(io.length, 8u) > (shared_mem->size - shared_mem->pos)) {
+	    aligned_len > (shared_mem->size - shared_mem->pos)) {
 		dev_err(dev_ctx->priv->dev, "%s: Not enough space in shared memory.",
 			dev_ctx->devname);
 		return -ENOMEM;
@@ -686,7 +694,7 @@ static int se_ioctl_setup_iobuf_handler(struct se_if_device_ctx *dev_ctx,
 
 	/* Allocate space in shared memory. 8 bytes aligned. */
 	pos = shared_mem->pos;
-	shared_mem->pos += round_up(io.length, 8u);
+	shared_mem->pos += aligned_len;
 	io.ele_addr = (u64)shared_mem->dma_addr + pos;
 
 	memset(shared_mem->ptr + pos, 0, io.length);
@@ -791,6 +799,7 @@ static ssize_t se_if_fops_read(struct file *fp, char __user *buf, size_t size,
 {
 	struct se_if_device_ctx *dev_ctx = fp->private_data;
 	struct se_if_priv *priv = dev_ctx->priv;
+	size_t copy_len;
 	int err;
 
 	dev_dbg(priv->dev, "%s: read to buf %p(%zu), ppos=%lld.", dev_ctx->devname,
@@ -823,14 +832,13 @@ static ssize_t se_if_fops_read(struct file *fp, char __user *buf, size_t size,
 				     priv->cmd_receiver_clbk_hdl.rx_msg_sz,
 				     false);
 
-		if (copy_to_user(buf, priv->cmd_receiver_clbk_hdl.rx_msg,
-				 priv->cmd_receiver_clbk_hdl.rx_msg_sz)) {
-			dev_err(priv->dev, "%s: Failed to copy to user.",
-				dev_ctx->devname);
+		copy_len = min(size, priv->cmd_receiver_clbk_hdl.rx_msg_sz);
+
+		if (copy_to_user(buf, priv->cmd_receiver_clbk_hdl.rx_msg, copy_len))
 			err = -EFAULT;
-		} else {
-			err = priv->cmd_receiver_clbk_hdl.rx_msg_sz;
-		}
+		else
+			err = copy_len;
+
 exit:
 		priv->cmd_receiver_clbk_hdl.rx_msg_sz = 0;
 
