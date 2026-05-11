@@ -77,7 +77,6 @@
 #include "fdinfo.h"
 #include "kbuf.h"
 #include "rsrc.h"
-#include "slot.h"
 #include "cancel.h"
 #include "net.h"
 #include "notif.h"
@@ -1797,25 +1796,17 @@ static int io_init_req(struct io_ring_ctx *ctx, struct io_kiocb *req,
 		return io_init_fail_req(req, -EINVAL);
 	if (!def->iopoll && (ctx->flags & IORING_SETUP_IOPOLL))
 		return io_init_fail_req(req, -EINVAL);
-	if (def->iopoll && (ctx->flags & IORING_SETUP_IOPOLL)) {
-		/*
-		 * Set REQ_F_IOPOLL and clear iopoll_completed once at SQE
-		 * init so each opcode's issue path doesn't have to do it.
-		 */
-		req->flags |= REQ_F_IOPOLL;
-		req->iopoll_completed = 0;
-	}
 
-	if (def->needs_file)
-		req->cqe.fd = READ_ONCE(sqe->fd);
-	if (def->plug) {
+	if (def->needs_file) {
 		struct io_submit_state *state = &ctx->submit_state;
+
+		req->cqe.fd = READ_ONCE(sqe->fd);
 
 		/*
 		 * Plug now if we have more than 2 IO left after this, and the
 		 * target is potentially a read/write to block based storage.
 		 */
-		if (state->need_plug) {
+		if (state->need_plug && def->plug) {
 			state->plug_started = true;
 			state->need_plug = false;
 			blk_start_plug_nr_ios(&state->plug, state->submit_nr);
@@ -2165,7 +2156,6 @@ static __cold void io_ring_ctx_free(struct io_ring_ctx *ctx)
 	io_sq_thread_finish(ctx);
 
 	mutex_lock(&ctx->uring_lock);
-	io_free_io_slots(ctx);
 	io_sqe_buffers_unregister(ctx);
 	io_sqe_files_unregister(ctx);
 	io_unregister_zcrx(ctx);

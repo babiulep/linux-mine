@@ -532,12 +532,6 @@ struct request_queue {
 
 	struct queue_limits	limits;
 
-	/*
-	 * Device used for persistent DMA mappings. Drivers supporting
-	 * BIO_REGISTERED must set this.
-	 */
-	struct device		*dma_dev;
-
 #ifdef CONFIG_PM
 	struct device		*dev;
 	enum rpm_status		rpm_status;
@@ -1032,7 +1026,6 @@ void blk_request_module(dev_t devt);
 extern int blk_register_queue(struct gendisk *disk);
 extern void blk_unregister_queue(struct gendisk *disk);
 void submit_bio_noacct(struct bio *bio);
-void submit_bio_noacct_fast(struct bio *bio);
 struct bio *bio_split_to_limits(struct bio *bio);
 struct bio *bio_submit_split_bioset(struct bio *bio, unsigned int split_sectors,
 				    struct bio_set *bs);
