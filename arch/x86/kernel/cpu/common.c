@@ -339,13 +339,13 @@ bool cpuid_feature(void)
 
 static void squash_the_stupid_serial_number(struct cpuinfo_x86 *c)
 {
+	const struct leaf_0x0_0 *l0;
 	unsigned long lo, hi;
 
 	if (!cpu_has(c, X86_FEATURE_PN) || !disable_x86_serial_nr)
 		return;
 
 	/* Disable processor serial number: */
-
 	rdmsr(MSR_IA32_BBL_CR_CTL, lo, hi);
 	lo |= 0x200000;
 	wrmsr(MSR_IA32_BBL_CR_CTL, lo, hi);
@@ -353,8 +353,16 @@ static void squash_the_stupid_serial_number(struct cpuinfo_x86 *c)
 	pr_notice("CPU serial number disabled.\n");
 	clear_cpu_cap(c, X86_FEATURE_PN);
 
-	/* Disabling the serial number may affect the cpuid level */
-	c->cpuid_level = cpuid_eax(0);
+	/* Disabling CPUID(0x3) can change the maximum base CPUID level. */
+	cpuid_refresh_leaf(c, 0x0);
+	l0 = cpuid_leaf(c, 0x0);
+	if (!l0)
+		return;
+
+	c->cpuid_level = l0->max_std_leaf;
+
+	/* Rescan from the whole range. */
+	cpuid_refresh_range(c, 0, CPUID_BASE_END);
 }
 
 static int __init x86_serial_nr_setup(char *s)
