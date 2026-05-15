@@ -145,8 +145,6 @@ int skb_gro_receive(struct sk_buff *p, struct sk_buff *skb)
 		skb_frag_off_add(frag, offset);
 		skb_frag_size_sub(frag, offset);
 
-		pinfo->flags |= skbinfo->flags & SKBFL_SHARED_FRAG;
-
 		/* all fragments truesize : remove (head size + sk_buff) */
 		new_truesize = SKB_TRUESIZE(skb_end_offset(skb));
 		delta_truesize = skb->truesize - new_truesize;
@@ -177,8 +175,6 @@ int skb_gro_receive(struct sk_buff *p, struct sk_buff *skb)
 
 		memcpy(frag + 1, skbinfo->frags, sizeof(*frag) * skbinfo->nr_frags);
 		/* We dont need to clear skbinfo->nr_frags here */
-
-		pinfo->flags |= skbinfo->flags & SKBFL_SHARED_FRAG;
 
 		new_truesize = SKB_DATA_ALIGN(sizeof(struct sk_buff));
 		delta_truesize = skb->truesize - new_truesize;
