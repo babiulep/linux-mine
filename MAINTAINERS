@@ -23022,7 +23022,7 @@ N:	riscv
 K:	riscv
 
 RISC-V IOMMU
-M:	Tomasz Jeznach <tjeznach@rivosinc.com>
+M:	Tomasz Jeznach <tomasz.jeznach@linux.dev>
 L:	iommu@lists.linux.dev
 L:	linux-riscv@lists.infradead.org
 S:	Maintained
@@ -28947,7 +28947,6 @@ R:	Ahmed S. Darwish <darwi@linutronix.de>
 L:	x86-cpuid@lists.linux.dev
 S:	Maintained
 W:	https://x86-cpuid.org
-F:	arch/x86/include/asm/cpuid/leaf_types.h
 F:	tools/arch/x86/kcpuid/
 
 X86 ENTRY CODE

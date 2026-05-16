@@ -10,7 +10,6 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/interrupt.h>
-#include <linux/kernel.h>
 #include <linux/kernel_stat.h>
 #include <linux/mutex.h>
 #include <linux/string.h>
@@ -327,7 +326,7 @@ void register_handler_proc(unsigned int irq, struct irqaction *action)
 
 #undef MAX_NAMELEN
 
-#define MAX_NAMELEN 11
+#define MAX_NAMELEN 10
 
 void register_irq_proc(unsigned int irq, struct irq_desc *desc)
 {
@@ -349,7 +348,7 @@ void register_irq_proc(unsigned int irq, struct irq_desc *desc)
 		return;
 
 	/* create /proc/irq/1234 */
-	snprintf(name, MAX_NAMELEN, "%u", irq);
+	sprintf(name, "%u", irq);
 	desc->dir = proc_mkdir(name, root_irq_dir);
 	if (!desc->dir)
 		return;
@@ -402,7 +401,7 @@ void unregister_irq_proc(unsigned int irq, struct irq_desc *desc)
 #endif
 	remove_proc_entry("spurious", desc->dir);
 
-	snprintf(name, MAX_NAMELEN, "%u", irq);
+	sprintf(name, "%u", irq);
 	remove_proc_entry(name, root_irq_dir);
 }
 

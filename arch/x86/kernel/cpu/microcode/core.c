@@ -127,7 +127,7 @@ bool __init microcode_loader_disabled(void)
 	}
 
 	/*
-	 * 2) Bit 31 in CPUID[1]:ECX is set
+	 * 2) Bit 31 in CPUID[1]:ECX is clear
 	 *    The bit is reserved for hypervisor use. This is still not
 	 *    completely accurate as XEN PV guests don't see that CPUID bit
 	 *    set, but that's good enough as they don't land on the BSP
