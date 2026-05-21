@@ -16,6 +16,7 @@
  * Copyright (c) 2010 Erik Larsson
  */
 
+#include <linux/string_choices.h>
 #include <linux/writeback.h>
 #include <linux/iomap.h>
 
@@ -661,6 +662,9 @@ static int ntfs_attr_find(const __le32 type, const __le16 *name,
 	__le16 *upcase = vol->upcase;
 	u32 upcase_len = vol->upcase_len;
 	unsigned int space;
+	u16 name_offset;
+	u32 attr_len;
+	u32 name_size;
 
 	/*
 	 * Iterate over attributes in mft record starting at @ctx->attr, or the
@@ -688,6 +692,20 @@ static int ntfs_attr_find(const __le32 type, const __le16 *name,
 			return -ENOENT;
 		if (unlikely(!a->length))
 			break;
+		if (a->name_length) {
+			name_offset = le16_to_cpu(a->name_offset);
+			attr_len = le32_to_cpu(a->length);
+			name_size = a->name_length * sizeof(__le16);
+
+			if (name_offset > attr_len ||
+			    attr_len - name_offset < name_size) {
+				ntfs_error(vol->sb,
+					   "Corrupt attribute name in MFT record %llu\n",
+					   ctx->ntfs_ino->mft_no);
+				break;
+			}
+		}
+
 		if (type == AT_UNUSED)
 			return 0;
 		if (a->type != type)
@@ -701,14 +719,6 @@ static int ntfs_attr_find(const __le32 type, const __le16 *name,
 			if (a->name_length)
 				return -ENOENT;
 		} else {
-			if (a->name_length && ((le16_to_cpu(a->name_offset) +
-					       a->name_length * sizeof(__le16)) >
-						le32_to_cpu(a->length))) {
-				ntfs_error(vol->sb, "Corrupt attribute name in MFT record %llu\n",
-					   ctx->ntfs_ino->mft_no);
-				break;
-			}
-
 			if (!ntfs_are_names_equal(name, name_len,
 					(__le16 *)((u8 *)a + le16_to_cpu(a->name_offset)),
 					a->name_length, ic, upcase, upcase_len)) {
@@ -1846,7 +1856,7 @@ int ntfs_attr_make_non_resident(struct ntfs_inode *ni, const u32 data_size)
 		if (IS_ERR(rl)) {
 			err = PTR_ERR(rl);
 			ntfs_debug("Failed to allocate cluster%s, error code %i.",
-					ntfs_bytes_to_cluster(vol, new_size) > 1 ? "s" : "",
+					str_plural(ntfs_bytes_to_cluster(vol, new_size)),
 					err);
 			goto folio_err_out;
 		}
@@ -2618,7 +2628,7 @@ int ntfs_attr_add(struct ntfs_inode *ni, __le32 type,
 		return -EINVAL;
 
 	ntfs_debug("Entering for inode 0x%llx, attr %x, size %lld.\n",
-			ni->mft_no, type, size);
+			(long long) ni->mft_no, type, size);
 
 	if (ni->nr_extents == -1)
 		ni = ni->ext.base_ntfs_ino;

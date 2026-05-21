@@ -398,10 +398,6 @@ void init_mlme_ext_priv(struct adapter *padapter)
 	pmlmeext->chan_scan_time = SURVEY_TO;
 	pmlmeext->mlmeext_init = true;
 	pmlmeext->active_keep_alive_check = true;
-
-#ifdef DBG_FIXED_CHAN
-	pmlmeext->fixed_chan = 0xFF;
-#endif
 }
 
 void free_mlme_ext_priv(struct mlme_ext_priv *pmlmeext)
@@ -3745,25 +3741,11 @@ void site_survey(struct adapter *padapter)
 	}
 
 	if (survey_channel != 0) {
-		/* PAUSE 4-AC Queue when site_survey */
-		/* rtw_hal_get_hwreg(padapter, HW_VAR_TXPAUSE, (u8 *)(&val8)); */
-		/* val8 |= 0x0f; */
-		/* rtw_hal_set_hwreg(padapter, HW_VAR_TXPAUSE, (u8 *)(&val8)); */
-		if (pmlmeext->sitesurvey_res.channel_idx == 0) {
-#ifdef DBG_FIXED_CHAN
-			if (pmlmeext->fixed_chan != 0xff)
-				set_channel_bwmode(padapter, pmlmeext->fixed_chan, HAL_PRIME_CHNL_OFFSET_DONT_CARE, CHANNEL_WIDTH_20);
-			else
-#endif
-				set_channel_bwmode(padapter, survey_channel, HAL_PRIME_CHNL_OFFSET_DONT_CARE, CHANNEL_WIDTH_20);
-		} else {
-#ifdef DBG_FIXED_CHAN
-			if (pmlmeext->fixed_chan != 0xff)
-				r8723bs_select_channel(padapter, pmlmeext->fixed_chan);
-			else
-#endif
-				r8723bs_select_channel(padapter, survey_channel);
-		}
+		if (pmlmeext->sitesurvey_res.channel_idx == 0)
+			set_channel_bwmode(padapter, survey_channel,
+					   HAL_PRIME_CHNL_OFFSET_DONT_CARE, CHANNEL_WIDTH_20);
+		else
+			r8723bs_select_channel(padapter, survey_channel);
 
 		if (ScanType == SCAN_ACTIVE) { /* obey the channel plan setting... */
 			{
@@ -5526,7 +5508,7 @@ u8 setkey_hdl(struct adapter *padapter, u8 *pbuf)
 		else
 			addr = null_addr;
 
-		ctrl = BIT(15) | BIT6 | ((pparm->algorithm) << 2) | pparm->keyid;
+		ctrl = BIT(15) | BIT(6) | ((pparm->algorithm) << 2) | pparm->keyid;
 		write_cam(padapter, cam_id, ctrl, addr, pparm->key);
 		netdev_dbg(padapter->pnetdev,
 			   "set group key camid:%d, addr:%pM, kid:%d, type:%s\n",

@@ -81,6 +81,7 @@ usb-serial-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/johan/usb-seria
 phy		https://git.kernel.org/pub/scm/linux/kernel/git/phy/linux-phy.git#fixes
 staging.current	https://git.kernel.org/pub/scm/linux/kernel/git/gregkh/staging.git#staging-linus
 iio-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/jic23/iio.git#fixes-togreg
+watchdog-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/groeck/linux-staging.git#watchdog
 counter-current	https://git.kernel.org/pub/scm/linux/kernel/git/wbg/counter.git#counter-current
 char-misc.current	https://git.kernel.org/pub/scm/linux/kernel/git/gregkh/char-misc.git#char-misc-linus
 soundwire-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/vkoul/soundwire.git#fixes
@@ -312,7 +313,7 @@ smack		https://github.com/cschaufler/smack-next#next
 tomoyo		git://git.code.sf.net/p/tomoyo/tomoyo.git#master
 tpmdd-tpm	https://git.kernel.org/pub/scm/linux/kernel/git/jarkko/linux-tpmdd.git#for-next-tpm
 tpmdd-keys	https://git.kernel.org/pub/scm/linux/kernel/git/jarkko/linux-tpmdd.git#for-next-keys
-watchdog	git://www.linux-watchdog.org/linux-watchdog-next.git#master
+watchdog	https://git.kernel.org/pub/scm/linux/kernel/git/groeck/linux-staging.git#watchdog-next
 iommu		https://git.kernel.org/pub/scm/linux/kernel/git/iommu/linux.git#next
 audit		https://git.kernel.org/pub/scm/linux/kernel/git/pcmoore/audit.git#next
 devicetree	https://git.kernel.org/pub/scm/linux/kernel/git/robh/linux.git#for-next

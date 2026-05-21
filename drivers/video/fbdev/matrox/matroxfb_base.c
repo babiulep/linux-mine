@@ -1643,7 +1643,7 @@ static int initMatrox2(struct matrox_fb_info *minfo, struct board *b)
 
 	static const struct pci_device_id intel_82437[] = {
 		{ PCI_VDEVICE(INTEL, PCI_DEVICE_ID_INTEL_82437) },
-		{ },
+		{ }
 	};
 
 	DBG(__func__)

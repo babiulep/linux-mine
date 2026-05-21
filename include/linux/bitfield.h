@@ -44,7 +44,7 @@
  *  FIELD_MODIFY(REG_FIELD_C, &reg, c);
  */
 
-#define __bf_shf(x) (__builtin_ffsll(x) - 1)
+#define __bf_shf __builtin_ctzll
 
 #define __scalar_type_to_unsigned_cases(type)				\
 		unsigned type:	(unsigned type)0,			\
@@ -184,7 +184,7 @@
  * @reg:  value of entire bitfield
  *
  * Returns the sign-extended field specified by @_mask from the
- * bitfield passed in as @_reg by masking and shifting it down.
+ * bitfield passed in as @reg by masking and shifting it down.
  */
 #define FIELD_GET_SIGNED(mask, reg)					\
 	({								\

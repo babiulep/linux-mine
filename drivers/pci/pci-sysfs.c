@@ -870,29 +870,6 @@ static const struct attribute_group pci_dev_config_attr_group = {
 	.bin_size = pci_dev_config_attr_bin_size,
 };
 
-/*
- * llseek operation for mmappable PCI resources.
- * May be left unused if the arch doesn't provide them.
- */
-static __maybe_unused loff_t
-pci_llseek_resource(struct file *filep,
-		    struct kobject *kobj,
-		    const struct bin_attribute *attr,
-		    loff_t offset, int whence)
-{
-	struct pci_dev *pdev;
-	int bar;
-
-	if (attr->size)
-		return fixed_size_llseek(filep, offset, whence, attr->size);
-
-	pdev = to_pci_dev(kobj_to_dev(kobj));
-	bar = (unsigned long)attr->private;
-
-	return fixed_size_llseek(filep, offset, whence,
-				 pci_resource_len(pdev, bar));
-}
-
 #ifdef HAVE_PCI_LEGACY
 /**
  * pci_read_legacy_io - read byte(s) from legacy I/O port space
@@ -1029,13 +1006,21 @@ static umode_t pci_legacy_mem_sparse_is_visible(struct kobject *kobj,
 	return __pci_legacy_is_visible(kobj, a, pci_mmap_mem, true);
 }
 
+static loff_t pci_llseek_resource_legacy(struct file *filep,
+					 struct kobject *kobj __always_unused,
+					 const struct bin_attribute *attr,
+					 loff_t offset, int whence)
+{
+	return fixed_size_llseek(filep, offset, whence, attr->size);
+}
+
 static const struct bin_attribute pci_legacy_io_attr = {
 	.attr = { .name = "legacy_io", .mode = 0600 },
 	.size = PCI_LEGACY_IO_SIZE,
 	.read = pci_read_legacy_io,
 	.write = pci_write_legacy_io,
 	.mmap = pci_mmap_legacy_io,
-	.llseek = pci_llseek_resource,
+	.llseek = pci_llseek_resource_legacy,
 	.f_mapping = iomem_get_mapping,
 };
 
@@ -1045,7 +1030,7 @@ static const struct bin_attribute pci_legacy_io_sparse_attr = {
 	.read = pci_read_legacy_io,
 	.write = pci_write_legacy_io,
 	.mmap = pci_mmap_legacy_io,
-	.llseek = pci_llseek_resource,
+	.llseek = pci_llseek_resource_legacy,
 	.f_mapping = iomem_get_mapping,
 };
 
@@ -1053,7 +1038,7 @@ static const struct bin_attribute pci_legacy_mem_attr = {
 	.attr = { .name = "legacy_mem", .mode = 0600 },
 	.size = PCI_LEGACY_MEM_SIZE,
 	.mmap = pci_mmap_legacy_mem,
-	.llseek = pci_llseek_resource,
+	.llseek = pci_llseek_resource_legacy,
 	.f_mapping = iomem_get_mapping,
 };
 
@@ -1061,7 +1046,7 @@ static const struct bin_attribute pci_legacy_mem_sparse_attr = {
 	.attr = { .name = "legacy_mem_sparse", .mode = 0600 },
 	.size = PCI_LEGACY_MEM_SIZE << 5,
 	.mmap = pci_mmap_legacy_mem,
-	.llseek = pci_llseek_resource,
+	.llseek = pci_llseek_resource_legacy,
 	.f_mapping = iomem_get_mapping,
 };
 
@@ -1234,6 +1219,18 @@ static ssize_t pci_write_resource(struct file *filp, struct kobject *kobj,
 		return ret;
 
 	return pci_resource_io(filp, kobj, attr, buf, off, count, true);
+}
+
+static loff_t pci_llseek_resource(struct file *filep,
+				  struct kobject *kobj,
+				  const struct bin_attribute *attr,
+				  loff_t offset, int whence)
+{
+	struct pci_dev *pdev = to_pci_dev(kobj_to_dev(kobj));
+	int bar = (unsigned long)attr->private;
+
+	return fixed_size_llseek(filep, offset, whence,
+				 pci_resource_len(pdev, bar));
 }
 
 /*

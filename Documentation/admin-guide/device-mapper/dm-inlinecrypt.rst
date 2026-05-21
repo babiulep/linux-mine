@@ -1,6 +1,6 @@
-========
+==============
 dm-inlinecrypt
-========
+==============
 
 Device-Mapper's "inlinecrypt" target provides transparent encryption of block devices
 using the inline encryption hardware.

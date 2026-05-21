@@ -993,8 +993,8 @@ static void pvr2fb_pci_remove(struct pci_dev *pdev)
 }
 
 static const struct pci_device_id pvr2fb_pci_tbl[] = {
-	{ PCI_VDEVICE(NEC, PCI_DEVICE_ID_NEC_NEON250), },
-	{ },
+	{ PCI_VDEVICE(NEC, PCI_DEVICE_ID_NEC_NEON250) },
+	{ }
 };
 
 MODULE_DEVICE_TABLE(pci, pvr2fb_pci_tbl);

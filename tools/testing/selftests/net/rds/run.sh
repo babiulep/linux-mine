@@ -35,7 +35,7 @@ GCOV_CMD=gcov
 check_gcov_env()
 {
 	if ! which "$GCOV_CMD" > /dev/null 2>&1; then
-		echo "Warning: Could not find gcov. "
+		echo "# Warning: Could not find gcov. "
 		GENERATE_GCOV_REPORT=0
 		return
 	fi
@@ -48,7 +48,7 @@ check_gcov_env()
 		GCOV_CMD=gcov-$(gcc -dumpversion)
 
 		if ! which "$GCOV_CMD" > /dev/null 2>&1; then
-			echo "Warning: Could not find an appropriate gcov installation. \
+			echo "# Warning: Could not find an appropriate gcov installation. \
 				gcov version must match gcc version"
 			GENERATE_GCOV_REPORT=0
 			return
@@ -58,11 +58,11 @@ check_gcov_env()
 		GCOV_VER=$($GCOV_CMD -v | grep gcov | awk '{print $3}'| \
 			awk 'BEGIN {FS="-"}{print $1}')
 		if [ "$GCOV_VER" != "$GCC_VER" ]; then
-			echo "Warning: Could not find an appropriate gcov installation. \
+			echo "# Warning: Could not find an appropriate gcov installation. \
 				gcov version must match gcc version"
 			GENERATE_GCOV_REPORT=0
 		else
-			echo "Warning: Mismatched gcc and gcov detected.  Using $GCOV_CMD"
+			echo "# Warning: Mismatched gcc and gcov detected.  Using $GCOV_CMD"
 		fi
 	fi
 }
@@ -71,20 +71,20 @@ check_gcov_env()
 check_gcov_conf()
 {
 	if ! grep -x "CONFIG_GCOV_PROFILE_RDS=y" "$kconfig" > /dev/null 2>&1; then
-		echo "INFO: CONFIG_GCOV_PROFILE_RDS should be enabled for coverage reports"
+		echo "# INFO: CONFIG_GCOV_PROFILE_RDS should be enabled for coverage reports"
 		GENERATE_GCOV_REPORT=0
 	fi
 	if ! grep -x "CONFIG_GCOV_KERNEL=y" "$kconfig" > /dev/null 2>&1; then
-		echo "INFO: CONFIG_GCOV_KERNEL should be enabled for coverage reports"
+		echo "# INFO: CONFIG_GCOV_KERNEL should be enabled for coverage reports"
 		GENERATE_GCOV_REPORT=0
 	fi
 	if grep -x "CONFIG_GCOV_PROFILE_ALL=y" "$kconfig" > /dev/null 2>&1; then
-		echo "INFO: CONFIG_GCOV_PROFILE_ALL should be disabled for coverage reports"
+		echo "# INFO: CONFIG_GCOV_PROFILE_ALL should be disabled for coverage reports"
 		GENERATE_GCOV_REPORT=0
 	fi
 
 	if [ "$GENERATE_GCOV_REPORT" -eq 0 ]; then
-		echo "To enable gcov reports, please run "\
+		echo "# To enable gcov reports, please run "\
 			"\"tools/testing/selftests/net/rds/config.sh -g\" and rebuild the kernel"
 	else
 		# if we have the required kernel configs, proceed to check the environment to
@@ -101,6 +101,16 @@ check_conf_enabled() {
 		exit 4
 	fi
 }
+
+check_rdma_conf_enabled() {
+	if ! grep -x "$1=y" "$kconfig" > /dev/null 2>&1; then
+		echo "selftests: [SKIP] rdma transport requires $1 enabled"
+		echo "To enable, run " \
+		     "tools/testing/selftests/net/rds/config.sh -r and rebuild"
+		exit 4
+	fi
+}
+
 check_conf_disabled() {
 	if grep -x "$1=y" "$kconfig" > /dev/null 2>&1; then
 		echo "selftests: [SKIP] This test requires $1 disabled"
@@ -115,6 +125,28 @@ check_conf() {
 	check_conf_enabled CONFIG_RDS_TCP
 	check_conf_enabled CONFIG_RDS
 	check_conf_disabled CONFIG_MODULES
+}
+
+# Check kernel config and host environment for RDS-RDMA support.
+# Exits with SKIP (4) if the user requested rdma but prerequisites
+# are not met.
+check_rdma_conf()
+{
+	case "$TRANSPORT" in
+	  *rdma*) ;;
+	  *) return ;;
+	esac
+
+	# Kconfig will enforce CONFIG_INFINIBAND_* as dependencies
+	# of CONFIG_RDMA_RXE
+	check_rdma_conf_enabled CONFIG_RDMA_RXE
+	check_rdma_conf_enabled CONFIG_RDS_RDMA
+
+	if ! which rdma > /dev/null 2>&1; then
+		echo "selftests: [SKIP] rdma transport requires the 'rdma'" \
+		      " tool (iproute2)"
+		exit 4
+	fi
 }
 
 check_env()
@@ -153,8 +185,10 @@ check_env()
 LOG_DIR="${RDS_LOG_DIR:-}"
 TIMEOUT=$timeout
 GENERATE_GCOV_REPORT=1
+TRANSPORT=tcp
 FLAGS=()
-while getopts "d:l:c:u:t:" opt; do
+
+while getopts "d:l:c:u:t:T:" opt; do
   case ${opt} in
     d)
       LOG_DIR=${OPTARG}
@@ -171,9 +205,12 @@ while getopts "d:l:c:u:t:" opt; do
     u)
       FLAGS+=("-u" "${OPTARG}")
       ;;
+    T)
+      TRANSPORT=${OPTARG}
+      ;;
     :)
       echo "USAGE: run.sh [-d logdir] [-l packet_loss] [-c packet_corruption]" \
-           "[-u packet_duplicate] [-t timeout]"
+           "[-u packet_duplicate] [-t timeout] [-T tcp|rdma|tcp,rdma]"
       exit 1
       ;;
     ?)
@@ -183,34 +220,50 @@ while getopts "d:l:c:u:t:" opt; do
   esac
 done
 
+# Validate transport tokens
+IFS=',' read -ra transports <<< "$TRANSPORT"
+for t in "${transports[@]}"; do
+    if [ "$t" != "tcp" ] && [ "$t" != "rdma" ]; then
+        echo "run.sh: unknown transport '$t' (expected tcp or rdma)"
+        exit 1
+    fi
+done
+
+FLAGS+=("--transport" "${TRANSPORT}")
+
 check_env
 check_conf
 check_gcov_conf
+check_rdma_conf
 
 TRACE_CMD=()
 if [[ -n "$LOG_DIR" ]]; then
-   rm -fr "$LOG_DIR"
    FLAGS+=("-d" "$LOG_DIR")
 
    TRACE_FILE="${LOG_DIR}/rds-strace.txt"
    COVR_DIR="${LOG_DIR}/coverage/"
+   DMESG_FILE="${LOG_DIR}/rds-dmesg.out"
+
    mkdir -p  "$LOG_DIR"
    mkdir -p "$COVR_DIR"
 
-   echo "#Traces will be logged to ${TRACE_FILE}"
    rm -f "$TRACE_FILE"
+   rm -f "$DMESG_FILE"
+   rm -f "$LOG_DIR"/rds-*.pcap
+   rm -f "$COVR_DIR"/gcovr*
 
+   echo "# Traces will be logged to ${TRACE_FILE}"
    TRACE_CMD=(strace -T -tt -o "${TRACE_FILE}")
 fi
 
 set +e
-echo "#running RDS tests..."
+echo "# running RDS tests..."
 "${TRACE_CMD[@]}" python3 "$(dirname "$0")/test.py" "${FLAGS[@]}" -t "$TIMEOUT"
 
 test_rc=$?
 
 if [[ -n "$LOG_DIR" ]]; then
-   dmesg > "${LOG_DIR}/dmesg.out"
+   dmesg > "${DMESG_FILE}"
 fi
 
 if [[ -n "$LOG_DIR" ]] && [ "$GENERATE_GCOV_REPORT" -eq 1 ]; then

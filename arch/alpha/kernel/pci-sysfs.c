@@ -143,9 +143,8 @@ static int sparse_mem_mmap_fits(struct pci_dev *pdev, int num)
 
 /* Legacy I/O bus mapping stuff. */
 
-static int __legacy_mmap_fits(struct pci_controller *hose,
-			      struct vm_area_struct *vma,
-			      unsigned long res_size, int sparse)
+static int __legacy_mmap_fits(struct vm_area_struct *vma,
+			      unsigned long res_size)
 {
 	unsigned long nr, start, size;
 
@@ -153,13 +152,7 @@ static int __legacy_mmap_fits(struct pci_controller *hose,
 	start = vma->vm_pgoff;
 	size = ((res_size - 1) >> PAGE_SHIFT) + 1;
 
-	if (start < size && size - start >= nr)
-		return 1;
-	WARN(1, "process \"%s\" tried to map%s 0x%08lx-0x%08lx on hose %d "
-		"(size 0x%08lx)\n",
-		current->comm, sparse ? " sparse" : "", start, start + nr,
-		hose->index, size);
-	return 0;
+	return start < size && size - start >= nr;
 }
 
 static inline int has_sparse(struct pci_controller *hose,
@@ -185,7 +178,7 @@ int pci_mmap_legacy_page_range(struct pci_bus *bus, struct vm_area_struct *vma,
 	if (sparse)
 		res_size <<= 5;
 
-	if (!__legacy_mmap_fits(hose, vma, res_size, sparse))
+	if (!__legacy_mmap_fits(vma, res_size))
 		return -EINVAL;
 
 	return hose_mmap_page_range(hose, vma, mmap_type, sparse);
@@ -274,9 +267,9 @@ static inline enum pci_mmap_state pci_bar_mmap_type(struct pci_dev *pdev,
 	return pci_resource_is_mem(pdev, bar) ? pci_mmap_mem : pci_mmap_io;
 }
 
-static inline umode_t __pci_dev_resource_is_visible(struct kobject *kobj,
-						    const struct bin_attribute *a,
-						    int bar)
+static inline umode_t __pci_resource_attr_is_visible(struct kobject *kobj,
+						     const struct bin_attribute *a,
+						     int bar)
 {
 	struct pci_dev *pdev = to_pci_dev(kobj_to_dev(kobj));
 
@@ -296,7 +289,7 @@ static umode_t pci_dev_resource_is_visible(struct kobject *kobj,
 	if (has_sparse(hose, pci_bar_mmap_type(pdev, bar)))
 		return 0;
 
-	return __pci_dev_resource_is_visible(kobj, a, bar);
+	return __pci_resource_attr_is_visible(kobj, a, bar);
 }
 
 static umode_t pci_dev_resource_sparse_is_visible(struct kobject *kobj,
@@ -313,7 +306,7 @@ static umode_t pci_dev_resource_sparse_is_visible(struct kobject *kobj,
 	if (type == pci_mmap_mem && !sparse_mem_mmap_fits(pdev, bar))
 		return 0;
 
-	return __pci_dev_resource_is_visible(kobj, a, bar);
+	return __pci_resource_attr_is_visible(kobj, a, bar);
 }
 
 static umode_t pci_dev_resource_dense_is_visible(struct kobject *kobj,
@@ -329,14 +322,14 @@ static umode_t pci_dev_resource_dense_is_visible(struct kobject *kobj,
 		return 0;
 
 	if (type == pci_mmap_mem && !sparse_mem_mmap_fits(pdev, bar))
-		return __pci_dev_resource_is_visible(kobj, a, bar);
+		return __pci_resource_attr_is_visible(kobj, a, bar);
 
 	dense_base = (type == pci_mmap_mem) ? hose->dense_mem_base :
 					      hose->dense_io_base;
 	if (!dense_base)
 		return 0;
 
-	return __pci_dev_resource_is_visible(kobj, a, bar);
+	return __pci_resource_attr_is_visible(kobj, a, bar);
 }
 
 static inline size_t __pci_dev_resource_bin_size(struct kobject *kobj,

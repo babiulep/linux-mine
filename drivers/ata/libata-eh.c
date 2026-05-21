@@ -651,11 +651,11 @@ int ata_scsi_cmd_error_handler(struct Scsi_Host *host, struct ata_port *ap,
 			if (qc->scsicmd != scmd)
 				continue;
 			if ((qc->flags & ATA_QCFLAG_ACTIVE) ||
-			    qc == ap->deferred_qc)
+			    qc == qc->dev->link->deferred_qc)
 				break;
 		}
 
-		if (i < ATA_MAX_QUEUE && qc == ap->deferred_qc) {
+		if (i < ATA_MAX_QUEUE && qc == qc->dev->link->deferred_qc) {
 			/*
 			 * This is a deferred command that timed out while
 			 * waiting for the command queue to drain. Since the qc
@@ -666,8 +666,8 @@ int ata_scsi_cmd_error_handler(struct Scsi_Host *host, struct ata_port *ap,
 			 * deferred qc work from issuing this qc.
 			 */
 			WARN_ON_ONCE(qc->flags & ATA_QCFLAG_ACTIVE);
-			ap->deferred_qc = NULL;
-			cancel_work(&ap->deferred_qc_work);
+			qc->dev->link->deferred_qc = NULL;
+			cancel_work(&qc->dev->link->deferred_qc_work);
 			set_host_byte(scmd, DID_TIME_OUT);
 			scsi_eh_finish_cmd(scmd, &ap->eh_done_q);
 		} else if (i < ATA_MAX_QUEUE) {
@@ -819,7 +819,7 @@ void ata_scsi_port_error_handler(struct Scsi_Host *host, struct ata_port *ap)
 		ap->pflags &= ~ATA_PFLAG_LOADING;
 	else if ((ap->pflags & ATA_PFLAG_SCSI_HOTPLUG) &&
 		!(ap->flags & ATA_FLAG_SAS_HOST))
-		schedule_delayed_work(&ap->hotplug_task, 0);
+		queue_delayed_work(system_dfl_long_wq, &ap->hotplug_task, 0);
 
 	if (ap->pflags & ATA_PFLAG_RECOVERED)
 		ata_port_info(ap, "EH complete\n");

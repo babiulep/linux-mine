@@ -211,18 +211,25 @@ EXPORT_SYMBOL(netfs_clear_inode_writeback);
 void netfs_invalidate_folio(struct folio *folio, size_t offset, size_t length)
 {
 	struct netfs_folio *finfo;
-	struct netfs_inode *ctx = netfs_inode(folio_inode(folio));
+	struct inode *inode = folio_inode(folio);
+	struct netfs_inode *ctx = netfs_inode(inode);
 	size_t flen = folio_size(folio);
 
 	_enter("{%lx},%zx,%zx", folio->index, offset, length);
 
 	if (offset == 0 && length == flen) {
-		unsigned long long i_size = i_size_read(&ctx->inode);
+		unsigned long long i_size, remote_i_size, zero_point;
 		unsigned long long fpos = folio_pos(folio), end;
 
+		netfs_read_sizes(inode, &i_size, &remote_i_size, &zero_point);
 		end = umin(fpos + flen, i_size);
-		if (fpos < i_size && end > ctx->zero_point)
-			ctx->zero_point = end;
+		if (fpos < i_size && end > zero_point) {
+			spin_lock(&inode->i_lock);
+			end = umin(fpos + flen, inode->i_size);
+			if (fpos < i_size && end > ctx->_zero_point)
+				netfs_write_zero_point(inode, end);
+			spin_unlock(&inode->i_lock);
+		}
 	}
 
 	folio_wait_private_2(folio); /* [DEPRECATED] */
@@ -255,7 +262,7 @@ void netfs_invalidate_folio(struct folio *folio, size_t offset, size_t length)
 				goto erase_completely;
 			/* Move the start of the data. */
 			finfo->dirty_len = fend - iend;
-			finfo->dirty_offset = offset;
+			finfo->dirty_offset = iend;
 			trace_netfs_folio(folio, netfs_folio_trace_invalidate_front);
 			return;
 		}
@@ -296,15 +303,22 @@ EXPORT_SYMBOL(netfs_invalidate_folio);
  */
 bool netfs_release_folio(struct folio *folio, gfp_t gfp)
 {
-	struct netfs_inode *ctx = netfs_inode(folio_inode(folio));
-	unsigned long long end;
+	struct inode *inode = folio_inode(folio);
+	struct netfs_inode *ctx = netfs_inode(inode);
+	unsigned long long i_size, remote_i_size, zero_point, end;
 
 	if (folio_test_dirty(folio))
 		return false;
 
-	end = umin(folio_next_pos(folio), ctx->remote_i_size);
-	if (end > ctx->zero_point)
-		ctx->zero_point = end;
+	netfs_read_sizes(inode, &i_size, &remote_i_size, &zero_point);
+	end = folio_next_pos(folio);
+	if (end > zero_point) {
+		spin_lock(&inode->i_lock);
+		end = umin(end, ctx->_remote_i_size);
+		if (end > ctx->_zero_point)
+			netfs_write_zero_point(inode, end);
+		spin_unlock(&inode->i_lock);
+	}
 
 	if (folio_test_private(folio))
 		return false;
@@ -360,6 +374,7 @@ void netfs_wait_for_in_progress_stream(struct netfs_io_request *rreq,
 	DEFINE_WAIT(myself);
 
 	list_for_each_entry(subreq, &stream->subrequests, rreq_link) {
+		smp_rmb(); /* Read ->next before IN_PROGRESS. */
 		if (!netfs_check_subreq_in_progress(subreq))
 			continue;
 

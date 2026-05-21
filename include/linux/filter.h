@@ -749,6 +749,27 @@ static inline u32 bpf_prog_run_pin_on_cpu(const struct bpf_prog *prog,
 	return ret;
 }
 
+static inline bool is_stack_arg_ldx(const struct bpf_insn *insn)
+{
+	return insn->code == (BPF_LDX | BPF_MEM | BPF_DW) &&
+	       insn->src_reg == BPF_REG_PARAMS &&
+	       insn->off > 0 && insn->off % 8 == 0;
+}
+
+static inline bool is_stack_arg_st(const struct bpf_insn *insn)
+{
+	return insn->code == (BPF_ST | BPF_MEM | BPF_DW) &&
+	       insn->dst_reg == BPF_REG_PARAMS &&
+	       insn->off < 0 && insn->off % 8 == 0;
+}
+
+static inline bool is_stack_arg_stx(const struct bpf_insn *insn)
+{
+	return insn->code == (BPF_STX | BPF_MEM | BPF_DW) &&
+	       insn->dst_reg == BPF_REG_PARAMS &&
+	       insn->off < 0 && insn->off % 8 == 0;
+}
+
 #define BPF_SKB_CB_LEN QDISC_CB_PRIV_LEN
 
 struct bpf_skb_data_end {
@@ -1152,9 +1173,6 @@ bool sk_filter_charge(struct sock *sk, struct sk_filter *fp);
 void sk_filter_uncharge(struct sock *sk, struct sk_filter *fp);
 
 u64 __bpf_call_base(u64 r1, u64 r2, u64 r3, u64 r4, u64 r5);
-#define __bpf_call_base_args \
-	((u64 (*)(u64, u64, u64, u64, u64, const struct bpf_insn *)) \
-	 (void *)__bpf_call_base)
 
 struct bpf_prog *bpf_int_jit_compile(struct bpf_verifier_env *env, struct bpf_prog *prog);
 void bpf_jit_compile(struct bpf_prog *prog);
@@ -1163,6 +1181,7 @@ bool bpf_jit_inlines_helper_call(s32 imm);
 bool bpf_jit_supports_subprog_tailcalls(void);
 bool bpf_jit_supports_percpu_insn(void);
 bool bpf_jit_supports_kfunc_call(void);
+bool bpf_jit_supports_stack_args(void);
 bool bpf_jit_supports_far_kfunc_call(void);
 bool bpf_jit_supports_exceptions(void);
 bool bpf_jit_supports_ptr_xchg(void);

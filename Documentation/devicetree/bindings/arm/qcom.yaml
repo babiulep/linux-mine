@@ -368,6 +368,11 @@ properties:
 
       - items:
           - enum:
+              - qcom,ipq9650-rdp488
+          - const: qcom,ipq9650
+
+      - items:
+          - enum:
               - qcom,kaanapali-mtp
               - qcom,kaanapali-qrd
           - const: qcom,kaanapali
@@ -1175,6 +1180,10 @@ properties:
           - const: microsoft,denali-oled
           - const: microsoft,denali
           - const: qcom,x1e80100
+
+      - items:
+          - const: microsoft,surface-pro-12in
+          - const: qcom,x1p42100
 
       - items:
           - enum:

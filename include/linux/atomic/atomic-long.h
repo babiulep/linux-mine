@@ -11,18 +11,14 @@
 
 #ifdef CONFIG_64BIT
 typedef atomic64_t atomic_long_t;
-#define ATOMIC_LONG_INIT(i)			ATOMIC64_INIT(i)
-#define atomic_long_cond_read_acquire		atomic64_cond_read_acquire
-#define atomic_long_cond_read_relaxed		atomic64_cond_read_relaxed
-#define atomic_long_cond_read_acquire_timeout	atomic64_cond_read_acquire_timeout
-#define atomic_long_cond_read_relaxed_timeout	atomic64_cond_read_relaxed_timeout
+#define ATOMIC_LONG_INIT(i)		ATOMIC64_INIT(i)
+#define atomic_long_cond_read_acquire	atomic64_cond_read_acquire
+#define atomic_long_cond_read_relaxed	atomic64_cond_read_relaxed
 #else
 typedef atomic_t atomic_long_t;
-#define ATOMIC_LONG_INIT(i)			ATOMIC_INIT(i)
-#define atomic_long_cond_read_acquire		atomic_cond_read_acquire
-#define atomic_long_cond_read_relaxed		atomic_cond_read_relaxed
-#define atomic_long_cond_read_acquire_timeout	atomic_cond_read_acquire_timeout
-#define atomic_long_cond_read_relaxed_timeout	atomic_cond_read_relaxed_timeout
+#define ATOMIC_LONG_INIT(i)		ATOMIC_INIT(i)
+#define atomic_long_cond_read_acquire	atomic_cond_read_acquire
+#define atomic_long_cond_read_relaxed	atomic_cond_read_relaxed
 #endif
 
 /**
@@ -1813,4 +1809,4 @@ raw_atomic_long_dec_if_positive(atomic_long_t *v)
 }
 
 #endif /* _LINUX_ATOMIC_LONG_H */
-// 79c1f4acb5774376ceed559843d5d9ed1348df99
+// 4b882bf19018602c10816c52f8b4ae280adc887b

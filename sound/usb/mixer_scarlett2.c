@@ -2614,13 +2614,13 @@ static int scarlett2_usb(
 
 	struct scarlett2_usb_packet *req __free(kfree) = NULL;
 	size_t req_buf_size = struct_size(req, data, req_size);
-	req = kmalloc(req_buf_size, GFP_KERNEL);
+	req = kmalloc_flex(*req, data, req_size);
 	if (!req)
 		return -ENOMEM;
 
 	struct scarlett2_usb_packet *resp __free(kfree) = NULL;
 	size_t resp_buf_size = struct_size(resp, data, resp_size);
-	resp = kmalloc(resp_buf_size, GFP_KERNEL);
+	resp = kmalloc_flex(*resp, data, resp_size);
 	if (!resp)
 		return -ENOMEM;
 
@@ -2830,9 +2830,9 @@ static int scarlett2_usb_set_data_buf(
 		u8 data[];
 	} __packed *req;
 	int err;
-	int buf_size = struct_size(req, data, bytes);
+	size_t buf_size = struct_size(req, data, bytes);
 
-	req = kmalloc(buf_size, GFP_KERNEL);
+	req = kmalloc_flex(*req, data, bytes);
 	if (!req)
 		return -ENOMEM;
 
@@ -9634,11 +9634,14 @@ static long scarlett2_hwdep_write(struct snd_hwdep *hw,
 	flash_size = private->flash_segment_blocks[segment_id] *
 		     SCARLETT2_FLASH_BLOCK_SIZE;
 
-	if (count < 0 || *offset < 0 || *offset + count >= flash_size)
-		return -ENOSPC;
+	if (count < 0 || *offset < 0)
+		return -EINVAL;
 
 	if (!count)
 		return 0;
+
+	if (*offset >= flash_size || count > flash_size - *offset)
+		return -ENOSPC;
 
 	/* Limit the *req size to SCARLETT2_FLASH_RW_MAX */
 	if (count > max_data_size)
@@ -9646,7 +9649,7 @@ static long scarlett2_hwdep_write(struct snd_hwdep *hw,
 
 	/* Create and send the request */
 	len = struct_size(req, data, count);
-	req = kzalloc(len, GFP_KERNEL);
+	req = kzalloc_flex(*req, data, count);
 	if (!req)
 		return -ENOMEM;
 

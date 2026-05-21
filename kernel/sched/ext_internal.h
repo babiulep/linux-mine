@@ -938,6 +938,9 @@ struct sched_ext_ops_cid {
 
 	/* internal use only, must be NULL */
 	void __rcu *priv;
+
+	/* layout end anchor for the BUILD_BUG_ON in scx_init(); keep last */
+	char __end[0];
 };
 
 enum scx_opi {
@@ -1598,7 +1601,7 @@ static inline bool scx_task_on_sched(struct scx_sched *sch,
 	return true;
 }
 
-static struct scx_sched *scx_prog_sched(const struct bpf_prog_aux *aux)
+static inline struct scx_sched *scx_prog_sched(const struct bpf_prog_aux *aux)
 {
 	return rcu_dereference_all(scx_root);
 }

@@ -1483,7 +1483,6 @@ static void __sched rt_mutex_slowunlock(struct rt_mutex_base *lock)
 }
 
 static __always_inline void __rt_mutex_unlock(struct rt_mutex_base *lock)
-	__no_context_analysis
 {
 	if (likely(rt_mutex_cmpxchg_release(lock, current, NULL)))
 		return;

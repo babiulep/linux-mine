@@ -1,7 +1,6 @@
 /*
  * DRBG: Deterministic Random Bits Generator
- *       Implementation of the HMAC SHA-512 DRBG from NIST SP800-90A,
- *       both with and without prediction resistance
+ *       Implementation of the HMAC SHA-512 DRBG from NIST SP800-90A
  *
  * Copyright Stephan Mueller <smueller@chronox.de>, 2014
  * Copyright 2026 Google LLC
@@ -122,7 +121,7 @@
  * so that the value never quite completely fills the range of a size_t,
  * allowing the health check to verify that larger values are rejected.
  */
-#define DRBG_MAX_ADDTL		(U32_MAX - 1)
+#define DRBG_MAX_ADDTL_BYTES	(U32_MAX - 1)
 
 struct drbg_state {
 	struct mutex drbg_mutex;	/* lock around DRBG */
@@ -131,7 +130,6 @@ struct drbg_state {
 	/* Number of RNG requests since last reseed -- 10.1.2.1 1c */
 	size_t reseed_ctr;
 	bool instantiated;
-	bool pr;		/* Prediction resistance enabled? */
 	struct crypto_rng *jent;
 	const u8 *test_entropy;
 	size_t test_entropylen;
@@ -237,7 +235,7 @@ static int drbg_seed(struct drbg_state *drbg, const u8 *pers, size_t pers_len,
 	const u8 *entropy;
 
 	/* 9.1 / 9.2 / 9.3.1 step 3 */
-	if (pers_len > DRBG_MAX_ADDTL) {
+	if (pers_len > DRBG_MAX_ADDTL_BYTES) {
 		pr_devel("DRBG: personalization string too long %zu\n",
 			 pers_len);
 		return -EINVAL;
@@ -355,7 +353,7 @@ static int drbg_generate(struct drbg_state *drbg, u8 *out, size_t outlen,
 	/* 9.3.1 step 3 is implicit with the chosen DRBG */
 
 	/* 9.3.1 step 4 */
-	if (addtl_len > DRBG_MAX_ADDTL) {
+	if (addtl_len > DRBG_MAX_ADDTL_BYTES) {
 		pr_devel("DRBG: additional information string too long %zu\n",
 			 addtl_len);
 		return -EINVAL;
@@ -370,9 +368,8 @@ static int drbg_generate(struct drbg_state *drbg, u8 *out, size_t outlen,
 	 * drbg_seed() then too, since drbg_hmac_generate() adds bytes from
 	 * random.c to the additional input, which is a de facto reseed anyway.
 	 */
-	if (drbg->pr || drbg->reseed_ctr > DRBG_MAX_REQUESTS) {
-		pr_devel("DRBG: reseeding before generation (prediction resistance: %s)\n",
-			 str_true_false(drbg->pr));
+	if (drbg->reseed_ctr > DRBG_MAX_REQUESTS) {
+		pr_devel("DRBG: reseeding before generation\n");
 		/* 9.3.1 steps 7.1 through 7.3 */
 		err = drbg_seed(drbg, addtl, addtl_len, true);
 		if (err)
@@ -431,14 +428,13 @@ static void drbg_kcapi_set_entropy(struct crypto_rng *tfm,
 
 /* Seed (i.e. instantiate) or re-seed the DRBG. */
 static int drbg_kcapi_seed(struct crypto_rng *tfm,
-			   const u8 *pers, size_t pers_len, bool pr)
+			   const u8 *pers, unsigned int pers_len)
 {
 	static const u8 initial_key[DRBG_STATE_LEN]; /* all zeroes */
 	struct drbg_state *drbg = crypto_rng_ctx(tfm);
 	int ret;
 
-	pr_devel("DRBG: Initializing DRBG with prediction resistance %s\n",
-		 str_enabled_disabled(pr));
+	pr_devel("DRBG: Initializing DRBG\n");
 	guard(mutex)(&drbg->drbg_mutex);
 
 	if (drbg->instantiated)
@@ -447,13 +443,12 @@ static int drbg_kcapi_seed(struct crypto_rng *tfm,
 	/* 9.1 step 1 is implicit with the selected DRBG type */
 
 	/*
-	 * 9.1 step 2 is implicit as caller can select prediction resistance
-	 * all DRBG types support prediction resistance
+	 * 9.1 step 2 is implicit, as this implementation doesn't support
+	 * prediction resistance
 	 */
 
 	/* 9.1 step 4 is implicit in DRBG_SEC_STRENGTH */
 
-	drbg->pr = pr;
 	memset(drbg->V, 1, DRBG_STATE_LEN);
 	hmac_sha512_preparekey(&drbg->key, initial_key, DRBG_STATE_LEN);
 
@@ -477,18 +472,6 @@ static int drbg_kcapi_seed(struct crypto_rng *tfm,
 	}
 	drbg->instantiated = true;
 	return 0;
-}
-
-static int drbg_kcapi_seed_pr(struct crypto_rng *tfm,
-			      const u8 *seed, unsigned int slen)
-{
-	return drbg_kcapi_seed(tfm, seed, slen, /* pr= */ true);
-}
-
-static int drbg_kcapi_seed_nopr(struct crypto_rng *tfm,
-				const u8 *seed, unsigned int slen)
-{
-	return drbg_kcapi_seed(tfm, seed, slen, /* pr= */ false);
 }
 
 /*
@@ -570,14 +553,15 @@ static inline int __init drbg_healthcheck_sanity(void)
 	 */
 
 	/* overflow addtllen with additional info string */
-	ret = drbg_generate(drbg, buf, OUTBUFLEN, buf, DRBG_MAX_ADDTL + 1);
+	ret = drbg_generate(drbg, buf, OUTBUFLEN, buf,
+			    DRBG_MAX_ADDTL_BYTES + 1);
 	BUG_ON(ret == 0);
 	/* overflow max_bits */
 	ret = drbg_generate(drbg, buf, DRBG_MAX_REQUEST_BYTES + 1, NULL, 0);
 	BUG_ON(ret == 0);
 
 	/* overflow max addtllen with personalization string */
-	ret = drbg_seed(drbg, buf, DRBG_MAX_ADDTL + 1, false);
+	ret = drbg_seed(drbg, buf, DRBG_MAX_ADDTL_BYTES + 1, false);
 	BUG_ON(ret == 0);
 	/* all tests passed */
 
@@ -588,31 +572,17 @@ static inline int __init drbg_healthcheck_sanity(void)
 	return 0;
 }
 
-static struct rng_alg drbg_algs[] = {
-	{
-		.base.cra_name		= "stdrng",
-		.base.cra_driver_name	= "drbg_pr_hmac_sha512",
-		.base.cra_priority	= 200,
-		.base.cra_ctxsize	= sizeof(struct drbg_state),
-		.base.cra_module	= THIS_MODULE,
-		.base.cra_init		= drbg_kcapi_init,
-		.set_ent		= drbg_kcapi_set_entropy,
-		.seed			= drbg_kcapi_seed_pr,
-		.generate		= drbg_kcapi_generate,
-		.base.cra_exit		= drbg_kcapi_exit,
-	},
-	{
-		.base.cra_name		= "stdrng",
-		.base.cra_driver_name	= "drbg_nopr_hmac_sha512",
-		.base.cra_priority	= 201,
-		.base.cra_ctxsize	= sizeof(struct drbg_state),
-		.base.cra_module	= THIS_MODULE,
-		.base.cra_init		= drbg_kcapi_init,
-		.set_ent		= drbg_kcapi_set_entropy,
-		.seed			= drbg_kcapi_seed_nopr,
-		.generate		= drbg_kcapi_generate,
-		.base.cra_exit		= drbg_kcapi_exit,
-	},
+static struct rng_alg drbg_alg = {
+	.base.cra_name		= "stdrng",
+	.base.cra_driver_name	= "drbg_nopr_hmac_sha512",
+	.base.cra_priority	= 201,
+	.base.cra_ctxsize	= sizeof(struct drbg_state),
+	.base.cra_module	= THIS_MODULE,
+	.base.cra_init		= drbg_kcapi_init,
+	.set_ent		= drbg_kcapi_set_entropy,
+	.seed			= drbg_kcapi_seed,
+	.generate		= drbg_kcapi_generate,
+	.base.cra_exit		= drbg_kcapi_exit,
 };
 
 static int __init drbg_init(void)
@@ -624,20 +594,18 @@ static int __init drbg_init(void)
 		return ret;
 
 	/*
-	 * In FIPS mode, boost the algorithm priorities to ensure that when
-	 * users request "stdrng", they really get an algorithm from here.
+	 * In FIPS mode, boost the algorithm priority to ensure that when users
+	 * request "stdrng", they really get the algorithm from here.
 	 */
-	if (fips_enabled) {
-		for (size_t i = 0; i < ARRAY_SIZE(drbg_algs); i++)
-			drbg_algs[i].base.cra_priority += 2000;
-	}
+	if (fips_enabled)
+		drbg_alg.base.cra_priority += 2000;
 
-	return crypto_register_rngs(drbg_algs, ARRAY_SIZE(drbg_algs));
+	return crypto_register_rng(&drbg_alg);
 }
 
 static void __exit drbg_exit(void)
 {
-	crypto_unregister_rngs(drbg_algs, ARRAY_SIZE(drbg_algs));
+	crypto_unregister_rng(&drbg_alg);
 }
 
 module_init(drbg_init);
@@ -646,5 +614,4 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Stephan Mueller <smueller@chronox.de>");
 MODULE_DESCRIPTION("NIST SP800-90A Deterministic Random Bit Generator (DRBG)");
 MODULE_ALIAS_CRYPTO("stdrng");
-MODULE_ALIAS_CRYPTO("drbg_pr_hmac_sha512");
 MODULE_ALIAS_CRYPTO("drbg_nopr_hmac_sha512");

@@ -28,6 +28,7 @@ static const struct dm_inlinecrypt_cipher {
  * @start: starting sector of the range of @dev which this target actually maps.
  *	   For this purpose a "sector" is 512 bytes.
  * @cipher_string: the name of the encryption algorithm being used
+ * @key_size: size of the encryption key in bytes
  * @iv_offset: starting offset for IVs.  IVs are generated as if the target were
  *	       preceded by @iv_offset 512-byte sectors.
  * @sector_size: crypto sector size in bytes (usually 4096)
@@ -325,11 +326,13 @@ static int inlinecrypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	}
 
 	/* <key> */
-	ctx->key_size = get_key_size(&argv[1]);
-	if (ctx->key_size < 0) {
+	err = get_key_size(&argv[1]);
+	if (err < 0) {
 		ti->error = "Cannot parse key size";
 		return -EINVAL;
 	}
+	ctx->key_size = err;
+
 	err = inlinecrypt_get_key(argv[1], raw_key, ctx->key_size);
 	if (err) {
 		ti->error = "Malformed key string";

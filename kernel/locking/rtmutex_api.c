@@ -67,16 +67,28 @@ EXPORT_SYMBOL(rt_mutex_base_init);
  * @subclass: the lockdep subclass
  */
 void __sched rt_mutex_lock_nested(struct rt_mutex *lock, unsigned int subclass)
-	__no_context_analysis /* ignoring the return value below is fine in this case */
 {
-	__rt_mutex_lock_common(lock, TASK_UNINTERRUPTIBLE, NULL, subclass);
+	if (__rt_mutex_lock_common(lock, TASK_UNINTERRUPTIBLE, NULL, subclass) == 0)
+		return;
+	/*
+	 * The code below is never reached because __rt_mutex_lock_common() only
+	 * returns an error code if interrupted by a signal or upon a timeout.
+	 */
+	WARN_ON_ONCE(true);
+	__acquire(lock);
 }
 EXPORT_SYMBOL_GPL(rt_mutex_lock_nested);
 
 void __sched _rt_mutex_lock_nest_lock(struct rt_mutex *lock, struct lockdep_map *nest_lock)
-	__no_context_analysis /* ignoring the return value below is fine in this case */
 {
-	__rt_mutex_lock_common(lock, TASK_UNINTERRUPTIBLE, nest_lock, 0);
+	if (__rt_mutex_lock_common(lock, TASK_UNINTERRUPTIBLE, nest_lock, 0) == 0)
+		return;
+	/*
+	 * The code below is never reached because __rt_mutex_lock_common() only
+	 * returns an error code if interrupted by a signal or upon a timeout.
+	 */
+	WARN_ON_ONCE(true);
+	__acquire(lock);
 }
 EXPORT_SYMBOL_GPL(_rt_mutex_lock_nest_lock);
 
@@ -89,7 +101,14 @@ EXPORT_SYMBOL_GPL(_rt_mutex_lock_nest_lock);
  */
 void __sched rt_mutex_lock(struct rt_mutex *lock)
 {
-	__rt_mutex_lock_common(lock, TASK_UNINTERRUPTIBLE, NULL, 0);
+	if (__rt_mutex_lock_common(lock, TASK_UNINTERRUPTIBLE, NULL, 0) == 0)
+		return;
+	/*
+	 * The code below is never reached because __rt_mutex_lock_common() only
+	 * returns an error code if interrupted by a signal or upon a timeout.
+	 */
+	WARN_ON_ONCE(true);
+	__acquire(lock);
 }
 EXPORT_SYMBOL_GPL(rt_mutex_lock);
 #endif

@@ -512,13 +512,15 @@ static int tegra114_emc_prepare_timing_change(struct tegra_emc *emc,
 	enum emc_dll_change dll_change;
 	unsigned int pre_wait = 0;
 	u32 val, mask;
-	bool next_dll_enabled = !(timing->emc_mode_1 & 0x1);
 	bool last_dll_enabled = !(last->emc_mode_1 & 0x1);
 	bool update = false;
+	bool next_dll_enabled;
 	unsigned int i;
 
 	if (!timing)
 		return -ENOENT;
+
+	next_dll_enabled = !(timing->emc_mode_1 & 0x1);
 
 	if (next_dll_enabled == last_dll_enabled)
 		dll_change = DLL_CHANGE_NONE;
@@ -1202,10 +1204,8 @@ static int tegra114_emc_interconnect_init(struct tegra_emc *emc)
 
 	/* create External Memory Controller node */
 	node = icc_node_create(TEGRA_ICC_EMC);
-	if (IS_ERR(node)) {
-		err = PTR_ERR(node);
-		goto err_msg;
-	}
+	if (IS_ERR(node))
+		return PTR_ERR(node);
 
 	node->name = "External Memory Controller";
 	icc_node_add(node, &emc->provider);
@@ -1233,10 +1233,8 @@ static int tegra114_emc_interconnect_init(struct tegra_emc *emc)
 
 remove_nodes:
 	icc_nodes_remove(&emc->provider);
-err_msg:
-	dev_err(emc->dev, "failed to initialize ICC: %d\n", err);
 
-	return err;
+	return dev_err_probe(emc->dev, err, "failed to initialize ICC");
 }
 
 static void devm_tegra114_emc_unset_callback(void *data)

@@ -379,7 +379,7 @@ static int add_b_desc_to_pending_list(void *shared_ptr_with_pos,
 	struct se_shared_mem_mgmt_info *se_shared_mem_mgmt = &dev_ctx->se_shared_mem_mgmt;
 	struct se_buf_desc *b_desc;
 
-	b_desc = kzalloc(sizeof(*b_desc), GFP_KERNEL);
+	b_desc = kzalloc_obj(*b_desc, GFP_KERNEL);
 	if (!b_desc)
 		return -ENOMEM;
 
@@ -464,7 +464,7 @@ static int init_device_context(struct se_if_priv *priv, int ch_id,
 	struct se_if_device_ctx *dev_ctx;
 	int ret = 0;
 
-	dev_ctx = kzalloc(sizeof(*dev_ctx), GFP_KERNEL);
+	dev_ctx = kzalloc_obj(*dev_ctx, GFP_KERNEL);
 
 	if (!dev_ctx)
 		return -ENOMEM;
@@ -481,15 +481,15 @@ static int init_device_context(struct se_if_priv *priv, int ch_id,
 	dev_ctx->priv = priv;
 	*new_dev_ctx = dev_ctx;
 
-	list_add_tail(&dev_ctx->link, &priv->dev_ctx_list);
-	priv->active_devctx_count++;
-
 	ret = init_se_shared_mem(dev_ctx);
 	if (ret < 0) {
 		kfree(dev_ctx->devname);
 		kfree(dev_ctx);
 		*new_dev_ctx = NULL;
 	}
+
+	list_add_tail(&dev_ctx->link, &priv->dev_ctx_list);
+	priv->active_devctx_count++;
 
 	return ret;
 }

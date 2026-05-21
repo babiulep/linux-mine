@@ -133,7 +133,7 @@ static DEFINE_PER_CPU(struct percpu_swap_cluster, percpu_swap_cluster) = {
 /* May return NULL on invalid type, caller must check for NULL return */
 static struct swap_info_struct *swap_type_to_info(int type)
 {
-	if (type < 0 || type >= MAX_SWAPFILES)
+	if (type >= MAX_SWAPFILES)
 		return NULL;
 	return READ_ONCE(swap_info[type]); /* rcu_dereference() */
 }
@@ -1054,6 +1054,7 @@ static void swap_reclaim_full_clusters(struct swap_info_struct *si, bool force)
 		swap_cluster_unlock(ci);
 		if (to_scan <= 0)
 			break;
+		cond_resched();
 	}
 }
 
@@ -1442,8 +1443,10 @@ start_over:
 }
 
 static int swap_extend_table_alloc(struct swap_info_struct *si,
-				   struct swap_cluster_info *ci, gfp_t gfp)
+				   struct swap_cluster_info *ci,
+				   unsigned int ci_off, gfp_t gfp)
 {
+	int count;
 	void *table;
 
 	table = kzalloc(sizeof(ci->extend_table[0]) * SWAPFILE_CLUSTER, gfp);
@@ -1451,11 +1454,27 @@ static int swap_extend_table_alloc(struct swap_info_struct *si,
 		return -ENOMEM;
 
 	spin_lock(&ci->lock);
-	if (!ci->extend_table)
-		ci->extend_table = table;
-	else
-		kfree(table);
+	/*
+	 * Extend table allocation requires releasing ci lock first so it's
+	 * possible that the slot has been freed, no longer overflowed, or
+	 * a concurrent extend table allocation has already succeeded, so
+	 * the allocation is no longer needed.
+	 */
+	if (!cluster_table_is_alloced(ci))
+		goto out_free;
+	count = swp_tb_get_count(__swap_table_get(ci, ci_off));
+	if (count < (SWP_TB_COUNT_MAX - 1))
+		goto out_free;
+	if (ci->extend_table)
+		goto out_free;
+
+	ci->extend_table = table;
 	spin_unlock(&ci->lock);
+	return 0;
+
+out_free:
+	spin_unlock(&ci->lock);
+	kfree(table);
 	return 0;
 }
 
@@ -1471,7 +1490,7 @@ int swap_retry_table_alloc(swp_entry_t entry, gfp_t gfp)
 		return 0;
 
 	ci = __swap_offset_to_cluster(si, offset);
-	ret = swap_extend_table_alloc(si, ci, gfp);
+	ret = swap_extend_table_alloc(si, ci, swp_cluster_offset(entry), gfp);
 
 	put_swap_device(si);
 	return ret;
@@ -1518,13 +1537,21 @@ static void __swap_cluster_put_entry(struct swap_cluster_info *ci,
 		if (count == (SWP_TB_COUNT_MAX - 1)) {
 			ci->extend_table[ci_off] = 0;
 			__swap_table_set(ci, ci_off, __swp_tb_mk_count(swp_tb, count));
-			swap_extend_table_try_free(ci);
 		} else {
 			ci->extend_table[ci_off] = count;
 		}
 	} else {
 		__swap_table_set(ci, ci_off, __swp_tb_mk_count(swp_tb, --count));
 	}
+
+	/*
+	 * `SWP_TB_COUNT_MAX - 1` triggers extend table allocation. If the
+	 * count was above that, then the extend table is no longer needed,
+	 * so free it. And if we just put the count value from MAX - 1, it's
+	 * also possible that a pending dup just attached an extend table.
+	 */
+	if (unlikely(count == SWP_TB_COUNT_MAX - 2 || count == SWP_TB_COUNT_MAX - 1))
+		swap_extend_table_try_free(ci);
 }
 
 /**
@@ -1664,7 +1691,7 @@ restart:
 		if (unlikely(err)) {
 			if (err == -ENOMEM) {
 				spin_unlock(&ci->lock);
-				err = swap_extend_table_alloc(si, ci, GFP_ATOMIC);
+				err = swap_extend_table_alloc(si, ci, ci_off, GFP_ATOMIC);
 				spin_lock(&ci->lock);
 				if (!err)
 					goto restart;
@@ -2077,16 +2104,7 @@ out:
 }
 
 #ifdef CONFIG_HIBERNATION
-/**
- * swap_alloc_hibernation_slot() - Allocate a swap slot for hibernation.
- * @type: swap device type index to allocate from.
- *
- * The caller must ensure the swap device is stable, either by pinning
- * it (SWP_HIBERNATION) or by freezing user-space.
- *
- * Return: a valid swp_entry_t on success, or an empty entry (val == 0)
- * on failure.
- */
+/* Allocate a slot for hibernation */
 swp_entry_t swap_alloc_hibernation_slot(int type)
 {
 	struct swap_info_struct *pcp_si, *si = swap_type_to_info(type);
@@ -2097,41 +2115,45 @@ swp_entry_t swap_alloc_hibernation_slot(int type)
 	if (!si)
 		goto fail;
 
-	/*
-	 * Try the local cluster first if it matches the device. If
-	 * not, try grab a new cluster and override local cluster.
-	 */
-	local_lock(&percpu_swap_cluster.lock);
-	pcp_si = this_cpu_read(percpu_swap_cluster.si[0]);
-	pcp_offset = this_cpu_read(percpu_swap_cluster.offset[0]);
-	if (pcp_si == si && pcp_offset) {
-		ci = swap_cluster_lock(si, pcp_offset);
-		if (cluster_is_usable(ci, 0))
-			offset = alloc_swap_scan_cluster(si, ci, NULL, pcp_offset);
-		else
-			swap_cluster_unlock(ci);
+	/* This is called for allocating swap entry, not cache */
+	if (get_swap_device_info(si)) {
+		if (si->flags & SWP_WRITEOK) {
+			/*
+			 * Try the local cluster first if it matches the device. If
+			 * not, try grab a new cluster and override local cluster.
+			 */
+			local_lock(&percpu_swap_cluster.lock);
+			pcp_si = this_cpu_read(percpu_swap_cluster.si[0]);
+			pcp_offset = this_cpu_read(percpu_swap_cluster.offset[0]);
+			if (pcp_si == si && pcp_offset) {
+				ci = swap_cluster_lock(si, pcp_offset);
+				if (cluster_is_usable(ci, 0))
+					offset = alloc_swap_scan_cluster(si, ci, NULL, pcp_offset);
+				else
+					swap_cluster_unlock(ci);
+			}
+			if (!offset)
+				offset = cluster_alloc_swap_entry(si, NULL);
+			local_unlock(&percpu_swap_cluster.lock);
+			if (offset)
+				entry = swp_entry(si->type, offset);
+		}
+		put_swap_device(si);
 	}
-	if (!offset)
-		offset = cluster_alloc_swap_entry(si, NULL);
-	local_unlock(&percpu_swap_cluster.lock);
-	if (offset)
-		entry = swp_entry(si->type, offset);
-
 fail:
 	return entry;
 }
 
-/**
- * swap_free_hibernation_slot() - Free a swap slot allocated for hibernation.
- * @entry: swap entry to free.
- *
- * The caller must ensure the swap device is stable.
- */
+/* Free a slot allocated by swap_alloc_hibernation_slot */
 void swap_free_hibernation_slot(swp_entry_t entry)
 {
-	struct swap_info_struct *si = __swap_entry_to_info(entry);
+	struct swap_info_struct *si;
 	struct swap_cluster_info *ci;
 	pgoff_t offset = swp_offset(entry);
+
+	si = get_swap_device(entry);
+	if (WARN_ON(!si))
+		return;
 
 	ci = swap_cluster_lock(si, offset);
 	__swap_cluster_put_entry(ci, offset % SWAPFILE_CLUSTER);
@@ -2140,17 +2162,25 @@ void swap_free_hibernation_slot(swp_entry_t entry)
 
 	/* In theory readahead might add it to the swap cache by accident */
 	__try_to_reclaim_swap(si, offset, TTRS_ANYWAY);
+	put_swap_device(si);
 }
 
-static int __find_hibernation_swap_type(dev_t device, sector_t offset)
+/*
+ * Find the swap type that corresponds to given device (if any).
+ *
+ * @offset - number of the PAGE_SIZE-sized block of the device, starting
+ * from 0, in which the swap header is expected to be located.
+ *
+ * This is needed for the suspend to disk (aka swsusp).
+ */
+int swap_type_of(dev_t device, sector_t offset)
 {
 	int type;
 
-	lockdep_assert_held(&swap_lock);
-
 	if (!device)
-		return -EINVAL;
+		return -1;
 
+	spin_lock(&swap_lock);
 	for (type = 0; type < nr_swapfiles; type++) {
 		struct swap_info_struct *sis = swap_info[type];
 
@@ -2160,116 +2190,14 @@ static int __find_hibernation_swap_type(dev_t device, sector_t offset)
 		if (device == sis->bdev->bd_dev) {
 			struct swap_extent *se = first_se(sis);
 
-			if (se->start_block == offset)
+			if (se->start_block == offset) {
+				spin_unlock(&swap_lock);
 				return type;
+			}
 		}
 	}
+	spin_unlock(&swap_lock);
 	return -ENODEV;
-}
-
-/**
- * pin_hibernation_swap_type - Pin the swap device for hibernation
- * @device: Block device containing the resume image
- * @offset: Offset identifying the swap area
- *
- * Locate the swap device for @device/@offset and mark it as pinned
- * for hibernation. While pinned, swapoff() is prevented.
- *
- * Only one uswsusp context may pin a swap device at a time.
- * If already pinned, this function returns -EBUSY.
- *
- * Return:
- * >= 0 on success (swap type).
- * -EINVAL if @device is invalid.
- * -ENODEV if the swap device is not found.
- * -EBUSY if the device is already pinned for hibernation.
- */
-int pin_hibernation_swap_type(dev_t device, sector_t offset)
-{
-	int type;
-	struct swap_info_struct *si;
-
-	spin_lock(&swap_lock);
-
-	type = __find_hibernation_swap_type(device, offset);
-	if (type < 0) {
-		spin_unlock(&swap_lock);
-		return type;
-	}
-
-	si = swap_type_to_info(type);
-	if (WARN_ON_ONCE(!si)) {
-		spin_unlock(&swap_lock);
-		return -ENODEV;
-	}
-
-	/*
-	 * hibernate_acquire() prevents concurrent hibernation sessions.
-	 * This check additionally guards against double-pinning within
-	 * the same session.
-	 */
-	if (WARN_ON_ONCE(si->flags & SWP_HIBERNATION)) {
-		spin_unlock(&swap_lock);
-		return -EBUSY;
-	}
-
-	si->flags |= SWP_HIBERNATION;
-
-	spin_unlock(&swap_lock);
-	return type;
-}
-
-/**
- * unpin_hibernation_swap_type - Unpin the swap device for hibernation
- * @type: Swap type previously returned by pin_hibernation_swap_type()
- *
- * Clear the hibernation pin on the given swap device, allowing
- * swapoff() to proceed normally.
- *
- * If @type does not refer to a valid swap device, this function
- * does nothing.
- */
-void unpin_hibernation_swap_type(int type)
-{
-	struct swap_info_struct *si;
-
-	spin_lock(&swap_lock);
-	si = swap_type_to_info(type);
-	if (!si) {
-		spin_unlock(&swap_lock);
-		return;
-	}
-	si->flags &= ~SWP_HIBERNATION;
-	spin_unlock(&swap_lock);
-}
-
-/**
- * find_hibernation_swap_type - Find swap type for hibernation
- * @device: Block device containing the resume image
- * @offset: Offset within the device identifying the swap area
- *
- * Locate the swap device corresponding to @device and @offset.
- *
- * Unlike pin_hibernation_swap_type(), this function only performs a
- * lookup and does not mark the swap device as pinned for hibernation.
- *
- * This is safe in the sysfs-based hibernation path where user space
- * is already frozen and swapoff() cannot run concurrently.
- *
- * Return:
- * A non-negative swap type on success.
- * -EINVAL if @device is invalid.
- * -ENODEV if no matching swap device is found.
- */
-int find_hibernation_swap_type(dev_t device, sector_t offset)
-{
-	int type;
-
-	spin_lock(&swap_lock);
-	type = __find_hibernation_swap_type(device, offset);
-	spin_unlock(&swap_lock);
-
-	return type;
 }
 
 int find_first_swap(dev_t *device)
@@ -3035,14 +2963,6 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
 		spin_unlock(&swap_lock);
 		goto out_dput;
 	}
-
-	/* Refuse swapoff while the device is pinned for hibernation */
-	if (p->flags & SWP_HIBERNATION) {
-		err = -EBUSY;
-		spin_unlock(&swap_lock);
-		goto out_dput;
-	}
-
 	if (!security_vm_enough_memory_mm(current->mm, p->pages))
 		vm_unacct_memory(p->pages);
 	else {

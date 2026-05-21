@@ -35,7 +35,6 @@
 	M68k	M68k architecture is enabled.
 			These options have more detailed description inside of
 			Documentation/arch/m68k/kernel-options.rst.
-	MDA	MDA console support is enabled.
 	MIPS	MIPS architecture is enabled.
 	MOUSE	Appropriate mouse support is enabled.
 	MSI	Message Signaled Interrupts (PCI).
@@ -2100,6 +2099,10 @@ Kernel parameters
 			Format: nn[KMGTPE] or (node format)
 				<node>:nn[KMGTPE][,<node>:nn[KMGTPE]]
 
+			The size must be a multiple of the gigantic page size.
+			When using node format, this applies to each per-node size.
+			Missaligned values are dropped with a warning.
+
 			Reserve a CMA area of given size and allocate gigantic
 			hugepages using the CMA allocator. If enabled, the
 			boot-time allocation of gigantic hugepages is skipped.
@@ -3811,10 +3814,6 @@ Kernel parameters
 	md=		[HW] RAID subsystems devices and level
 			See Documentation/admin-guide/md.rst.
 
-	mdacon=		[MDA]
-			Format: <first>,<last>
-			Specifies range of consoles to be captured by the MDA.
-
 	mds=		[X86,INTEL,EARLY]
 			Control mitigation for the Micro-architectural Data
 			Sampling (MDS) vulnerability.
@@ -4631,7 +4630,7 @@ Kernel parameters
 	nosmt		[KNL,MIPS,PPC,EARLY] Disable symmetric multithreading (SMT).
 			Equivalent to smt=1.
 
-			[KNL,LOONGARCH,X86,PPC,S390] Disable symmetric multithreading (SMT).
+			[KNL,LOONGARCH,X86,ARM64,PPC,S390] Disable symmetric multithreading (SMT).
 			nosmt=force: Force disable SMT, cannot be undone
 				     via the sysfs control file.
 
@@ -7220,6 +7219,18 @@ Kernel parameters
 
 			Not specifying this option is equivalent to
 			spec_store_bypass_disable=auto.
+
+	split_llc=
+			[X86,EARLY] Split the LLC N-ways
+
+			When set, the LLC is split this many ways by matching
+			'core_id % n'. This is setup before SMP bringup and
+			used during SMP bringup before it knows the full
+			topology. If your core count doesn't nicely divide by
+			the number given, you get to keep the pieces.
+
+			This is mostly a debug feature to emulate multiple LLCs
+			on hardware that only have a single LLC.
 
 	split_lock_detect=
 			[X86] Enable split lock detection or bus lock detection

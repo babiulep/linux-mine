@@ -13,6 +13,7 @@
 
 #include <linux/types.h>
 
+struct config_group;
 struct fwnode_handle;
 struct device;
 
@@ -153,6 +154,9 @@ struct tb_property_dir *tb_property_parse_dir(const u32 *block,
 ssize_t tb_property_format_dir(const struct tb_property_dir *dir, u32 *block,
 			       size_t block_len);
 struct tb_property_dir *tb_property_copy_dir(const struct tb_property_dir *dir);
+int tb_property_merge_dir(struct tb_property_dir *parent,
+			  const struct tb_property_dir *dir,
+			  bool replace);
 struct tb_property_dir *tb_property_create_dir(const uuid_t *uuid);
 void tb_property_free_dir(struct tb_property_dir *dir);
 int tb_property_add_immediate(struct tb_property_dir *parent, const char *key,
@@ -394,6 +398,10 @@ void tb_unregister_protocol_handler(struct tb_protocol_handler *handler);
  * @prtcvers: Protocol version from the properties directory
  * @prtcrevs: Protocol software revision from the properties directory
  * @prtcstns: Protocol settings mask from the properties directory
+ * @lock: Protects this structure
+ * @local_properties: Properties owned by the service driver
+ * @remote_properties: Properties read from the remote service. These
+ *		       are read-only.
  * @debugfs_dir: Pointer to the service debugfs directory. Always created
  *		 when debugfs is enabled. Can be used by service drivers to
  *		 add their own entries under the service.
@@ -401,6 +409,9 @@ void tb_unregister_protocol_handler(struct tb_protocol_handler *handler);
  * Each domain exposes set of services it supports as collection of
  * properties. For each service there will be one corresponding
  * &struct tb_service. Service drivers are bound to these.
+ *
+ * Service drivers can add their own dynamic properties to
+ * @local_properties but whenever they do so @lock must be held.
  */
 struct tb_service {
 	struct device dev;
@@ -410,6 +421,9 @@ struct tb_service {
 	u32 prtcvers;
 	u32 prtcrevs;
 	u32 prtcstns;
+	struct mutex lock;
+	struct tb_property_dir *local_properties;
+	struct tb_property_dir *remote_properties;
 	struct dentry *debugfs_dir;
 };
 
@@ -478,6 +492,8 @@ static inline struct tb_xdomain *tb_service_parent(struct tb_service *svc)
 	return tb_to_xdomain(svc->dev.parent);
 }
 
+void tb_service_properties_changed(struct tb_service *svc);
+
 /**
  * struct tb_nhi - thunderbolt native host interface
  * @lock: Must be held during ring creation/destruction. Is acquired by
@@ -539,6 +555,9 @@ struct tb_nhi {
  * @start_poll: Called when ring interrupt is triggered to start
  *		polling. Passing %NULL keeps the ring in interrupt mode.
  * @poll_data: Data passed to @start_poll
+ * @interval_nsec: Interval counter if interrupt throttling is to be
+ *		   used with this ring (in ns)
+ * @wait: Used to signal that the ring may be empty now
  */
 struct tb_ring {
 	spinlock_t lock;
@@ -562,6 +581,8 @@ struct tb_ring {
 	u16 eof_mask;
 	void (*start_poll)(void *data);
 	void *poll_data;
+	unsigned int interval_nsec;
+	wait_queue_head_t wait;
 };
 
 /* Leave ring interrupt enabled on suspend */
@@ -613,7 +634,20 @@ struct ring_frame {
 };
 
 /* Minimum size for ring_rx */
-#define TB_FRAME_SIZE		0x100
+#define TB_FRAME_SIZE		256
+#define TB_MAX_FRAME_SIZE	4096
+
+static inline size_t tb_ring_frame_size(const struct ring_frame *frame)
+{
+	if (frame->size)
+		return frame->size;
+	return TB_MAX_FRAME_SIZE;
+}
+
+static inline size_t tb_ring_size(const struct tb_ring *ring)
+{
+	return ring->size;
+}
 
 struct tb_ring *tb_ring_alloc_tx(struct tb_nhi *nhi, int hop, int size,
 				 unsigned int flags);
@@ -622,6 +656,7 @@ struct tb_ring *tb_ring_alloc_rx(struct tb_nhi *nhi, int hop, int size,
 				 u16 sof_mask, u16 eof_mask,
 				 void (*start_poll)(void *), void *poll_data);
 void tb_ring_start(struct tb_ring *ring);
+bool tb_ring_flush(struct tb_ring *ring, unsigned int timeout_msec);
 void tb_ring_stop(struct tb_ring *ring);
 void tb_ring_free(struct tb_ring *ring);
 
@@ -674,6 +709,8 @@ static inline int tb_ring_tx(struct tb_ring *ring, struct ring_frame *frame)
 struct ring_frame *tb_ring_poll(struct tb_ring *ring);
 void tb_ring_poll_complete(struct tb_ring *ring);
 
+int tb_ring_throttling(struct tb_ring *ring, unsigned int interval_nsec);
+
 /**
  * tb_ring_dma_device() - Return device used for DMA mapping
  * @ring: Ring whose DMA device is retrieved
@@ -690,6 +727,11 @@ static inline struct device *tb_ring_dma_device(struct tb_ring *ring)
 
 bool usb4_usb3_port_match(struct device *usb4_port_dev,
 			  const struct fwnode_handle *usb3_port_fwnode);
+
+#if IS_REACHABLE(CONFIG_CONFIGFS_FS)
+int tb_configfs_register_group(struct config_group *group);
+void tb_configfs_unregister_group(struct config_group *group);
+#endif
 
 #else /* CONFIG_USB4 */
 static inline bool usb4_usb3_port_match(struct device *usb4_port_dev,

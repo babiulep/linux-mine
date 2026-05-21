@@ -397,17 +397,6 @@ static int lo_rw_aio(struct loop_device *lo, struct loop_cmd *cmd,
 		cmd->iocb.ki_flags = 0;
 	}
 
-	if (!file)
-		pr_err("%s(loop%d) starting %s with NULL file (already cleared?)\n",
-		       __func__, lo->lo_number, rw == ITER_SOURCE ? "write" : "read");
-	else if (!file_count(file))
-		pr_err("%s(loop%d) starting %s with raw_refcnt=0x%lx (already released?)\n",
-		       __func__, lo->lo_number, rw == ITER_SOURCE ? "write" : "read",
-		       __file_ref_read_raw(&file->f_ref));
-	else if (IS_ENABLED(CONFIG_DEBUG_AID_FOR_SYZBOT))
-		pr_info("%s(loop%d) starting %s with raw_refcnt=0x%lx, refcnt=%lu\n",
-			__func__, lo->lo_number, rw == ITER_SOURCE ? "write" : "read",
-			__file_ref_read_raw(&file->f_ref), file_count(file));
 	if (rw == ITER_SOURCE) {
 		kiocb_start_write(&cmd->iocb);
 		ret = file->f_op->write_iter(&cmd->iocb, &iter);
@@ -1129,12 +1118,24 @@ static void __loop_clr_fd(struct loop_device *lo)
 	struct file *filp;
 	gfp_t gfp = lo->old_gfp_mask;
 
+	/*
+	 * Now that loop_queue_rq() sees lo->lo_state != Lo_bound,
+	 * wait for already started loop_queue_rq() to complete.
+	 */
+	synchronize_rcu();
+	/*
+	 * Now that no more works are scheduled by loop_queue_rq(),
+	 * wait for already scheduled works to complete.
+	 */
+	drain_workqueue(lo->workqueue);
+	/*
+	 * Now that no more AIO requests are scheduled by lo_rw_aio(),
+	 * wait for already started AIO to complete.
+	 */
+	blk_mq_unfreeze_queue(lo->lo_queue, blk_mq_freeze_queue(lo->lo_queue));
+
 	spin_lock_irq(&lo->lo_lock);
 	filp = lo->lo_backing_file;
-#ifdef CONFIG_DEBUG_AID_FOR_SYZBOT
-	pr_err("%s(loop%d) clearing lo_backing_file with raw_refcnt=0x%lx, refcnt=%lu\n",
-	       __func__, lo->lo_number, __file_ref_read_raw(&filp->f_ref), file_count(filp));
-#endif
 	lo->lo_backing_file = NULL;
 	spin_unlock_irq(&lo->lo_lock);
 

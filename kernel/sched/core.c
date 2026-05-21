@@ -548,6 +548,11 @@ void __trace_set_current_state(int state_value)
 }
 EXPORT_SYMBOL(__trace_set_current_state);
 
+int task_llc(const struct task_struct *p)
+{
+	return per_cpu(sd_llc_id, task_cpu(p));
+}
+
 /*
  * Serialization rules:
  *
@@ -4506,6 +4511,7 @@ static void __sched_fork(u64 clone_flags, struct task_struct *p)
 	init_numa_balancing(clone_flags, p);
 	p->wake_entry.u_flags = CSD_TYPE_TTWU;
 	p->migration_pending = NULL;
+	init_sched_mm(p);
 }
 
 DEFINE_STATIC_KEY_FALSE(sched_numa_balancing);
@@ -6653,6 +6659,7 @@ static inline void proxy_set_task_cpu(struct task_struct *p, int cpu)
 static inline struct task_struct *proxy_resched_idle(struct rq *rq)
 {
 	put_prev_set_next_task(rq, rq->donor, rq->idle);
+	rq->next_class = &idle_sched_class;
 	rq_set_donor(rq, rq->idle);
 	set_tsk_need_resched(rq->idle);
 	return rq->idle;
@@ -8612,18 +8619,14 @@ static void cpuset_cpu_inactive(unsigned int cpu)
 
 static inline void sched_smt_present_inc(int cpu)
 {
-#ifdef CONFIG_SCHED_SMT
 	if (cpumask_weight(cpu_smt_mask(cpu)) == 2)
 		static_branch_inc_cpuslocked(&sched_smt_present);
-#endif
 }
 
 static inline void sched_smt_present_dec(int cpu)
 {
-#ifdef CONFIG_SCHED_SMT
 	if (cpumask_weight(cpu_smt_mask(cpu)) == 2)
 		static_branch_dec_cpuslocked(&sched_smt_present);
-#endif
 }
 
 int sched_cpu_activate(unsigned int cpu)
@@ -8702,6 +8705,8 @@ int sched_cpu_deactivate(unsigned int cpu)
 	 */
 	synchronize_rcu();
 
+	sched_domains_free_llc_id(cpu);
+
 	sched_set_rq_offline(rq, cpu);
 
 	scx_rq_deactivate(rq);
@@ -8711,9 +8716,7 @@ int sched_cpu_deactivate(unsigned int cpu)
 	 */
 	sched_smt_present_dec(cpu);
 
-#ifdef CONFIG_SCHED_SMT
 	sched_core_cpu_deactivate(cpu);
-#endif
 
 	if (!sched_smp_initialized)
 		return 0;
@@ -9035,6 +9038,11 @@ void __init sched_init(void)
 
 		rq->core_cookie = 0UL;
 #endif
+#ifdef CONFIG_SCHED_CACHE
+		raw_spin_lock_init(&rq->cpu_epoch_lock);
+		rq->cpu_epoch_next = jiffies;
+#endif
+
 		zalloc_cpumask_var_node(&rq->scratch_mask, GFP_KERNEL, cpu_to_node(i));
 	}
 

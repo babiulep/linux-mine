@@ -14,6 +14,20 @@
 #include "types.h"
 #include "sys.h"
 
+#define __nolibc_open_flags(_flags) ((_flags) | O_LARGEFILE)
+
+#define __nolibc_open_mode(_flags)							\
+({											\
+	mode_t _mode;									\
+	va_list args;									\
+											\
+	va_start(args, (_flags));							\
+	_mode = va_arg(args, mode_t);							\
+	va_end(args);									\
+											\
+	_mode;										\
+})
+
 /*
  * int openat(int dirfd, const char *path, int flags[, mode_t mode]);
  */
@@ -27,19 +41,8 @@ int _sys_openat(int dirfd, const char *path, int flags, mode_t mode)
 static __attribute__((unused))
 int openat(int dirfd, const char *path, int flags, ...)
 {
-	mode_t mode = 0;
-
-	flags |= O_LARGEFILE;
-
-	if (flags & O_CREAT) {
-		va_list args;
-
-		va_start(args, flags);
-		mode = va_arg(args, mode_t);
-		va_end(args);
-	}
-
-	return __sysret(_sys_openat(dirfd, path, flags, mode));
+	return __sysret(_sys_openat(dirfd, path, __nolibc_open_flags(flags),
+						 __nolibc_open_mode(flags)));
 }
 
 /*
@@ -55,19 +58,7 @@ int _sys_open(const char *path, int flags, mode_t mode)
 static __attribute__((unused))
 int open(const char *path, int flags, ...)
 {
-	mode_t mode = 0;
-
-	flags |= O_LARGEFILE;
-
-	if (flags & O_CREAT) {
-		va_list args;
-
-		va_start(args, flags);
-		mode = va_arg(args, mode_t);
-		va_end(args);
-	}
-
-	return __sysret(_sys_open(path, flags, mode));
+	return __sysret(_sys_open(path, __nolibc_open_flags(flags), __nolibc_open_mode(flags)));
 }
 
 /*

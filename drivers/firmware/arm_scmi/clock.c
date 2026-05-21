@@ -630,8 +630,8 @@ scmi_clock_describe_rates_get(const struct scmi_protocol_handle *ph,
 			clkd->r.rates[RATE_STEP]);
 	} else {
 		clkd->info.max_rate = clkd->r.rates[clkd->r.num_rates - 1];
-		dev_dbg(ph->dev, "Clock:%s DISCRETE:%d -> Min %llu Max %llu\n",
-			clkd->info.name, clkd->r.rate_discrete,
+		dev_dbg(ph->dev, "Clock:%s Num_Rates:%u -> Min %llu Max %llu\n",
+			clkd->info.name, clkd->tot_rates,
 			clkd->info.min_rate, clkd->info.max_rate);
 	}
 

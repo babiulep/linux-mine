@@ -194,6 +194,6 @@ Name                            Perm    Description
 temp1_input                     RO      Temperature input
 temp1_label                     RO      Descriptive name for the sensor
 temp1_max                       RW      Maximum temperature
-temp1_max_h yst                 RW      Maximum hysteresis temperature
+temp1_max_hyst                  RW      Maximum hysteresis temperature
 update_interval                 RW      Update conversions interval in milliseconds
 =============================== ======= ===========================================

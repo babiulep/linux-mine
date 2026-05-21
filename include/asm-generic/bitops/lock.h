@@ -9,7 +9,7 @@
 /**
  * arch_test_and_set_bit_lock - Set a bit and return its old value, for lock
  * @nr: Bit to set
- * @p: Address to count from
+ * @addr: Address to count from
  *
  * This operation is atomic and provides acquire barrier semantics if
  * the returned value is 0.
@@ -33,7 +33,7 @@ arch_test_and_set_bit_lock(unsigned int nr, volatile unsigned long *addr)
 /**
  * arch_clear_bit_unlock - Clear a bit in memory, for unlock
  * @nr: the bit to set
- * @p: the address to start counting from
+ * @addr: the address to start counting from
  *
  * This operation is atomic and provides release barrier semantics.
  */
@@ -47,7 +47,7 @@ arch_clear_bit_unlock(unsigned int nr, volatile unsigned long *addr)
 /**
  * arch___clear_bit_unlock - Clear a bit in memory, for unlock
  * @nr: the bit to set
- * @p: the address to start counting from
+ * @addr: the address to start counting from
  *
  * A weaker form of clear_bit_unlock() as used by __bit_lock_unlock(). If all
  * the bits in the word are protected by this lock some archs can use weaker
