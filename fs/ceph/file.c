@@ -996,7 +996,7 @@ retry:
 			ceph_init_inode_acls(newino, &as_ctx);
 			file->f_mode |= FMODE_CREATED;
 		}
-		if ((flags & OPENAT2_REGULAR) && !d_is_reg(dentry)) {
+		if ((flags & __O_REGULAR) && !d_is_reg(dentry)) {
 			err = -EFTYPE;
 			goto out_req;
 		}

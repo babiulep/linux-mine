@@ -129,8 +129,7 @@ struct descriptor_resource {
 };
 
 struct iso_resource_params {
-	int generation;
-	u64 channels;
+	u64 channels_mask;
 	s32 bandwidth;
 };
 
@@ -144,14 +143,14 @@ struct iso_resource_auto {
 		ISO_RES_AUTO_REALLOC,
 		ISO_RES_AUTO_DEALLOC,
 	} todo;
+	int generation;
 	struct iso_resource_params params;
 	struct iso_resource_event *e_alloc, *e_dealloc;
 };
 
 struct iso_resource_once {
 	struct client *client;
-	// Schedule work and access todo only with client->lock held.
-	struct delayed_work work;
+	struct work_struct work;
 	enum {
 		ISO_RES_ONCE_ALLOC,
 		ISO_RES_ONCE_DEALLOC,
@@ -1316,8 +1315,7 @@ static int fill_iso_resource_params(struct iso_resource_params *params,
 	    request->bandwidth > BANDWIDTH_AVAILABLE_INITIAL)
 		return -EINVAL;
 
-	params->generation = -1;
-	params->channels = request->channels;
+	params->channels_mask = request->channels;
 	params->bandwidth = request->bandwidth;
 
 	return 0;
@@ -1336,8 +1334,8 @@ static void iso_resource_auto_work(struct work_struct *work)
 	scoped_guard(spinlock_irq, &client->lock) {
 		reset_jiffies = client->device->card->reset_jiffies;
 		current_generation = client->device->generation;
-		resource_generation = r->params.generation;
-		r->params.generation = current_generation;
+		resource_generation = r->generation;
+		r->generation = current_generation;
 		todo = r->todo;
 	}
 
@@ -1361,7 +1359,7 @@ static void iso_resource_auto_work(struct work_struct *work)
 
 	bandwidth = r->params.bandwidth;
 
-	fw_iso_resource_manage(client->device->card, current_generation, r->params.channels,
+	fw_iso_resource_manage(client->device->card, current_generation, r->params.channels_mask,
 			       &channel, &bandwidth, todo != ISO_RES_AUTO_DEALLOC);
 
 	if (todo == ISO_RES_AUTO_DEALLOC) {
@@ -1403,7 +1401,7 @@ static void iso_resource_auto_work(struct work_struct *work)
 				r->todo = ISO_RES_AUTO_REALLOC;
 
 			if (channel >= 0)
-				r->params.channels = 1ULL << channel;
+				r->params.channels_mask = BIT_ULL(channel);
 
 			e = r->e_alloc;
 			r->e_alloc = NULL;
@@ -1487,7 +1485,7 @@ static int ioctl_deallocate_iso_resource(struct client *client,
 
 static void iso_resource_once_work(struct work_struct *work)
 {
-	struct iso_resource_once *r = from_work(r, work, work.work);
+	struct iso_resource_once *r = from_work(r, work, work);
 	struct client *client = r->client;
 	struct iso_resource_event *e = r->event;
 	int generation, channel, bandwidth;
@@ -1495,10 +1493,9 @@ static void iso_resource_once_work(struct work_struct *work)
 	scoped_guard(spinlock_irq, &client->lock)
 		generation = client->device->generation;
 
-	r->params.generation = generation;
 	bandwidth = r->params.bandwidth;
 
-	fw_iso_resource_manage(client->device->card, generation, r->params.channels, &channel,
+	fw_iso_resource_manage(client->device->card, generation, r->params.channels_mask, &channel,
 			       &bandwidth, r->todo == ISO_RES_ONCE_ALLOC);
 
 	e->iso_resource.handle = UNAVAILABLE_HANDLE;
@@ -1507,7 +1504,7 @@ static void iso_resource_once_work(struct work_struct *work)
 
 	queue_event(client, &e->event, &e->iso_resource, sizeof(e->iso_resource), NULL, 0);
 
-	cancel_delayed_work(&r->work);
+	cancel_work(&r->work);
 	kfree(r);
 
 	client_put(client);
@@ -1527,7 +1524,7 @@ static int init_iso_resource_once(struct client *client,
 	if (err < 0)
 		return err;
 
-	INIT_DELAYED_WORK(&r->work, iso_resource_once_work);
+	INIT_WORK(&r->work, iso_resource_once_work);
 	r->client = client;
 	r->todo	= todo;
 
@@ -1541,7 +1538,7 @@ static int init_iso_resource_once(struct client *client,
 	// Keep the client until work item finishing.
 	client_get(r->client);
 
-	queue_delayed_work(fw_workqueue, &no_free_ptr(r)->work, 0);
+	queue_work(fw_workqueue, &no_free_ptr(r)->work);
 
 	request->handle = UNAVAILABLE_HANDLE;
 

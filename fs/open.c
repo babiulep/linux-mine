@@ -960,7 +960,7 @@ static int do_dentry_open(struct file *f,
 	if (f->f_mapping->a_ops && f->f_mapping->a_ops->direct_IO)
 		f->f_mode |= FMODE_CAN_ODIRECT;
 
-	f->f_flags &= ~(O_CREAT | O_EXCL | O_NOCTTY | O_TRUNC | OPENAT2_REGULAR);
+	f->f_flags &= ~(O_CREAT | O_EXCL | O_NOCTTY | O_TRUNC | __O_REGULAR);
 	f->f_iocb_flags = iocb_flags(f);
 
 	file_ra_state_init(&f->f_ra, f->f_mapping->host->i_mapping);
@@ -1156,8 +1156,16 @@ inline int build_open_flags(const struct open_how *how, struct open_flags *op)
 	int lookup_flags = 0;
 	int acc_mode = ACC_MODE(flags);
 
-	BUILD_BUG_ON_MSG(upper_32_bits(VALID_OPENAT2_FLAGS),
-			 "struct open_flags doesn't yet handle flags > 32 bits");
+	BUILD_BUG_ON_MSG(upper_32_bits(VALID_OPEN_FLAGS),
+			 "VALID_OPEN_FLAGS must fit in 32 bits");
+	/* The whole point: OPENAT2_REGULAR must be unrepresentable in int. */
+	BUILD_BUG_ON_MSG(!upper_32_bits(OPENAT2_REGULAR),
+			 "OPENAT2_REGULAR must live in the upper 32 bits of open_how::flags");
+	/* Prevent a future bit collision between UAPI and internal carrier. */
+	BUILD_BUG_ON_MSG(OPENAT2_REGULAR & VALID_OPEN_FLAGS,
+			 "OPENAT2_REGULAR must not alias any open()/openat() flag");
+	BUILD_BUG_ON_MSG(__O_REGULAR & VALID_OPENAT2_FLAGS,
+			 "__O_REGULAR must not alias any user-visible flag");
 
 	/*
 	 * Strip flags that aren't relevant in determining struct open_flags.
@@ -1209,7 +1217,10 @@ inline int build_open_flags(const struct open_how *how, struct open_flags *op)
 		if (!(acc_mode & MAY_WRITE))
 			return -EINVAL;
 	}
-
+	/*
+	 * Asking to open a directory and a regular file at the same time is
+	 * contradictory.
+	 */
 	if ((flags & (O_DIRECTORY | OPENAT2_REGULAR)) ==
 	    (O_DIRECTORY | OPENAT2_REGULAR))
 		return -EINVAL;
@@ -1229,6 +1240,19 @@ inline int build_open_flags(const struct open_how *how, struct open_flags *op)
 	 */
 	if (flags & __O_SYNC)
 		flags |= O_DSYNC;
+
+	/*
+	 * Translate the upper-32-bit UAPI bit OPENAT2_REGULAR into the
+	 * kernel-internal lower-32-bit __O_REGULAR carrier so the bit
+	 * survives the assignment to op->open_flag (an int) below and the
+	 * subsequent flow through f->f_flags (unsigned int) and the
+	 * i_op->atomic_open() callback (unsigned). do_dentry_open() strips
+	 * __O_REGULAR before the file becomes visible to userspace.
+	 */
+	if (flags & OPENAT2_REGULAR) {
+		flags &= ~OPENAT2_REGULAR;
+		flags |= __O_REGULAR;
+	}
 
 	op->open_flag = flags;
 

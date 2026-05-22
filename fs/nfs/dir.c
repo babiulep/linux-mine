@@ -2194,7 +2194,7 @@ int nfs_atomic_open(struct inode *dir, struct dentry *dentry,
 			break;
 		case -EISDIR:
 		case -ENOTDIR:
-			if (open_flags & OPENAT2_REGULAR) {
+			if (open_flags & __O_REGULAR) {
 				err = -EFTYPE;
 				break;
 			}

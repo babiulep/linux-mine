@@ -136,7 +136,7 @@ static struct cma *dma_contiguous_numa_area[MAX_NUMNODES];
 static phys_addr_t numa_cma_size[MAX_NUMNODES] __initdata;
 static struct cma *dma_contiguous_pernuma_area[MAX_NUMNODES];
 static phys_addr_t pernuma_size_bytes __initdata;
-static bool __maybe_unused numa_cma_configured;
+static bool numa_cma_configured __initdata;
 
 static int __init early_numa_cma(char *p)
 {
@@ -202,11 +202,10 @@ static void __init dma_numa_cma_reserve(void)
 {
 	int nid;
 
-#ifdef CONFIG_CMA_SIZE_PERNUMA
-	if (!numa_cma_configured && dma_contiguous_default_area
-	    && nr_online_nodes > 1)
+	if (IS_ENABLED(CONFIG_CMA_SIZE_PERNUMA) &&
+	    !numa_cma_configured && dma_contiguous_default_area &&
+	    nr_online_nodes > 1)
 		pernuma_size_bytes = cma_get_size(dma_contiguous_default_area);
-#endif
 
 	for_each_node(nid) {
 		int ret;

@@ -241,7 +241,7 @@ static int __cifs_do_create(struct inode *dir, struct dentry *direntry,
 				goto cifs_create_get_file_info;
 			}
 
-			if ((oflags & OPENAT2_REGULAR) && !S_ISREG(newinode->i_mode)) {
+			if ((oflags & __O_REGULAR) && !S_ISREG(newinode->i_mode)) {
 				CIFSSMBClose(xid, tcon, fid->netfid);
 				iput(newinode);
 				return -EFTYPE;
@@ -465,7 +465,7 @@ cifs_create_set_dentry:
 	}
 
 	if (newinode) {
-		if ((oflags & OPENAT2_REGULAR) && !S_ISREG(newinode->i_mode)) {
+		if ((oflags & __O_REGULAR) && !S_ISREG(newinode->i_mode)) {
 			rc = -EFTYPE;
 			goto out_err;
 		}

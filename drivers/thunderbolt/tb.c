@@ -3000,7 +3000,8 @@ static int tb_start(struct tb *tb, bool reset)
 
 	tb->root_switch = tb_switch_alloc(tb, &tb->dev, 0);
 	if (IS_ERR(tb->root_switch))
-		return PTR_ERR(tb->root_switch);
+		return dev_err_probe(tb->nhi->dev, PTR_ERR(tb->root_switch),
+				     "failed to allocate host router\n");
 
 	/*
 	 * ICM firmware upgrade needs running firmware and in native
@@ -3017,14 +3018,14 @@ static int tb_start(struct tb *tb, bool reset)
 	ret = tb_switch_configure(tb->root_switch);
 	if (ret) {
 		tb_switch_put(tb->root_switch);
-		return ret;
+		return dev_err_probe(tb->nhi->dev, ret, "failed to configure host router\n");
 	}
 
 	/* Announce the switch to the world */
 	ret = tb_switch_add(tb->root_switch);
 	if (ret) {
 		tb_switch_put(tb->root_switch);
-		return ret;
+		return dev_err_probe(tb->nhi->dev, ret, "failed to add host router\n");
 	}
 
 	/*
@@ -3310,13 +3311,14 @@ static const struct tb_cm_ops tb_cm_ops = {
  */
 static bool tb_apple_add_links(struct tb_nhi *nhi)
 {
+	struct pci_dev *nhi_pdev = to_pci_dev(nhi->dev);
 	struct pci_dev *upstream, *pdev;
 	bool ret;
 
 	if (!x86_apple_machine)
 		return false;
 
-	switch (nhi->pdev->device) {
+	switch (nhi_pdev->device) {
 	case PCI_DEVICE_ID_INTEL_LIGHT_RIDGE:
 	case PCI_DEVICE_ID_INTEL_CACTUS_RIDGE_4C:
 	case PCI_DEVICE_ID_INTEL_FALCON_RIDGE_2C_NHI:
@@ -3326,7 +3328,7 @@ static bool tb_apple_add_links(struct tb_nhi *nhi)
 		return false;
 	}
 
-	upstream = pci_upstream_bridge(nhi->pdev);
+	upstream = pci_upstream_bridge(nhi_pdev);
 	while (upstream) {
 		if (!pci_is_pcie(upstream))
 			return false;
@@ -3353,15 +3355,15 @@ static bool tb_apple_add_links(struct tb_nhi *nhi)
 		    !pdev->is_pciehp)
 			continue;
 
-		link = device_link_add(&pdev->dev, &nhi->pdev->dev,
+		link = device_link_add(&pdev->dev, nhi->dev,
 				       DL_FLAG_AUTOREMOVE_SUPPLIER |
 				       DL_FLAG_PM_RUNTIME);
 		if (link) {
-			dev_dbg(&nhi->pdev->dev, "created link from %s\n",
+			dev_dbg(nhi->dev, "created link from %s\n",
 				dev_name(&pdev->dev));
 			ret = true;
 		} else {
-			dev_warn(&nhi->pdev->dev, "device link creation from %s failed\n",
+			dev_warn(nhi->dev, "device link creation from %s failed\n",
 				 dev_name(&pdev->dev));
 		}
 	}

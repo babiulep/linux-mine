@@ -88,12 +88,8 @@
 #define __O_TMPFILE	020000000
 #endif
 
-#ifndef OPENAT2_REGULAR
-#define OPENAT2_REGULAR	040000000
-#endif
-
 #ifndef O_EMPTYPATH
-#define O_EMPTYPATH	0100000000	/* allow empty path */
+#define O_EMPTYPATH	(1 << 26)	/* allow empty path */
 #endif
 
 /* a horrid kludge trying to make sure that this will fail on old kernels */

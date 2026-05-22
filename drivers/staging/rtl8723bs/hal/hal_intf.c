@@ -99,14 +99,17 @@ u8 rtw_hal_check_ips_status(struct adapter *padapter)
 	return CheckIPSStatus(padapter);
 }
 
-s32	rtw_hal_xmitframe_enqueue(struct adapter *padapter, struct xmit_frame *pxmitframe)
+int rtw_hal_xmitframe_enqueue(struct adapter *padapter, struct xmit_frame *pxmitframe)
 {
 	return rtl8723bs_hal_xmitframe_enqueue(padapter, pxmitframe);
 }
 
 s32	rtw_hal_xmit(struct adapter *padapter, struct xmit_frame *pxmitframe)
 {
-	return rtl8723bs_hal_xmit(padapter, pxmitframe);
+	if (rtl8723bs_hal_xmit(padapter, pxmitframe))
+		return _FAIL;
+
+	return _SUCCESS;
 }
 
 /*
@@ -222,7 +225,6 @@ void beacon_timing_control(struct adapter *padapter)
 {
 	rtl8723b_SetBeaconRelatedRegisters(padapter);
 }
-
 
 s32 rtw_hal_xmit_thread_handler(struct adapter *padapter)
 {

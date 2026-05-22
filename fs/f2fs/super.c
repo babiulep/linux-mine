@@ -1845,13 +1845,6 @@ static int f2fs_drop_inode(struct inode *inode)
 			return 1;
 		}
 	}
-	/*
-	 * In order to get large folio as soon as possible, let's drop
-	 * inode cache asap. See also f2fs_release_file.
-	 */
-	if (f2fs_exist_written_data(sbi, inode->i_ino, LARGE_FOLIO_INO) &&
-	    !is_inode_flag_set(inode, FI_DIRTY_INODE))
-		return 1;
 
 	/*
 	 * This is to avoid a deadlock condition like below.
@@ -2640,12 +2633,17 @@ static int f2fs_disable_checkpoint(struct f2fs_sb_info *sbi)
 
 	/* check if we need more GC first */
 	unusable = f2fs_get_unusable_blocks(sbi);
+
+	f2fs_info(sbi, "%s starts, unusable: %u", __func__, unusable);
+
 	if (!f2fs_disable_cp_again(sbi, unusable))
 		goto skip_gc;
 
 	f2fs_update_time(sbi, DISABLE_TIME);
 
 	sbi->gc_mode = GC_URGENT_HIGH;
+
+	f2fs_info(sbi, "%s: run f2fs_gc() to migrate blocks", __func__);
 
 	while (!f2fs_time_over(sbi, DISABLE_TIME)) {
 		struct f2fs_gc_control gc_control = {
@@ -2667,6 +2665,12 @@ static int f2fs_disable_checkpoint(struct f2fs_sb_info *sbi)
 			break;
 	}
 
+	f2fs_info(sbi, "%s: call sync_filesystem() to persist meta: %lld, node: %lld, data: %lld",
+			__func__,
+			get_pages(sbi, F2FS_DIRTY_META),
+			get_pages(sbi, F2FS_DIRTY_NODES),
+			get_pages(sbi, F2FS_DIRTY_DATA));
+
 	ret = sync_filesystem(sbi->sb);
 	if (ret || err) {
 		err = ret ? ret : err;
@@ -2680,6 +2684,12 @@ static int f2fs_disable_checkpoint(struct f2fs_sb_info *sbi)
 	}
 
 skip_gc:
+	f2fs_info(sbi, "%s: call f2fs_write_checkpoint(), meta: %lld, node: %lld, data: %lld",
+			__func__,
+			get_pages(sbi, F2FS_DIRTY_META),
+			get_pages(sbi, F2FS_DIRTY_NODES),
+			get_pages(sbi, F2FS_DIRTY_DATA));
+
 	f2fs_down_write_trace(&sbi->gc_lock, &lc);
 	cpc.reason = CP_PAUSE;
 	set_sbi_flag(sbi, SBI_CP_DISABLED);
@@ -2697,7 +2707,7 @@ out_unlock:
 restore_flag:
 	sbi->gc_mode = gc_mode;
 	sbi->sb->s_flags = s_flags;	/* Restore SB_RDONLY status */
-	f2fs_info(sbi, "f2fs_disable_checkpoint() finish, err:%d", err);
+	f2fs_info(sbi, "%s finishes, err:%d", __func__, err);
 	return err;
 }
 
@@ -4616,6 +4626,7 @@ static void save_stop_reason(struct f2fs_sb_info *sbi, unsigned char reason)
 	spin_lock_irqsave(&sbi->error_lock, flags);
 	if (sbi->stop_reason[reason] < GENMASK(BITS_PER_BYTE - 1, 0))
 		sbi->stop_reason[reason]++;
+	sbi->stop_reason_dirty = true;
 	spin_unlock_irqrestore(&sbi->error_lock, flags);
 }
 
@@ -4623,6 +4634,7 @@ static void f2fs_record_stop_reason(struct f2fs_sb_info *sbi)
 {
 	struct f2fs_super_block *raw_super = F2FS_RAW_SUPER(sbi);
 	unsigned long flags;
+	bool report_shutdown = false;
 	int err;
 
 	f2fs_down_write(&sbi->sb_lock);
@@ -4634,6 +4646,10 @@ static void f2fs_record_stop_reason(struct f2fs_sb_info *sbi)
 		sbi->error_dirty = false;
 	}
 	memcpy(raw_super->s_stop_reason, sbi->stop_reason, MAX_STOP_REASON);
+	if (sbi->stop_reason_dirty) {
+		report_shutdown = true;
+		sbi->stop_reason_dirty = false;
+	}
 	spin_unlock_irqrestore(&sbi->error_lock, flags);
 
 	err = f2fs_commit_super(sbi, false);
@@ -4644,7 +4660,8 @@ static void f2fs_record_stop_reason(struct f2fs_sb_info *sbi)
 			"f2fs_commit_super fails to record stop_reason, err:%d",
 			err);
 
-	fserror_report_shutdown(sbi->sb, GFP_NOFS);
+	if (report_shutdown)
+		fserror_report_shutdown(sbi->sb, GFP_NOFS);
 }
 
 void f2fs_save_errors(struct f2fs_sb_info *sbi, unsigned char flag)

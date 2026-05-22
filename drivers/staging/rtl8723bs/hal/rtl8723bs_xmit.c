@@ -256,11 +256,6 @@ static s32 xmit_xmitframes(struct adapter *padapter, struct xmit_priv *pxmitpriv
 
 					pxmitbuf = rtw_alloc_xmitbuf(pxmitpriv);
 					if (!pxmitbuf) {
-#ifdef DBG_XMIT_BUF
-						netdev_err(padapter->pnetdev,
-							   "%s: xmit_buf is not enough!\n",
-							   __func__);
-#endif
 						err = -2;
 						complete(&(pxmitpriv->xmit_comp));
 						break;
@@ -398,7 +393,6 @@ next:
 	if (ret == 1)
 		goto next;
 
-
 	return _SUCCESS;
 }
 
@@ -464,8 +458,8 @@ s32 rtl8723bs_mgnt_xmit(
  *Handle xmitframe(packet) come from rtw_xmit()
  *
  * Return:
- *true	dump packet directly ok
- *false	enqueue, temporary can't transmit packets to hardware
+ * true      dump packet directly ok
+ * false     enqueue, temporary can't transmit packets to hardware
  */
 s32 rtl8723bs_hal_xmit(
 	struct adapter *padapter, struct xmit_frame *pxmitframe
@@ -473,7 +467,6 @@ s32 rtl8723bs_hal_xmit(
 {
 	struct xmit_priv *pxmitpriv;
 	s32 err;
-
 
 	pxmitframe->attrib.qsel = pxmitframe->attrib.priority;
 	pxmitpriv = &padapter->xmitpriv;
@@ -491,7 +484,7 @@ s32 rtl8723bs_hal_xmit(
 	spin_lock_bh(&pxmitpriv->lock);
 	err = rtw_xmitframe_enqueue(padapter, pxmitframe);
 	spin_unlock_bh(&pxmitpriv->lock);
-	if (err != _SUCCESS) {
+	if (err) {
 		rtw_free_xmitframe(pxmitpriv, pxmitframe);
 
 		pxmitpriv->tx_drop++;
@@ -511,7 +504,7 @@ s32	rtl8723bs_hal_xmitframe_enqueue(
 	s32 err;
 
 	err = rtw_xmitframe_enqueue(padapter, pxmitframe);
-	if (err != _SUCCESS) {
+	if (err) {
 		rtw_free_xmitframe(pxmitpriv, pxmitframe);
 
 		pxmitpriv->tx_drop++;
@@ -534,7 +527,6 @@ s32 rtl8723bs_init_xmit_priv(struct adapter *padapter)
 	struct xmit_priv *xmitpriv = &padapter->xmitpriv;
 	struct hal_com_data *phal;
 
-
 	phal = GET_HAL_DATA(padapter);
 
 	spin_lock_init(&phal->SdioTxFIFOFreePageLock);
@@ -551,7 +543,6 @@ void rtl8723bs_free_xmit_priv(struct adapter *padapter)
 	struct __queue *pqueue = &pxmitpriv->pending_xmitbuf_queue;
 	struct list_head *plist, *phead;
 	struct list_head tmplist;
-
 
 	phead = get_list_head(pqueue);
 	INIT_LIST_HEAD(&tmplist);

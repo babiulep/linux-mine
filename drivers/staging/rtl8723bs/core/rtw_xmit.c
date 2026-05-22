@@ -191,10 +191,6 @@ s32 _rtw_init_xmit_priv(struct xmit_priv *pxmitpriv, struct adapter *padapter)
 
 		list_add_tail(&pxmitbuf->list,
 			      &pxmitpriv->free_xmitbuf_queue.queue);
-		#ifdef DBG_XMIT_BUF
-		pxmitbuf->no = i;
-		#endif
-
 		pxmitbuf++;
 	}
 
@@ -264,9 +260,6 @@ s32 _rtw_init_xmit_priv(struct xmit_priv *pxmitpriv, struct adapter *padapter)
 
 		list_add_tail(&pxmitbuf->list,
 			      &pxmitpriv->free_xmit_extbuf_queue.queue);
-		#ifdef DBG_XMIT_BUF_EXT
-		pxmitbuf->no = i;
-		#endif
 		pxmitbuf++;
 	}
 
@@ -1821,12 +1814,49 @@ void rtw_free_xmitframe_queue(struct xmit_priv *pxmitpriv, struct __queue *pfram
 	spin_unlock_bh(&pframequeue->lock);
 }
 
-s32 rtw_xmitframe_enqueue(struct adapter *padapter, struct xmit_frame *pxmitframe)
+/*
+ * Will enqueue pxmitframe to the proper queue,
+ * and indicate it to xx_pending list.....
+ */
+static int rtw_xmit_classifier(struct adapter *padapter, struct xmit_frame *pxmitframe)
 {
-	if (rtw_xmit_classifier(padapter, pxmitframe) == _FAIL)
-		return _FAIL;
+	u8 ac_index;
+	struct sta_info *psta;
+	struct tx_servq	*ptxservq;
+	struct pkt_attrib	*pattrib = &pxmitframe->attrib;
+	struct hw_xmit	*phwxmits =  padapter->xmitpriv.hwxmits;
 
-	return _SUCCESS;
+	psta = rtw_get_stainfo(&padapter->stapriv, pattrib->ra);
+	if (pattrib->psta != psta)
+		return -ENODEV;
+
+	if (!psta)
+		return -EINVAL;
+
+	if (!(psta->state & _FW_LINKED))
+		return -ENETDOWN;
+
+	ptxservq = rtw_get_sta_pending(padapter, psta, pattrib->priority, (u8 *)(&ac_index));
+
+	if (list_empty(&ptxservq->tx_pending))
+		list_add_tail(&ptxservq->tx_pending, get_list_head(phwxmits[ac_index].sta_queue));
+
+	list_add_tail(&pxmitframe->list, get_list_head(&ptxservq->sta_pending));
+	ptxservq->qcnt++;
+	phwxmits[ac_index].accnt++;
+
+	return 0;
+}
+
+int rtw_xmitframe_enqueue(struct adapter *padapter, struct xmit_frame *pxmitframe)
+{
+	int res;
+
+	res = rtw_xmit_classifier(padapter, pxmitframe);
+	if (res)
+		return res;
+
+	return 0;
 }
 
 struct tx_servq *rtw_get_sta_pending(struct adapter *padapter, struct sta_info *psta, signed int up, u8 *ac)
@@ -1861,45 +1891,6 @@ struct tx_servq *rtw_get_sta_pending(struct adapter *padapter, struct sta_info *
 	}
 
 	return ptxservq;
-}
-
-/*
- * Will enqueue pxmitframe to the proper queue,
- * and indicate it to xx_pending list.....
- */
-s32 rtw_xmit_classifier(struct adapter *padapter, struct xmit_frame *pxmitframe)
-{
-	u8 ac_index;
-	struct sta_info *psta;
-	struct tx_servq	*ptxservq;
-	struct pkt_attrib	*pattrib = &pxmitframe->attrib;
-	struct hw_xmit	*phwxmits =  padapter->xmitpriv.hwxmits;
-	signed int res = _SUCCESS;
-
-	psta = rtw_get_stainfo(&padapter->stapriv, pattrib->ra);
-	if (pattrib->psta != psta)
-		return _FAIL;
-
-	if (!psta) {
-		res = _FAIL;
-		goto exit;
-	}
-
-	if (!(psta->state & _FW_LINKED))
-		return _FAIL;
-
-	ptxservq = rtw_get_sta_pending(padapter, psta, pattrib->priority, (u8 *)(&ac_index));
-
-	if (list_empty(&ptxservq->tx_pending))
-		list_add_tail(&ptxservq->tx_pending, get_list_head(phwxmits[ac_index].sta_queue));
-
-	list_add_tail(&pxmitframe->list, get_list_head(&ptxservq->sta_pending));
-	ptxservq->qcnt++;
-	phwxmits[ac_index].accnt++;
-
-exit:
-
-	return res;
 }
 
 void rtw_free_hwxmits(struct adapter *padapter)
@@ -2037,8 +2028,9 @@ inline bool xmitframe_hiq_filter(struct xmit_frame *xmitframe)
 	} else if (registry->hiq_filter == RTW_HIQ_FILTER_ALLOW_ALL)
 		allow = true;
 	else if (registry->hiq_filter == RTW_HIQ_FILTER_DENY_ALL) {
-	} else
+	} else {
 		WARN_ON(1);
+	}
 
 	return allow;
 }

@@ -1248,7 +1248,6 @@ static bool load_and_init_upcase(struct ntfs_volume *vol)
 	u8 *addr;
 	pgoff_t index, max_index;
 	unsigned int size;
-	int i, max;
 
 	ntfs_debug("Entering.");
 	/* Read upcase table and setup vol->upcase and vol->upcase_len. */
@@ -1299,16 +1298,11 @@ read_partial_upcase_page:
 		mutex_unlock(&ntfs_lock);
 		return true;
 	}
-	max = default_upcase_len;
-	if (max > vol->upcase_len)
-		max = vol->upcase_len;
-	for (i = 0; i < max; i++)
-		if (vol->upcase[i] != default_upcase[i])
-			break;
-	if (i == max) {
+	if (default_upcase_len == vol->upcase_len &&
+	    !memcmp(vol->upcase, default_upcase,
+		    default_upcase_len * sizeof(*default_upcase))) {
 		kvfree(vol->upcase);
 		vol->upcase = default_upcase;
-		vol->upcase_len = max;
 		ntfs_nr_upcase_users++;
 		mutex_unlock(&ntfs_lock);
 		ntfs_debug("Volume specified $UpCase matches default. Using default.");
@@ -1640,7 +1634,7 @@ static void ntfs_volume_free(struct ntfs_volume *vol)
 		vol->upcase = NULL;
 	}
 
-	if (!ntfs_nr_upcase_users && default_upcase) {
+	if (!ntfs_nr_upcase_users) {
 		kvfree(default_upcase);
 		default_upcase = NULL;
 	}
@@ -1655,8 +1649,7 @@ static void ntfs_volume_free(struct ntfs_volume *vol)
 
 	unload_nls(vol->nls_map);
 
-	if (vol->lcn_empty_bits_per_page)
-		kvfree(vol->lcn_empty_bits_per_page);
+	kvfree(vol->lcn_empty_bits_per_page);
 	kfree(vol->volume_label);
 	kfree(vol);
 }
@@ -2423,8 +2416,6 @@ static int ntfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	}
 	/* Error exit code path. */
 unl_upcase_iput_tmp_ino_err_out_now:
-	if (vol->lcn_empty_bits_per_page)
-		kvfree(vol->lcn_empty_bits_per_page);
 	/*
 	 * Decrease the number of upcase users and destroy the global default
 	 * upcase table if necessary.
@@ -2444,6 +2435,9 @@ iput_tmp_ino_err_out_now:
 	/* Errors at this stage are irrelevant. */
 err_out_now:
 	sb->s_fs_info = NULL;
+	kvfree(vol->lcn_empty_bits_per_page);
+	kfree(vol->volume_label);
+	unload_nls(vol->nls_map);
 	kfree(vol);
 	ntfs_debug("Failed, returning -EINVAL.");
 	lockdep_on();

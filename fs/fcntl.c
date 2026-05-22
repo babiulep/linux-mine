@@ -1171,8 +1171,8 @@ static int __init fcntl_init(void)
 	 */
 	BUILD_BUG_ON(22 - 1 /* for O_RDONLY being 0 */ !=
 		HWEIGHT32(
-			(VALID_OPENAT2_FLAGS & ~(O_NONBLOCK | O_NDELAY)) |
-			__FMODE_EXEC));
+			(VALID_OPEN_FLAGS & ~(O_NONBLOCK | O_NDELAY)) |
+			__FMODE_EXEC | __O_REGULAR));
 
 	fasync_cache = kmem_cache_create("fasync_cache",
 					 sizeof(struct fasync_struct), 0,

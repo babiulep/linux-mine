@@ -581,21 +581,6 @@ void InitInterrupt8723BSdio(struct adapter *adapter)
 				   0);
 }
 
-/*  */
-/*	Description: */
-/*		Initialize System Host Interrupt Mask configuration variables for future use. */
-/*  */
-/*	Created by Roger, 2011.08.03. */
-/*  */
-void InitSysInterrupt8723BSdio(struct adapter *adapter)
-{
-	struct hal_com_data *haldata;
-
-	haldata = GET_HAL_DATA(adapter);
-
-	haldata->SysIntrMask = (0);
-}
-
 /*
  * Enable SDIO Host Interrupt Mask configuration on SDIO local domain.
  *
@@ -607,16 +592,11 @@ void rtw_sdio_enable_interrupt(struct adapter *adapter)
 {
 	struct hal_com_data *haldata;
 	__le32 himr;
-	u32 tmp;
 
 	haldata = GET_HAL_DATA(adapter);
 
 	himr = cpu_to_le32(haldata->sdio_himr);
 	sdio_local_write(adapter, SDIO_REG_HIMR, 4, (u8 *)&himr);
-
-	/*  Update current system IMR settings */
-	tmp = rtw_read32(adapter, REG_HSIMR);
-	rtw_write32(adapter, REG_HSIMR, tmp | haldata->SysIntrMask);
 
 	/*  */
 	/*  <Roger_Notes> There are some C2H CMDs have been sent before system interrupt is enabled, e.g., C2H, CPWM. */
@@ -877,5 +857,3 @@ void HalQueryTxOQTBufferStatus8723BSdio(struct adapter *adapter)
 
 	haldata->SdioTxOQTFreeSpace = SdioLocalCmd52Read1Byte(adapter, SDIO_REG_OQT_FREE_PG);
 }
-
-

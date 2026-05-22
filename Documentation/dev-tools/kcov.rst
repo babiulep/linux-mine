@@ -237,6 +237,9 @@ Both ``kcov_remote_start`` and ``kcov_remote_stop`` annotations and the
 collection sections. The way a handle is used depends on the context where the
 matching code section executes.
 
+A thread can use two separate KCOV instances to collect remote coverage and
+normal coverage at the same time.
+
 KCOV supports collecting remote coverage from the following contexts:
 
 1. Global kernel background tasks. These are the tasks that are spawned during
@@ -246,8 +249,6 @@ KCOV supports collecting remote coverage from the following contexts:
 2. Local kernel background tasks. These are spawned when a userspace process
    interacts with some kernel interface and are usually killed when the process
    exits (e.g. vhost workers).
-   This can be combined with another KCOV instance that is configured for normal
-   coverage collection.
 
 3. Soft interrupts.
 

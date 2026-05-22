@@ -184,7 +184,8 @@ int rtw_init_cmd_priv(struct	cmd_priv *pcmdpriv)
 		return -ENOMEM;
 	}
 
-	pcmdpriv->rsp_buf = pcmdpriv->rsp_allocated_buf + 4 - ((SIZE_PTR)(pcmdpriv->rsp_allocated_buf) & 3);
+	pcmdpriv->rsp_buf = pcmdpriv->rsp_allocated_buf + 4 -
+		((SIZE_PTR)(pcmdpriv->rsp_allocated_buf) & 3);
 
 	pcmdpriv->cmd_issued_cnt = 0;
 	pcmdpriv->cmd_done_cnt = 0;
@@ -247,12 +248,12 @@ void _rtw_free_cmd_priv(struct	cmd_priv *pcmdpriv)
  *
  */
 
-int _rtw_enqueue_cmd(struct __queue *queue, struct cmd_obj *obj)
+static int _rtw_enqueue_cmd(struct __queue *queue, struct cmd_obj *obj)
 {
 	unsigned long irqL;
 
 	if (!obj)
-		goto exit;
+		return 0;
 
 	/* spin_lock_bh(&queue->lock); */
 	spin_lock_irqsave(&queue->lock, irqL);
@@ -262,8 +263,7 @@ int _rtw_enqueue_cmd(struct __queue *queue, struct cmd_obj *obj)
 	/* spin_unlock_bh(&queue->lock); */
 	spin_unlock_irqrestore(&queue->lock, irqL);
 
-exit:
-	return _SUCCESS;
+	return 0;
 }
 
 struct	cmd_obj	*_rtw_dequeue_cmd(struct __queue *queue)
@@ -313,27 +313,28 @@ int rtw_cmd_filter(struct cmd_priv *pcmdpriv, struct cmd_obj *cmd_obj)
 
 int rtw_enqueue_cmd(struct cmd_priv *pcmdpriv, struct cmd_obj *cmd_obj)
 {
-	int res = _FAIL;
+	int res;
 	struct adapter *padapter = pcmdpriv->padapter;
 
 	if (!cmd_obj)
-		goto exit;
+		return _FAIL;
 
 	cmd_obj->padapter = padapter;
 
 	res = rtw_cmd_filter(pcmdpriv, cmd_obj);
 	if (res == _FAIL) {
 		rtw_free_cmd_obj(cmd_obj);
-		goto exit;
+		return _FAIL;
 	}
 
 	res = _rtw_enqueue_cmd(&pcmdpriv->cmd_queue, cmd_obj);
 
-	if (res == _SUCCESS)
+	if (res == 0) {
 		complete(&pcmdpriv->cmd_queue_comp);
+		return _SUCCESS;
+	}
 
-exit:
-	return res;
+	return _FAIL;
 }
 
 struct	cmd_obj	*rtw_dequeue_cmd(struct cmd_priv *pcmdpriv)
@@ -735,12 +736,19 @@ u8 rtw_joinbss_cmd(struct adapter  *padapter, struct wlan_network *pnetwork)
 	if (!pmlmepriv->assoc_by_bssid)
 		memcpy(&pmlmepriv->assoc_bssid[0], &pnetwork->network.mac_address[0], ETH_ALEN);
 
-	psecnetwork->ie_length = rtw_restruct_sec_ie(padapter, &pnetwork->network.ies[0], &psecnetwork->ies[0], pnetwork->network.ie_length);
+	psecnetwork->ie_length = rtw_restruct_sec_ie(padapter,
+						     &pnetwork->network.ies[0],
+						     &psecnetwork->ies[0],
+						     pnetwork->network.ie_length);
 
 	pqospriv->qos_option = 0;
 
 	if (pregistrypriv->wmm_enable) {
-		tmp_len = rtw_restruct_wmm_ie(padapter, &pnetwork->network.ies[0], &psecnetwork->ies[0], pnetwork->network.ie_length, psecnetwork->ie_length);
+		tmp_len = rtw_restruct_wmm_ie(padapter,
+					      &pnetwork->network.ies[0],
+					      &psecnetwork->ies[0],
+					      pnetwork->network.ie_length,
+					      psecnetwork->ie_length);
 
 		if (psecnetwork->ie_length != tmp_len) {
 			psecnetwork->ie_length = tmp_len;
@@ -1300,7 +1308,7 @@ void lps_ctrl_wk_hdl(struct adapter *padapter, u8 lps_ctrl_type)
 		rtw_hal_set_hwreg(padapter, HW_VAR_H2C_FW_JOINBSSRPT, (u8 *)(&mstatus));
 		break;
 	case LPS_CTRL_SPECIAL_PACKET:
-		pwrpriv->DelayLPSLastTimeStamp = jiffies;
+		pwrpriv->delay_lps_last_time_stamp = jiffies;
 		hal_btcoex_SpecialPacketNotify(padapter, PACKET_DHCP);
 		LPS_Leave(padapter, "LPS_CTRL_SPECIAL_PACKET");
 		break;
