@@ -61,7 +61,6 @@ enum scan_result {
 	SCAN_COPY_MC,
 	SCAN_PAGE_FILLED,
 	SCAN_PAGE_DIRTY_OR_WRITEBACK,
-	SCAN_INVALID_PTES_NONE,
 };
 
 #define CREATE_TRACE_POINTS
@@ -380,41 +379,43 @@ static bool pte_none_or_zero(pte_t pte)
 }
 
 /**
- * collapse_max_ptes_none - Calculate maximum allowed none-page or zero-page
- * PTEs for the given collapse operation.
+ * collapse_max_ptes_none - Calculate maximum allowed empty PTEs or PTEs mapping
+ * the shared zeropage for the given collapse operation.
  * @cc: The collapse control struct
  * @vma: The vma to check for userfaultfd
  * @order: The folio order being collapsed to
  *
- * Return: Maximum number of none-page or zero-page PTEs allowed for the
- * collapse operation.
+ * Return: Maximum number of empty/shared zeropage PTEs for the collapse operation
  */
-static int collapse_max_ptes_none(struct collapse_control *cc,
+static unsigned int collapse_max_ptes_none(struct collapse_control *cc,
 		struct vm_area_struct *vma, unsigned int order)
 {
 	unsigned int max_ptes_none = khugepaged_max_ptes_none;
-	// If the vma is userfaultfd-armed, allow no none-page or zero-page PTEs.
+
 	if (vma && userfaultfd_armed(vma))
 		return 0;
-	// for MADV_COLLAPSE, allow any none-page or zero-page PTEs.
+	/* for MADV_COLLAPSE, allow any empty/shared zeropage PTEs */
 	if (!cc->is_khugepaged)
 		return HPAGE_PMD_NR;
-	// for PMD collapse, respect the user defined maximum.
+	/* for PMD collapse, respect the user defined maximum */
 	if (is_pmd_order(order))
 		return max_ptes_none;
-	/* Zero/non-present collapse disabled. */
-	if (!max_ptes_none)
-		return 0;
-	// for mTHP collapse with the sysctl value set to KHUGEPAGED_MAX_PTES_LIMIT,
-	// scale the maximum number of PTEs to the order of the collapse.
+	/*
+	 * for mTHP collapse with the sysctl value set to KHUGEPAGED_MAX_PTES_LIMIT,
+	 * scale the maximum number of PTEs to the order of the collapse.
+	 */
 	if (max_ptes_none == KHUGEPAGED_MAX_PTES_LIMIT)
 		return (1 << order) - 1;
-
-	// We currently only support max_ptes_none values of 0 or KHUGEPAGED_MAX_PTES_LIMIT.
-	// Emit a warning and return -EINVAL.
-	pr_warn_once("mTHP collapse only supports max_ptes_none values of 0 or %u\n",
-		      KHUGEPAGED_MAX_PTES_LIMIT);
-	return -EINVAL;
+	if (!max_ptes_none)
+		return 0;
+	/*
+	 * For mTHP collapse of values other than 0 or KHUGEPAGED_MAX_PTES_LIMIT,
+	 * emit a warning and return 0.
+	 */
+	pr_warn_once("mTHP collapse does not support max_ptes_none values"
+		     " other than 0 or %u, defaulting to 0.\n",
+		     KHUGEPAGED_MAX_PTES_LIMIT);
+	return 0;
 }
 
 /**
@@ -429,15 +430,19 @@ static int collapse_max_ptes_none(struct collapse_control *cc,
 static unsigned int collapse_max_ptes_shared(struct collapse_control *cc,
 		unsigned int order)
 {
-	// for MADV_COLLAPSE, do not restrict the number of PTEs that map shared
-	// anonymous pages.
+	/*
+	 * For MADV_COLLAPSE, do not restrict the number of PTEs that map shared
+	 * anonymous pages.
+	 */
 	if (!cc->is_khugepaged)
 		return HPAGE_PMD_NR;
-	// for mTHP collapse do not allow collapsing anonymous memory pages that
-	// are shared between processes.
+	/*
+	 * for mTHP collapse do not allow collapsing anonymous memory pages that
+	 * are shared between processes.
+	 */
 	if (!is_pmd_order(order))
 		return 0;
-	// for PMD collapse, respect the user defined maximum.
+	/* for PMD collapse, respect the user defined maximum */
 	return khugepaged_max_ptes_shared;
 }
 
@@ -453,14 +458,16 @@ static unsigned int collapse_max_ptes_shared(struct collapse_control *cc,
 static unsigned int collapse_max_ptes_swap(struct collapse_control *cc,
 		unsigned int order)
 {
-	// for MADV_COLLAPSE, do not restrict the number PTEs entries or
-	// pagecache entries that are non-present.
+	/*
+	 * For MADV_COLLAPSE, do not restrict the number PTEs entries or
+	 * pagecache entries that are non-present.
+	 */
 	if (!cc->is_khugepaged)
 		return HPAGE_PMD_NR;
-	// for mTHP collapse do not allow any non-present PTEs or pagecache entries.
+	/* for mTHP collapse do not allow any non-present PTEs or pagecache entries */
 	if (!is_pmd_order(order))
 		return 0;
-	// for PMD collapse, respect the user defined maximum.
+	/* for PMD collapse, respect the user defined maximum */
 	return khugepaged_max_ptes_swap;
 }
 
@@ -602,9 +609,8 @@ static unsigned long collapse_allowable_orders(struct vm_area_struct *vma,
 void khugepaged_enter_vma(struct vm_area_struct *vma,
 			  vm_flags_t vm_flags)
 {
-	if (!mm_flags_test(MMF_VM_HUGEPAGE, vma->vm_mm) &&
-	    collapse_allowable_orders(vma, vm_flags, TVA_KHUGEPAGED) &&
-	    hugepage_enabled())
+	if (!mm_flags_test(MMF_VM_HUGEPAGE, vma->vm_mm) && hugepage_enabled()
+	    && collapse_allowable_orders(vma, vm_flags, TVA_KHUGEPAGED))
 		__khugepaged_enter(vma->vm_mm);
 }
 
@@ -679,6 +685,8 @@ static enum scan_result __collapse_huge_page_isolate(struct vm_area_struct *vma,
 		unsigned long start_addr, pte_t *pte, struct collapse_control *cc,
 		unsigned int order, struct list_head *compound_pagelist)
 {
+	const unsigned int max_ptes_none = collapse_max_ptes_none(cc, vma, order);
+	const unsigned int max_ptes_shared = collapse_max_ptes_shared(cc, order);
 	const unsigned long nr_pages = 1UL << order;
 	struct page *page = NULL;
 	struct folio *folio = NULL;
@@ -686,11 +694,6 @@ static enum scan_result __collapse_huge_page_isolate(struct vm_area_struct *vma,
 	pte_t *_pte;
 	int none_or_zero = 0, shared = 0, referenced = 0;
 	enum scan_result result = SCAN_FAIL;
-	int max_ptes_none = collapse_max_ptes_none(cc, vma, order);
-	unsigned int max_ptes_shared = collapse_max_ptes_shared(cc, order);
-
-	if (max_ptes_none < 0)
-		return SCAN_INVALID_PTES_NONE;
 
 	for (_pte = pte; _pte < pte + nr_pages;
 	     _pte++, addr += PAGE_SIZE) {
@@ -1145,6 +1148,10 @@ static enum scan_result check_pmd_still_valid(struct mm_struct *mm,
  * Bring missing pages in from swap, to complete THP collapse.
  * Only done if khugepaged_scan_pmd believes it is worthwhile.
  *
+ * For mTHP orders the function bails on the first swap entry, because
+ * faulting pages back in during collapse could re-populate PTEs that
+ * push a later scan over the threshold for a higher-order collapse.
+ *
  * Called and returns without pte mapped or spinlocks held.
  * Returns result: if not SCAN_SUCCEED, mmap_lock has been released.
  */
@@ -1266,19 +1273,18 @@ static enum scan_result alloc_charge_folio(struct folio **foliop, struct mm_stru
 		return SCAN_CGROUP_CHARGE_FAIL;
 	}
 
-	count_memcg_folio_events(folio, THP_COLLAPSE_ALLOC, 1);
+	if (is_pmd_order(order))
+		count_memcg_folio_events(folio, THP_COLLAPSE_ALLOC, 1);
 
 	*foliop = folio;
 	return SCAN_SUCCEED;
 }
 
 /*
- * collapse_huge_page expects the mmap_read_lock to be dropped before
- * entering this function. The function will also always return with the lock
- * dropped. The function starts by allocation a folio, which can potentially
- * take a long time if it involves sync compaction, and we do not need to hold
- * the mmap_lock during that. We must recheck the vma after taking it again in
- * write mode.
+ * collapse_huge_page expects the mmap_lock to be unlocked before entering and
+ * will always return with the lock unlocked, to avoid holding the mmap_lock
+ * while allocating a THP, as that could trigger direct reclaim/compaction.
+ * Note that the VMA must be rechecked after grabbing the mmap_lock again.
  */
 static enum scan_result collapse_huge_page(struct mm_struct *mm, unsigned long start_addr,
 		int referenced, int unmapped, struct collapse_control *cc,
@@ -1509,12 +1515,12 @@ static unsigned int collapse_mthp_count_present(struct collapse_control *cc,
  * If a collapse is permitted, we attempt to collapse the PTE range into a
  * mTHP.
  */
-static int mthp_collapse(struct mm_struct *mm, unsigned long address,
-		int referenced, int unmapped, struct collapse_control *cc,
-		unsigned long enabled_orders)
+static int mthp_collapse(struct mm_struct *mm, struct vm_area_struct *vma,
+		unsigned long address, int referenced, int unmapped,
+		struct collapse_control *cc, unsigned long enabled_orders)
 {
-	unsigned int nr_occupied_ptes, nr_ptes;
-	int max_ptes_none, collapsed = 0, stack_size = 0;
+	unsigned int nr_occupied_ptes, nr_ptes, max_ptes_none;
+	int collapsed = 0, stack_size = 0;
 	unsigned long collapse_address;
 	struct mthp_range range;
 	u16 offset;
@@ -1531,10 +1537,7 @@ static int mthp_collapse(struct mm_struct *mm, unsigned long address,
 		if (!test_bit(order, &enabled_orders))
 			goto next_order;
 
-		max_ptes_none = collapse_max_ptes_none(cc, NULL, order);
-
-		if (max_ptes_none < 0)
-			return collapsed;
+		max_ptes_none = collapse_max_ptes_none(cc, vma, order);
 
 		nr_occupied_ptes = collapse_mthp_count_present(cc, offset,
 							       nr_ptes);
@@ -1574,7 +1577,7 @@ static int mthp_collapse(struct mm_struct *mm, unsigned long address,
 		}
 
 next_order:
-		if (order > KHUGEPAGED_MIN_MTHP_ORDER) {
+		if ((BIT(order) - 1) & enabled_orders) {
 			const u8 next_order = order - 1;
 			const u16 mid_offset = offset + (nr_ptes / 2);
 
@@ -1591,9 +1594,9 @@ static enum scan_result collapse_scan_pmd(struct mm_struct *mm,
 		struct vm_area_struct *vma, unsigned long start_addr,
 		bool *lock_dropped, struct collapse_control *cc)
 {
-	int max_ptes_none = collapse_max_ptes_none(cc, vma, HPAGE_PMD_ORDER);
 	const unsigned int max_ptes_shared = collapse_max_ptes_shared(cc, HPAGE_PMD_ORDER);
 	const unsigned int max_ptes_swap = collapse_max_ptes_swap(cc, HPAGE_PMD_ORDER);
+	unsigned int max_ptes_none = collapse_max_ptes_none(cc, vma, HPAGE_PMD_ORDER);
 	enum tva_type tva_flags = cc->is_khugepaged ? TVA_KHUGEPAGED : TVA_FORCED_COLLAPSE;
 	pmd_t *pmd;
 	pte_t *pte, *_pte, pteval;
@@ -1781,9 +1784,9 @@ out_unmap:
 	if (result == SCAN_SUCCEED) {
 		/* collapse_huge_page expects the lock to be dropped before calling */
 		mmap_read_unlock(mm);
-		nr_collapsed = mthp_collapse(mm, start_addr, referenced, unmapped,
-					      cc, enabled_orders);
-		/* collapse_huge_page will return with the mmap_lock released */
+		nr_collapsed = mthp_collapse(mm, vma, start_addr, referenced,
+					     unmapped, cc, enabled_orders);
+		/* mmap_lock was released above, set lock_dropped */
 		*lock_dropped = true;
 		result = nr_collapsed ? SCAN_SUCCEED : SCAN_FAIL;
 	}
@@ -2675,7 +2678,7 @@ static enum scan_result collapse_scan_file(struct mm_struct *mm,
 		unsigned long addr, struct file *file, pgoff_t start,
 		struct collapse_control *cc)
 {
-	const int max_ptes_none = collapse_max_ptes_none(cc, NULL, HPAGE_PMD_ORDER);
+	const unsigned int max_ptes_none = collapse_max_ptes_none(cc, NULL, HPAGE_PMD_ORDER);
 	const unsigned int max_ptes_swap = collapse_max_ptes_swap(cc, HPAGE_PMD_ORDER);
 	struct folio *folio = NULL;
 	struct address_space *mapping = file->f_mapping;

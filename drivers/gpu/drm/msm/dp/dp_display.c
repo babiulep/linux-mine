@@ -305,6 +305,15 @@ end:
 	return rc;
 }
 
+/**
+ * msm_dp_display_host_phy_init() - start up DP PHY
+ * @dp: main display data structure
+ *
+ * Prepare DP PHY for the AUX transactions to succeed.
+ *
+ * Returns: true if this call has initliazed the PHY and false if the PHY has
+ * already been setup beforehand.
+ */
 static bool msm_dp_display_host_phy_init(struct msm_dp_display_private *dp)
 {
 	drm_dbg_dp(dp->drm_dev, "type=%d core_init=%d phy_init=%d\n",
@@ -389,11 +398,10 @@ static int msm_dp_hpd_plug_handle(struct msm_dp_display_private *dp)
 			dp->msm_dp_display.connector_type,
 			dp->link->sink_count);
 
-	mutex_lock(&dp->plugged_lock);
+	guard(mutex)(&dp->plugged_lock);
 
 	ret = pm_runtime_resume_and_get(&pdev->dev);
 	if (ret) {
-		mutex_unlock(&dp->plugged_lock);
 		DRM_ERROR("failed to pm_runtime_resume\n");
 		return ret;
 	}
@@ -409,8 +417,6 @@ static int msm_dp_hpd_plug_handle(struct msm_dp_display_private *dp)
 			dp->link->sink_count);
 
 	dp->plugged = true;
-
-	mutex_unlock(&dp->plugged_lock);
 
 	return ret;
 };
@@ -441,12 +447,9 @@ static int msm_dp_hpd_unplug_handle(struct msm_dp_display_private *dp)
 			dp->msm_dp_display.connector_type,
 			dp->link->sink_count);
 
-	mutex_lock(&dp->plugged_lock);
-	if (!dp->plugged) {
-		mutex_unlock(&dp->plugged_lock);
-
+	guard(mutex)(&dp->plugged_lock);
+	if (!dp->plugged)
 		return 0;
-	}
 
 	/* Don't forget modes for eDP */
 	if (!dp->msm_dp_display.is_edp)
@@ -477,7 +480,6 @@ static int msm_dp_hpd_unplug_handle(struct msm_dp_display_private *dp)
 		pm_runtime_put_sync(&pdev->dev);
 		dp->plugged = false;
 	}
-	mutex_unlock(&dp->plugged_lock);
 
 	return 0;
 }
@@ -811,31 +813,33 @@ void msm_dp_display_set_psr(struct msm_dp *msm_dp_display, bool enter)
 
 /**
  * msm_dp_bridge_detect - callback to determine if connector is connected
+ *
  * @bridge: Pointer to drm bridge structure
  * @connector: Pointer to drm connector structure
- * Returns: Bridge's 'is connected' status
+ *
+ * Returns: where there is a display connected to the DPTX (returning
+ * disconnected for branch devices without DP Sinks being connected).
  */
 enum drm_connector_status msm_dp_bridge_detect(struct drm_bridge *bridge,
 					       struct drm_connector *connector)
 {
 	struct msm_dp_bridge *msm_dp_bridge = to_dp_bridge(bridge);
 	struct msm_dp *dp = msm_dp_bridge->msm_dp_display;
-	struct msm_dp_display_private *priv;
-	int ret = 0;
 	int status = connector_status_disconnected;
+	struct msm_dp_display_private *priv;
 	u8 dpcd[DP_RECEIVER_CAP_SIZE];
 	struct drm_dp_desc desc;
 	bool phy_deinit;
+	int ret;
 
 	dp = to_dp_bridge(bridge)->msm_dp_display;
 
 	priv = container_of(dp, struct msm_dp_display_private, msm_dp_display);
 
-	mutex_lock(&priv->plugged_lock);
+	guard(mutex)(&priv->plugged_lock);
 	ret = pm_runtime_resume_and_get(&dp->pdev->dev);
 	if (ret) {
 		DRM_ERROR("failed to pm_runtime_resume\n");
-		mutex_unlock(&priv->plugged_lock);
 		return status;
 	}
 
@@ -890,8 +894,6 @@ end:
 
 		pm_runtime_put_sync(&dp->pdev->dev);
 	}
-
-	mutex_unlock(&priv->plugged_lock);
 
 	return status;
 }
@@ -1388,9 +1390,11 @@ void msm_dp_bridge_atomic_enable(struct drm_bridge *drm_bridge,
 	}
 
 	rc = msm_dp_ctrl_on_link(msm_dp_display->ctrl);
-	if (rc)
+	if (rc) {
 		DRM_ERROR("Failed link training (rc=%d)\n", rc);
-	// TODO: schedule drm_connector_set_link_status_property()
+		// TODO: schedule drm_connector_set_link_status_property()
+		return;
+	}
 
 	msm_dp_display_enable(msm_dp_display, force_link_train);
 

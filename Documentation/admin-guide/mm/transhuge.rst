@@ -312,8 +312,9 @@ when collapsing a group of small pages into one large page::
 For PMD-sized THP collapse, this directly limits the number of empty pages
 allowed in the 2MB region.
 
-For mTHP collapse, only 0 or (HPAGE_PMD_NR - 1) are supported. Any other value
-will emit a warning and no mTHP collapse will be attempted.
+For mTHP collapse, only 0 or (HPAGE_PMD_NR - 1) are supported. At
+HPAGE_PMD_NR - 1, we collapse to the highest possible order. Any intermediate
+value will emit a warning and mTHP collapse will default to max_ptes_none=0.
 
 A higher value allows more empty pages, potentially leading to more memory
 usage but better THP performance. A lower value is more conservative and

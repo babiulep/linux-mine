@@ -5509,7 +5509,7 @@ static noinline void free_to_partial_list(
  * slab.  Optimistically assume the slab is still full, so we don't need to find
  * the tail of the detached freelist.
  *
- * Fail if the slab isn't full anymore due to a cocurrent free.
+ * Fail if the slab isn't full anymore due to a concurrent free.
  */
 static bool __slab_try_return_freelist(struct kmem_cache *s, struct slab *slab,
 				       void *head, int cnt)
@@ -7091,8 +7091,8 @@ __refill_objects_node(struct kmem_cache *s, void **p, gfp_t gfp, unsigned int mi
 		/*
 		 * Freelist had more objects than we can accommodate, we need to
 		 * free them back. First we try to be optimistic and assume the
-		 * slab is stil full since we just detached its freelist.
-		 * Otherwise we must need to find the tail object.
+		 * slab is still full since we just detached its freelist.
+		 * Otherwise we must find the tail object.
 		 */
 		if (unlikely(count)) {
 			void *head = object;
@@ -7114,26 +7114,16 @@ __refill_objects_node(struct kmem_cache *s, void **p, gfp_t gfp, unsigned int mi
 			break;
 	}
 
-	if (unlikely(!list_empty(&pc.slabs))) {
+	if (!list_empty(&pc.slabs)) {
 		spin_lock_irqsave(&n->list_lock, flags);
 
 		list_for_each_entry_safe(slab, slab2, &pc.slabs, slab_list) {
 
-			if (unlikely(!slab->inuse && n->nr_partial >= s->min_partial))
-				continue;
-
 			list_del(&slab->slab_list);
-			add_partial(n, slab, ADD_TO_HEAD);
+			add_partial(n, slab, ADD_TO_TAIL);
 		}
 
 		spin_unlock_irqrestore(&n->list_lock, flags);
-
-		/* any slabs left are completely free and for discard */
-		list_for_each_entry_safe(slab, slab2, &pc.slabs, slab_list) {
-
-			list_del(&slab->slab_list);
-			discard_slab(s, slab);
-		}
 	}
 
 	return refilled;
