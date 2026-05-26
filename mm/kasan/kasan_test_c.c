@@ -875,8 +875,12 @@ static void kmalloc_double_kzfree(struct kunit *test)
 	size_t size = 16;
 
 	/*
-	 * Only generic KASAN uses quarantine, which could prevent the just freed
-	 * memory from being allocated soon.
+	 * With the tag-based KASAN modes, if the memory happens to be
+	 * reallocated between the two frees and the new allocation tag happens
+	 * to match the old one, the second free will cause a memory corruption.
+	 * Resolving https://bugzilla.kernel.org/show_bug.cgi?id=212177 would
+	 * help to deal with this. With Generic KASAN, it's effectively
+	 * impossible for the memory to get reallocated due to the quarantine.
 	 */
 	KASAN_TEST_NEEDS_CONFIG_ON(test, CONFIG_KASAN_GENERIC);
 
