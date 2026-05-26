@@ -296,9 +296,6 @@ static int do_seamldr_install_module(void *seamldr_params)
 			if (is_lead_cpu)
 				ret = tdx_module_run_update();
 			break;
-		case MODULE_UPDATE_CPU_INIT:
-			ret = tdx_cpu_enable();
-			break;
 		default:
 			break;
 		}
