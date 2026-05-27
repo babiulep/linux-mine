@@ -355,6 +355,7 @@ fastrpc		https://git.kernel.org/pub/scm/linux/kernel/git/srini/fastrpc.git#for-n
 fpga		https://git.kernel.org/pub/scm/linux/kernel/git/fpga/linux-fpga.git#for-next
 icc		https://git.kernel.org/pub/scm/linux/kernel/git/djakov/icc.git#icc-next
 iio		https://git.kernel.org/pub/scm/linux/kernel/git/jic23/iio.git#togreg
+nfc		https://codeberg.org/linux-nfc/linux.git#for-next
 phy-next	https://git.kernel.org/pub/scm/linux/kernel/git/phy/linux-phy.git#next
 soundwire	https://git.kernel.org/pub/scm/linux/kernel/git/vkoul/soundwire.git#next
 extcon		https://git.kernel.org/pub/scm/linux/kernel/git/chanwoo/extcon.git#extcon-next
@@ -422,4 +423,3 @@ fwctl		https://git.kernel.org/pub/scm/linux/kernel/git/fwctl/fwctl.git#for-next
 devsec-tsm	https://git.kernel.org/pub/scm/linux/kernel/git/devsec/tsm.git#next
 hisilicon	https://github.com/hisilicon/linux-hisi.git#for-next
 kthread		https://git.kernel.org/pub/scm/linux/kernel/git/frederic/linux-dynticks.git#for-next
-nfc		https://codeberg.org/linux-nfc/linux.git#for-next

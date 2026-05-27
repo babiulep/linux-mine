@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: GPL-2.0
-# misc-next marker
 
 config BTRFS_FS
 	tristate "Btrfs filesystem support"
@@ -108,6 +107,8 @@ config BTRFS_EXPERIMENTAL
 	  - extent tree v2 - complex rework of extent tracking
 
 	  - block size > page size support
+
+	  - huge folios for data - folios can be as large as 2MiB now
 
 	  - asynchronous checksum generation for data writes
 

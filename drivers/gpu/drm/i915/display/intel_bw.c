@@ -1270,10 +1270,8 @@ static int intel_bw_check_data_rate(struct intel_atomic_state *state, bool *chan
 	struct intel_display *display = to_intel_display(state);
 	const struct intel_crtc_state *new_crtc_state, *old_crtc_state;
 	struct intel_crtc *crtc;
-	int i;
 
-	for_each_oldnew_intel_crtc_in_state(state, crtc, old_crtc_state,
-					    new_crtc_state, i) {
+	for_each_oldnew_intel_crtc_in_state(state, crtc, old_crtc_state, new_crtc_state) {
 		unsigned int old_data_rate =
 			intel_crtc_bw_data_rate(old_crtc_state);
 		unsigned int new_data_rate =
@@ -1319,10 +1317,9 @@ static int intel_bw_check_sagv_mask(struct intel_atomic_state *state)
 	const struct intel_bw_state *old_bw_state = NULL;
 	struct intel_bw_state *new_bw_state = NULL;
 	struct intel_crtc *crtc;
-	int ret, i;
+	int ret;
 
-	for_each_oldnew_intel_crtc_in_state(state, crtc, old_crtc_state,
-					    new_crtc_state, i) {
+	for_each_oldnew_intel_crtc_in_state(state, crtc, old_crtc_state, new_crtc_state) {
 		if (intel_crtc_can_enable_sagv(old_crtc_state) ==
 		    intel_crtc_can_enable_sagv(new_crtc_state))
 			continue;
@@ -1429,7 +1426,7 @@ void intel_bw_update_hw_state(struct intel_display *display)
 
 	bw_state->pipe_sagv_reject = 0;
 
-	for_each_intel_crtc(display->drm, crtc) {
+	for_each_intel_crtc(display, crtc) {
 		const struct intel_crtc_state *crtc_state =
 			to_intel_crtc_state(crtc->base.state);
 		enum pipe pipe = crtc->pipe;

@@ -2286,6 +2286,38 @@ void btrfs_scratch_superblocks(struct btrfs_fs_info *fs_info, struct btrfs_devic
 	update_dev_time(rcu_dereference_raw(device->name));
 }
 
+int btrfs_remove_dev_stat_item(struct btrfs_trans_handle *trans, u64 devid)
+{
+	BTRFS_PATH_AUTO_RELEASE(path);
+	struct btrfs_fs_info *fs_info = trans->fs_info;
+	struct btrfs_root *dev_root = fs_info->dev_root;
+	struct btrfs_key key;
+	int ret;
+
+	key.objectid = BTRFS_DEV_STATS_OBJECTID;
+	key.type = BTRFS_PERSISTENT_ITEM_KEY;
+	key.offset = devid;
+
+	ret = btrfs_search_slot(trans, dev_root, &key, &path, -1, 1);
+	if (ret < 0) {
+		btrfs_warn(fs_info,
+			   "error %d while searching for dev_stats item for devid %llu",
+			   ret, devid);
+		return ret;
+	}
+	/* The dev stats item does not exist, nothing to bother. */
+	if (ret > 0)
+		return 0;
+	ret = btrfs_del_item(trans, dev_root, &path);
+	if (ret < 0) {
+		btrfs_warn(fs_info,
+			   "error %d while deleting dev_stats item for devid %llu",
+			   ret, devid);
+		return ret;
+	}
+	return 0;
+}
+
 int btrfs_rm_device(struct btrfs_fs_info *fs_info,
 		    struct btrfs_dev_lookup_args *args,
 		    struct file **bdev_file)
@@ -2365,6 +2397,12 @@ int btrfs_rm_device(struct btrfs_fs_info *fs_info,
 		return ret;
 	}
 
+	ret = btrfs_remove_dev_stat_item(trans, device->devid);
+	if (unlikely(ret)) {
+		btrfs_abort_transaction(trans, ret);
+		btrfs_end_transaction(trans);
+		return ret;
+	}
 	clear_bit(BTRFS_DEV_STATE_IN_FS_METADATA, &device->dev_state);
 	btrfs_scrub_cancel_dev(device);
 
@@ -2889,6 +2927,12 @@ int btrfs_init_new_device(struct btrfs_fs_info *fs_info, const char *device_path
 	device->commit_total_bytes = device->total_bytes;
 	set_bit(BTRFS_DEV_STATE_IN_FS_METADATA, &device->dev_state);
 	clear_bit(BTRFS_DEV_STATE_REPLACE_TGT, &device->dev_state);
+
+	/*
+	 * Increase dev_stats_ccnt so that corresponding DEV_STATS item can be
+	 * created at the next transaction commit.
+	 */
+	atomic_inc(&device->dev_stats_ccnt);
 	device->dev_stats_valid = 1;
 	set_blocksize(device->bdev_file, BTRFS_BDEV_BLOCKSIZE);
 
@@ -8165,8 +8209,8 @@ static int btrfs_device_init_dev_stats(struct btrfs_device *device,
 
 	for (i = 0; i < BTRFS_DEV_STAT_VALUES_MAX; i++) {
 		if (item_size >= (1 + i) * sizeof(__le64))
-			btrfs_dev_stat_set(device, i,
-					   btrfs_dev_stats_value(eb, ptr, i));
+			atomic_set(device->dev_stat_values + i,
+				   btrfs_dev_stats_value(eb, ptr, i));
 		else
 			btrfs_dev_stat_set(device, i, 0);
 	}

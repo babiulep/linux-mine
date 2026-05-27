@@ -54,20 +54,20 @@ struct btrfs_space_info;
 #define BTRFS_MIN_BLOCKSIZE	(SZ_4K)
 #define BTRFS_MAX_BLOCKSIZE	(SZ_64K)
 
-/* The max folio size btrfs supports. */
+/* The maximum folio size btrfs supports. */
 #define BTRFS_MAX_FOLIO_SIZE	(SZ_2M)
 static_assert(BTRFS_MAX_FOLIO_SIZE > PAGE_SIZE);
 
 /*
- * The max number of blocks a huge folio can support.
+ * The maximum number of blocks a huge folio can support.
  *
- * Depending on the fs block size, the real max blocks per folio
+ * Depending on the filesystem block size, the real maximum blocks per folio
  * may also be limited by the above BTRFS_MAX_FOLIO_SIZE.
  */
 #ifdef CONFIG_BTRFS_EXPERIMENTAL
-#define BTRFS_MAX_BLOCKS_PER_FOLIO	(512)
+#define BTRFS_MAX_BLOCKS_PER_FOLIO		(512)
 #else
-#define BTRFS_MAX_BLOCKS_PER_FOLIO	(BITS_PER_LONG)
+#define BTRFS_MAX_BLOCKS_PER_FOLIO		(BITS_PER_LONG)
 #endif
 
 #define BTRFS_MAX_EXTENT_SIZE SZ_128M
@@ -94,6 +94,10 @@ static_assert(sizeof(struct btrfs_super_block) == BTRFS_SUPER_INFO_SIZE);
 
 #define BTRFS_KEY_FMT			"(%llu %u %llu)"
 #define BTRFS_KEY_FMT_VALUE(key)	(key)->objectid, (key)->type, (key)->offset
+
+#define BTRFS_QGROUP_FMT		"%hu/%llu"
+#define BTRFS_QGROUP_FMT_VALUE(qgroup)	btrfs_qgroup_level((qgroup)->qgroupid), \
+					btrfs_qgroup_subvolid((qgroup)->qgroupid)
 
 /*
  * Number of metadata items necessary for an unlink operation:
