@@ -67,25 +67,31 @@ struct intel_qgv_info {
 	u8 deinterleave;
 };
 
+static int dclk_freq_mhz(int ratio)
+{
+	/* multiple of 16.666 MHz (100/6) */
+	return DIV_ROUND_CLOSEST(ratio * 100, 6);
+}
+
 static int dg1_mchbar_read_qgv_point_info(struct intel_display *display,
 					  struct intel_qgv_point *sp,
 					  int point)
 {
-	u32 dclk_ratio, dclk_reference;
+	u32 dclk_ratio;
 	u32 val;
 
 	val = intel_mchbar_read(display, SA_PERF_STATUS_0_0_0_MCHBAR_PC);
 	dclk_ratio = REG_FIELD_GET(DG1_QCLK_RATIO_MASK, val);
 	if (val & DG1_QCLK_REFERENCE)
-		dclk_reference = 6; /* 6 * 16.666 MHz = 100 MHz */
+		dclk_ratio *= 6; /* 6 * 16.666 MHz = 100 MHz */
 	else
-		dclk_reference = 8; /* 8 * 16.666 MHz = 133 MHz */
-	sp->dclk = DIV_ROUND_UP((16667 * dclk_ratio * dclk_reference) + 500, 1000);
+		dclk_ratio *= 8; /* 8 * 16.666 MHz = 133 MHz */
 
 	val = intel_mchbar_read(display, SKL_MC_BIOS_DATA_0_0_0_MCHBAR_PCU);
 	if (val & DG1_GEAR_TYPE)
-		sp->dclk *= 2;
+		dclk_ratio *= 2;
 
+	sp->dclk = dclk_freq_mhz(dclk_ratio);
 	if (sp->dclk == 0)
 		return -EINVAL;
 
@@ -107,7 +113,6 @@ static int icl_pcode_read_qgv_point_info(struct intel_display *display,
 					 int point)
 {
 	u32 val = 0, val2 = 0;
-	u16 dclk;
 	int ret;
 
 	ret = intel_parent_pcode_read(display, ICL_PCODE_MEM_SUBSYSYSTEM_INFO |
@@ -116,9 +121,7 @@ static int icl_pcode_read_qgv_point_info(struct intel_display *display,
 	if (ret)
 		return ret;
 
-	dclk = val & 0xffff;
-	sp->dclk = DIV_ROUND_UP((16667 * dclk) + (DISPLAY_VER(display) >= 12 ? 500 : 0),
-				1000);
+	sp->dclk = dclk_freq_mhz(val & 0xffff);
 	sp->t_rp = (val & 0xff0000) >> 16;
 	sp->t_rcd = (val & 0xff000000) >> 24;
 
@@ -208,12 +211,11 @@ static int mtl_read_qgv_point_info(struct intel_display *display,
 				   struct intel_qgv_point *sp, int point)
 {
 	u32 val, val2;
-	u16 dclk;
 
 	val = intel_de_read(display, MTL_MEM_SS_INFO_QGV_POINT_LOW(point));
 	val2 = intel_de_read(display, MTL_MEM_SS_INFO_QGV_POINT_HIGH(point));
-	dclk = REG_FIELD_GET(MTL_DCLK_MASK, val);
-	sp->dclk = DIV_ROUND_CLOSEST(16667 * dclk, 1000);
+
+	sp->dclk = dclk_freq_mhz(REG_FIELD_GET(MTL_DCLK_MASK, val));
 	sp->t_rp = REG_FIELD_GET(MTL_TRP_MASK, val);
 	sp->t_rcd = REG_FIELD_GET(MTL_TRCD_MASK, val);
 
@@ -238,10 +240,15 @@ intel_read_qgv_point_info(struct intel_display *display,
 		return icl_pcode_read_qgv_point_info(display, sp, point);
 }
 
+static bool is_y_tile(struct intel_display *display)
+{
+	/* assume Y tile may be used if supported */
+	return !HAS_4TILE(display);
+}
+
 static int icl_get_qgv_points(struct intel_display *display,
 			      const struct dram_info *dram_info,
-			      struct intel_qgv_info *qi,
-			      bool is_y_tile)
+			      struct intel_qgv_info *qi)
 {
 	int i, ret;
 
@@ -280,16 +287,16 @@ static int icl_get_qgv_points(struct intel_display *display,
 	} else if (DISPLAY_VER(display) >= 12) {
 		switch (dram_info->type) {
 		case INTEL_DRAM_DDR4:
-			qi->t_bl = is_y_tile ? 8 : 4;
+			qi->t_bl = is_y_tile(display) ? 8 : 4;
 			qi->max_numchannels = 2;
 			qi->channel_width = 64;
-			qi->deinterleave = is_y_tile ? 1 : 2;
+			qi->deinterleave = is_y_tile(display) ? 1 : 2;
 			break;
 		case INTEL_DRAM_DDR5:
-			qi->t_bl = is_y_tile ? 16 : 8;
+			qi->t_bl = is_y_tile(display) ? 16 : 8;
 			qi->max_numchannels = 4;
 			qi->channel_width = 32;
-			qi->deinterleave = is_y_tile ? 1 : 2;
+			qi->deinterleave = is_y_tile(display) ? 1 : 2;
 			break;
 		case INTEL_DRAM_LPDDR4:
 			if (display->platform.rocketlake) {
@@ -304,7 +311,7 @@ static int icl_get_qgv_points(struct intel_display *display,
 			qi->t_bl = 16;
 			qi->max_numchannels = 8;
 			qi->channel_width = 16;
-			qi->deinterleave = is_y_tile ? 2 : 4;
+			qi->deinterleave = is_y_tile(display) ? 2 : 4;
 			break;
 		default:
 			qi->t_bl = 16;
@@ -510,7 +517,6 @@ static int icl_get_bw_info(struct intel_display *display,
 			   const struct intel_display_bw_params *display_bw_params)
 {
 	struct intel_qgv_info qi = {};
-	bool is_y_tile = true; /* assume y tile may be used */
 	int num_channels = max_t(u8, 1, dram_info->num_channels);
 	int ipqdepth, ipqdepthpch = 16;
 	int dclk_max;
@@ -518,7 +524,7 @@ static int icl_get_bw_info(struct intel_display *display,
 	int num_groups = ARRAY_SIZE(display->bw.max);
 	int i, ret;
 
-	ret = icl_get_qgv_points(display, dram_info, &qi, is_y_tile);
+	ret = icl_get_qgv_points(display, dram_info, &qi);
 	if (ret) {
 		drm_dbg_kms(display->drm,
 			    "Failed to get memory subsystem information, ignoring bandwidth limits");
@@ -528,7 +534,7 @@ static int icl_get_bw_info(struct intel_display *display,
 	dclk_max = icl_sagv_max_dclk(&qi);
 	maxdebw = min(soc_bw_params->deprogbwlimit * 1000, dclk_max * 16 * 6 / 10);
 	ipqdepth = min(ipqdepthpch, display_bw_params->displayrtids / num_channels);
-	qi.deinterleave = DIV_ROUND_UP(num_channels, is_y_tile ? 4 : 2);
+	qi.deinterleave = DIV_ROUND_UP(num_channels, is_y_tile(display) ? 4 : 2);
 
 	for (i = 0; i < num_groups; i++) {
 		struct intel_bw_info *bi = &display->bw.max[i];
@@ -553,7 +559,7 @@ static int icl_get_bw_info(struct intel_display *display,
 			 */
 			ct = max_t(int, sp->t_rc, sp->t_rp + sp->t_rcd +
 				   (clpchgroup - 1) * qi.t_bl + sp->t_rdpre);
-			bw = DIV_ROUND_UP(sp->dclk * clpchgroup * 32 * num_channels, ct);
+			bw = sp->dclk * clpchgroup * 32 * num_channels / ct;
 
 			bi->deratedbw[j] = min(maxdebw,
 					       bw * (100 - soc_bw_params->derating) / 100);
@@ -576,22 +582,25 @@ static int icl_get_bw_info(struct intel_display *display,
 	return 0;
 }
 
+static int tgl_peakbw(int num_channels, int channel_width, int dclk)
+{
+	return num_channels * (channel_width / 8) * dclk;
+}
+
 static int tgl_get_bw_info(struct intel_display *display,
 			   const struct dram_info *dram_info,
 			   const struct intel_soc_bw_params *soc_bw_params,
 			   const struct intel_display_bw_params *display_bw_params)
 {
 	struct intel_qgv_info qi = {};
-	bool is_y_tile = true; /* assume y tile may be used */
 	int num_channels = max_t(u8, 1, dram_info->num_channels);
 	int ipqdepth, ipqdepthpch = 16;
-	int dclk_max;
 	int maxdebw, peakbw;
 	int clperchgroup;
 	int num_groups = ARRAY_SIZE(display->bw.max);
 	int i, ret;
 
-	ret = icl_get_qgv_points(display, dram_info, &qi, is_y_tile);
+	ret = icl_get_qgv_points(display, dram_info, &qi);
 	if (ret) {
 		drm_dbg_kms(display->drm,
 			    "Failed to get memory subsystem information, ignoring bandwidth limits");
@@ -602,19 +611,15 @@ static int tgl_get_bw_info(struct intel_display *display,
 	    (dram_info->type == INTEL_DRAM_LPDDR4 || dram_info->type == INTEL_DRAM_LPDDR5))
 		num_channels *= 2;
 
-	qi.deinterleave = qi.deinterleave ? : DIV_ROUND_UP(num_channels, is_y_tile ? 4 : 2);
-
 	if (num_channels < qi.max_numchannels && DISPLAY_VER(display) >= 12)
-		qi.deinterleave = max(DIV_ROUND_UP(qi.deinterleave, 2), 1);
+		qi.deinterleave = max(qi.deinterleave / 2, 1);
 
 	if (DISPLAY_VER(display) >= 12 && num_channels > qi.max_numchannels)
 		drm_warn(display->drm, "Number of channels exceeds max number of channels.");
 	if (qi.max_numchannels != 0)
 		num_channels = min_t(u8, num_channels, qi.max_numchannels);
 
-	dclk_max = icl_sagv_max_dclk(&qi);
-
-	peakbw = num_channels * DIV_ROUND_UP(qi.channel_width, 8) * dclk_max;
+	peakbw = tgl_peakbw(num_channels, qi.channel_width, icl_sagv_max_dclk(&qi));
 	maxdebw = min(soc_bw_params->deprogbwlimit * 1000, peakbw * DEPROGBWPCLIMIT / 100);
 
 	ipqdepth = min(ipqdepthpch, display_bw_params->displayrtids / num_channels);
@@ -622,7 +627,7 @@ static int tgl_get_bw_info(struct intel_display *display,
 	 * clperchgroup = 4kpagespermempage * clperchperblock,
 	 * clperchperblock = 8 / num_channels * interleave
 	 */
-	clperchgroup = 4 * DIV_ROUND_UP(8, num_channels) * qi.deinterleave;
+	clperchgroup = 4 * (8 / num_channels) * qi.deinterleave;
 
 	for (i = 0; i < num_groups; i++) {
 		struct intel_bw_info *bi = &display->bw.max[i];
@@ -636,8 +641,7 @@ static int tgl_get_bw_info(struct intel_display *display,
 			bi_next = &display->bw.max[i + 1];
 
 			if (clpchgroup < clperchgroup)
-				bi_next->num_planes = (ipqdepth - clpchgroup) /
-						       clpchgroup + 1;
+				bi_next->num_planes = (ipqdepth - clpchgroup) / clpchgroup;
 			else
 				bi_next->num_planes = 0;
 		}
@@ -657,13 +661,11 @@ static int tgl_get_bw_info(struct intel_display *display,
 			 */
 			ct = max_t(int, sp->t_rc, sp->t_rp + sp->t_rcd +
 				   (clpchgroup - 1) * qi.t_bl + sp->t_rdpre);
-			bw = DIV_ROUND_UP(sp->dclk * clpchgroup * 32 * num_channels, ct);
+			bw = sp->dclk * clpchgroup * 32 * num_channels / ct;
 
 			bi->deratedbw[j] = min(maxdebw,
 					       bw * (100 - soc_bw_params->derating) / 100);
-			bi->peakbw[j] = DIV_ROUND_CLOSEST(sp->dclk *
-							  num_channels *
-							  qi.channel_width, 8);
+			bi->peakbw[j] = tgl_peakbw(num_channels, qi.channel_width, sp->dclk);
 
 			drm_dbg_kms(display->drm,
 				    "BW%d / QGV %d: num_planes=%d deratedbw=%u peakbw: %u\n",
@@ -729,19 +731,19 @@ static int xe2_hpd_get_bw_info(struct intel_display *display,
 	int peakbw, maxdebw;
 	int ret, i;
 
-	ret = icl_get_qgv_points(display, dram_info, &qi, true);
+	ret = icl_get_qgv_points(display, dram_info, &qi);
 	if (ret) {
 		drm_dbg_kms(display->drm,
 			    "Failed to get memory subsystem information, ignoring bandwidth limits");
 		return ret;
 	}
 
-	peakbw = num_channels * qi.channel_width / 8 * icl_sagv_max_dclk(&qi);
-	maxdebw = min(soc_bw_params->deprogbwlimit * 1000, peakbw * DEPROGBWPCLIMIT / 10);
+	peakbw = tgl_peakbw(num_channels, qi.channel_width, icl_sagv_max_dclk(&qi));
+	maxdebw = min(soc_bw_params->deprogbwlimit * 1000, peakbw * DEPROGBWPCLIMIT / 100);
 
 	for (i = 0; i < qi.num_points; i++) {
-		const struct intel_qgv_point *point = &qi.points[i];
-		int bw = num_channels * (qi.channel_width / 8) * point->dclk;
+		const struct intel_qgv_point *sp = &qi.points[i];
+		int bw = tgl_peakbw(num_channels, qi.channel_width, sp->dclk);
 
 		display->bw.max[0].deratedbw[i] =
 			min(maxdebw, (100 - soc_bw_params->derating) * bw / 100);
@@ -801,11 +803,6 @@ static unsigned int tgl_max_bw_index(struct intel_display *display,
 				     int num_planes, int qgv_point)
 {
 	int i;
-
-	/*
-	 * Let's return max bw for 0 planes
-	 */
-	num_planes = max(1, num_planes);
 
 	for (i = ARRAY_SIZE(display->bw.max) - 1; i >= 0; i--) {
 		const struct intel_bw_info *bi =
@@ -1154,7 +1151,7 @@ static int mtl_find_qgv_points(struct intel_display *display,
 	}
 
 	/* MTL PM DEMAND expects QGV BW parameter in multiples of 100 mbps */
-	new_bw_state->qgv_point_peakbw = DIV_ROUND_CLOSEST(qgv_peak_bw, 100);
+	new_bw_state->qgv_point_peakbw = qgv_peak_bw / 100;
 
 	return 0;
 }

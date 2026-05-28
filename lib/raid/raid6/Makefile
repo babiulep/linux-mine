@@ -2,8 +2,6 @@
 
 ccflags-y			+= -I $(src)
 
-ccflags-y			+= -I $(src)
-
 ifeq ($(CONFIG_RAID6_PQ_ARCH),y)
 CFLAGS_algos.o			+= -I$(src)/$(SRCARCH)
 endif

@@ -204,12 +204,6 @@ config MTD_TSUNAMI
 	help
 	  Support for the flash chip on Tsunami TIG bus.
 
-config MTD_NETtel
-	tristate "CFI flash device on SnapGear/SecureEdge"
-	depends on X86 && MTD_JEDECPROBE
-	help
-	  Support for flash chips on NETtel/SecureEdge/SnapGear boards.
-
 config MTD_LANTIQ
 	tristate "Lantiq SoC NOR support"
 	depends on LANTIQ
@@ -255,13 +249,6 @@ config MTD_DC21285
 	  21285 bridge used with Intel's StrongARM processors. More info at
 	  <https://www.intel.com/design/bridge/docs/21285_documentation.htm>.
 
-config MTD_IMPA7
-	tristate "JEDEC Flash device mapped on impA7"
-	depends on ARM && MTD_JEDECPROBE
-	help
-	  This enables access to the NOR Flash on the impA7 board of
-	  implementa GmbH. If you have such a board, say 'Y' here.
-
 # This needs CFI or JEDEC, depending on the cards found.
 config MTD_PCI
 	tristate "PCI MTD driver"
@@ -289,12 +276,6 @@ config MTD_PCMCIA_ANONYMOUS
 	  anything about themselves are assumed to be MTD cards.
 
 	  If unsure, say N.
-
-config MTD_UCLINUX
-	bool "Generic uClinux RAM/ROM filesystem support"
-	depends on (MTD_RAM=y || MTD_ROM=y) && (!MMU || COLDFIRE)
-	help
-	  Map driver to support image based filesystems for uClinux.
 
 config MTD_PLATRAM
 	tristate "Map driver for platform device RAM (mtd-ram)"

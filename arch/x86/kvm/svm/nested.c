@@ -30,6 +30,7 @@
 #include "lapic.h"
 #include "svm.h"
 #include "hyperv.h"
+#include "pmu.h"
 
 #define CC KVM_NESTED_VMENTER_CONSISTENCY_CHECK
 
@@ -859,6 +860,7 @@ static void nested_vmcb02_prepare_control(struct vcpu_svm *svm)
 
 	/* Enter Guest-Mode */
 	enter_guest_mode(vcpu);
+	svm_pmu_handle_nested_transition(svm);
 
 	/*
 	 * Filled at exit: exit_code, exit_info_1, exit_info_2, exit_int_info,
@@ -1140,16 +1142,22 @@ int nested_svm_vmrun(struct kvm_vcpu *vcpu)
 	}
 
 	ret = nested_svm_copy_vmcb12_to_cache(vcpu, vmcb12_gpa);
-	if (ret) {
-		if (ret == -EFAULT)
-			return kvm_handle_memory_failure(vcpu, X86EMUL_IO_NEEDED, NULL);
+	if (ret == -EFAULT)
+		return kvm_handle_memory_failure(vcpu, X86EMUL_IO_NEEDED, NULL);
 
-		/* Advance RIP past VMRUN as part of the nested #VMEXIT. */
-		return kvm_skip_emulated_instruction(vcpu);
-	}
+	/*
+	 * At this point, VMRUN is guaranteed to not fault; advance RIP. If
+	 * caching vmcb12 failed for other reasons, return immediately afterward
+	 * as a nested #VMEXIT was already set up.
+	 *
+	 * FIXME: If TF is set on VMRUN should inject a #DB (or handle guest
+	 * debugging) right after #VMEXIT, right now it's just ignored.
+	 */
+	if (!svm_skip_emulated_instruction(vcpu))
+		return 0;
 
-	/* At this point, VMRUN is guaranteed to not fault; advance RIP. */
-	ret = kvm_skip_emulated_instruction(vcpu);
+	if (ret)
+		goto insn_retired;
 
 	/*
 	 * Since vmcb01 is not in use, we can use it to store some of the L1
@@ -1179,7 +1187,13 @@ int nested_svm_vmrun(struct kvm_vcpu *vcpu)
 		nested_svm_vmexit(svm);
 	}
 
-	return ret;
+insn_retired:
+	/*
+	 * A successful VMRUN is counted by the PMU in guest mode, so only
+	 * retire the instruction after potentially entering guest mode.
+	 */
+	kvm_pmu_instruction_retired(vcpu);
+	return 1;
 }
 
 /* Copy state save area fields which are handled by VMRUN */
@@ -1312,6 +1326,8 @@ void nested_svm_vmexit(struct vcpu_svm *svm)
 
 	/* Exit Guest-Mode */
 	leave_guest_mode(vcpu);
+	svm_pmu_handle_nested_transition(svm);
+
 	svm->nested.vmcb12_gpa = 0;
 
 	kvm_warn_on_nested_run_pending(vcpu);
@@ -1522,6 +1538,15 @@ void svm_leave_nested(struct kvm_vcpu *vcpu)
 		svm->nested.vmcb12_gpa = INVALID_GPA;
 
 		leave_guest_mode(vcpu);
+
+		/*
+		 * Force leaving nested is a non-architectural flow so precision
+		 * isn't a priority.  Defer updating the PMU until the next vCPU
+		 * run, potentially tolerating some imprecision to avoid poking
+		 * into PMU state from arbitrary contexts (e.g. to avoid using
+		 * stale state).
+		 */
+		__svm_pmu_handle_nested_transition(svm, true);
 
 		svm_switch_vmcb(svm, &svm->vmcb01);
 

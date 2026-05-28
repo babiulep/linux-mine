@@ -7,7 +7,6 @@
 
 #include <linux/module.h>
 #include <linux/gfp.h>
-#include <linux/slab.h>
 #include <linux/raid/pq.h>
 #include <linux/static_call.h>
 #include <kunit/visibility.h>
@@ -154,6 +153,7 @@ EXPORT_SYMBOL_GPL(raid6_recov_datap);
 
 #define RAID6_TIME_JIFFIES_LG2	4
 #define RAID6_TEST_DISKS	8
+#define RAID6_TEST_DISKS_ORDER	3
 
 static int raid6_choose_gen(void *(*const dptrs)[RAID6_TEST_DISKS],
 		const int disks)
@@ -247,7 +247,7 @@ static int __init raid6_select_algo(void)
 	}
 
 	/* prepare the buffer and fill it circularly with gfmul table */
-	disk_ptr = kvmalloc(PAGE_SIZE * RAID6_TEST_DISKS, GFP_KERNEL);
+	disk_ptr = (char *)__get_free_pages(GFP_KERNEL, RAID6_TEST_DISKS_ORDER);
 	if (!disk_ptr) {
 		pr_err("raid6: Yikes!  No memory available.\n");
 		return -ENOMEM;
@@ -269,7 +269,7 @@ static int __init raid6_select_algo(void)
 	/* select raid gen_syndrome function */
 	error = raid6_choose_gen(&dptrs, disks);
 
-	kvfree(disk_ptr);
+	free_pages((unsigned long)disk_ptr, RAID6_TEST_DISKS_ORDER);
 
 	return error;
 }

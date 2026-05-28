@@ -472,10 +472,5 @@ static inline unsigned int folio_swap_flags(struct folio *folio)
 	return 0;
 }
 
-static inline unsigned int swp_cluster_offset(swp_entry_t entry)
-{
-	return 0;
-}
-
 #endif /* CONFIG_SWAP */
 #endif /* _MM_SWAP_H */

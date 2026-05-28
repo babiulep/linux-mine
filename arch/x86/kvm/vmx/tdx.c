@@ -1178,12 +1178,22 @@ static void __tdx_map_gpa(struct vcpu_tdx *tdx);
 
 static int tdx_complete_vmcall_map_gpa(struct kvm_vcpu *vcpu)
 {
+	u64 hypercall_ret = READ_ONCE(vcpu->run->hypercall.ret);
 	struct vcpu_tdx *tdx = to_tdx(vcpu);
+	long rc;
 
-	if (vcpu->run->hypercall.ret) {
-		tdvmcall_set_return_code(vcpu, TDVMCALL_STATUS_INVALID_OPERAND);
-		tdx->vp_enter_args.r11 = tdx->map_gpa_next;
-		return 1;
+	switch (hypercall_ret) {
+	case 0:
+		break;
+	case EAGAIN:
+		rc = TDVMCALL_STATUS_RETRY;
+		goto propagate_error;
+	case EINVAL:
+		rc = TDVMCALL_STATUS_INVALID_OPERAND;
+		goto propagate_error;
+	default:
+		WARN_ON_ONCE(kvm_is_valid_map_gpa_range_ret(hypercall_ret));
+		return -EINVAL;
 	}
 
 	tdx->map_gpa_next += TDX_MAP_GPA_MAX_LEN;
@@ -1196,13 +1206,17 @@ static int tdx_complete_vmcall_map_gpa(struct kvm_vcpu *vcpu)
 	 * TDVMCALL_MAP_GPA, see comments in tdx_protected_apic_has_interrupt().
 	 */
 	if (kvm_vcpu_has_events(vcpu)) {
-		tdvmcall_set_return_code(vcpu, TDVMCALL_STATUS_RETRY);
-		tdx->vp_enter_args.r11 = tdx->map_gpa_next;
-		return 1;
+		rc = TDVMCALL_STATUS_RETRY;
+		goto propagate_error;
 	}
 
 	__tdx_map_gpa(tdx);
 	return 0;
+
+propagate_error:
+	tdvmcall_set_return_code(vcpu, rc);
+	tdx->vp_enter_args.r11 = tdx->map_gpa_next;
+	return 1;
 }
 
 static void __tdx_map_gpa(struct vcpu_tdx *tdx)
@@ -1649,18 +1663,52 @@ static int tdx_mem_page_aug(struct kvm *kvm, gfn_t gfn,
 	return 0;
 }
 
-static int tdx_sept_set_private_spte(struct kvm *kvm, gfn_t gfn,
-				     enum pg_level level, u64 mirror_spte)
+static struct page *tdx_spte_to_sept_pt(struct kvm *kvm, gfn_t gfn,
+					u64 new_spte, enum pg_level level)
+{
+	struct kvm_mmu_page *sp = spte_to_child_sp(new_spte);
+
+	if (KVM_BUG_ON(!sp->external_spt, kvm) ||
+	    KVM_BUG_ON(sp->role.level + 1 != level, kvm) ||
+	    KVM_BUG_ON(sp->gfn != gfn, kvm))
+		return NULL;
+
+	return virt_to_page(sp->external_spt);
+}
+
+static int tdx_sept_map_nonleaf_spte(struct kvm *kvm, gfn_t gfn,
+				     enum pg_level level, u64 new_spte)
+{
+	gpa_t gpa = gfn_to_gpa(gfn);
+	u64 err, entry, level_state;
+	struct page *sept_pt;
+
+	sept_pt = tdx_spte_to_sept_pt(kvm, gfn, new_spte, level);
+	if (!sept_pt)
+		return -EIO;
+
+	err = tdh_mem_sept_add(&to_kvm_tdx(kvm)->td, gpa, level, sept_pt,
+			       &entry, &level_state);
+	if (unlikely(tdx_operand_busy(err)))
+		return -EBUSY;
+
+	if (TDX_BUG_ON_2(err, TDH_MEM_SEPT_ADD, entry, level_state, kvm))
+		return -EIO;
+
+	return 0;
+}
+
+static int tdx_sept_map_leaf_spte(struct kvm *kvm, gfn_t gfn, enum pg_level level,
+				  u64 new_spte)
 {
 	struct kvm_tdx *kvm_tdx = to_kvm_tdx(kvm);
-	kvm_pfn_t pfn = spte_to_pfn(mirror_spte);
+	kvm_pfn_t pfn = spte_to_pfn(new_spte);
 
 	/* TODO: handle large pages. */
 	if (KVM_BUG_ON(level != PG_LEVEL_4K, kvm))
 		return -EIO;
 
-	WARN_ON_ONCE(!is_shadow_present_pte(mirror_spte) ||
-		     (mirror_spte & VMX_EPT_RWX_MASK) != VMX_EPT_RWX_MASK);
+	WARN_ON_ONCE((new_spte & VMX_EPT_RWX_MASK) != VMX_EPT_RWX_MASK);
 
 	/*
 	 * Ensure pre_fault_allowed is read by kvm_arch_vcpu_pre_fault_memory()
@@ -1678,24 +1726,6 @@ static int tdx_sept_set_private_spte(struct kvm *kvm, gfn_t gfn,
 		return tdx_mem_page_add(kvm, gfn, level, pfn);
 
 	return tdx_mem_page_aug(kvm, gfn, level, pfn);
-}
-
-static int tdx_sept_link_private_spt(struct kvm *kvm, gfn_t gfn,
-				     enum pg_level level, void *private_spt)
-{
-	gpa_t gpa = gfn_to_gpa(gfn);
-	struct page *page = virt_to_page(private_spt);
-	u64 err, entry, level_state;
-
-	err = tdh_mem_sept_add(&to_kvm_tdx(kvm)->td, gpa, level, page, &entry,
-			       &level_state);
-	if (unlikely(tdx_operand_busy(err)))
-		return -EBUSY;
-
-	if (TDX_BUG_ON_2(err, TDH_MEM_SEPT_ADD, entry, level_state, kvm))
-		return -EIO;
-
-	return 0;
 }
 
 /*
@@ -1744,34 +1774,11 @@ static void tdx_track(struct kvm *kvm)
 	kvm_make_all_cpus_request(kvm, KVM_REQ_OUTSIDE_GUEST_MODE);
 }
 
-static int tdx_sept_free_private_spt(struct kvm *kvm, gfn_t gfn,
-				     enum pg_level level, void *private_spt)
+static int tdx_sept_remove_leaf_spte(struct kvm *kvm, gfn_t gfn,
+				     enum pg_level level, u64 old_spte)
 {
 	struct kvm_tdx *kvm_tdx = to_kvm_tdx(kvm);
-
-	/*
-	 * free_external_spt() is only called after hkid is freed when TD is
-	 * tearing down.
-	 * KVM doesn't (yet) zap page table pages in mirror page table while
-	 * TD is active, though guest pages mapped in mirror page table could be
-	 * zapped during TD is active, e.g. for shared <-> private conversion
-	 * and slot move/deletion.
-	 */
-	if (KVM_BUG_ON(is_hkid_assigned(kvm_tdx), kvm))
-		return -EIO;
-
-	/*
-	 * The HKID assigned to this TD was already freed and cache was
-	 * already flushed. We don't have to flush again.
-	 */
-	return tdx_reclaim_page(virt_to_page(private_spt));
-}
-
-static void tdx_sept_remove_private_spte(struct kvm *kvm, gfn_t gfn,
-					 enum pg_level level, u64 mirror_spte)
-{
-	struct kvm_tdx *kvm_tdx = to_kvm_tdx(kvm);
-	kvm_pfn_t pfn = spte_to_pfn(mirror_spte);
+	kvm_pfn_t pfn = spte_to_pfn(old_spte);
 	gpa_t gpa = gfn_to_gpa(gfn);
 	u64 err, entry, level_state;
 
@@ -1783,16 +1790,16 @@ static void tdx_sept_remove_private_spte(struct kvm *kvm, gfn_t gfn,
 	 * there can't be anything populated in the private EPT.
 	 */
 	if (KVM_BUG_ON(!is_hkid_assigned(to_kvm_tdx(kvm)), kvm))
-		return;
+		return -EIO;
 
 	/* TODO: handle large pages. */
 	if (KVM_BUG_ON(level != PG_LEVEL_4K, kvm))
-		return;
+		return -EIO;
 
 	err = tdh_do_no_vcpus(tdh_mem_range_block, kvm, &kvm_tdx->td, gpa,
 			      level, &entry, &level_state);
 	if (TDX_BUG_ON_2(err, TDH_MEM_RANGE_BLOCK, entry, level_state, kvm))
-		return;
+		return -EIO;
 
 	/*
 	 * TDX requires TLB tracking before dropping private page.  Do
@@ -1808,13 +1815,80 @@ static void tdx_sept_remove_private_spte(struct kvm *kvm, gfn_t gfn,
 	err = tdh_do_no_vcpus(tdh_mem_page_remove, kvm, &kvm_tdx->td, gpa,
 			      level, &entry, &level_state);
 	if (TDX_BUG_ON_2(err, TDH_MEM_PAGE_REMOVE, entry, level_state, kvm))
-		return;
+		return -EIO;
 
 	err = tdh_phymem_page_wbinvd_hkid((u16)kvm_tdx->hkid, pfn);
 	if (TDX_BUG_ON(err, TDH_PHYMEM_PAGE_WBINVD, kvm))
-		return;
+		return -EIO;
 
 	tdx_quirk_reset_paddr(PFN_PHYS(pfn), PAGE_SIZE);
+	return 0;
+}
+
+/*
+ * Handle changes for
+ * (1) leaf SPTEs from non-present to present
+ * (2) non-leaf SPTEs from non-present to present
+ * (3) leaf SPTEs from present to non-present
+ *
+ * - (1) and (2) must be under shared mmu_lock. If (1) and (2) are under
+ *   exclusive mmu_lock (currently impossible), contention errors may lead to
+ *   KVM_BUG_ON() in handle_changed_spte(), e.g., due to tdx_mem_page_aug(),
+ *   tdx_mem_page_add(), or tdh_mem_sept_add() contending with tdh_vp_enter()
+ *   due to zero-step mitigation or contending with TDCALLs.
+ * - (3) must be under write mmu_lock. If (3) is under shared mmu_lock
+ *   (currently impossible), warnings will be generated due to
+ *   lockdep_assert_held_write() or TDX_BUG_ON() caused by concurrent BLOCK,
+ *   TRACK, REMOVE.
+ * - Promotion/demotion is not yet supported.
+ */
+static int tdx_sept_set_private_spte(struct kvm *kvm, gfn_t gfn, u64 old_spte,
+				     u64 new_spte, enum pg_level level)
+{
+	lockdep_assert_held(&kvm->mmu_lock);
+
+	if (is_shadow_present_pte(old_spte))
+		return tdx_sept_remove_leaf_spte(kvm, gfn, level, old_spte);
+
+	if (KVM_BUG_ON(!is_shadow_present_pte(new_spte), kvm))
+		return -EIO;
+
+	if (!is_last_spte(new_spte, level))
+		return tdx_sept_map_nonleaf_spte(kvm, gfn, level, new_spte);
+
+	return tdx_sept_map_leaf_spte(kvm, gfn, level, new_spte);
+}
+
+/*
+ * Handle changes for non-leaf SPTEs from present to non-present.
+ * Must be under exclusive mmu_lock and cannot fail.
+ */
+static void tdx_sept_free_private_spt(struct kvm *kvm, struct kvm_mmu_page *sp)
+{
+	/*
+	 * KVM doesn't (yet) zap page table pages in mirror page table while
+	 * TD is active, though guest pages mapped in mirror page table could be
+	 * zapped during TD is active, e.g. for shared <-> private conversion
+	 * and slot move/deletion.
+	 *
+	 * In other words, KVM should only free mirror page tables after the
+	 * TD's hkid is freed, when the TD is being torn down.
+	 *
+	 * If the S-EPT PTE can't be removed for any reason, intentionally leak
+	 * the page to prevent the kernel from accessing the encrypted page.
+	 */
+	if (KVM_BUG_ON(is_hkid_assigned(to_kvm_tdx(kvm)), kvm) ||
+	    tdx_reclaim_page(virt_to_page(sp->external_spt)))
+		goto out;
+
+	/*
+	 * Immediately free the S-EPT page because RCU-time free is unnecessary
+	 * after TDH.PHYMEM.PAGE.RECLAIM ensures there are no outstanding
+	 * readers.
+	 */
+	free_page((unsigned long)sp->external_spt);
+out:
+	sp->external_spt = NULL;
 }
 
 void tdx_deliver_interrupt(struct kvm_lapic *apic, int delivery_mode,
@@ -2783,7 +2857,7 @@ void tdx_flush_tlb_current(struct kvm_vcpu *vcpu)
 void tdx_flush_tlb_all(struct kvm_vcpu *vcpu)
 {
 	/*
-	 * TDX has called tdx_track() in tdx_sept_remove_private_spte() to
+	 * TDX has called tdx_track() in tdx_sept_remove_leaf_spte() to
 	 * ensure that private EPT will be flushed on the next TD enter. No need
 	 * to call tdx_track() here again even when this callback is a result of
 	 * zapping private EPT.
@@ -3413,10 +3487,8 @@ int __init tdx_hardware_setup(void)
 
 	vt_x86_ops.vm_size = max_t(unsigned int, vt_x86_ops.vm_size, sizeof(struct kvm_tdx));
 
-	vt_x86_ops.link_external_spt = tdx_sept_link_private_spt;
 	vt_x86_ops.set_external_spte = tdx_sept_set_private_spte;
 	vt_x86_ops.free_external_spt = tdx_sept_free_private_spt;
-	vt_x86_ops.remove_external_spte = tdx_sept_remove_private_spte;
 	vt_x86_ops.protected_apic_has_interrupt = tdx_protected_apic_has_interrupt;
 	return 0;
 
