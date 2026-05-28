@@ -6030,16 +6030,15 @@ __pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 	if (likely(!sched_class_above(prev->sched_class, &fair_sched_class) &&
 		   rq->nr_running == rq->cfs.h_nr_queued)) {
 
-		p = pick_next_task_fair(rq, prev, rf);
+		p = pick_task_fair(rq, rf);
 		if (unlikely(p == RETRY_TASK))
 			goto restart;
 
 		/* Assume the next prioritized class is idle_sched_class */
-		if (!p) {
+		if (!p)
 			p = pick_task_idle(rq, rf);
-			put_prev_set_next_task(rq, prev, p);
-		}
 
+		put_prev_set_next_task(rq, prev, p);
 		return p;
 	}
 
@@ -6047,20 +6046,12 @@ restart:
 	prev_balance(rq, prev, rf);
 
 	for_each_active_class(class) {
-		if (class->pick_next_task) {
-			p = class->pick_next_task(rq, prev, rf);
-			if (unlikely(p == RETRY_TASK))
-				goto restart;
-			if (p)
-				return p;
-		} else {
-			p = class->pick_task(rq, rf);
-			if (unlikely(p == RETRY_TASK))
-				goto restart;
-			if (p) {
-				put_prev_set_next_task(rq, prev, p);
-				return p;
-			}
+		p = class->pick_task(rq, rf);
+		if (unlikely(p == RETRY_TASK))
+			goto restart;
+		if (p) {
+			put_prev_set_next_task(rq, prev, p);
+			return p;
 		}
 	}
 
@@ -7979,7 +7970,7 @@ static void __sched_dynamic_update(int mode)
 		break;
 	}
 
-	preempt_dynamic_mode = mode;
+	WRITE_ONCE(preempt_dynamic_mode, mode);
 }
 
 void sched_dynamic_update(int mode)
@@ -8020,12 +8011,13 @@ static void __init preempt_dynamic_init(void)
 	}
 }
 
-# define PREEMPT_MODEL_ACCESSOR(mode) \
-	bool preempt_model_##mode(void)						 \
-	{									 \
-		WARN_ON_ONCE(preempt_dynamic_mode == preempt_dynamic_undefined); \
-		return preempt_dynamic_mode == preempt_dynamic_##mode;		 \
-	}									 \
+# define PREEMPT_MODEL_ACCESSOR(mode)					\
+	bool preempt_model_##mode(void)					\
+	{								\
+		int mode = READ_ONCE(preempt_dynamic_mode);		\
+		WARN_ON_ONCE(mode == preempt_dynamic_undefined);	\
+		return mode == preempt_dynamic_##mode;			\
+	}								\
 	EXPORT_SYMBOL_GPL(preempt_model_##mode)
 
 PREEMPT_MODEL_ACCESSOR(none);
@@ -8681,7 +8673,8 @@ int sched_cpu_deactivate(unsigned int cpu)
 	 * Remove CPU from nohz.idle_cpus_mask to prevent participating in
 	 * load balancing when not active
 	 */
-	nohz_balance_exit_idle(rq);
+	scoped_guard (rcu)
+		nohz_balance_exit_idle(rq);
 
 	set_cpu_active(cpu, false);
 
