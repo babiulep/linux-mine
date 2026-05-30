@@ -1444,7 +1444,7 @@ dev_t part_devt(struct gendisk *disk, u8 partno)
 }
 
 struct gendisk *__alloc_disk_node(struct request_queue *q, int node_id,
-		struct lock_class_key *lkclass)
+		struct lock_class_key lkclass[2])
 {
 	struct gendisk *disk;
 
@@ -1506,7 +1506,7 @@ out_free_disk:
 }
 
 struct gendisk *__blk_alloc_disk(struct queue_limits *lim, int node,
-		struct lock_class_key *lkclass)
+		struct lock_class_key lkclass[2])
 {
 	struct queue_limits default_lim = { };
 	struct request_queue *q;

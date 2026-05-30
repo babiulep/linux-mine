@@ -485,8 +485,7 @@ static int csi_async_notifier_complete(struct v4l2_async_notifier *notifier)
 	return 0;
 
 unregister_dev:
-	i--;
-	for (; i >= 0; i--) {
+	while (i--) {
 		media_entity_remove_links(&csi->ctx[i].vdev.entity);
 		video_unregister_device(&csi->ctx[i].vdev);
 	}
@@ -888,9 +887,9 @@ static int ti_csi2rx_get_stream(struct ti_csi2rx_ctx *ctx)
 
 	/* Get the source pad connected to this ctx */
 	pad = media_entity_remote_source_pad_unique(ctx->pad.entity);
-	if (!pad) {
+	if (IS_ERR(pad)) {
 		dev_err(csi->dev, "No pad connected to ctx %d\n", ctx->idx);
-		return -ENODEV;
+		return PTR_ERR(pad);
 	}
 
 	state = v4l2_subdev_get_locked_active_state(&csi->subdev);
@@ -1184,8 +1183,8 @@ static int ti_csi2rx_sd_enable_streams(struct v4l2_subdev *sd,
 	spin_unlock_irqrestore(&dma->lock, flags);
 
 	remote_pad = media_entity_remote_source_pad_unique(&csi->subdev.entity);
-	if (!remote_pad)
-		return -ENODEV;
+	if (IS_ERR(remote_pad))
+		return PTR_ERR(remote_pad);
 	sink_streams = v4l2_subdev_state_xlate_streams(state, pad,
 						       TI_CSI2RX_PAD_SINK,
 						       &streams_mask);
@@ -1219,8 +1218,8 @@ static int ti_csi2rx_sd_disable_streams(struct v4l2_subdev *sd,
 		writel(0, csi->shim + SHIM_CNTL);
 
 	remote_pad = media_entity_remote_source_pad_unique(&csi->subdev.entity);
-	if (!remote_pad)
-		return -ENODEV;
+	if (IS_ERR(remote_pad))
+		return PTR_ERR(remote_pad);
 	sink_streams = v4l2_subdev_state_xlate_streams(state, pad,
 						       TI_CSI2RX_PAD_SINK,
 						       &streams_mask);
@@ -1552,7 +1551,7 @@ static int ti_csi2rx_suspend(struct device *dev)
 	struct ti_csi2rx_ctx *ctx;
 	struct ti_csi2rx_dma *dma;
 	unsigned long flags = 0;
-	int i, ret = 0;
+	int ret = 0;
 
 	/* If device was not in use we can simply suspend */
 	if (pm_runtime_status_suspended(dev))
@@ -1564,7 +1563,7 @@ static int ti_csi2rx_suspend(struct device *dev)
 	 */
 	writel(0, csi->shim + SHIM_CNTL);
 
-	for (i = 0; i < csi->num_ctx; i++) {
+	for (unsigned int i = 0; i < csi->num_ctx; i++) {
 		ctx = &csi->ctx[i];
 		dma = &ctx->dma;
 
@@ -1604,7 +1603,7 @@ static int ti_csi2rx_resume(struct device *dev)
 	struct ti_csi2rx_buffer *buf;
 	unsigned long flags = 0;
 	unsigned int reg;
-	int i, ret = 0;
+	int ret = 0;
 
 	/* If device was not in use, we can simply wakeup */
 	if (pm_runtime_status_suspended(dev))
@@ -1614,7 +1613,7 @@ static int ti_csi2rx_resume(struct device *dev)
 	reg = SHIM_CNTL_PIX_RST;
 	writel(reg, csi->shim + SHIM_CNTL);
 
-	for (i = 0; i < csi->num_ctx; i++) {
+	for (unsigned int i = 0; i < csi->num_ctx; i++) {
 		ctx = &csi->ctx[i];
 		dma = &ctx->dma;
 		spin_lock_irqsave(&dma->lock, flags);
@@ -1755,8 +1754,7 @@ static int ti_csi2rx_probe(struct platform_device *pdev)
 err_notifier:
 	ti_csi2rx_cleanup_notifier(csi);
 err_ctx:
-	i--;
-	for (; i >= 0; i--)
+	while (i--)
 		ti_csi2rx_cleanup_ctx(&csi->ctx[i]);
 	ti_csi2rx_cleanup_v4l2(csi);
 err_dma_chan:
@@ -1768,12 +1766,11 @@ err_dma_chan:
 static void ti_csi2rx_remove(struct platform_device *pdev)
 {
 	struct ti_csi2rx_dev *csi = platform_get_drvdata(pdev);
-	unsigned int i;
 
 	if (!pm_runtime_status_suspended(&pdev->dev))
 		pm_runtime_set_suspended(&pdev->dev);
 
-	for (i = 0; i < csi->num_ctx; i++)
+	for (unsigned int i = 0; i < csi->num_ctx; i++)
 		ti_csi2rx_cleanup_ctx(&csi->ctx[i]);
 
 	ti_csi2rx_cleanup_notifier(csi);

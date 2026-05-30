@@ -5,7 +5,6 @@
  * Copyright 2024 Linaro Ltd.
  */
 
-#include <asm/barrier.h>
 #include <linux/bitfield.h>
 #include <linux/bitmap.h>
 #include <linux/bitops.h>
@@ -300,9 +299,6 @@ static int acpm_get_rx(struct acpm_chan *achan, const struct acpm_xfer *xfer,
 
 		i = (i + 1) % achan->qlen;
 	} while (i != rx_front);
-
-	/* Ensure all payload reads complete before advancing the rear pointer */
-	mb();
 
 	/* We saved all responses, mark RX empty. */
 	writel(rx_front, achan->rx.rear);

@@ -366,15 +366,9 @@ static int vsi_iommu_map_iova(struct vsi_iommu_domain *vsi_domain, u32 *pte_addr
 static void vsi_iommu_flush_tlb(struct iommu_domain *domain)
 {
 	struct vsi_iommu_domain *vsi_domain = to_vsi_domain(domain);
-	struct list_head *pos;
+	struct vsi_iommu *iommu;
 
-	list_for_each(pos, &vsi_domain->iommus) {
-		struct vsi_iommu *iommu;
-
-		iommu = list_entry(pos, struct vsi_iommu, node);
-		if (!iommu)
-			continue;
-
+	list_for_each_entry(iommu, &vsi_domain->iommus, node) {
 		if (pm_runtime_get(iommu->dev) < 0)
 			continue;
 
@@ -714,7 +708,8 @@ static int vsi_iommu_probe(struct platform_device *pdev)
 	pm_runtime_use_autosuspend(dev);
 	pm_runtime_enable(dev);
 
-	err = iommu_device_sysfs_add(&iommu->iommu, dev, NULL, dev_name(dev));
+	err = iommu_device_sysfs_add(&iommu->iommu, dev, NULL, "%s",
+				     dev_name(dev));
 	if (err)
 		goto err_runtime_disable;
 

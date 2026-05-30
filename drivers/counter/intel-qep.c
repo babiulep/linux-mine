@@ -400,9 +400,7 @@ static int intel_qep_probe(struct pci_dev *pci, const struct pci_device_id *id)
 
 	qep->dev = dev;
 	qep->regs = regs;
-	ret = devm_mutex_init(dev, &qep->lock);
-	if (ret)
-		return ret;
+	mutex_init(&qep->lock);
 
 	intel_qep_init(qep);
 	pci_set_drvdata(pci, qep);

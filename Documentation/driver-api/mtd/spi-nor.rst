@@ -211,6 +211,7 @@ section, after the ``---`` marker.
    must adapt `bs` accordingly.
 
    Warning: These tests may hard lock your device! Make sure:
+
    - The device is not hard locked already (#WP strapped to low and
      SR_SRWD bit set)
    - If you have a WPn pin, you may want to set `no-wp` in your DT for

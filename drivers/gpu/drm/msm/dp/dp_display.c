@@ -884,7 +884,7 @@ enum drm_connector_status msm_dp_bridge_detect(struct drm_bridge *bridge,
 end:
 	/*
 	 * If we detected the DPRX, leave the controller on so that it doesn't
-	 * loose the state.
+	 * lose the state.
 	 */
 	if (!priv->plugged) {
 		if (phy_deinit) {

@@ -974,7 +974,7 @@ int bdev_disk_changed(struct gendisk *disk, bool invalidate);
 
 void put_disk(struct gendisk *disk);
 struct gendisk *__blk_alloc_disk(struct queue_limits *lim, int node,
-		struct lock_class_key *lkclass);
+		struct lock_class_key lkclass[2]);
 
 /**
  * blk_alloc_disk - allocate a gendisk structure
