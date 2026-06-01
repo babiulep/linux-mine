@@ -296,7 +296,9 @@ fn init_fields(
             #init
 
             #(#cfgs)*
-            #[allow(unused_variables)]
+            // Allow `non_snake_case` since the same warning is going to be reported for the struct
+            // field.
+            #[allow(unused_variables, non_snake_case)]
             let #ident = #guard.let_binding();
         });
 
@@ -352,7 +354,7 @@ fn make_field_check(
             ::core::ptr::write(slot, #path {
                 #(
                     #(#field_attrs)*
-                    #field_name: ::core::panic!(),
+                    #field_name: loop {},
                 )*
                 #zeroing_trailer
             })

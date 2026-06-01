@@ -390,8 +390,7 @@ struct tegra_pmc_soc {
 	const struct tegra_pmc_regs *regs;
 	void (*init)(struct tegra_pmc *pmc);
 	void (*setup_irq_polarity)(struct tegra_pmc *pmc,
-				   struct device_node *np,
-				   bool invert);
+				   struct device_node *np);
 	void (*set_wake_filters)(struct tegra_pmc *pmc);
 	int (*irq_set_wake)(struct irq_data *data, unsigned int on);
 	int (*irq_set_type)(struct irq_data *data, unsigned int type);
@@ -444,6 +443,7 @@ struct tegra_pmc_soc {
  * @cpu_pwr_good_en: CPU power good signal is enabled
  * @lp0_vec_phys: physical base address of the LP0 warm boot code
  * @lp0_vec_size: size of the LP0 warm boot code
+ * @invert_irq: polarity of the PMU IRQ is inverted
  * @powergates_available: Bitmap of available power gates
  * @powergates_lock: mutex for power gate register access
  * @pctl_dev: pin controller exposed by the PMC
@@ -486,6 +486,8 @@ struct tegra_pmc {
 	bool cpu_pwr_good_en;
 	u32 lp0_vec_phys;
 	u32 lp0_vec_size;
+	bool invert_irq;
+
 	DECLARE_BITMAP(powergates_available, TEGRA_POWERGATE_MAX);
 
 	struct mutex powergates_lock;
@@ -1908,6 +1910,8 @@ static int tegra_pmc_parse_dt(struct tegra_pmc *pmc, struct device_node *np)
 	pmc->lp0_vec_phys = values[0];
 	pmc->lp0_vec_size = values[1];
 
+	pmc->invert_irq = of_property_read_bool(np, "nvidia,invert-interrupt");
+
 	return 0;
 }
 
@@ -2950,16 +2954,23 @@ static bool tegra_pmc_detect_tz_only(struct tegra_pmc *pmc)
 	return false;
 }
 
-static void tegra_pmc_init_common(struct tegra_pmc *pmc)
+static void tegra_pmc_init_common(struct tegra_pmc *pmc, struct device_node *np)
 {
 	unsigned int i;
 
-	pmc->tz_only = tegra_pmc_detect_tz_only(pmc);
+	if (pmc->soc->maybe_tz_only)
+		pmc->tz_only = tegra_pmc_detect_tz_only(pmc);
 
 	/* Create a bitmap of the available and valid partitions */
 	for (i = 0; i < pmc->soc->num_powergates; i++)
 		if (pmc->soc->powergates[i])
 			set_bit(i, pmc->powergates_available);
+
+	/*
+	 * Invert the interrupt polarity if a PMC device tree node exists and
+	 * contains the nvidia,invert-interrupt property.
+	 */
+	pmc->soc->setup_irq_polarity(pmc, np);
 }
 
 static void tegra_pmc_reset_suspend_mode(void *data)
@@ -2990,11 +3001,12 @@ static int tegra_pmc_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	pmc->soc = device_get_match_data(&pdev->dev);
-	tegra_pmc_init_common(pmc);
+	mutex_init(&pmc->powergates_lock);
+	pmc->dev = &pdev->dev;
 
 	err = tegra_pmc_parse_dt(pmc, pdev->dev.of_node);
 	if (err < 0)
-		return err;
+		return dev_err_probe(&pdev->dev, err, "failed to parse DT\n");
 
 	err = devm_add_action_or_reset(&pdev->dev, tegra_pmc_reset_suspend_mode,
 				       pmc);
@@ -3042,6 +3054,8 @@ static int tegra_pmc_probe(struct platform_device *pdev)
 	if (IS_ERR(pmc->clk))
 		return dev_err_probe(&pdev->dev, PTR_ERR(pmc->clk),
 				     "failed to get pclk\n");
+
+	tegra_pmc_init_common(pmc, pdev->dev.of_node);
 
 	/*
 	 * PMC should be last resort for restarting since it soft-resets
@@ -3105,8 +3119,6 @@ static int tegra_pmc_probe(struct platform_device *pdev)
 
 		pmc->rate = clk_get_rate(pmc->clk);
 	}
-
-	pmc->dev = &pdev->dev;
 
 	err = tegra_pmc_init(pmc);
 	if (err < 0) {
@@ -3389,14 +3401,13 @@ static void tegra20_pmc_init(struct tegra_pmc *pmc)
 }
 
 static void tegra20_pmc_setup_irq_polarity(struct tegra_pmc *pmc,
-					   struct device_node *np,
-					   bool invert)
+					   struct device_node *np)
 {
 	u32 value;
 
 	value = tegra_pmc_readl(pmc, PMC_CNTRL);
 
-	if (invert)
+	if (pmc->invert_irq)
 		value |= PMC_CNTRL_INTR_POLARITY;
 	else
 		value &= ~PMC_CNTRL_INTR_POLARITY;
@@ -4002,8 +4013,7 @@ static void tegra186_pmc_init(struct tegra_pmc *pmc)
 }
 
 static void tegra186_pmc_setup_irq_polarity(struct tegra_pmc *pmc,
-					    struct device_node *np,
-					    bool invert)
+					    struct device_node *np)
 {
 	struct resource regs;
 	void __iomem *wake;
@@ -4026,7 +4036,7 @@ static void tegra186_pmc_setup_irq_polarity(struct tegra_pmc *pmc,
 
 	value = readl(wake + pmc->soc->regs->aowake_ctrl);
 
-	if (invert)
+	if (pmc->invert_irq)
 		value |= WAKE_AOWAKE_CTRL_INTR_POLARITY;
 	else
 		value &= ~WAKE_AOWAKE_CTRL_INTR_POLARITY;
@@ -5010,7 +5020,7 @@ static int __init tegra_pmc_early_init(void)
 	const struct of_device_id *match;
 	struct device_node *np;
 	struct resource regs;
-	bool invert;
+	int err;
 
 	mutex_init(&early_pmc->powergates_lock);
 
@@ -5063,15 +5073,14 @@ static int __init tegra_pmc_early_init(void)
 	if (of_device_is_available(np)) {
 		early_pmc->soc = match->data;
 
-		tegra_pmc_init_common(early_pmc);
+		err = tegra_pmc_parse_dt(early_pmc, np);
+		if (err < 0) {
+			pr_err("failed to parse DT: %d\n", err);
+			of_node_put(np);
+			return err;
+		}
 
-		/*
-		 * Invert the interrupt polarity if a PMC device tree node
-		 * exists and contains the nvidia,invert-interrupt property.
-		 */
-		invert = of_property_read_bool(np, "nvidia,invert-interrupt");
-
-		early_pmc->soc->setup_irq_polarity(early_pmc, np, invert);
+		tegra_pmc_init_common(early_pmc, np);
 
 		of_node_put(np);
 	}

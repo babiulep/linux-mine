@@ -3136,7 +3136,7 @@ static int bpf_prog_load(union bpf_attr *attr, bpfptr_t uattr, struct bpf_log_at
 
 	err = security_bpf_prog_load(prog, attr, token, uattr.is_kernel);
 	if (err)
-		goto free_prog_sec;
+		goto free_prog;
 
 	/* run eBPF verifier */
 	err = bpf_check(&prog, attr, uattr, attr_log);
@@ -3182,8 +3182,6 @@ free_used_maps:
 	__bpf_prog_put_noref(prog, prog->aux->real_func_cnt);
 	return err;
 
-free_prog_sec:
-	security_bpf_prog_free(prog);
 free_prog:
 	free_uid(prog->aux->user);
 	if (prog->aux->attach_btf)
@@ -4719,7 +4717,7 @@ static int bpf_prog_detach(const union bpf_attr *attr)
 #define BPF_PROG_QUERY_LAST_FIELD query.revision
 
 static int bpf_prog_query(const union bpf_attr *attr,
-			  union bpf_attr __user *uattr)
+			  union bpf_attr __user *uattr, u32 uattr_size)
 {
 	if (!bpf_net_capable())
 		return -EPERM;
@@ -4758,7 +4756,7 @@ static int bpf_prog_query(const union bpf_attr *attr,
 	case BPF_CGROUP_GETSOCKOPT:
 	case BPF_CGROUP_SETSOCKOPT:
 	case BPF_LSM_CGROUP:
-		return cgroup_bpf_prog_query(attr, uattr);
+		return cgroup_bpf_prog_query(attr, uattr, uattr_size);
 	case BPF_LIRC_MODE2:
 		return lirc_prog_query(attr, uattr);
 	case BPF_FLOW_DISSECTOR:
@@ -6376,7 +6374,7 @@ static int __sys_bpf(enum bpf_cmd cmd, bpfptr_t uattr, unsigned int size,
 		err = bpf_prog_detach(&attr);
 		break;
 	case BPF_PROG_QUERY:
-		err = bpf_prog_query(&attr, uattr.user);
+		err = bpf_prog_query(&attr, uattr.user, size);
 		break;
 	case BPF_PROG_TEST_RUN:
 		err = bpf_prog_test_run(&attr, uattr.user);

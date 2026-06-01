@@ -18,7 +18,10 @@ use crate::{
         Falcon, //
     },
     fb::SysmemFlush,
-    gsp::Gsp,
+    gsp::{
+        self,
+        Gsp, //
+    },
     regs,
 };
 
@@ -243,8 +246,10 @@ impl fmt::Display for Spec {
 }
 
 /// Structure holding the resources required to operate the GPU.
-#[pin_data]
+#[pin_data(PinnedDrop)]
 pub(crate) struct Gpu<'gpu> {
+    /// Device owning the GPU.
+    device: &'gpu device::Device<device::Bound>,
     spec: Spec,
     /// MMIO mapping of PCI BAR 0.
     bar: &'gpu Bar0,
@@ -258,6 +263,8 @@ pub(crate) struct Gpu<'gpu> {
     /// GSP runtime data. Temporarily an empty placeholder.
     #[pin]
     gsp: Gsp,
+    /// GSP unload firmware bundle, if any.
+    unload_bundle: Option<gsp::UnloadBundle>,
 }
 
 impl<'gpu> Gpu<'gpu> {
@@ -266,6 +273,7 @@ impl<'gpu> Gpu<'gpu> {
         bar: &'gpu Bar0,
     ) -> impl PinInit<Self, Error> + 'gpu {
         try_pin_init!(Self {
+            device: pdev.as_ref(),
             spec: Spec::new(pdev.as_ref(), bar).inspect(|spec| {
                 dev_info!(pdev,"NVIDIA ({})\n", spec);
             })?,
@@ -290,7 +298,27 @@ impl<'gpu> Gpu<'gpu> {
 
             gsp <- Gsp::new(pdev),
 
-            _: { gsp.boot(pdev, bar, spec.chipset, gsp_falcon, sec2_falcon)? },
+            // This member must be initialized last, so the `UnloadBundle` can never be dropped from
+            // outside of the constructed `Gpu`, ensuring that the unload sequence is properly run
+            // in case of failure.
+            unload_bundle: gsp.boot(pdev, bar, spec.chipset, gsp_falcon, sec2_falcon)?,
         })
+    }
+}
+
+#[pinned_drop]
+impl PinnedDrop for Gpu<'_> {
+    fn drop(self: Pin<&mut Self>) {
+        let this = self.project();
+        let device = *this.device;
+        let bar = *this.bar;
+        let bundle = this.unload_bundle.take();
+
+        let _ = this
+            .gsp
+            .as_ref()
+            .get_ref()
+            .unload(device, bar, &*this.gsp_falcon, &*this.sec2_falcon, bundle)
+            .inspect_err(|e| dev_err!(device, "failed to unload GSP: {:?}\n", e));
     }
 }

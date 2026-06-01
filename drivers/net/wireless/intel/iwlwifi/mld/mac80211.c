@@ -291,8 +291,13 @@ static void iwl_mld_hw_set_nan(struct iwl_mld *mld)
 		  NAN_DEV_CAPA_NUM_RX_ANT_POS) &
 		 NAN_DEV_CAPA_NUM_RX_ANT_MASK);
 
-	/* Maximal channel switch time is 4 msec */
-	hw->wiphy->nan_capa.max_channel_switch_time = 4 * USEC_PER_MSEC;
+	/* Maximal channel switch time - use FW TLV value if available */
+	if (mld->fw->ucode_capa.nan_max_chan_switch_time)
+		hw->wiphy->nan_capa.max_channel_switch_time =
+			mld->fw->ucode_capa.nan_max_chan_switch_time;
+	else
+		hw->wiphy->nan_capa.max_channel_switch_time =
+			4 * USEC_PER_MSEC;
 
 	hw->wiphy->nan_capa.phy.ht = mld->nvm_data->nan_phy_capa.ht;
 	hw->wiphy->nan_capa.phy.vht = mld->nvm_data->nan_phy_capa.vht;
@@ -1204,6 +1209,13 @@ int iwl_mld_assign_vif_chanctx(struct ieee80211_hw *hw,
 	/* Now activate the link */
 	if (iwl_mld_can_activate_link(mld, vif, link)) {
 		iwl_mld_tlc_update_phy(mld, vif, link);
+
+		/* FW requires AP_TX_POWER_CONSTRAINTS_CMD before link
+		 * activation for AP and after link activation for STA,
+		 * for an unknown reason.
+		 */
+		if (vif->type == NL80211_IFTYPE_AP)
+			iwl_mld_send_ap_tx_power_constraint_cmd(mld, vif, link);
 
 		ret = iwl_mld_activate_link(mld, link);
 		if (ret)

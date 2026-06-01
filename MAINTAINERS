@@ -3505,6 +3505,7 @@ K:	(?:\b|_)ROCKCHIP(?:\b|_)
 
 ARM/SAMSUNG S3C, S5P AND EXYNOS ARM ARCHITECTURES
 M:	Krzysztof Kozlowski <krzk@kernel.org>
+M:	Peter Griffin <peter.griffin@linaro.org>
 R:	Alim Akhtar <alim.akhtar@samsung.com>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 L:	linux-samsung-soc@vger.kernel.org
@@ -4870,13 +4871,6 @@ S:	Supported
 F:	arch/x86/net/
 X:	arch/x86/net/bpf_jit_comp32.c
 
-BPF [BTF]
-M:	Martin KaFai Lau <martin.lau@linux.dev>
-L:	bpf@vger.kernel.org
-S:	Maintained
-F:	include/linux/btf*
-F:	kernel/bpf/btf.c
-
 BPF [CORE]
 M:	Alexei Starovoitov <ast@kernel.org>
 M:	Daniel Borkmann <daniel@iogearbox.net>
@@ -5009,18 +5003,11 @@ F:	tools/testing/selftests/bpf/prog_tests/tc_netkit.c
 F:	tools/testing/selftests/drivers/net/hw/nk_qlease.py
 F:	tools/testing/selftests/net/nk_qlease.py
 
-BPF [NETWORKING] (struct_ops, reuseport)
-M:	Martin KaFai Lau <martin.lau@linux.dev>
-L:	bpf@vger.kernel.org
-L:	netdev@vger.kernel.org
-S:	Maintained
-F:	kernel/bpf/bpf_struct*
-
 BPF [NETWORKING] (tcx & tc BPF, sock_addr)
-M:	Martin KaFai Lau <martin.lau@linux.dev>
 M:	Daniel Borkmann <daniel@iogearbox.net>
 R:	John Fastabend <john.fastabend@gmail.com>
 R:	Stanislav Fomichev <sdf@fomichev.me>
+R:	Martin KaFai Lau <martin.lau@linux.dev>
 L:	bpf@vger.kernel.org
 L:	netdev@vger.kernel.org
 S:	Maintained
@@ -5054,14 +5041,6 @@ M:	Eduard Zingerman <eddyz87@gmail.com>
 L:	bpf@vger.kernel.org
 S:	Maintained
 F:	tools/testing/selftests/bpf/
-
-BPF [STORAGE & CGROUPS]
-M:	Martin KaFai Lau <martin.lau@linux.dev>
-L:	bpf@vger.kernel.org
-S:	Maintained
-F:	kernel/bpf/*storage.c
-F:	kernel/bpf/bpf_lru*
-F:	kernel/bpf/cgroup.c
 
 BPF [TOOLING] (bpftool)
 M:	Quentin Monnet <qmo@kernel.org>
@@ -24062,6 +24041,7 @@ SAMSUNG SOC CLOCK DRIVERS
 M:	Krzysztof Kozlowski <krzk@kernel.org>
 M:	Sylwester Nawrocki <s.nawrocki@samsung.com>
 M:	Chanwoo Choi <cw00.choi@samsung.com>
+M:	Peter Griffin <peter.griffin@linaro.org>
 R:	Alim Akhtar <alim.akhtar@samsung.com>
 L:	linux-samsung-soc@vger.kernel.org
 S:	Maintained
