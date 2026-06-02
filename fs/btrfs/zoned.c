@@ -131,10 +131,10 @@ static int sb_write_pointer(struct block_device *bdev, struct blk_zone *zones,
 			u64 bytenr = ALIGN_DOWN(zone_end, BTRFS_SUPER_INFO_SIZE) -
 						BTRFS_SUPER_INFO_SIZE;
 
-			filemap_invalidate_lock(mapping);
+			filemap_invalidate_lock_shared(mapping);
 			page[i] = read_cache_page_gfp(mapping,
 					bytenr >> PAGE_SHIFT, GFP_NOFS);
-			filemap_invalidate_unlock(mapping);
+			filemap_invalidate_unlock_shared(mapping);
 			if (IS_ERR(page[i])) {
 				if (i == 1)
 					btrfs_release_disk_super(super[0]);
@@ -1327,7 +1327,7 @@ static int btrfs_load_zone_info(struct btrfs_fs_info *fs_info, int zone_idx,
 {
 	struct btrfs_dev_replace *dev_replace = &fs_info->dev_replace;
 	struct btrfs_device *device;
-	int dev_replace_is_ongoing = 0;
+	bool dev_replace_is_ongoing = false;
 	unsigned int nofs_flag;
 	struct blk_zone zone;
 	int ret;

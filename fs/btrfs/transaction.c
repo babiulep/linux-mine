@@ -456,12 +456,12 @@ static int record_root_in_trans(struct btrfs_trans_handle *trans,
 		 *
 		 * When this is zero, they can trust root->last_trans and fly
 		 * through btrfs_record_root_in_trans without having to take the
-		 * lock.  smp_wmb() makes sure that all the writes above are
-		 * done before we pop in the zero below
+		 * lock. smp_wmb() makes sure readers that see the last_trans
+		 * update also see IN_TRANS_SETUP set, and clear_bit_unlock()
+		 * publishes the relocation setup before we clear the bit.
 		 */
 		ret = btrfs_init_reloc_root(trans, root);
-		smp_mb__before_atomic();
-		clear_bit(BTRFS_ROOT_IN_TRANS_SETUP, &root->state);
+		clear_bit_unlock(BTRFS_ROOT_IN_TRANS_SETUP, &root->state);
 	}
 	return ret;
 }
@@ -499,10 +499,12 @@ int btrfs_record_root_in_trans(struct btrfs_trans_handle *trans,
 	 * see record_root_in_trans for comments about IN_TRANS_SETUP usage
 	 * and barriers
 	 */
-	smp_rmb();
-	if (btrfs_get_root_last_trans(root) == trans->transid &&
-	    !test_bit(BTRFS_ROOT_IN_TRANS_SETUP, &root->state))
-		return 0;
+	if (btrfs_get_root_last_trans(root) == trans->transid) {
+		/* Order the last_trans load before testing IN_TRANS_SETUP. */
+		smp_rmb();
+		if (!test_bit_acquire(BTRFS_ROOT_IN_TRANS_SETUP, &root->state))
+			return 0;
+	}
 
 	mutex_lock(&fs_info->reloc_mutex);
 	ret = record_root_in_trans(trans, root, false);
@@ -631,7 +633,7 @@ start_transaction(struct btrfs_root *root, unsigned int num_items,
 	 * the appropriate flushing if need be.
 	 */
 	if (num_items && root != fs_info->chunk_root) {
-		qgroup_reserved = num_items * fs_info->nodesize;
+		qgroup_reserved = (num_items << fs_info->nodesize_bits);
 		/*
 		 * Use prealloc for now, as there might be a currently running
 		 * transaction that could free this reserved space prematurely
@@ -2267,7 +2269,7 @@ int btrfs_commit_transaction(struct btrfs_trans_handle *trans)
 	btrfs_create_pending_block_groups(trans);
 
 	if (!test_bit(BTRFS_TRANS_DIRTY_BG_RUN, &cur_trans->flags)) {
-		int run_it = 0;
+		bool run_it = false;
 
 		/* this mutex is also taken before trying to set
 		 * block groups readonly.  We need to make sure
@@ -2285,7 +2287,7 @@ int btrfs_commit_transaction(struct btrfs_trans_handle *trans)
 		mutex_lock(&fs_info->ro_block_group_mutex);
 		if (!test_and_set_bit(BTRFS_TRANS_DIRTY_BG_RUN,
 				      &cur_trans->flags))
-			run_it = 1;
+			run_it = true;
 		mutex_unlock(&fs_info->ro_block_group_mutex);
 
 		if (run_it) {

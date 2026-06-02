@@ -635,11 +635,10 @@ static __always_inline bool rseq_exit_user_update(struct pt_regs *regs, struct t
 		return true;
 	}
 
-	int cpu = task_cpu(t);
 	struct rseq_ids ids = {
-		.cpu_id	 = cpu,
+		.cpu_id	 = task_cpu(t),
 		.mm_cid	 = task_mm_cid(t),
-		.node_id = cpu_to_node(cpu),
+		.node_id = cpu_to_node(ids.cpu_id),
 	};
 
 	return rseq_update_usr(t, regs, &ids);

@@ -259,14 +259,13 @@ static int iris_probe(struct platform_device *pdev)
 		return PTR_ERR(core->ubwc_cfg);
 
 	ret = devm_request_threaded_irq(core->dev, core->irq, iris_hfi_isr,
-					iris_hfi_isr_handler, IRQF_TRIGGER_HIGH, "iris", core);
+					iris_hfi_isr_handler,
+					IRQF_TRIGGER_HIGH | IRQF_NO_AUTOEN,
+					"iris", core);
 	if (ret)
 		return ret;
 
-	disable_irq_nosync(core->irq);
-
 	iris_init_ops(core);
-	core->iris_firmware_data->init_hfi_ops(core);
 
 	ret = iris_init_resources(core);
 	if (ret)
@@ -384,6 +383,10 @@ static const struct of_device_id iris_dt_match[] = {
 	{
 		.compatible = "qcom,sm8750-iris",
 		.data = &sm8750_data,
+	},
+	{
+		.compatible = "qcom,x1p42100-iris",
+		.data = &x1p42100_data,
 	},
 	{ },
 };

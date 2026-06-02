@@ -19,8 +19,6 @@
 #include <linux/userfaultfd_k.h>
 #include <linux/mmu_notifier.h>
 #include <linux/hugetlb.h>
-#include <linux/file.h>
-#include <linux/cleanup.h>
 #include <linux/list.h>
 #include <linux/sched/mm.h>
 #include <linux/mm_inline.h>
@@ -32,6 +30,8 @@
 #include <linux/syscalls.h>
 #include <linux/miscdevice.h>
 #include <linux/uio.h>
+#include <linux/file.h>
+#include <linux/cleanup.h>
 #include <asm/tlbflush.h>
 #include <asm/tlb.h>
 #include "internal.h"

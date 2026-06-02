@@ -3623,7 +3623,7 @@ int btrfs_orphan_cleanup(struct btrfs_root *root)
 
 		if (!inode && root == fs_info->tree_root) {
 			struct btrfs_root *dead_root;
-			int is_dead_root = 0;
+			bool is_dead_root = false;
 
 			/*
 			 * This is an orphan in the tree root. Currently these
@@ -3645,7 +3645,7 @@ int btrfs_orphan_cleanup(struct btrfs_root *root)
 			dead_root = radix_tree_lookup(&fs_info->fs_roots_radix,
 							 (unsigned long)found_key.objectid);
 			if (dead_root && btrfs_root_refs(&dead_root->root_item) == 0)
-				is_dead_root = 1;
+				is_dead_root = true;
 			spin_unlock(&fs_info->fs_roots_radix_lock);
 
 			if (is_dead_root) {
@@ -9496,7 +9496,7 @@ ssize_t btrfs_encoded_read_regular(struct kiocb *iocb, struct iov_iter *iter,
 	pages = kzalloc_objs(struct page *, nr_pages, GFP_NOFS);
 	if (!pages)
 		return -ENOMEM;
-	ret = btrfs_alloc_page_array(nr_pages, pages, false);
+	ret = btrfs_alloc_page_array(nr_pages, pages, GFP_NOFS);
 	if (ret) {
 		ret = -ENOMEM;
 		goto out;

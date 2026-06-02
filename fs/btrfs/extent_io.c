@@ -380,7 +380,7 @@ noinline_for_stack bool find_lock_delalloc_range(struct inode *inode,
 	bool found;
 	struct extent_state *cached_state = NULL;
 	int ret;
-	int loops = 0;
+	bool loops = false;
 
 	/* Caller should pass a valid @end to indicate the search range end */
 	ASSERT(orig_end > orig_start);
@@ -437,7 +437,7 @@ again:
 		cached_state = NULL;
 		if (!loops) {
 			max_bytes = fs_info->sectorsize;
-			loops = 1;
+			loops = true;
 			goto again;
 		} else {
 			return false;
@@ -617,24 +617,24 @@ static void end_bbio_data_read(struct btrfs_bio *bbio)
 }
 
 /*
- * Populate every free slot in a provided array with folios using GFP_NOFS.
+ * Populate every free slot in a provided array with folios.
  *
- * @nr_folios:   number of folios to allocate
- * @order:	 the order of the folios to be allocated
- * @folio_array: the array to fill with folios; any existing non-NULL entries in
- *		 the array will be skipped
+ * @nr_folios:    number of folios to allocate
+ * @order:	  folio order
+ * @folio_array:  array to fill with folios; non-NULL entries are skipped
+ * @gfp:          GFP flags for the allocation
  *
  * Return: 0        if all folios were able to be allocated;
  *         -ENOMEM  otherwise, the partially allocated folios would be freed and
  *                  the array slots zeroed
  */
 int btrfs_alloc_folio_array(unsigned int nr_folios, unsigned int order,
-			    struct folio **folio_array)
+			    struct folio **folio_array, gfp_t gfp)
 {
 	for (int i = 0; i < nr_folios; i++) {
 		if (folio_array[i])
 			continue;
-		folio_array[i] = folio_alloc(GFP_NOFS, order);
+		folio_array[i] = folio_alloc(gfp, order);
 		if (!folio_array[i])
 			goto error;
 	}
@@ -649,21 +649,18 @@ error:
 }
 
 /*
- * Populate every free slot in a provided array with pages, using GFP_NOFS.
+ * Populate every free slot in a provided array with pages.
  *
- * @nr_pages:   number of pages to allocate
- * @page_array: the array to fill with pages; any existing non-null entries in
- *		the array will be skipped
- * @nofail:	whether using __GFP_NOFAIL flag
+ * @nr_pages:    number of pages to allocate
+ * @page_array:  array to fill; non-NULL entries are skipped
+ * @gfp:         GFP flags for the allocation
  *
  * Return: 0        if all pages were able to be allocated;
  *         -ENOMEM  otherwise, the partially allocated pages would be freed and
  *                  the array slots zeroed
  */
-int btrfs_alloc_page_array(unsigned int nr_pages, struct page **page_array,
-			   bool nofail)
+int btrfs_alloc_page_array(unsigned int nr_pages, struct page **page_array, gfp_t gfp)
 {
-	const gfp_t gfp = nofail ? (GFP_NOFS | __GFP_NOFAIL) : GFP_NOFS;
 	unsigned int allocated;
 
 	for (allocated = 0; allocated < nr_pages;) {
@@ -687,13 +684,13 @@ int btrfs_alloc_page_array(unsigned int nr_pages, struct page **page_array,
  *
  * For now, the folios populated are always in order 0 (aka, single page).
  */
-static int alloc_eb_folio_array(struct extent_buffer *eb, bool nofail)
+static int alloc_eb_folio_array(struct extent_buffer *eb, gfp_t gfp)
 {
 	struct page *page_array[INLINE_EXTENT_BUFFER_PAGES] = { 0 };
 	int num_pages = num_extent_pages(eb);
 	int ret;
 
-	ret = btrfs_alloc_page_array(num_pages, page_array, nofail);
+	ret = btrfs_alloc_page_array(num_pages, page_array, gfp);
 	if (ret < 0)
 		return ret;
 
@@ -2362,13 +2359,13 @@ int btree_writepages(struct address_space *mapping, struct writeback_control *wb
 	struct btrfs_eb_write_context ctx = { .wbc = wbc };
 	struct btrfs_fs_info *fs_info = inode_to_fs_info(mapping->host);
 	int ret = 0;
-	int done = 0;
+	bool done = false;
 	int nr_to_write_done = 0;
 	struct eb_batch batch;
 	unsigned int nr_ebs;
 	unsigned long index;
 	unsigned long end;
-	int scanned = 0;
+	bool scanned = false;
 	xa_mark_t tag;
 
 	eb_batch_init(&batch);
@@ -2385,7 +2382,7 @@ int btree_writepages(struct address_space *mapping, struct writeback_control *wb
 		index = (wbc->range_start >> fs_info->nodesize_bits);
 		end = (wbc->range_end >> fs_info->nodesize_bits);
 
-		scanned = 1;
+		scanned = true;
 	}
 	if (wbc->sync_mode == WB_SYNC_ALL)
 		tag = PAGECACHE_TAG_TOWRITE;
@@ -2408,7 +2405,7 @@ retry:
 					ret = 0;
 
 				if (ret) {
-					done = 1;
+					done = true;
 					break;
 				}
 				continue;
@@ -2434,7 +2431,7 @@ retry:
 		 * We hit the last page and there is more work to be done: wrap
 		 * back to the start of the file
 		 */
-		scanned = 1;
+		scanned = true;
 		index = 0;
 		goto retry;
 	}
@@ -2474,15 +2471,15 @@ static int extent_write_cache_pages(struct address_space *mapping,
 	struct writeback_control *wbc = bio_ctrl->wbc;
 	struct inode *inode = mapping->host;
 	int ret = 0;
-	int done = 0;
+	bool done = false;
 	int nr_to_write_done = 0;
 	struct folio_batch fbatch;
 	unsigned int nr_folios;
 	pgoff_t index;
 	pgoff_t end;		/* Inclusive */
 	pgoff_t done_index;
-	int range_whole = 0;
-	int scanned = 0;
+	bool range_whole = false;
+	bool scanned = false;
 	xa_mark_t tag;
 
 	/*
@@ -2510,8 +2507,8 @@ static int extent_write_cache_pages(struct address_space *mapping,
 		index = wbc->range_start >> PAGE_SHIFT;
 		end = wbc->range_end >> PAGE_SHIFT;
 		if (wbc->range_start == 0 && wbc->range_end == LLONG_MAX)
-			range_whole = 1;
-		scanned = 1;
+			range_whole = true;
+		scanned = true;
 	}
 
 	/*
@@ -2595,7 +2592,7 @@ retry:
 
 			ret = extent_writepage(folio, bio_ctrl);
 			if (ret < 0) {
-				done = 1;
+				done = true;
 				break;
 			}
 
@@ -2615,7 +2612,7 @@ retry:
 		 * We hit the last page and there is more work to be done: wrap
 		 * back to the start of the file
 		 */
-		scanned = 1;
+		scanned = true;
 		index = 0;
 
 		/*
@@ -3103,7 +3100,7 @@ struct extent_buffer *btrfs_clone_extent_buffer(const struct extent_buffer *src)
 	 */
 	set_bit(EXTENT_BUFFER_UNMAPPED, &new->bflags);
 
-	ret = alloc_eb_folio_array(new, false);
+	ret = alloc_eb_folio_array(new, GFP_NOFS);
 	if (ret)
 		goto release_eb;
 
@@ -3144,7 +3141,7 @@ struct extent_buffer *alloc_dummy_extent_buffer(struct btrfs_fs_info *fs_info,
 	if (!eb)
 		return NULL;
 
-	ret = alloc_eb_folio_array(eb, false);
+	ret = alloc_eb_folio_array(eb, GFP_NOFS);
 	if (ret)
 		goto release_eb;
 
@@ -3447,7 +3444,7 @@ struct extent_buffer *alloc_extent_buffer(struct btrfs_fs_info *fs_info,
 	struct btrfs_folio_state *prealloc = NULL;
 	u64 lockdep_owner = owner_root;
 	bool page_contig = true;
-	int uptodate = 1;
+	bool uptodate = true;
 	int ret;
 
 	if (check_eb_alignment(fs_info, start))
@@ -3497,8 +3494,12 @@ struct extent_buffer *alloc_extent_buffer(struct btrfs_fs_info *fs_info,
 	}
 
 reallocate:
-	/* Allocate all pages first. */
-	ret = alloc_eb_folio_array(eb, true);
+	/*
+	 * Allocate all pages first. These will be attached to btree_inode->i_mapping
+	 * below (added to LRU, served by btree_migrate_folio), so request
+	 * __GFP_MOVABLE so the page allocator places them in MOVABLE pageblocks.
+	 */
+	ret = alloc_eb_folio_array(eb, GFP_NOFS | __GFP_NOFAIL | __GFP_MOVABLE);
 	if (ret < 0) {
 		btrfs_free_folio_state(prealloc);
 		goto out;
@@ -3557,7 +3558,7 @@ reallocate:
 			page_contig = false;
 
 		if (!btrfs_meta_folio_test_uptodate(folio, eb))
-			uptodate = 0;
+			uptodate = false;
 
 		/*
 		 * We can't unlock the pages just yet since the extent buffer

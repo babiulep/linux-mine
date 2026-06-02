@@ -3346,14 +3346,6 @@ static int mana_dealloc_queues(struct net_device *ndev)
 				tsleep <<= 1;
 			}
 			if (atomic_read(&txq->pending_sends)) {
-				err = pcie_flr(to_pci_dev(gd->gdma_context->dev));
-				if (err) {
-					netdev_err(ndev, "flr failed %d with %d pkts pending in txq %u\n",
-						   err, atomic_read(&txq->pending_sends),
-						   txq->gdma_txq_id);
-				}
-			}
-			if (atomic_read(&txq->pending_sends)) {
 				err =
 				    pcie_flr(to_pci_dev(gd->gdma_context->dev));
 				if (err) {

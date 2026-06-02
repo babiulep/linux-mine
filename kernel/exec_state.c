@@ -91,7 +91,7 @@ void task_exec_state_set_dumpable(enum task_dumpable value)
 {
 	struct task_exec_state *exec_state;
 
-	if (WARN_ON(value > TASK_DUMPABLE_ROOT))
+	if (WARN_ON_ONCE(value > TASK_DUMPABLE_ROOT))
 		value = TASK_DUMPABLE_OFF;
 
 	exec_state = rcu_dereference_protected(current->exec_state, true);

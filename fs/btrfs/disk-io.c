@@ -215,7 +215,7 @@ int btrfs_read_extent_buffer(struct extent_buffer *eb,
 			     const struct btrfs_tree_parent_check *check)
 {
 	struct btrfs_fs_info *fs_info = eb->fs_info;
-	int failed = 0;
+	bool failed = false;
 	int ret;
 	int num_copies = 0;
 	int mirror_num = 0;
@@ -234,7 +234,7 @@ int btrfs_read_extent_buffer(struct extent_buffer *eb,
 			break;
 
 		if (!failed_mirror) {
-			failed = 1;
+			failed = true;
 			failed_mirror = eb->read_mirror;
 		}
 
@@ -563,7 +563,7 @@ static bool btree_dirty_folio(struct address_space *mapping,
 			continue;
 		}
 		spin_unlock_irqrestore(&subpage->lock, flags);
-		cur = page_start + cur_bit * fs_info->sectorsize;
+		cur = page_start + (cur_bit << fs_info->sectorsize_bits);
 
 		eb = find_extent_buffer(fs_info, cur);
 		ASSERT(eb);

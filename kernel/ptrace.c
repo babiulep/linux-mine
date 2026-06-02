@@ -53,11 +53,9 @@ bool ptracer_access_allowed(struct task_struct *tsk)
 {
 	const struct task_exec_state *es;
 
-	if (!tsk->ptrace)
-		return false;
-	if (current != tsk->parent)
-		return false;
 	guard(rcu)();
+	if (ptrace_parent(tsk) != current)
+		return false;
 	es = task_exec_state_rcu(tsk);
 	return READ_ONCE(es->dumpable) == TASK_DUMPABLE_OWNER ||
 	       ptracer_capable(tsk, es->user_ns);
