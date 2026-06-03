@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
 
-use kernel::prelude::*;
+use core::ops::Range;
+
+use kernel::{
+    dma::DmaMask,
+    prelude::*, //
+};
 
 use crate::{
     driver::Bar0,
@@ -16,6 +21,12 @@ mod tu102;
 pub(crate) trait GpuHal {
     /// Waits for GFW_BOOT completion if required by this hardware family.
     fn wait_gfw_boot_completion(&self, bar: &Bar0) -> Result;
+
+    /// Returns the DMA mask for the current architecture.
+    fn dma_mask(&self) -> DmaMask;
+
+    /// Returns the address range of the PCI config mirror space.
+    fn pci_config_mirror_range(&self) -> Range<u32>;
 }
 
 pub(super) fn gpu_hal(chipset: Chipset) -> &'static dyn GpuHal {

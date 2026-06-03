@@ -357,7 +357,7 @@ static int mmap_mem_prepare(struct vm_area_desc *desc)
 
 	/* Remap-pfn-range will mark the range with the I/O flag. */
 	mmap_action_remap_full(desc, desc->pgoff);
-	desc->action.error_filter = -EAGAIN;
+	desc->action.error_override = -EAGAIN;
 
 	return 0;
 }

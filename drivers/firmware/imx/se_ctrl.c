@@ -56,7 +56,7 @@ struct se_var_info {
 /* contains fixed information */
 struct se_soc_info {
 	const u16 soc_id;
-	const bool soc_register;
+	const char *soc_name;
 	const struct se_fw_img_name se_fw_img_nm;
 };
 
@@ -72,7 +72,7 @@ static struct se_var_info var_se_info;
 
 static struct se_soc_info se_imx8ulp_info = {
 	.soc_id = SOC_ID_OF_IMX8ULP,
-	.soc_register = true,
+	.soc_name = "i.MX8ULP",
 	.se_fw_img_nm = {
 		.prim_fw_nm_in_rfs = IMX_ELE_FW_DIR
 			"mx8ulpa2-ahab-container.img",
@@ -163,7 +163,7 @@ static int get_se_soc_info(struct se_if_priv *priv, const struct se_soc_info *se
 	var_se_info.soc_rev = s_info->d_info.soc_rev;
 	load_fw->imem.state = s_info->d_addn_info.imem_state;
 
-	if (!se_info->soc_register)
+	if (!se_info->soc_name)
 		return 0;
 
 	attr = devm_kzalloc(priv->dev, sizeof(*attr), GFP_KERNEL);
@@ -181,14 +181,7 @@ static int get_se_soc_info(struct se_if_priv *priv, const struct se_soc_info *se
 						FIELD_GET(DEV_GETINFO_MAJ_VER_MASK,
 							  var_se_info.soc_rev));
 
-	switch (se_info->soc_id) {
-	case SOC_ID_OF_IMX8ULP:
-		attr->soc_id = "i.MX8ULP";
-		break;
-	case SOC_ID_OF_IMX93:
-		attr->soc_id = "i.MX93";
-		break;
-	}
+	attr->soc_id = se_info->soc_name;
 
 	err = of_property_read_string(of_root, "model", &attr->machine);
 	if (err)
@@ -486,6 +479,8 @@ static int init_device_context(struct se_if_priv *priv, int ch_id,
 		kfree(dev_ctx->devname);
 		kfree(dev_ctx);
 		*new_dev_ctx = NULL;
+
+		return ret;
 	}
 
 	list_add_tail(&dev_ctx->link, &priv->dev_ctx_list);
@@ -532,24 +527,17 @@ static int se_ioctl_cmd_snd_rcv_rsp_handler(struct se_if_device_ctx *dev_ctx,
 		return -ENOSPC;
 	}
 
-	err = se_chk_tx_msg_hdr(priv, (struct se_msg_hdr *)cmd_snd_rcv_rsp_info.tx_buf);
-	if (err) {
-		se_ioctl_cmd_snd_rcv_cleanup(dev_ctx, uarg, &cmd_snd_rcv_rsp_info);
-		return err;
-	}
-
-	struct se_api_msg *rx_msg __free(kfree) =
-		kzalloc(cmd_snd_rcv_rsp_info.rx_buf_sz, GFP_KERNEL);
-	if (!rx_msg) {
-		se_ioctl_cmd_snd_rcv_cleanup(dev_ctx, uarg, &cmd_snd_rcv_rsp_info);
-		return -ENOMEM;
-	}
-
 	struct se_api_msg *tx_msg __free(kfree) =
 		memdup_user(cmd_snd_rcv_rsp_info.tx_buf,
 			    cmd_snd_rcv_rsp_info.tx_buf_sz);
 	if (IS_ERR(tx_msg)) {
 		err = PTR_ERR(tx_msg);
+		se_ioctl_cmd_snd_rcv_cleanup(dev_ctx, uarg, &cmd_snd_rcv_rsp_info);
+		return err;
+	}
+
+	err = se_chk_tx_msg_hdr(priv, &tx_msg->header);
+	if (err) {
 		se_ioctl_cmd_snd_rcv_cleanup(dev_ctx, uarg, &cmd_snd_rcv_rsp_info);
 		return err;
 	}
@@ -569,6 +557,13 @@ static int se_ioctl_cmd_snd_rcv_rsp_handler(struct se_if_device_ctx *dev_ctx,
 		}
 	}
 	set_se_rcv_msg_timeout(priv, SE_RCV_MSG_LONG_TIMEOUT);
+
+	struct se_api_msg *rx_msg __free(kfree) =
+		kzalloc(cmd_snd_rcv_rsp_info.rx_buf_sz, GFP_KERNEL);
+	if (!rx_msg) {
+		se_ioctl_cmd_snd_rcv_cleanup(dev_ctx, uarg, &cmd_snd_rcv_rsp_info);
+		return -ENOMEM;
+	}
 
 	err = ele_msg_send_rcv(dev_ctx, tx_msg, cmd_snd_rcv_rsp_info.tx_buf_sz,
 			       rx_msg, cmd_snd_rcv_rsp_info.rx_buf_sz);
@@ -670,11 +665,6 @@ static int se_ioctl_setup_iobuf_handler(struct se_if_device_ctx *dev_ctx,
 		goto copy;
 	}
 
-	if (io.length > SIZE_MAX - 7) {
-		dev_err(dev_ctx->priv->dev, "%s: Invalid buffer length.",
-			dev_ctx->devname);
-		return -EINVAL;
-	}
 	aligned_len = round_up((size_t)io.length, 8);
 
 	/* No specific requirement for this buffer. */
@@ -767,10 +757,6 @@ static ssize_t se_if_fops_write(struct file *fp, const char __user *buf,
 		if (dev_ctx != priv->cmd_receiver_clbk_hdl.dev_ctx)
 			return -EINVAL;
 
-		err = se_chk_tx_msg_hdr(priv, (struct se_msg_hdr *)buf);
-		if (err)
-			return err;
-
 		if (size < SE_MU_HDR_SZ) {
 			dev_err(priv->dev, "%s: User buffer too small(%zu < %d).",
 				dev_ctx->devname, size, SE_MU_HDR_SZ);
@@ -780,6 +766,10 @@ static ssize_t se_if_fops_write(struct file *fp, const char __user *buf,
 		struct se_api_msg *tx_msg __free(kfree) = memdup_user(buf, size);
 		if (IS_ERR(tx_msg))
 			return PTR_ERR(tx_msg);
+
+		err = se_chk_tx_msg_hdr(priv, &tx_msg->header);
+		if (err)
+			return err;
 
 		print_hex_dump_debug("from user ", DUMP_PREFIX_OFFSET, 4, 4,
 				     tx_msg, size, false);

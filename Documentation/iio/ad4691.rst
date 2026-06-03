@@ -27,23 +27,27 @@ expose 16 channels (``voltage0`` through ``voltage15``); the AD4693 and AD4694
 expose 8 channels (``voltage0`` through ``voltage7``).
 
 All channels share a common scale (``in_voltage_scale``), derived from the
-reference voltage. Each channel independently exposes:
+reference voltage. Each channel exposes:
 
 * ``in_voltageN_raw`` — single-shot ADC result
-* ``in_voltageN_sampling_frequency`` — per-channel effective output rate,
-  defined as the internal oscillator frequency divided by the channel's
-  oversampling ratio. Writing this attribute selects the nearest achievable
-  rate for the current OSR; the value read back reflects the actual rate after
-  snapping to the closest valid oscillator entry.
-* ``in_voltageN_sampling_frequency_available`` — list of achievable effective
-  rates for the channel's current oversampling ratio. The list updates
-  dynamically when the oversampling ratio changes.
 
-The following attributes are only available in CNV Burst Mode:
+The following attributes are shared across all channels:
 
-* ``in_voltageN_oversampling_ratio`` — per-channel hardware oversampling depth;
-  see `Oversampling`_ below.
-* ``in_voltageN_oversampling_ratio_available`` — valid ratios: 1, 2, 4, 8, 16,
+* ``in_voltage_sampling_frequency`` — effective output rate, defined as the
+  internal oscillator frequency divided by the oversampling ratio. Writing this
+  attribute selects the nearest achievable rate for the current OSR; the value
+  read back reflects the actual rate after snapping to the closest valid
+  oscillator entry.
+* ``in_voltage_sampling_frequency_available`` — list of achievable effective
+  rates for the current oversampling ratio. The list updates dynamically when
+  the oversampling ratio changes.
+
+The following attributes are shared across all channels and only available in
+CNV Burst Mode:
+
+* ``in_voltage_oversampling_ratio`` — hardware oversampling depth applied to
+  all channels; see `Oversampling`_ below.
+* ``in_voltage_oversampling_ratio_available`` — valid ratios: 1, 2, 4, 8, 16,
   32.
 
 
@@ -86,29 +90,27 @@ oscillator is started and stopped around each read to save power.
 Oversampling
 ============
 
-In CNV Burst Mode each channel has an independent hardware accumulator that
-averages a configurable number of successive conversions. The result is always
-returned as a 16-bit mean, so ``realbits`` and ``storagebits`` are unaffected
-by the oversampling ratio. Valid ratios are 1, 2, 4, 8, 16 and 32; the default
-is 1 (no averaging). Oversampling is not supported in Manual Mode.
+In CNV Burst Mode a shared hardware accumulator averages a configurable number
+of successive conversions across all active channels. The result is always a
+16-bit mean, so the buffer data type (shown in ``buffer0/in_voltageN_type``)
+is unaffected by the oversampling ratio. Valid ratios are 1, 2, 4, 8, 16 and
+32; the default is 1 (no averaging). Oversampling is not supported in Manual
+Mode.
 
 .. code-block:: bash
 
-    # Set oversampling ratio to 16 on channel 0
-    echo 16 > /sys/bus/iio/devices/iio:device0/in_voltage0_oversampling_ratio
+    # Set oversampling ratio to 16 (shared across all channels)
+    echo 16 > /sys/bus/iio/devices/iio:device0/in_voltage_oversampling_ratio
 
     # Read the resulting effective sampling frequency
-    cat /sys/bus/iio/devices/iio:device0/in_voltage0_sampling_frequency
+    cat /sys/bus/iio/devices/iio:device0/in_voltage_sampling_frequency
 
-Writing ``oversampling_ratio`` stores the new depth for that channel;
-the internal oscillator is unaffected. The effective rate read back via
-``in_voltageN_sampling_frequency`` becomes ``osc_freq / new_osr``
-automatically. ``oversampling_ratio`` and ``sampling_frequency`` are
-orthogonal: one controls averaging depth, the other controls the oscillator.
-
-All channels share one internal oscillator. Writing ``sampling_frequency`` for
-any channel updates the oscillator and therefore affects the effective rate
-read back from all other channels.
+Writing ``in_voltage_oversampling_ratio`` stores the new shared depth and snaps
+the internal oscillator to the largest valid table entry that is both less than
+or equal to ``old_effective_rate × new_osr`` and evenly divisible by
+``new_osr``. This preserves an integer read-back of
+``in_voltage_sampling_frequency`` after the change and keeps the oscillator as
+close as possible to the previous effective rate.
 
 
 Reference voltage
@@ -145,8 +147,9 @@ Reset
 
 The driver supports two reset mechanisms:
 
-* **Hardware reset** (``reset-gpios`` in device tree): asserted at probe by
-  the reset controller framework.
+* **Hardware reset** (``reset-gpios`` in device tree): the GPIO line is
+  asserted then deasserted at probe; the driver waits 300 µs for the chip
+  to complete its internal reset sequence before accepting SPI commands.
 * **Software reset** (fallback when ``reset-gpios`` is absent): written
   automatically at probe.
 
@@ -165,8 +168,8 @@ Example device tree fragment::
     adc@0 {
         compatible = "adi,ad4692";
         ...
-        interrupts = <17 IRQ_TYPE_LEVEL_HIGH>;
         interrupt-parent = <&gpio0>;
+        interrupts = <17 IRQ_TYPE_LEVEL_HIGH>;
         interrupt-names = "gp0";
     };
 
@@ -202,3 +205,23 @@ The ``sampling_frequency`` attribute on the IIO buffer controls the trigger
 rate (in Hz). The initial rate is 100 kHz.
 
 Oversampling is not supported in Manual Mode.
+
+
+Buffer data format
+==================
+
+The sample format in the IIO buffer depends on whether SPI offload is in use.
+
+Software triggered-buffer path (no SPI offload)
+------------------------------------------------
+
+Each active channel occupies one 16-bit big-endian slot (``storagebits=16``,
+``endianness=be``). Active channels are packed densely in scan-index order,
+followed by a 64-bit software timestamp appended by the IIO core.
+
+SPI offload path
+----------------
+
+Each active channel occupies one 16-bit CPU-native slot (``storagebits=16``,
+``endianness=cpu``). The SPI offload engine streams 16-bit words directly from
+the SPI Engine into the DMA buffer; no software timestamp is appended.

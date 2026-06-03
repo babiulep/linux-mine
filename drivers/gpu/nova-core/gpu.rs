@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
 
+use core::ops::Range;
+
 use kernel::{
     device,
+    dma::Device,
     fmt,
     io::Io,
     num::Bounded,
@@ -132,6 +135,20 @@ impl Chipset {
     /// This includes all chipsets < GA102.
     pub(crate) const fn needs_fwsec_bootloader(self) -> bool {
         matches!(self.arch(), Architecture::Turing) || matches!(self, Self::GA100)
+    }
+
+    /// Returns `true` if this chipset boots via FSP (Hopper and later), which requires the FMC
+    /// firmware image.
+    pub(crate) const fn uses_fsp(self) -> bool {
+        matches!(
+            self.arch(),
+            Architecture::Hopper | Architecture::BlackwellGB10x | Architecture::BlackwellGB20x
+        )
+    }
+
+    /// Returns the address range of the PCI config mirror space.
+    pub(crate) fn pci_config_mirror_range(self) -> Range<u32> {
+        hal::gpu_hal(self).pci_config_mirror_range()
     }
 }
 
@@ -269,7 +286,7 @@ pub(crate) struct Gpu<'gpu> {
 
 impl<'gpu> Gpu<'gpu> {
     pub(crate) fn new(
-        pdev: &'gpu pci::Device<device::Bound>,
+        pdev: &'gpu pci::Device<device::Core<'_>>,
         bar: &'gpu Bar0,
     ) -> impl PinInit<Self, Error> + 'gpu {
         try_pin_init!(Self {
@@ -280,7 +297,14 @@ impl<'gpu> Gpu<'gpu> {
 
             // We must wait for GFW_BOOT completion before doing any significant setup on the GPU.
             _: {
-                hal::gpu_hal(spec.chipset).wait_gfw_boot_completion(bar)
+                let hal = hal::gpu_hal(spec.chipset);
+                let dma_mask = hal.dma_mask();
+
+                // SAFETY: `Gpu` owns all DMA allocations for this device, and we are
+                // still constructing it, so no concurrent DMA allocations can exist.
+                unsafe { pdev.dma_set_mask_and_coherent(dma_mask)? };
+
+                hal.wait_gfw_boot_completion(bar)
                     .inspect_err(|_| dev_err!(pdev, "GFW boot did not complete\n"))?;
             },
 

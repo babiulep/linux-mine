@@ -74,7 +74,7 @@ int ele_get_info(struct se_if_priv *priv, struct ele_dev_info *s_info)
 						   &get_info_addr,
 						   GFP_KERNEL);
 	if (!get_info_data) {
-		dev_dbg(priv->dev,
+		dev_err(priv->dev,
 			"%s: Failed to allocate get_info_addr.", __func__);
 		return -ENOMEM;
 	}
@@ -95,6 +95,8 @@ int ele_get_info(struct se_if_priv *priv, struct ele_dev_info *s_info)
 
 	ret = se_val_rsp_hdr_n_status(priv, rx_msg, ELE_GET_INFO_REQ,
 				      ELE_GET_INFO_RSP_MSG_SZ, true);
+	if (ret < 0)
+		goto exit;
 
 	memcpy(s_info, get_info_data, sizeof(*s_info));
 exit:
@@ -208,6 +210,11 @@ int ele_fw_authenticate(struct se_if_priv *priv, phys_addr_t contnr_addr,
 	if (!priv)
 		return -EINVAL;
 
+	if (upper_32_bits(contnr_addr) || upper_32_bits(img_addr)) {
+		dev_err(priv->dev, "Wrong address: %pap %pap\n", &contnr_addr, &img_addr);
+		return -EINVAL;
+	}
+
 	struct se_api_msg *tx_msg __free(kfree)	=
 		kzalloc(ELE_FW_AUTH_REQ_SZ, GFP_KERNEL);
 	if (!tx_msg)
@@ -224,8 +231,8 @@ int ele_fw_authenticate(struct se_if_priv *priv, phys_addr_t contnr_addr,
 		return ret;
 
 	tx_msg->data[0] = lower_32_bits(contnr_addr);
-	tx_msg->data[1] = upper_32_bits(contnr_addr);
-	tx_msg->data[2] = img_addr;
+	tx_msg->data[1] = 0;
+	tx_msg->data[2] = lower_32_bits(img_addr);
 
 	ret = ele_msg_send_rcv(priv->priv_dev_ctx, tx_msg, ELE_FW_AUTH_REQ_SZ, rx_msg,
 			       ELE_FW_AUTH_RSP_MSG_SZ);
@@ -283,7 +290,7 @@ int ele_debug_dump(struct se_if_priv *priv)
 
 		rx_msg->header.size -= 2;
 
-		if (rx_msg->header.size > 4)
+		if (rx_msg->header.size > 2)
 			rx_msg->header.size--;
 
 		for (i = 0; i < rx_msg->header.size; i += 2)

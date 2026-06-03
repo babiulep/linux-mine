@@ -164,7 +164,7 @@ static bool check_hdr_exception_for_sz(struct se_if_priv *priv,
 	 */
 	if (header->command == ELE_DEBUG_DUMP_REQ &&
 	    header->ver == priv->if_defs->base_api_ver &&
-	    header->size >= 0 && header->size <= ELE_DEBUG_DUMP_RSP_SZ)
+	    header->size >= 2 && header->size <= (ELE_DEBUG_DUMP_RSP_SZ / 4))
 		return true;
 
 	return false;
@@ -219,7 +219,7 @@ void se_if_rx_callback(struct mbox_client *mbox_cl, void *msg)
 			se_clbk_hdl->dev_ctx->devname, *(u32 *)header);
 
 		if (rx_msg_sz != se_clbk_hdl->rx_msg_sz &&
-		    check_hdr_exception_for_sz(priv, header)) {
+		    !check_hdr_exception_for_sz(priv, header)) {
 			dev_err(dev,
 				"%s: Rsp to CMD: hdr(0x%x) with different sz(%d != %d).\n",
 				se_clbk_hdl->dev_ctx->devname, *(u32 *)header,

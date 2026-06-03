@@ -483,10 +483,10 @@ struct mmap_action {
 	enum mmap_action_type type;
 
 	/*
-	 * If non-zero, filter errors that arise from mmap actions such that we
-	 * return error_filter instead. Only valid error codes may be specified.
+	 * If non-zero, replace errors that arise from mmap actions with this
+	 * value instead. Only valid error codes may be specified.
 	 */
-	int error_filter;
+	int error_override;
 
 	/*
 	 * This should be set in rare instances where the operation required

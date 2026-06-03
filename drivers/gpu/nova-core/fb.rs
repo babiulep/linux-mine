@@ -165,6 +165,8 @@ pub(crate) struct FbLayout {
     pub(crate) wpr2: FbRange,
     pub(crate) heap: FbRange,
     pub(crate) vf_partition_count: u8,
+    /// PMU reserved memory size, in bytes.
+    pub(crate) pmu_reserved_size: u32,
 }
 
 impl FbLayout {
@@ -250,9 +252,8 @@ impl FbLayout {
         };
 
         let heap = {
-            const HEAP_SIZE: u64 = u64::SZ_1M;
-
-            FbRange(wpr2.start - HEAP_SIZE..wpr2.start)
+            let heap_size = u64::from(hal.non_wpr_heap_size());
+            FbRange(wpr2.start - heap_size..wpr2.start)
         };
 
         Ok(Self {
@@ -265,6 +266,7 @@ impl FbLayout {
             wpr2,
             heap,
             vf_partition_count: 0,
+            pmu_reserved_size: hal.pmu_reserved_size(),
         })
     }
 }

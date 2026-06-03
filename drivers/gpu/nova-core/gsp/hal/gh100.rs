@@ -16,6 +16,11 @@ use crate::{
         Falcon, //
     },
     fb::FbLayout,
+    firmware::{
+        fsp::FspFirmware,
+        FIRMWARE_VERSION, //
+    },
+    fsp::Fsp,
     gpu::Chipset,
     gsp::{
         boot::BootUnloadGuard,
@@ -35,14 +40,17 @@ impl GspHal for Gh100 {
     fn boot<'a>(
         &self,
         _gsp: &'a Gsp,
-        _dev: &'a device::Device<device::Bound>,
-        _bar: &'a Bar0,
-        _chipset: Chipset,
+        dev: &'a device::Device<device::Bound>,
+        bar: &'a Bar0,
+        chipset: Chipset,
         _fb_layout: &FbLayout,
         _wpr_meta: &Coherent<GspFwWprMeta>,
         _gsp_falcon: &'a Falcon<GspEngine>,
         _sec2_falcon: &'a Falcon<Sec2>,
     ) -> Result<BootUnloadGuard<'a>> {
+        let fsp_fw = FspFirmware::new(dev, chipset, FIRMWARE_VERSION)?;
+        let _fsp = Fsp::wait_secure_boot(dev, bar, chipset, fsp_fw)?;
+
         Err(ENOTSUPP)
     }
 }

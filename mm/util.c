@@ -1415,16 +1415,16 @@ static int mmap_action_finish(struct vm_area_struct *vma,
 	len = vma_pages(vma) << PAGE_SHIFT;
 	do_munmap(current->mm, vma->vm_start, len, NULL);
 
-	return action->error_filter ?: err;
+	return action->error_override ?: err;
 }
 
 #ifdef CONFIG_MMU
 
 static int check_mmap_action(struct mmap_action *action)
 {
-	const unsigned long filter = action->error_filter;
+	const unsigned long override = action->error_override;
 
-	if (WARN_ON_ONCE(filter && !IS_ERR_VALUE(filter)))
+	if (WARN_ON_ONCE(override && !IS_ERR_VALUE(override)))
 		return -EINVAL;
 
 	return 0;

@@ -18,7 +18,10 @@
 //!
 //! Note that the devinit sequence also needs to run during suspend/resume.
 
+use core::ops::Range;
+
 use kernel::{
+    dma::DmaMask,
     io::{
         poll::read_poll_timeout,
         Io, //
@@ -79,6 +82,17 @@ impl GpuHal for Tu102 {
             Delta::from_secs(4),
         )
         .map(|_| ())
+    }
+
+    fn dma_mask(&self) -> DmaMask {
+        DmaMask::new::<47>()
+    }
+
+    fn pci_config_mirror_range(&self) -> Range<u32> {
+        const PCI_CONFIG_MIRROR_START: u32 = 0x088000;
+        const PCI_CONFIG_MIRROR_SIZE: u32 = 0x001000;
+
+        PCI_CONFIG_MIRROR_START..PCI_CONFIG_MIRROR_START + PCI_CONFIG_MIRROR_SIZE
     }
 }
 
