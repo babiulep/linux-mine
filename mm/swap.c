@@ -94,7 +94,7 @@ static void page_cache_release(struct folio *folio)
 		lruvec_unlock_irqrestore(lruvec, flags);
 }
 
-static void ___folio_put(struct folio *folio, bool prezeroed)
+void __folio_put(struct folio *folio)
 {
 	if (unlikely(folio_is_zone_device(folio))) {
 		free_zone_device_folio(folio);
@@ -109,23 +109,9 @@ static void ___folio_put(struct folio *folio, bool prezeroed)
 	page_cache_release(folio);
 	folio_unqueue_deferred_split(folio);
 	mem_cgroup_uncharge(folio);
-	if (prezeroed)
-		free_frozen_pages_prezeroed(&folio->page, folio_order(folio));
-	else
-		free_frozen_pages(&folio->page, folio_order(folio));
-}
-
-void __folio_put(struct folio *folio)
-{
-	___folio_put(folio, false);
+	free_frozen_pages(&folio->page, folio_order(folio));
 }
 EXPORT_SYMBOL(__folio_put);
-
-void __folio_put_prezeroed(struct folio *folio)
-{
-	___folio_put(folio, true);
-}
-EXPORT_SYMBOL(__folio_put_prezeroed);
 
 typedef void (*move_fn_t)(struct lruvec *lruvec, struct folio *folio);
 

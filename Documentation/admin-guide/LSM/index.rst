@@ -49,4 +49,3 @@ subdirectories.
    SafeSetID
    ipe
    landlock
-   Hornet

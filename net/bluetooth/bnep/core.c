@@ -349,18 +349,14 @@ static int bnep_rx_frame(struct bnep_session *s, struct sk_buff *skb)
 			break;
 		}
 		case BNEP_FILTER_MULTI_ADDR_SET:
-		case BNEP_FILTER_NET_TYPE_SET: {
-			u8 *hdr;
-
-			/* Pull ctrl type (1 b) + len (2 b) */
-			hdr = skb_pull_data(skb, 3);
-			if (!hdr)
+		case BNEP_FILTER_NET_TYPE_SET:
+			/* Pull: len (2 b), data (len bytes) */
+			data = skb_pull_data(skb, sizeof(u16));
+			if (!data)
 				goto badframe;
-			/* Pull data (len bytes); length is big-endian */
-			if (!skb_pull(skb, get_unaligned_be16(&hdr[1])))
+			if (!skb_pull(skb, get_unaligned_be16(data)))
 				goto badframe;
 			break;
-		}
 		default:
 			kfree_skb(skb);
 			return 0;

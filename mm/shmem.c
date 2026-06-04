@@ -4189,25 +4189,17 @@ static int shmem_initxattrs(struct inode *inode,
 	for (xattr = xattr_array; xattr->name != NULL; xattr++) {
 		CLASS(simple_xattr, new_xattr)(xattr->value, xattr->value_len);
 		if (IS_ERR(new_xattr))
-			break;
+			return -ENOMEM;
 
 		new_xattr->name = kasprintf(GFP_KERNEL_ACCOUNT,
 					XATTR_SECURITY_PREFIX "%s", xattr->name);
 		if (!new_xattr->name)
-			break;
+			return -ENOMEM;
 
 		if (simple_xattr_add(&sbinfo->xa_cache, &info->xattrs, new_xattr))
-			break;
-		retain_and_null_ptr(new_xattr);
-	}
+			return -ENOMEM;
 
-	if (xattr->name != NULL) {
-		if (ispace) {
-			raw_spin_lock(&sbinfo->stat_lock);
-			sbinfo->free_ispace += ispace;
-			raw_spin_unlock(&sbinfo->stat_lock);
-		}
-		return -ENOMEM;
+		retain_and_null_ptr(new_xattr);
 	}
 
 	return 0;

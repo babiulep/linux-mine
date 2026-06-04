@@ -23,7 +23,6 @@
 #include <linux/vmalloc.h>
 #include <linux/posix_acl_xattr.h>
 #include <linux/rhashtable.h>
-#include <linux/jhash.h>
 
 #include <linux/uaccess.h>
 
@@ -1447,7 +1446,11 @@ struct simple_xattr *simple_xattr_set(struct simple_xattr_cache *cache, struct l
 			return ERR_PTR(-ENOMEM);
 	}
 
-	/* Lookup is safe without RCU here since writes are serialized. */
+	/*
+	 * Hash table lookup/replace/remove will grab RCU read lock themselves.
+	 * This makes sure that hash table lookup is safe against concurrent
+	 * modification on another inode.
+	 */
 	old_xattr = rhashtable_lookup_fast(ht, &key, simple_xattr_params);
 	if (old_xattr) {
 		/* Fail if XATTR_CREATE is requested and the xattr exists. */
@@ -1679,6 +1682,39 @@ int simple_xattr_add(struct simple_xattr_cache *cache, struct list_head *xattrs,
 }
 
 /**
+ * simple_xattr_add_limited - add an xattr object, charging per-inode limits
+ * @cache: anchor for the hash table
+ * @xattrs: the header of the xattr object
+ * @limits: per-inode limit counters
+ * @new_xattr: the xattr object to add
+ *
+ * Like simple_xattr_add(), but also accounts @new_xattr against @limits so
+ * that a later removal or replacement of it through simple_xattr_set_limited()
+ * decrements counters that were actually incremented, rather than underflowing
+ * them. Use this instead of simple_xattr_add() when seeding initial xattrs
+ * that share a namespace with the limited set/remove path.
+ *
+ * Return: On success zero is returned. On failure a negative error code is
+ * returned.
+ */
+int simple_xattr_add_limited(struct simple_xattr_cache *cache,
+			     struct list_head *xattrs,
+			     struct simple_xattr_limits *limits,
+			     struct simple_xattr *new_xattr)
+{
+	int err;
+
+	err = simple_xattr_limits_inc(limits, new_xattr->size);
+	if (err)
+		return err;
+
+	err = simple_xattr_add(cache, xattrs, new_xattr);
+	if (err)
+		simple_xattr_limits_dec(limits, new_xattr->size);
+	return err;
+}
+
+/**
  * simple_xattrs_free - free xattrs
  * @cache: anchor for the hash table
  * @xattrs: xattr header whose xattrs to destroy
@@ -1700,7 +1736,11 @@ void simple_xattrs_free(struct simple_xattr_cache *cache, struct list_head *xatt
 		list_del(&xattr->node);
 		if (freed_space)
 			*freed_space += simple_xattr_space(xattr->name, xattr->size);
-		simple_xattr_free(xattr);
+		/*
+		 * Free with RCU, since the xattr might still get accessed by
+		 * the hash compare function
+		 */
+		simple_xattr_free_rcu(xattr);
 	}
 }
 

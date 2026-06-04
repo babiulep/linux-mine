@@ -331,8 +331,10 @@ msm_iommu_pagetable_prealloc_allocate(struct msm_mmu *mmu, struct msm_mmu_preall
 {
 	struct kmem_cache *pt_cache = get_pt_cache(mmu);
 
-	if (!p->count)
+	if (!p->count) {
+		p->pages = NULL;
 		return 0;
+	}
 
 	p->pages = kvmalloc_objs(*p->pages, p->count);
 	if (!p->pages)

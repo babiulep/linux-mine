@@ -2412,8 +2412,7 @@ bool mempolicy_in_oom_domain(struct task_struct *tsk,
 }
 
 static struct page *alloc_pages_preferred_many(gfp_t gfp, unsigned int order,
-						int nid, nodemask_t *nodemask,
-						unsigned long user_addr)
+						int nid, nodemask_t *nodemask)
 {
 	struct page *page;
 	gfp_t preferred_gfp;
@@ -2426,11 +2425,9 @@ static struct page *alloc_pages_preferred_many(gfp_t gfp, unsigned int order,
 	 */
 	preferred_gfp = gfp | __GFP_NOWARN;
 	preferred_gfp &= ~(__GFP_DIRECT_RECLAIM | __GFP_NOFAIL);
-	page = __alloc_frozen_pages_noprof(preferred_gfp, order, nid,
-					   nodemask, user_addr);
+	page = __alloc_frozen_pages_noprof(preferred_gfp, order, nid, nodemask);
 	if (!page)
-		page = __alloc_frozen_pages_noprof(gfp, order, nid, NULL,
-						   user_addr);
+		page = __alloc_frozen_pages_noprof(gfp, order, nid, NULL);
 
 	return page;
 }
@@ -2445,9 +2442,8 @@ static struct page *alloc_pages_preferred_many(gfp_t gfp, unsigned int order,
  *
  * Return: The page on success or NULL if allocation fails.
  */
-static struct page *__alloc_pages_mpol(gfp_t gfp, unsigned int order,
-		struct mempolicy *pol, pgoff_t ilx, int nid,
-		unsigned long user_addr)
+static struct page *alloc_pages_mpol(gfp_t gfp, unsigned int order,
+		struct mempolicy *pol, pgoff_t ilx, int nid)
 {
 	nodemask_t *nodemask;
 	struct page *page;
@@ -2455,8 +2451,7 @@ static struct page *__alloc_pages_mpol(gfp_t gfp, unsigned int order,
 	nodemask = policy_nodemask(gfp, pol, ilx, &nid);
 
 	if (pol->mode == MPOL_PREFERRED_MANY)
-		return alloc_pages_preferred_many(gfp, order, nid, nodemask,
-						 user_addr);
+		return alloc_pages_preferred_many(gfp, order, nid, nodemask);
 
 	if (IS_ENABLED(CONFIG_TRANSPARENT_HUGEPAGE) &&
 	    /* filter "hugepage" allocation, unless from alloc_pages() */
@@ -2480,7 +2475,7 @@ static struct page *__alloc_pages_mpol(gfp_t gfp, unsigned int order,
 			 */
 			page = __alloc_frozen_pages_noprof(
 				gfp | __GFP_THISNODE | __GFP_NORETRY, order,
-				nid, NULL, user_addr);
+				nid, NULL);
 			if (page || !(gfp & __GFP_DIRECT_RECLAIM))
 				return page;
 			/*
@@ -2492,7 +2487,7 @@ static struct page *__alloc_pages_mpol(gfp_t gfp, unsigned int order,
 		}
 	}
 
-	page = __alloc_frozen_pages_noprof(gfp, order, nid, nodemask, user_addr);
+	page = __alloc_frozen_pages_noprof(gfp, order, nid, nodemask);
 
 	if (unlikely(pol->mode == MPOL_INTERLEAVE ||
 		     pol->mode == MPOL_WEIGHTED_INTERLEAVE) && page) {
@@ -2508,12 +2503,6 @@ static struct page *__alloc_pages_mpol(gfp_t gfp, unsigned int order,
 	return page;
 }
 
-static struct page *alloc_pages_mpol(gfp_t gfp, unsigned int order,
-		struct mempolicy *pol, pgoff_t ilx, int nid)
-{
-	return __alloc_pages_mpol(gfp, order, pol, ilx, nid, 0);
-}
-
 struct folio *folio_alloc_mpol_noprof(gfp_t gfp, unsigned int order,
 		struct mempolicy *pol, pgoff_t ilx, int nid)
 {
@@ -2525,21 +2514,6 @@ struct folio *folio_alloc_mpol_noprof(gfp_t gfp, unsigned int order,
 	set_page_refcounted(page);
 	return page_rmappable_folio(page);
 }
-EXPORT_SYMBOL(folio_alloc_mpol_noprof);
-
-struct folio *folio_alloc_mpol_user_noprof(gfp_t gfp, unsigned int order,
-		struct mempolicy *pol, pgoff_t ilx, int nid,
-		unsigned long user_addr)
-{
-	struct page *page = __alloc_pages_mpol(gfp | __GFP_COMP, order, pol,
-			ilx, nid, user_addr);
-	if (!page)
-		return NULL;
-
-	set_page_refcounted(page);
-	return page_rmappable_folio(page);
-}
-EXPORT_SYMBOL(folio_alloc_mpol_user_noprof);
 
 /**
  * vma_alloc_folio - Allocate a folio for a VMA.
@@ -2567,7 +2541,7 @@ struct folio *vma_alloc_folio_noprof(gfp_t gfp, int order, struct vm_area_struct
 		gfp |= __GFP_NOWARN;
 
 	pol = get_vma_policy(vma, addr, order, &ilx);
-	folio = folio_alloc_mpol_user_noprof(gfp, order, pol, ilx, numa_node_id(), addr);
+	folio = folio_alloc_mpol_noprof(gfp, order, pol, ilx, numa_node_id());
 	mpol_cond_put(pol);
 	return folio;
 }

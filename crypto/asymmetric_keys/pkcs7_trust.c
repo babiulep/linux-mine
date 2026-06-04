@@ -127,7 +127,6 @@ verified:
 		for (p = sinfo->signer; p != x509; p = p->signer)
 			p->verified = true;
 	}
-	sinfo->verified = true;
 	kleave(" = 0");
 	return 0;
 }

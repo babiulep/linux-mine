@@ -4,6 +4,8 @@ soc/arm
 		arm64: Kconfig: drop unneeded dependency on OF_GPIO for ARCH_MVEBU
 	pxa/gpio
 		git://git.kernel.org/pub/scm/linux/kernel/git/brgl/linux tags/soc-pxa-gpio-for-v7.2
+	samsung/soc
+		https://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux.git tags/samsung-soc-7.2
 	zx/soc
 		https://gitlab.com/stefandoesinger/zx297520-kernel tags/zx29-plat-for-7.2
 	xz29/docfix
@@ -15,6 +17,8 @@ soc/dt
 	patch
 		arm64: dts: realtek: Add pinctrl support for RTD1625
 		ARM: dts: ixp4xx: use phandle-based GPIOs in mi424wr
+	ixp4xx/dt
+		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integrator.git tags/gemini-for-v7.2
 	pxa1908/dt
 		https://codeberg.org/pxa1908-mainline/linux tags/pxa1908-dt-for-7.2
 	qcom/dt
@@ -25,6 +29,13 @@ soc/dt
 	rockchip/dt
 		https://git.kernel.org/pub/scm/linux/kernel/git/mmind/linux-rockchip.git tags/v7.2-rockchip-dts32
 		https://git.kernel.org/pub/scm/linux/kernel/git/mmind/linux-rockchip.git tags/v7.2-rockchip-dts64-1
+	samsung/dt
+		https://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux.git tags/samsung-dt64-7.2
+	stm32/dt
+		git://git.kernel.org/pub/scm/linux/kernel/git/atorgue/stm32.git tags/stm32-dt-for-7.2-1
+	tegra/dt
+		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux.git tags/tegra-for-7.2-dt-bindings
+		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux.git tags/tegra-for-7.2-arm-dt
 	xz/dt
 		https://gitlab.com/stefandoesinger/zx297520-kernel tags/zx29-dts-for-7.2
 	<no branch> (89d0ad7f3a60d3076da2d90ece8d78d0eb60bb91)
@@ -46,6 +57,8 @@ soc/drivers
 		git://git.kernel.org/pub/scm/linux/kernel/git/jenswi/linux-tee tags/amdtee-for-v7.2
 	firmware/optee
 		git://git.kernel.org/pub/scm/linux/kernel/git/jenswi/linux-tee tags/optee-for-v7.2
+	firmware/xilinx
+		https://github.com/Xilinx/linux-xlnx.git tags/zynqmp-soc-for-7.2
 
 soc/defconfig
 	patch

@@ -19,11 +19,6 @@
 #include <linux/mm.h>
 #include <linux/page_reporting.h>
 
-static bool host_zeroes_pages;
-module_param(host_zeroes_pages, bool, 0444);
-MODULE_PARM_DESC(host_zeroes_pages,
-		 "Host zeroes reported pages, skip guest re-zeroing");
-
 /*
  * Balloon device works in 4K page units.  So each page is pointed to by
  * multiple balloon pages.  All memory counters in this driver are in balloon
@@ -299,10 +294,7 @@ static void release_pages_balloon(struct virtio_balloon *vb,
 
 	list_for_each_entry_safe(page, next, pages, lru) {
 		list_del(&page->lru);
-		if (host_zeroes_pages && !page_poisoning_enabled())
-			put_page_prezeroed(page);
-		else
-			put_page(page); /* balloon reference */
+		put_page(page); /* balloon reference */
 	}
 }
 
@@ -1049,8 +1041,6 @@ static int virtballoon_probe(struct virtio_device *vdev)
 		vb->pr_dev_info.order = 5;
 #endif
 
-		/* TODO: needs a virtio feature flag */
-		vb->pr_dev_info.host_zeroes_pages = host_zeroes_pages;
 		err = page_reporting_register(&vb->pr_dev_info);
 		if (err)
 			goto out_unregister_oom;
@@ -1085,6 +1075,7 @@ out_del_balloon_wq:
 out_del_vqs:
 	vdev->config->del_vqs(vdev);
 out_free_vb:
+	mutex_destroy(&vb->balloon_lock);
 	kfree(vb);
 out:
 	return err;
@@ -1129,6 +1120,7 @@ static void virtballoon_remove(struct virtio_device *vdev)
 	}
 
 	remove_common(vb);
+	mutex_destroy(&vb->balloon_lock);
 	kfree(vb);
 }
 
