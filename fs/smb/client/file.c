@@ -2524,7 +2524,10 @@ static void cifs_update_i_blocks_after_write(struct inode *inode, loff_t start,
 	if (cinode->cifsAttrs & FILE_ATTRIBUTE_SPARSE_FILE)
 		return;
 
-	/* Only extend the local estimate across a contiguous allocated prefix. */
+	/*
+	 * Grow the local estimate only across the currently known allocated
+	 * prefix. A write beyond that may leave a hole.
+	 */
 	if ((u64)start > allocated_end)
 		return;
 

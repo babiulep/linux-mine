@@ -2387,7 +2387,7 @@ static inline int cifs_open_create_options(unsigned int oflags, int opts)
 }
 
 /*
- * inode->i_blocks is counted in 512-byte sectors, independent of
+ * inode->i_blocks is counted in 512-byte units, independent of
  * inode->i_blksize.
  */
 #define CIFS_INO_BLOCK_SIZE 512ULL

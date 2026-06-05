@@ -2214,19 +2214,20 @@ int fuse_dev_release(struct inode *inode, struct file *file)
 		unsigned int i;
 		bool last;
 
+		/* Make sure fuse_dev_install_with_pq() has finished */
+		spin_lock(&fch->lock);
 		spin_lock(&fpq->lock);
 		WARN_ON(!list_empty(&fpq->io));
 		for (i = 0; i < FUSE_PQ_HASH_SIZE; i++)
 			list_splice_init(&fpq->processing[i], &to_end);
 		spin_unlock(&fpq->lock);
 
-		fuse_dev_end_requests(&to_end);
-
-		spin_lock(&fch->lock);
 		list_del(&fud->entry);
 		/* Are we the last open device? */
 		last = list_empty(&fch->devices);
 		spin_unlock(&fch->lock);
+
+		fuse_dev_end_requests(&to_end);
 
 		if (last) {
 			WARN_ON(fch->iq.fasync != NULL);

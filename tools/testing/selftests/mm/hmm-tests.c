@@ -2303,14 +2303,15 @@ TEST_F(hmm, migrate_anon_huge_fault)
 
 	npages = size >> self->page_shift;
 	map = (void *)ALIGN((uintptr_t)buffer->ptr, size);
-	ret = madvise(map, size, MADV_HUGEPAGE);
-	ASSERT_EQ(ret, 0);
 	old_ptr = buffer->ptr;
 	buffer->ptr = map;
 
 	/* Initialize buffer in system memory. */
 	for (i = 0, ptr = buffer->ptr; i < size / sizeof(*ptr); ++i)
 		ptr[i] = i;
+
+	ret = madvise(map, size, MADV_COLLAPSE);
+	ASSERT_EQ(ret, 0);
 
 	/* Migrate memory to device. */
 	ret = hmm_migrate_sys_to_dev(self->fd, buffer, npages);
@@ -2341,7 +2342,7 @@ TEST_F(hmm, migrate_anon_huge_fault)
 					(char *)buffer->ptr + i * self->page_size);
 
 			ASSERT_NE(entry & PM_SWAP, 0);
-			ASSERT_EQ(entry & PM_PRESENT, 0);
+			ASSERT_FALSE(PAGEMAP_PRESENT(entry));
 		}
 
 		close(pagemap_fd);

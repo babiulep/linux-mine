@@ -3663,12 +3663,9 @@ static long smb3_simple_falloc(struct file *file, struct cifs_tcon *tcon,
 	struct inode *inode;
 	struct cifsInodeInfo *cifsi;
 	struct cifsFileInfo *cfile = file->private_data;
-	struct smb2_file_all_info file_inf;
 	long rc = -EOPNOTSUPP;
 	unsigned int xid;
 	loff_t new_eof;
-	u64 asize;
-	int qrc;
 
 	xid = get_xid();
 
@@ -3701,6 +3698,10 @@ static long smb3_simple_falloc(struct file *file, struct cifs_tcon *tcon,
 		rc = SMB2_set_eof(xid, tcon, cfile->fid.persistent_fid,
 				  cfile->fid.volatile_fid, cfile->pid, new_eof);
 		if (rc == 0) {
+			struct smb2_file_all_info file_inf;
+			u64 asize;
+			int qrc;
+
 			netfs_resize_file(&cifsi->netfs, new_eof, true);
 			cifs_setsize(inode, new_eof);
 

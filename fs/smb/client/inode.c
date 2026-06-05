@@ -3044,6 +3044,12 @@ void cifs_setsize(struct inode *inode, loff_t offset)
 	spin_lock(&inode->i_lock);
 	old_size = i_size_read(inode);
 	i_size_write(inode, offset);
+
+	/*
+	 * Extending EOF does not allocate the intervening range. Only clamp
+	 * i_blocks on shrink; allocation growth comes from writes or from the
+	 * server-reported AllocationSize.
+	 */
 	if (offset < old_size && (u64)inode->i_blocks > blocks)
 		inode->i_blocks = blocks;
 	spin_unlock(&inode->i_lock);

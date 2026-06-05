@@ -67,7 +67,6 @@ static long cifs_ioctl_query_info(unsigned int xid, struct file *filep,
 	return rc;
 }
 
-
 static int cifs_ioctl_set_compression(unsigned int xid, struct file *filep,
 				      struct cifs_tcon *tcon,
 				      struct cifsFileInfo *cfile)
@@ -493,7 +492,7 @@ long cifs_ioctl(struct file *filep, unsigned int command, unsigned long arg)
 			/* Try to set compress flag */
 			if (tcon->ses->server->ops->set_compression) {
 				rc = cifs_ioctl_set_compression(xid, filep, tcon,
-								      pSMBFile);
+								pSMBFile);
 				if (rc == 0)
 					CIFS_I(inode)->cifsAttrs |=
 						FILE_ATTRIBUTE_COMPRESSED;

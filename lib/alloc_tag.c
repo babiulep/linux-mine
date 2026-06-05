@@ -45,32 +45,34 @@ int alloc_tag_ref_offs;
 
 struct allocinfo_private {
 	struct codetag_iterator iter;
+	struct codetag_iterator reported_iter;
 	bool print_header;
 };
 
 static void *allocinfo_start(struct seq_file *m, loff_t *pos)
 {
 	struct allocinfo_private *priv;
-	struct codetag *ct;
 	loff_t node = *pos;
 
 	priv = (struct allocinfo_private *)m->private;
 	codetag_lock_module_list(alloc_tag_cttype);
-	if (node == 0)
+	if (node == 0) {
 		priv->print_header = true;
-
-	priv->iter = codetag_get_ct_iter(alloc_tag_cttype);
-	while ((ct = codetag_next_ct(&priv->iter)) != NULL && node)
-		node--;
-
-	return ct ? priv : NULL;
+		priv->iter = codetag_get_ct_iter(alloc_tag_cttype);
+	} else {
+		priv->iter = priv->reported_iter;
+	}
+	codetag_next_ct(&priv->iter);
+	return priv->iter.ct ? priv : NULL;
 }
 
 static void *allocinfo_next(struct seq_file *m, void *arg, loff_t *pos)
 {
 	struct allocinfo_private *priv = (struct allocinfo_private *)arg;
-	struct codetag *ct = codetag_next_ct(&priv->iter);
+	struct codetag *ct;
 
+	priv->reported_iter = priv->iter;
+	ct = codetag_next_ct(&priv->iter);
 	(*pos)++;
 	if (!ct)
 		return NULL;
@@ -796,7 +798,7 @@ struct pfn_pool {
 
 static struct pfn_pool *current_pfn_pool __initdata;
 
-static void __init __alloc_tag_add_early_pfn(unsigned long pfn, gfp_t gfp_flags)
+static void __init __alloc_tag_add_early_pfn(unsigned long pfn)
 {
 	struct pfn_pool *pool;
 	int idx;
@@ -804,8 +806,7 @@ static void __init __alloc_tag_add_early_pfn(unsigned long pfn, gfp_t gfp_flags)
 	do {
 		pool = READ_ONCE(current_pfn_pool);
 		if (!pool || atomic_read(&pool->count) >= PFN_POOL_SIZE) {
-			gfp_t gfp = gfp_flags & ~(__GFP_DIRECT_RECLAIM | GFP_ZONEMASK);
-			struct page *new_page = alloc_page(gfp | __GFP_NO_CODETAG);
+			struct page *new_page = alloc_page(__GFP_HIGH | __GFP_NO_CODETAG);
 			struct pfn_pool *new;
 
 			if (!new_page) {
@@ -832,7 +833,7 @@ static void __init __alloc_tag_add_early_pfn(unsigned long pfn, gfp_t gfp_flags)
 	pool->pfns[idx] = pfn;
 }
 
-typedef void alloc_tag_add_func(unsigned long pfn, gfp_t gfp_flags);
+typedef void alloc_tag_add_func(unsigned long pfn);
 static alloc_tag_add_func __rcu *alloc_tag_add_early_pfn_ptr __refdata =
 	RCU_INITIALIZER(__alloc_tag_add_early_pfn);
 
@@ -850,7 +851,7 @@ void alloc_tag_add_early_pfn(unsigned long pfn, gfp_t gfp_flags)
 	rcu_read_lock();
 	alloc_tag_add = rcu_dereference(alloc_tag_add_early_pfn_ptr);
 	if (alloc_tag_add)
-		alloc_tag_add(pfn, gfp_flags);
+		alloc_tag_add(pfn);
 	rcu_read_unlock();
 }
 
