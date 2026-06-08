@@ -85,7 +85,26 @@ struct loop_cmd {
 	struct bio_vec *bvec;
 	struct cgroup_subsys_state *blkcg_css;
 	struct cgroup_subsys_state *memcg_css;
+#ifdef CONFIG_KCOV
+	unsigned long stack_entries[30];
+	int stack_nr;
+	pid_t pid;
+	char comm[TASK_COMM_LEN];
+#endif
 };
+
+static void loop_check_io_race(struct loop_device *lo, struct loop_cmd *cmd)
+{
+#ifdef CONFIG_KCOV
+	if (unlikely(data_race(READ_ONCE(lo->lo_state)) == Lo_rundown &&
+		     disk_openers(lo->lo_disk) == 0)) {
+		pr_err("BUG: %s/%u is doing I/O request on loop%d in Lo_rundown state.\n",
+		       cmd->comm, cmd->pid, lo->lo_number);
+		printk("Call Trace:\n");
+		stack_trace_print(cmd->stack_entries, cmd->stack_nr, 4);
+	}
+#endif
+}
 
 #define LOOP_IDLE_WORKER_TIMEOUT (60 * HZ)
 #define LOOP_DEFAULT_HW_Q_DEPTH 128
@@ -1745,9 +1764,19 @@ static void lo_release(struct gendisk *disk)
 
 	if (need_clear) {
 		/*
-		 * Temporarily drop disk->open_mutex in order to flush pending I/O
-		 * requests before clearing the backing device. The Lo_rundown state
-		 * guarantees that lo_open() will fail with -ENXIO.
+		 * Temporarily release disk->open_mutex in order to flush pending I/O
+		 * requests before clearing the backing device.
+		 *
+		 * This is a layering violation. But since bdev->bd_disk->fops->release()
+		 * (which is mapped to lo_release()) is the final function which
+		 * blkdev_put_whole() from bdev_release() calls immediately before
+		 * releasing disk->open_mutex, this changes nothing except opens a new
+		 * race window for allowing disk->fops->open() (which is mapped to
+		 * lo_open()) to be called.
+		 *
+		 * Even if lo_open() is called from blkdev_get_whole() due to this race,
+		 * the Lo_rundown state guarantees that lo_open() will fail with -ENXIO.
+		 * Thus, there will be effectively no change caused by this violation.
 		 */
 		mutex_unlock(&lo->lo_disk->open_mutex);
 		/*
@@ -1766,20 +1795,24 @@ static void lo_release(struct gendisk *disk)
 		 *
 		 * Due to synchronize_rcu() + drain_workqueue() sequence above,
 		 * calling blk_mq_unfreeze_queue() immediately after blk_mq_freeze_queue()
-		 * returns becomes safe, for loop_queue_rq() no longer schedules new
+		 * returns has to be safe, for loop_queue_rq() no longer schedules new
 		 * lo_rw_aio() works and lo_rw_aio() no longer submits new AIO requests.
 		 *
-		 * Even if we defer blk_mq_unfreeze_queue() to after we clear the
-		 * backing device, a NULL pointer dereference or UAF will happen if
-		 * loop_queue_rq() by error scheduled new lo_rw_aio() works or
-		 * lo_rw_aio() by error submitted new AIO requests, for the backing
-		 * device will be already cleared the refcount for the backing device
-		 * will be already dropped. In other words, there is no difference
-		 * between calling blk_mq_unfreeze_queue() immediately or later.
+		 * Deferring blk_mq_unfreeze_queue() does not help because we are about
+		 * to clear the backing device and drop the refcount for the backing device.
+		 * There is nothing we can do if blk_mq_freeze_queue() fails to flush.
 		 */
 		blk_mq_unfreeze_queue(lo->lo_queue, blk_mq_freeze_queue(lo->lo_queue));
-		/* Perform remaining cleanup, with open_mutex held. */
+		/*
+		 * Perform remaining cleanup, with disk->open_mutex held.
+		 *
+		 * The lo->lo_state should remain Lo_rundown despite we temporarily
+		 * released disk->open_mutex, for I am the only and the last user of
+		 * this loop device because lo_open() cannot succeed.
+		 */
 		mutex_lock(&lo->lo_disk->open_mutex);
+		if (WARN_ON(data_race(READ_ONCE(lo->lo_state)) != Lo_rundown))
+			return;
 		__loop_clr_fd(lo);
 	}
 }
@@ -1888,15 +1921,16 @@ static blk_status_t loop_queue_rq(struct blk_mq_hw_ctx *hctx,
 	struct loop_cmd *cmd = blk_mq_rq_to_pdu(rq);
 	struct loop_device *lo = rq->q->queuedata;
 
+#ifdef CONFIG_KCOV
+	cmd->stack_nr = stack_trace_save(cmd->stack_entries, ARRAY_SIZE(cmd->stack_entries), 0);
+	cmd->pid = current->pid;
+	get_task_comm(cmd->comm, current);
+#endif
+
 	blk_mq_start_request(rq);
 
 	if (data_race(READ_ONCE(lo->lo_state)) != Lo_bound) {
-		/* Can this happen? */
-		if (READ_ONCE(lo->lo_state) == Lo_rundown) {
-			pr_err("BUG: Someone is doing I/O request on loop%d with Lo_rundown state.\n",
-			       lo->lo_number);
-			dump_stack();
-		}
+		loop_check_io_race(lo, cmd);
 		return BLK_STS_IOERR;
 	}
 
@@ -1941,6 +1975,7 @@ static void loop_handle_cmd(struct loop_cmd *cmd)
 	int ret = 0;
 	struct mem_cgroup *old_memcg = NULL;
 
+	loop_check_io_race(lo, cmd);
 	if (write && (lo->lo_flags & LO_FLAGS_READ_ONLY)) {
 		ret = -EIO;
 		goto failed;

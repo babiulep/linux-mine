@@ -1074,6 +1074,9 @@ static int pci_register_host_bridge(struct pci_host_bridge *bridge)
 			dev_err(&bus->dev, "failed to add bus: %d\n", err);
 	}
 
+	/* Create procfs directory for this bus */
+	pci_proc_attach_bus(bus);
+
 	if (parent)
 		dev_info(parent, "PCI host bridge to bus %s\n", name);
 	else
@@ -1278,6 +1281,9 @@ add_dev:
 		if (WARN_ON(ret < 0))
 			dev_err(&child->dev, "failed to add bus: %d\n", ret);
 	}
+
+	/* Create procfs directory for this bus */
+	pci_proc_attach_bus(child);
 
 	return child;
 }

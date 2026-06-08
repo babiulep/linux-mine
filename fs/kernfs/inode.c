@@ -316,6 +316,15 @@ int kernfs_xattr_set(struct kernfs_node *kn, const char *name,
 	if (!attrs)
 		return -ENOMEM;
 
+	/*
+	 * Protect xattr modifications with the hashed per-node mutex.
+	 * Multiple superblocks (with different namespaces) can share the same
+	 * kernfs_node, so inode locking alone is insufficient. The hashed mutex
+	 * ensures serialization of concurrent xattr operations on the same node,
+	 * including the lazy allocation of the xattrs structure itself.
+	 */
+	CLASS(kernfs_node_lock, lock)(kn);
+
 	old_xattr = simple_xattr_set(cache, &attrs->xattrs, name, value, size, flags);
 	if (IS_ERR(old_xattr))
 		return PTR_ERR(old_xattr);
@@ -362,6 +371,9 @@ static int kernfs_vfs_user_xattr_set(const struct xattr_handler *handler,
 	attrs = kernfs_iattrs(kn);
 	if (!attrs)
 		return -ENOMEM;
+
+	/* See comment in kernfs_xattr_set() about locking. */
+	CLASS(kernfs_node_lock, lock)(kn);
 
 	return simple_xattr_set_limited(&kernfs_root(kn)->xa_cache,
 					&attrs->xattrs, &attrs->xattr_limits,

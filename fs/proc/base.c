@@ -2392,15 +2392,18 @@ proc_map_files_readdir(struct file *file, struct dir_context *ctx)
 	if (!task)
 		goto out;
 
+	ret = 0;
+	if (!dir_emit_dots(file, ctx))
+		goto out_put_task;
+
 	mm = mm_access(task, PTRACE_MODE_READ_FSCREDS);
 	if (IS_ERR(mm)) {
 		ret = PTR_ERR(mm);
+		/* if the task has no mm, the directory should just be empty */
+		if (ret == -ESRCH)
+			ret = 0;
 		goto out_put_task;
 	}
-
-	ret = 0;
-	if (!dir_emit_dots(file, ctx))
-		goto out_put_mm;
 
 	ret = mmap_read_lock_killable(mm);
 	if (ret)

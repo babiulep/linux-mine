@@ -189,7 +189,6 @@ EXPORT_SYMBOL_GPL(pci_host_common_parse_ports);
 #define PCI_HOST_D3COLD_ALLOWED        BIT(0)
 #define PCI_HOST_PME_D3COLD_CAPABLE    BIT(1)
 
-
 static void gen_pci_unmap_cfg(void *ptr)
 {
 	pci_ecam_free((struct pci_config_window *)ptr);

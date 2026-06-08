@@ -2601,7 +2601,7 @@ void fbcon_suspended(struct fb_info *info)
 	vc = vc_cons[par->currcon].d;
 
 	/* Clear cursor, restore saved data when in text mode */
-	if (con_is_visible(vc) && (vc->vc_mode == KD_TEXT))
+	if ((vc->vc_mode == KD_TEXT) && con_is_visible(vc))
 		fbcon_cursor(vc, false);
 }
 
@@ -2615,7 +2615,7 @@ void fbcon_resumed(struct fb_info *info)
 	vc = vc_cons[par->currcon].d;
 
 	/* Update screen when in text mode only */
-	if (con_is_visible(vc) && (vc->vc_mode == KD_TEXT))
+	if ((vc->vc_mode == KD_TEXT) && con_is_visible(vc))
 		update_screen(vc);
 }
 
