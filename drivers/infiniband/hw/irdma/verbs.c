@@ -16,9 +16,11 @@ static int irdma_query_device(struct ib_device *ibdev,
 	struct irdma_pci_f *rf = iwdev->rf;
 	struct pci_dev *pcidev = iwdev->rf->pcidev;
 	struct irdma_hw_attrs *hw_attrs = &rf->sc_dev.hw_attrs;
+	int err;
 
-	if (udata->inlen || udata->outlen)
-		return -EINVAL;
+	err = ib_is_udata_in_empty(udata);
+	if (err)
+		return err;
 
 	memset(props, 0, sizeof(*props));
 	addrconf_addr_eui48((u8 *)&props->sys_image_guid,
@@ -74,7 +76,7 @@ static int irdma_query_device(struct ib_device *ibdev,
 	if (hw_attrs->uk_attrs.hw_rev >= IRDMA_GEN_3)
 		props->device_cap_flags |= IB_DEVICE_MEM_WINDOW_TYPE_2B;
 
-	return 0;
+	return ib_respond_empty_udata(udata);
 }
 
 /**
@@ -632,7 +634,6 @@ static int irdma_setup_umode_qp(struct ib_udata *udata,
 	iwqp->ctx_info.qp_compl_ctx = req.user_compl_ctx;
 	iwqp->user_mode = 1;
 	if (req.user_wqe_bufs) {
-		info->qp_uk_init_info.legacy_mode = ucontext->legacy_mode;
 		spin_lock_irqsave(&ucontext->qp_reg_mem_list_lock, flags);
 		iwqp->iwpbl = irdma_get_pbl((unsigned long)req.user_wqe_bufs,
 					    &ucontext->qp_reg_mem_list);
@@ -2064,10 +2065,6 @@ static int irdma_resize_cq(struct ib_cq *ibcq, unsigned int entries,
 			rdma_udata_to_drv_context(udata, struct irdma_ucontext,
 						  ibucontext);
 
-		/* CQ resize not supported with legacy GEN_1 libi40iw */
-		if (ucontext->legacy_mode)
-			return -EOPNOTSUPP;
-
 		if (ib_copy_from_udata(&req, udata,
 				       min(sizeof(req), udata->inlen)))
 			return -EINVAL;
@@ -2547,7 +2544,7 @@ static int irdma_create_cq(struct ib_cq *ibcq,
 		cqmr = &iwpbl->cq_mr;
 
 		if (rf->sc_dev.hw_attrs.uk_attrs.feature_flags &
-		    IRDMA_FEATURE_CQ_RESIZE && !ucontext->legacy_mode) {
+		    IRDMA_FEATURE_CQ_RESIZE) {
 			spin_lock_irqsave(&ucontext->cq_reg_mem_list_lock, flags);
 			iwpbl_shadow = irdma_get_pbl(
 					(unsigned long)req.user_shadow_area,
@@ -2560,7 +2557,6 @@ static int irdma_create_cq(struct ib_cq *ibcq,
 			}
 			cqmr_shadow = &iwpbl_shadow->cq_mr;
 			info.shadow_area_pa = cqmr_shadow->cq_pbl.addr;
-			cqmr->split = true;
 		} else {
 			info.shadow_area_pa = cqmr->shadow;
 		}
@@ -2964,7 +2960,8 @@ static int irdma_handle_q_mem(struct irdma_device *iwdev,
 	case IRDMA_MEMREG_TYPE_CQ:
 		hmc_p = &cqmr->cq_pbl;
 
-		if (!cqmr->split)
+		if (!(iwdev->rf->sc_dev.hw_attrs.uk_attrs.feature_flags &
+		      IRDMA_FEATURE_CQ_RESIZE))
 			cqmr->shadow = (dma_addr_t)arr[req->cq_pages];
 
 		if (lvl)
@@ -3309,6 +3306,7 @@ static int irdma_reg_user_mr_type_mem(struct irdma_mr *iwmr, int access,
 	int err;
 
 	lvl = iwmr->page_cnt != 1 ? PBLE_LEVEL_1 | PBLE_LEVEL_2 : PBLE_LEVEL_0;
+	iwmr->access = access;
 
 	err = irdma_setup_pbles(iwdev->rf, iwmr, lvl);
 	if (err)

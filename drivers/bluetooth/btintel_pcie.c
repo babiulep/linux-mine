@@ -654,9 +654,10 @@ static void *btintel_pcie_copy_tlv(void *dest, enum btintel_pcie_tlv_type type,
 static int btintel_pcie_read_dram_buffers(struct btintel_pcie_data *data)
 {
 	u32 offset, prev_size, wr_ptr_status, dump_size, data_len;
+	u32 status_reg, wrap_reg;
 	struct btintel_pcie_dbgc *dbgc = &data->dbgc;
 	struct hci_dev *hdev = data->hdev;
-	u8 *pdata, *p, buf_idx;
+	u8 *pdata, *p, buf_idx, hw_variant;
 	struct intel_tlv *tlv;
 	struct timespec64 now;
 	struct tm tm_now;
@@ -669,7 +670,28 @@ static int btintel_pcie_read_dram_buffers(struct btintel_pcie_data *data)
 		return -EOPNOTSUPP;
 
 
-	wr_ptr_status = btintel_pcie_rd_dev_mem(data, BTINTEL_PCIE_DBGC_CUR_DBGBUFF_STATUS);
+	hw_variant = INTEL_HW_VARIANT(data->cnvi);
+	switch (hw_variant) {
+	case BTINTEL_HWID_BZRI:
+	case BTINTEL_HWID_BZRIW:
+		status_reg = BTINTEL_PCIE_DBGC_CUR_DBGBUFF_STATUS;
+		wrap_reg = BTINTEL_PCIE_DBGC_DBGBUFF_WRAP_ARND;
+		break;
+	case BTINTEL_HWID_SCP:
+	case BTINTEL_HWID_SCP2:
+	case BTINTEL_HWID_SCP2F:
+		status_reg = BTINTEL_PCIE_DBGC_CUR_DBGBUFF_STATUS_SCP;
+		wrap_reg = BTINTEL_PCIE_DBGC_DBGBUFF_WRAP_ARND_SCP;
+		break;
+	default:
+		bt_dev_err(hdev, "Unsupported Intel hardware variant (0x%2.2x)",
+			   hw_variant);
+		return -EINVAL;
+	}
+
+	wr_ptr_status = btintel_pcie_rd_dev_mem(data, status_reg);
+	data->dmp_hdr.wrap_ctr = btintel_pcie_rd_dev_mem(data, wrap_reg);
+
 	offset = wr_ptr_status & BTINTEL_PCIE_DBG_OFFSET_BIT_MASK;
 
 	buf_idx = BTINTEL_PCIE_DBGC_DBG_BUF_IDX(wr_ptr_status);
@@ -751,10 +773,6 @@ static int btintel_pcie_read_dram_buffers(struct btintel_pcie_data *data)
 				  sizeof(data->dmp_hdr.write_ptr));
 	p = btintel_pcie_copy_tlv(p, BTINTEL_WRAP_CTR, &data->dmp_hdr.wrap_ctr,
 				  sizeof(data->dmp_hdr.wrap_ctr));
-
-	data->dmp_hdr.wrap_ctr = btintel_pcie_rd_dev_mem(data,
-							 BTINTEL_PCIE_DBGC_DBGBUFF_WRAP_ARND);
-
 	p = btintel_pcie_copy_tlv(p, BTINTEL_TRIGGER_REASON, &data->dmp_hdr.trigger_reason,
 				  sizeof(data->dmp_hdr.trigger_reason));
 	p = btintel_pcie_copy_tlv(p, BTINTEL_FW_SHA, &data->dmp_hdr.fw_git_sha1,
@@ -799,6 +817,11 @@ static void btintel_pcie_dump_traces(struct hci_dev *hdev)
 		bt_dev_err(hdev, "Failed to dump traces: (%d)", ret);
 }
 
+static bool btintel_pcie_is_blazariw(struct pci_dev *pdev)
+{
+	return pdev->device == 0x4D76;
+}
+
 /* This function enables BT function by setting BTINTEL_PCIE_CSR_FUNC_CTRL_MAC_INIT bit in
  * BTINTEL_PCIE_CSR_FUNC_CTRL_REG register and wait for MSI-X with
  * BTINTEL_PCIE_MSIX_HW_INT_CAUSES_GP0.
@@ -817,6 +840,14 @@ static int btintel_pcie_enable_bt(struct btintel_pcie_data *data)
 			      data->ci_p_addr & 0xffffffff);
 	btintel_pcie_wr_reg32(data, BTINTEL_PCIE_CSR_CI_ADDR_MSB_REG,
 			      (u64)data->ci_p_addr >> 32);
+
+	/* On BlazarIW, the D0 entry to MAC init does not complete in
+	 * time. Wait 50 ms (worst case as per HW analysis) for the
+	 * shared hardware reset flow to complete before proceeding with
+	 * MAC init.
+	 */
+	if (btintel_pcie_is_blazariw(data->pdev))
+		msleep(50);
 
 	/* Reset the cached value of boot stage. it is updated by the MSI-X
 	 * gp0 interrupt handler.

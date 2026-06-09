@@ -11,6 +11,7 @@
 #ifndef _VIDEO_FONT_H
 #define _VIDEO_FONT_H
 
+#include <linux/math.h>
 #include <linux/types.h>
 
 struct console_font;
@@ -34,7 +35,7 @@ struct console_font;
  */
 static inline unsigned int font_glyph_pitch(unsigned int width)
 {
-	return (width + 7) >> 3;
+	return DIV_ROUND_UP(width, 8);
 }
 
 /**

@@ -563,13 +563,13 @@ TEST_F(fown, sigurg_socket)
  * Checks that LANDLOCK_SCOPE_SIGNAL is enforced on the asynchronous SIGIO
  * delivery path (fcntl(F_SETOWN)) when the file owner is a process group.
  *
- * A sandboxed task sitting at the head of its process group's PID hlist (the
- * default position right after fork()) used to escape the
- * fcntl(F_SETOWN, -pgrp) subject capture: pid_task(pgrp, PIDTYPE_PGID)
- * resolved to the task itself, so the same-thread-group exemption skipped
- * recording its Landlock domain.  At SIGIO time the cached subject was then
- * empty and the signal fanned out to every group member, including
- * non-sandboxed tasks outside the domain.
+ * A sandboxed process sitting at the head of its process group's PID hlist
+ * (the default position right after fork()) used to escape the
+ * fcntl(F_SETOWN, -pgrp) domain recording: pid_task(pgrp, PIDTYPE_PGID)
+ * resolved to the process itself, so the same-thread-group exemption skipped
+ * recording its Landlock domain.  At SIGIO time that domain was then unset and
+ * the signal fanned out to every group member, including non-sandboxed
+ * processes outside the domain.
  */
 TEST(sigio_to_pgid_members)
 {
@@ -581,8 +581,8 @@ TEST(sigio_to_pgid_members)
 	drop_caps(_metadata);
 
 	/*
-	 * Isolates the test in its own process group so the SIGIO fan-out
-	 * stays bounded to this parent and the child forked below.
+	 * Isolates the test in its own process group so the SIGIO fan-out stays
+	 * bounded to this parent and the child forked below.
 	 */
 	ASSERT_EQ(0, setpgid(0, 0));
 
@@ -599,7 +599,7 @@ TEST(sigio_to_pgid_members)
 		/*
 		 * The child inherits the parent's new process group and, just
 		 * attached with hlist_add_head_rcu(), is now the head of the
-		 * pgid hlist: this is the case that used to skip the capture.
+		 * pgid hlist: this is the case that used to skip the recording.
 		 */
 		EXPECT_EQ(0, close(sync_child[0]));
 
@@ -654,6 +654,92 @@ TEST(sigio_to_pgid_members)
 	if (WIFSIGNALED(status) || !WIFEXITED(status) ||
 	    WEXITSTATUS(status) != EXIT_SUCCESS)
 		_metadata->exit_code = KSFT_FAIL;
+}
+
+static void *thread_setown_scoped(void *arg)
+{
+	const int fd = *(int *)arg;
+	int ruleset_fd;
+	const struct landlock_ruleset_attr ruleset_attr = {
+		.scoped = LANDLOCK_SCOPE_SIGNAL,
+	};
+
+	/* Sandboxes only this non-leader thread (no thread syncing). */
+	ruleset_fd =
+		landlock_create_ruleset(&ruleset_attr, sizeof(ruleset_attr), 0);
+	if (ruleset_fd < 0)
+		return (void *)THREAD_ERROR;
+	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) ||
+	    landlock_restrict_self(ruleset_fd, 0)) {
+		close(ruleset_fd);
+		return (void *)THREAD_ERROR;
+	}
+	close(ruleset_fd);
+
+	/* Makes this process group own the SIGIO source. */
+	if (fcntl(fd, F_SETSIG, SIGURG) || fcntl(fd, F_SETOWN, -getpgrp()) ||
+	    fcntl(fd, F_SETFL, O_ASYNC))
+		return (void *)THREAD_ERROR;
+
+	return (void *)THREAD_SUCCESS;
+}
+
+/*
+ * Checks that the SIGIO fan-out is still delivered to the file owner's own
+ * process when fcntl(F_SETOWN, -pgrp) was issued from a sandboxed non-leader
+ * thread.
+ *
+ * The Landlock domain is recorded for a process-group owner (so out-of-domain
+ * members stay blocked, see sigio_to_pgid_members), but the kernel signals a
+ * process group through its members' thread-group leaders.  Here the leader is
+ * not sandboxed and thus has a different domain than the registering thread, so
+ * the registration-time check cannot tell that it belongs to the owner's own
+ * process.  hook_file_send_sigiotask() must recognize it through the recorded
+ * thread group and allow the delivery, matching the same-process guarantee of
+ * commit 18eb75f3af40.  Without that exemption the leader is wrongly denied and
+ * never signaled.
+ */
+TEST(sigio_to_pgid_self)
+{
+	int trigger[2];
+	pthread_t thread;
+	enum thread_return ret = THREAD_INVALID;
+	int i;
+
+	drop_caps(_metadata);
+
+	/* Bounds the SIGIO fan-out to this process. */
+	ASSERT_EQ(0, setpgid(0, 0));
+
+	/* The non-sandboxed thread-group leader is the SIGIO target. */
+	ASSERT_EQ(0, setup_signal_handler(SIGURG));
+	signal_received = 0;
+
+	ASSERT_EQ(0, pipe2(trigger, O_CLOEXEC));
+
+	/*
+	 * Registers the process-group fowner from a sibling thread that
+	 * sandboxes only itself, so its domain differs from the leader's.
+	 */
+	ASSERT_EQ(0, pthread_create(&thread, NULL, thread_setown_scoped,
+				    &trigger[0]));
+	ASSERT_EQ(0, pthread_join(thread, (void **)&ret));
+	ASSERT_EQ(THREAD_SUCCESS, ret);
+
+	/* Fans SIGURG out to the process group. */
+	ASSERT_EQ(1, write(trigger[1], ".", 1));
+
+	for (i = 0; i < 1000 && !signal_received; i++)
+		usleep(1000);
+
+	/*
+	 * Same-process delivery must always be allowed, even though the owner
+	 * was registered from a sandboxed sibling thread.
+	 */
+	EXPECT_EQ(1, signal_received);
+
+	EXPECT_EQ(0, close(trigger[0]));
+	EXPECT_EQ(0, close(trigger[1]));
 }
 
 TEST_HARNESS_MAIN

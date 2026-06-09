@@ -848,6 +848,12 @@ static int ntfs_read_locked_inode(struct inode *vi)
 					a->data.resident.value_offset),
 					le32_to_cpu(
 					a->data.resident.value_length));
+			/* A resident list is not validated on load; check it now. */
+			if (!ntfs_attr_list_is_valid(ni->attr_list,
+						     ni->attr_list_size)) {
+				ntfs_error(vi->i_sb, "Corrupt attribute list.");
+				goto unm_err_out;
+			}
 		}
 	}
 skip_attr_list_load:
@@ -1991,10 +1997,7 @@ int ntfs_read_inode_mount(struct inode *vi)
 			/* Catch the end of the attribute list. */
 			if ((u8 *)al_entry == al_end)
 				goto em_put_err_out;
-			if (!al_entry->length)
-				goto em_put_err_out;
-			if ((u8 *)al_entry + 6 > al_end ||
-			    (u8 *)al_entry + le16_to_cpu(al_entry->length) > al_end)
+			if (!ntfs_attr_list_entry_is_valid(al_entry, al_end))
 				goto em_put_err_out;
 			next_al_entry = (struct attr_list_entry *)((u8 *)al_entry +
 					le16_to_cpu(al_entry->length));

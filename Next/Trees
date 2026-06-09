@@ -144,6 +144,7 @@ sparc-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/alarsson/linux-sparc
 clk-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/clk/linux.git#clk-fixes
 thead-clk-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/fustini/linux.git#thead-clk-fixes
 tenstorrent-clk-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/tenstorrent/linux.git#tenstorrent-clk-fixes
+fustini-config-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/fustini/linux.git#riscv-config-fixes
 pwrseq-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/brgl/linux.git#pwrseq/for-current
 thead-dt-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/fustini/linux.git#thead-dt-fixes
 ftrace-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/trace/linux-trace.git#ftrace/fixes
@@ -214,6 +215,7 @@ sunxi		https://git.kernel.org/pub/scm/linux/kernel/git/sunxi/linux.git#sunxi/for
 tee		https://git.kernel.org/pub/scm/linux/kernel/git/jenswi/linux-tee.git#next
 tegra		https://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux.git#for-next
 tenstorrent-dt	https://git.kernel.org/pub/scm/linux/kernel/git/tenstorrent/linux.git#tenstorrent-dt-for-next
+fustini-config	https://git.kernel.org/pub/scm/linux/kernel/git/fustini/linux.git#riscv-config-for-next
 thead-dt	https://git.kernel.org/pub/scm/linux/kernel/git/fustini/linux.git#thead-dt-for-next
 ti		https://git.kernel.org/pub/scm/linux/kernel/git/ti/linux.git#ti-next
 xilinx		https://github.com/Xilinx/linux-xlnx.git#for-next

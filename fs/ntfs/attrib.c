@@ -589,10 +589,28 @@ static u32 ntfs_resident_attr_min_value_length(const __le32 type)
 			sizeof(__le16) * 1;
 	case AT_VOLUME_INFORMATION:
 		return sizeof(struct volume_information);
+	case AT_INDEX_ROOT:
+		return sizeof(struct index_root);
 	case AT_EA_INFORMATION:
 		return sizeof(struct ea_information);
 	default:
 		return 0;
+	}
+}
+
+static bool ntfs_attr_type_is_resident_only(const __le32 type)
+{
+	switch (type) {
+	case AT_STANDARD_INFORMATION:
+	case AT_FILE_NAME:
+	case AT_OBJECT_ID:
+	case AT_VOLUME_NAME:
+	case AT_VOLUME_INFORMATION:
+	case AT_INDEX_ROOT:
+	case AT_EA_INFORMATION:
+		return true;
+	default:
+		return false;
 	}
 }
 
@@ -614,6 +632,31 @@ static bool ntfs_volume_name_attr_value_is_valid(const u32 value_length)
 		return false;
 
 	return value_length <= NTFS_MAX_LABEL_LEN * sizeof(__le16);
+}
+
+static bool ntfs_index_root_attr_value_is_valid(const u8 *value, const u32 value_length)
+{
+	const struct index_root *ir;
+	u32 index_size;
+	u32 entries_offset;
+	u32 index_length;
+	u32 allocated_size;
+
+	ir = (const struct index_root *)value;
+	index_size = value_length - offsetof(struct index_root, index);
+	entries_offset = le32_to_cpu(ir->index.entries_offset);
+	index_length = le32_to_cpu(ir->index.index_length);
+	allocated_size = le32_to_cpu(ir->index.allocated_size);
+
+	if ((entries_offset | index_length | allocated_size) & 7 ||
+	    entries_offset < sizeof(struct index_header) ||
+	    entries_offset > index_length ||
+	    index_length > allocated_size ||
+	    allocated_size > index_size ||
+	    index_length - entries_offset < sizeof(struct index_entry_header))
+		return false;
+
+	return true;
 }
 
 struct ntfs_resident_attr_value {
@@ -666,7 +709,7 @@ static bool ntfs_attr_value_is_valid(struct ntfs_volume *vol,
 	u32 min_len;
 
 	if (a->non_resident) {
-		if (a->type == AT_FILE_NAME || a->type == AT_VOLUME_NAME)
+		if (ntfs_attr_type_is_resident_only(a->type))
 			goto corrupt;
 		if (!ntfs_non_resident_attr_value_is_valid(a))
 			goto corrupt;
@@ -687,6 +730,10 @@ static bool ntfs_attr_value_is_valid(struct ntfs_volume *vol,
 		break;
 	case AT_VOLUME_NAME:
 		if (!ntfs_volume_name_attr_value_is_valid(value.len))
+			goto corrupt;
+		break;
+	case AT_INDEX_ROOT:
+		if (!ntfs_index_root_attr_value_is_valid(value.data, value.len))
 			goto corrupt;
 		break;
 	}
@@ -921,11 +968,71 @@ char *ntfs_attr_name_get(const struct ntfs_volume *vol, const __le16 *uname,
 	return NULL;
 }
 
+/*
+ * ntfs_attr_list_entry_is_valid - sanity check one $ATTRIBUTE_LIST entry
+ * @ale:	the attribute-list entry to check
+ * @al_end:	end of the attribute-list buffer @ale lives in
+ *
+ * Verify that @ale is a well-formed attr_list_entry wholly contained in
+ * [.., @al_end): its fixed header must lie in range before any field is
+ * dereferenced, its length must be a multiple of 8 that covers the fixed
+ * header plus the name, the name must lie within the buffer, the entry must
+ * be in use and carry a live MFT reference.  Return true if valid.
+ */
+bool ntfs_attr_list_entry_is_valid(const struct attr_list_entry *ale,
+				   const u8 *al_end)
+{
+	const u8 *al = (const u8 *)ale;
+	u16 ale_len;
+
+	/* The fixed header must be in bounds before it is parsed. */
+	if (al + offsetof(struct attr_list_entry, name) > al_end)
+		return false;
+	ale_len = le16_to_cpu(ale->length);
+	/* On-disk entries are 8-byte aligned (see struct attr_list_entry). */
+	if (ale_len & 7)
+		return false;
+	if (ale->name_offset != sizeof(struct attr_list_entry))
+		return false;
+	if ((u32)ale->name_offset +
+	    (u32)ale->name_length * sizeof(__le16) > ale_len ||
+	    al + ale_len > al_end)
+		return false;
+	if (ale->type == AT_UNUSED)
+		return false;
+	if (MSEQNO_LE(ale->mft_reference) == 0)
+		return false;
+	return true;
+}
+
+/*
+ * ntfs_attr_list_is_valid - sanity check an in-memory $ATTRIBUTE_LIST
+ * @al_start:	start of the attribute list buffer
+ * @size:	length of the attribute list in bytes
+ *
+ * Verify that [@al_start, @al_start + @size) is a sequence of valid
+ * attr_list_entry records (see ntfs_attr_list_entry_is_valid()) that tile the
+ * buffer exactly.  Return true if valid, false otherwise.
+ */
+bool ntfs_attr_list_is_valid(const u8 *al_start, s64 size)
+{
+	const u8 *al = al_start;
+	const u8 *al_end = al_start + size;
+
+	while (al < al_end) {
+		const struct attr_list_entry *ale =
+				(const struct attr_list_entry *)al;
+
+		if (!ntfs_attr_list_entry_is_valid(ale, al_end))
+			return false;
+		al += le16_to_cpu(ale->length);
+	}
+	return al == al_end;
+}
+
 int load_attribute_list(struct ntfs_inode *base_ni, u8 *al_start, const s64 size)
 {
 	struct inode *attr_vi = NULL;
-	u8 *al;
-	struct attr_list_entry *ale;
 
 	if (!al_start || size <= 0)
 		return -EINVAL;
@@ -947,19 +1054,7 @@ int load_attribute_list(struct ntfs_inode *base_ni, u8 *al_start, const s64 size
 	}
 	iput(attr_vi);
 
-	for (al = al_start; al < al_start + size; al += le16_to_cpu(ale->length)) {
-		ale = (struct attr_list_entry *)al;
-		if (ale->name_offset != sizeof(struct attr_list_entry))
-			break;
-		if (le16_to_cpu(ale->length) <= ale->name_offset + ale->name_length ||
-		    al + le16_to_cpu(ale->length) > al_start + size)
-			break;
-		if (ale->type == AT_UNUSED)
-			break;
-		if (MSEQNO_LE(ale->mft_reference) == 0)
-			break;
-	}
-	if (al != al_start + size) {
+	if (!ntfs_attr_list_is_valid(al_start, size)) {
 		ntfs_error(base_ni->vol->sb, "Corrupt attribute list, mft = %llu",
 			   base_ni->mft_no);
 		return -EIO;
@@ -1215,9 +1310,8 @@ find_attr_list_attr:
 		 * we have reached the right one or the search has failed.
 		 */
 		if (lowest_vcn && (u8 *)next_al_entry >= al_start &&
-				(u8 *)next_al_entry + 6 < al_end &&
-				(u8 *)next_al_entry + le16_to_cpu(
-					next_al_entry->length) <= al_end &&
+				ntfs_attr_list_entry_is_valid(next_al_entry,
+							      al_end) &&
 				le64_to_cpu(next_al_entry->lowest_vcn) <=
 					lowest_vcn &&
 				next_al_entry->type == al_entry->type &&

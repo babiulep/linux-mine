@@ -8934,6 +8934,21 @@ helpful if user space wants to emulate instructions which are not
 This capability can be enabled dynamically even if VCPUs were already
 created and are running.
 
+7.47 KVM_CAP_S390_HPAGE_2G
+--------------------------
+
+:Architectures: s390
+:Parameters: none
+:Returns: 0 on success; -EINVAL if hpage_2g module parameter was not set,
+          cmma is enabled, or the VM has the KVM_VM_S390_UCONTROL
+          flag set; -EBUSY if vCPUs were already created for the VM.
+
+With this capability the KVM support for memory backing with 2g pages
+through hugetlbfs can be enabled for a VM. After the capability is
+enabled, cmma can't be enabled anymore and pfmfi and the storage key
+interpretation are disabled. If cmma has already been enabled or the
+hpage_2g module parameter is not set to 1, -EINVAL is returned.
+
 8. Other capabilities.
 ======================
 
@@ -9393,6 +9408,8 @@ means the VM type with value @n is supported.  Possible values of @n are::
   #define KVM_X86_SW_PROTECTED_VM	1
   #define KVM_X86_SEV_VM	2
   #define KVM_X86_SEV_ES_VM	3
+  #define KVM_X86_SNP_VM	4
+  #define KVM_X86_TDX_VM	5
 
 Note, KVM_X86_SW_PROTECTED_VM is currently only for development and testing.
 Do not use KVM_X86_SW_PROTECTED_VM for "real" VMs, and especially not in

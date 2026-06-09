@@ -2683,6 +2683,7 @@ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/bmc/linux.git
 F:	Documentation/devicetree/bindings/arm/aspeed/
 F:	arch/arm/boot/dts/aspeed/
 F:	arch/arm/mach-aspeed/
+F:	arch/arm64/boot/dts/aspeed/
 N:	aspeed
 
 ARM/AXIADO ARCHITECTURE
@@ -12861,6 +12862,8 @@ R:	Eric Snowberg <eric.snowberg@oracle.com>
 L:	linux-integrity@vger.kernel.org
 S:	Supported
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/zohar/linux-integrity.git
+F:	Documentation/security/IMA-export-delete.rst
+F:	Documentation/security/IMA-templates.rst
 F:	include/linux/secure_boot.h
 F:	security/integrity/
 F:	security/integrity/ima/
@@ -15816,6 +15819,14 @@ W:	https://ez.analog.com/linux-software-drivers
 F:	Documentation/devicetree/bindings/hwmon/pmbus/adi,max20830.yaml
 F:	Documentation/hwmon/max20830.rst
 F:	drivers/hwmon/pmbus/max20830.c
+
+MAX20860A HARDWARE MONITOR DRIVER
+M:	Sanman Pradhan <psanman@juniper.net>
+L:	linux-hwmon@vger.kernel.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/hwmon/pmbus/adi,max20860a.yaml
+F:	Documentation/hwmon/max20860a.rst
+F:	drivers/hwmon/pmbus/max20860a.c
 
 MAX2175 SDR TUNER DRIVER
 M:	Ramesh Shanmugasundaram <rashanmu@gmail.com>
@@ -21225,7 +21236,7 @@ M:	Lorenzo Bianconi <lorenzo@kernel.org>
 L:	linux-mediatek@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
 F:	Documentation/devicetree/bindings/pinctrl/airoha,en7581-pinctrl.yaml
-F:	drivers/pinctrl/mediatek/pinctrl-airoha.c
+F:	drivers/pinctrl/airoha/pinctrl-airoha.c
 
 PIN CONTROLLER - AMD
 M:	Basavaraj Natikar <Basavaraj.Natikar@amd.com>
@@ -23696,6 +23707,20 @@ L:	rust-for-linux@vger.kernel.org
 S:	Maintained
 T:	git https://github.com/Rust-for-Linux/linux.git rust-analyzer-next
 F:	scripts/generate_rust_analyzer.py
+
+RUST [SYNC]
+M:	Boqun Feng <boqun@kernel.org>
+M:	Gary Guo <gary@garyguo.net>
+M:	Alice Ryhl <aliceryhl@google.com>
+R:	Lyude Paul <lyude@redhat.com>
+R:	Daniel Almeida <daniel.almeida@collabora.com>
+R:	"Onur Özkan" <work@onurozkan.dev>
+L:	linux-kernel@vger.kernel.org
+L:	rust-for-linux@vger.kernel.org
+S:	Maintained
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/boqun/linux.git rust-sync
+F:	rust/kernel/sync.rs
+F:	rust/kernel/sync/
 
 RXRPC SOCKETS (AF_RXRPC)
 M:	David Howells <dhowells@redhat.com>
@@ -26175,7 +26200,6 @@ F:	drivers/media/platform/synopsys/hdmirx/*
 SYNOPSYS DESIGNWARE I2C DRIVER
 M:	Mika Westerberg <mika.westerberg@linux.intel.com>
 R:	Andy Shevchenko <andriy.shevchenko@linux.intel.com>
-R:	Jan Dabros <jsd@semihalf.com>
 L:	linux-i2c@vger.kernel.org
 S:	Supported
 F:	drivers/i2c/busses/i2c-designware-*

@@ -558,6 +558,7 @@ config PINCTRL_ST
 
 config PINCTRL_STMFX
 	tristate "STMicroelectronics STMFX GPIO expander pinctrl driver"
+	depends on OF
 	depends on I2C
 	depends on HAS_IOMEM
 	select GENERIC_PINCONF
@@ -689,6 +690,7 @@ config PINCTRL_RP1
 	  multi function device.
 
 source "drivers/pinctrl/actions/Kconfig"
+source "drivers/pinctrl/airoha/Kconfig"
 source "drivers/pinctrl/aspeed/Kconfig"
 source "drivers/pinctrl/bcm/Kconfig"
 source "drivers/pinctrl/berlin/Kconfig"
