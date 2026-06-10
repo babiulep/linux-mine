@@ -8,8 +8,10 @@ use crate::{
         Flags, //
     },
     bindings,
-    error::code::*,
-    error::Result,
+    error::{
+        code::*,
+        Result, //
+    },
     uaccess::UserSliceReader, //
 };
 use core::{
