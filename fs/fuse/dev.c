@@ -1,9 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
   FUSE: Filesystem in Userspace
   Copyright (C) 2001-2008  Miklos Szeredi <miklos@szeredi.hu>
-
-  This program can be distributed under the terms of the GNU GPL.
-  See the file COPYING.
 */
 
 #include "dev.h"
@@ -56,6 +54,7 @@ static struct fuse_req *fuse_request_alloc(struct fuse_chan *fch, gfp_t flags)
 
 static void fuse_request_free(struct fuse_req *req)
 {
+	WARN_ON(!list_empty(&req->intr_entry));
 	kmem_cache_free(fuse_req_cachep, req);
 }
 
@@ -384,7 +383,7 @@ EXPORT_SYMBOL_GPL(fuse_dev_chan_new);
 
 unsigned int fuse_chan_num_background(struct fuse_chan *fch)
 {
-	return fch->num_background;
+	return READ_ONCE(fch->num_background);
 }
 
 unsigned int fuse_chan_max_background(struct fuse_chan *fch)
@@ -1627,6 +1626,7 @@ static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
 	list_move_tail(&req->list, &fpq->processing[hash]);
 	__fuse_get_request(req);
 	set_bit(FR_SENT, &req->flags);
+	trace_fuse_request_sent(req);
 	spin_unlock(&fpq->lock);
 	/* matches barrier in request_wait_answer() */
 	smp_mb__after_atomic();
@@ -1795,6 +1795,14 @@ void fuse_chan_resend(struct fuse_chan *fch)
 			clear_bit(FR_PENDING, &req->flags);
 		fuse_dev_end_requests(&to_queue);
 		return;
+	}
+	/*
+	 * Remove interrupt entries for resent requests to prevent stale
+	 * intr_entry on fiq->interrupts after the request is re-queued.
+	 */
+	list_for_each_entry(req, &to_queue, list) {
+		if (test_bit(FR_INTERRUPTED, &req->flags))
+			list_del_init(&req->intr_entry);
 	}
 	/* iq and pq requests are both oldest to newest */
 	list_splice(&to_queue, &fiq->pending);
@@ -2138,7 +2146,7 @@ void fuse_chan_abort(struct fuse_chan *fch, bool abort_with_err)
 		fch->connected = 0;
 		spin_unlock(&fch->bg_lock);
 
-		fuse_chan_set_initialized(fch, 0);
+		fuse_chan_set_initialized(fch, NULL);
 		list_for_each_entry(fud, &fch->devices, entry) {
 			struct fuse_pqueue *fpq = &fud->pq;
 
