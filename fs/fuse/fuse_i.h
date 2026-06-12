@@ -191,6 +191,11 @@ struct fuse_inode {
 			struct timespec64 mtime;
 
 			/**
+			 * @epoch: epoch of fc when cache was started
+			 */
+			int epoch;
+
+			/**
 			 * @iversion: iversion of directory when cache was
 			 * started
 			 */
@@ -337,6 +342,7 @@ union fuse_file_args {
 /** The request IO state (for asynchronous processing) */
 struct fuse_io_priv {
 	struct kref refcnt;
+	struct work_struct work;
 	int async;
 	spinlock_t lock;
 	unsigned reqs;

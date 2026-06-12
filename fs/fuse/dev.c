@@ -594,6 +594,29 @@ static void flush_bg_queue(struct fuse_chan *fch)
 	}
 }
 
+void fuse_request_bg_finish(struct fuse_chan *fch, struct fuse_req *req)
+{
+	lockdep_assert_held(&fch->bg_lock);
+
+	clear_bit(FR_BACKGROUND, &req->flags);
+	if (fch->num_background == fch->max_background) {
+		fch->blocked = 0;
+		wake_up(&fch->blocked_waitq);
+	} else if (!fch->blocked) {
+		/*
+		 * Wake up next waiter, if any.  It's okay to use
+		 * waitqueue_active(), as we've already synced up
+		 * fch->blocked with waiters with the wake_up() call
+		 * above.
+		 */
+		if (waitqueue_active(&fch->blocked_waitq))
+			wake_up(&fch->blocked_waitq);
+	}
+
+	fch->num_background--;
+	fch->active_background--;
+}
+
 /*
  * This function is called when a request is finished.  Either a reply
  * has arrived or it was aborted (and not yet sent) or some error
@@ -625,23 +648,7 @@ void fuse_request_end(struct fuse_req *req)
 	WARN_ON(test_bit(FR_SENT, &req->flags));
 	if (test_bit(FR_BACKGROUND, &req->flags)) {
 		spin_lock(&fch->bg_lock);
-		clear_bit(FR_BACKGROUND, &req->flags);
-		if (fch->num_background == fch->max_background) {
-			fch->blocked = 0;
-			wake_up(&fch->blocked_waitq);
-		} else if (!fch->blocked) {
-			/*
-			 * Wake up next waiter, if any.  It's okay to use
-			 * waitqueue_active(), as we've already synced up
-			 * fch->blocked with waiters with the wake_up() call
-			 * above.
-			 */
-			if (waitqueue_active(&fch->blocked_waitq))
-				wake_up(&fch->blocked_waitq);
-		}
-
-		fch->num_background--;
-		fch->active_background--;
+		fuse_request_bg_finish(fch, req);
 		flush_bg_queue(fch);
 		spin_unlock(&fch->bg_lock);
 	} else {
@@ -1365,24 +1372,21 @@ static int request_pending(struct fuse_iqueue *fiq)
  *
  * Called with fiq->lock held, releases it
  */
-static int fuse_read_interrupt(struct fuse_iqueue *fiq,
-			       struct fuse_copy_state *cs,
-			       struct fuse_req *req)
+static int fuse_read_interrupt(struct fuse_iqueue *fiq, struct fuse_copy_state *cs)
 __releases(fiq->lock)
 {
-	struct fuse_in_header ih;
-	struct fuse_interrupt_in arg;
-	unsigned reqsize = sizeof(ih) + sizeof(arg);
+	struct fuse_req *req = list_first_entry(&fiq->interrupts, struct fuse_req, intr_entry);
+	struct fuse_interrupt_in arg = {
+		.unique = req->in.h.unique,
+	};
+	struct fuse_in_header ih = {
+		.opcode = FUSE_INTERRUPT,
+		.unique = (req->in.h.unique | FUSE_INT_REQ_BIT),
+		.len = sizeof(ih) + sizeof(arg),
+	};
 	int err;
 
 	list_del_init(&req->intr_entry);
-	memset(&ih, 0, sizeof(ih));
-	memset(&arg, 0, sizeof(arg));
-	ih.len = reqsize;
-	ih.opcode = FUSE_INTERRUPT;
-	ih.unique = (req->in.h.unique | FUSE_INT_REQ_BIT);
-	arg.unique = req->in.h.unique;
-
 	spin_unlock(&fiq->lock);
 
 	err = fuse_copy_one(cs, &ih, sizeof(ih));
@@ -1390,7 +1394,7 @@ __releases(fiq->lock)
 		err = fuse_copy_one(cs, &arg, sizeof(arg));
 	fuse_copy_finish(cs);
 
-	return err ? err : reqsize;
+	return err ? err : ih.len;
 }
 
 static struct fuse_forget_link *fuse_dequeue_forget(struct fuse_iqueue *fiq,
@@ -1559,11 +1563,8 @@ static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
 		goto err_unlock;
 	}
 
-	if (!list_empty(&fiq->interrupts)) {
-		req = list_entry(fiq->interrupts.next, struct fuse_req,
-				 intr_entry);
-		return fuse_read_interrupt(fiq, cs, req);
-	}
+	if (!list_empty(&fiq->interrupts))
+		return fuse_read_interrupt(fiq, cs);
 
 	if (forget_pending(fiq)) {
 		if (list_empty(&fiq->pending) || fiq->forget_batch-- > 0)
@@ -1598,7 +1599,6 @@ static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
 	if (!fpq->connected) {
 		req->out.h.error = err = -ECONNABORTED;
 		goto out_end;
-
 	}
 	list_add(&req->list, &fpq->io);
 	spin_unlock(&fpq->lock);

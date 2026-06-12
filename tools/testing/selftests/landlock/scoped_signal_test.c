@@ -563,13 +563,12 @@ TEST_F(fown, sigurg_socket)
  * Checks that LANDLOCK_SCOPE_SIGNAL is enforced on the asynchronous SIGIO
  * delivery path (fcntl(F_SETOWN)) when the file owner is a process group.
  *
- * A sandboxed process sitting at the head of its process group's PID hlist
- * (the default position right after fork()) used to escape the
- * fcntl(F_SETOWN, -pgrp) domain recording: pid_task(pgrp, PIDTYPE_PGID)
- * resolved to the process itself, so the same-thread-group exemption skipped
- * recording its Landlock domain.  At SIGIO time that domain was then unset and
- * the signal fanned out to every group member, including non-sandboxed
- * processes outside the domain.
+ * A sandboxed process sitting at the head of its process group's PID hlist (the
+ * default position right after fork()) used to escape the fcntl(F_SETOWN,
+ * -pgrp) domain recording: pid_task(pgrp, PIDTYPE_PGID) resolved to the process
+ * itself, so the same-thread-group exemption skipped recording its Landlock
+ * domain.  At SIGIO time that domain was then unset and the signal fanned out
+ * to every group member, including non-sandboxed processes outside the domain.
  */
 TEST(sigio_to_pgid_members)
 {

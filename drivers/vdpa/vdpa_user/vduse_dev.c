@@ -561,12 +561,12 @@ static int vduse_vdpa_set_vq_address(struct vdpa_device *vdpa, u16 idx,
 
 static void vduse_vq_kick(struct vduse_virtqueue *vq)
 {
-	guard(spinlock)(&vq->kick_lock);
-	if (!vq->ready)
-		return;
-
 	guard(rwsem_read)(&vq->dev->rwsem);
 	if (vq->dev->suspended)
+		return;
+
+	guard(spinlock)(&vq->kick_lock);
+	if (!vq->ready)
 		return;
 
 	if (vq->kickfd)
@@ -1281,12 +1281,9 @@ static int vduse_dev_queue_irq_work(struct vduse_dev *dev,
 {
 	int ret = -EINVAL;
 
-	down_read(&dev->rwsem);
-	if (dev->suspended)
+	guard(rwsem_read)(&dev->rwsem);
+	if (dev->suspended || !(dev->status & VIRTIO_CONFIG_S_DRIVER_OK))
 		return ret;
-
-	if (!(dev->status & VIRTIO_CONFIG_S_DRIVER_OK))
-		goto unlock;
 
 	ret = 0;
 	if (irq_effective_cpu == IRQ_UNBOUND)
@@ -1294,8 +1291,6 @@ static int vduse_dev_queue_irq_work(struct vduse_dev *dev,
 	else
 		queue_work_on(irq_effective_cpu,
 			      vduse_irq_bound_wq, irq_work);
-unlock:
-	up_read(&dev->rwsem);
 
 	return ret;
 }

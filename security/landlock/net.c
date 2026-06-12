@@ -20,7 +20,8 @@
 #include "ruleset.h"
 
 int landlock_append_net_rule(struct landlock_ruleset *const ruleset,
-			     const u16 port, access_mask_t access_rights)
+			     const u16 port, access_mask_t access_rights,
+			     const u32 flags)
 {
 	int err;
 	const struct landlock_id id = {
@@ -35,7 +36,7 @@ int landlock_append_net_rule(struct landlock_ruleset *const ruleset,
 			 ~landlock_get_net_access_mask(ruleset, 0);
 
 	mutex_lock(&ruleset->lock);
-	err = landlock_insert_rule(ruleset, id, access_rights);
+	err = landlock_insert_rule(ruleset, id, access_rights, flags);
 	mutex_unlock(&ruleset->lock);
 
 	return err;
@@ -49,7 +50,7 @@ static int current_check_access_socket(struct socket *const sock,
 {
 	unsigned short sock_family;
 	__be16 port;
-	struct layer_access_masks layer_masks = {};
+	struct layer_masks layer_masks = {};
 	const struct landlock_rule *rule;
 	struct landlock_id id = {
 		.type = LANDLOCK_KEY_NET_PORT,
@@ -69,8 +70,8 @@ static int current_check_access_socket(struct socket *const sock,
 		return -EINVAL;
 
 	/*
-	 * The socket is not locked, so sk_family can change concurrently
-	 * due to e.g. setsockopt(IPV6_ADDRFORM).
+	 * The socket is not locked, so sk_family can change concurrently due to
+	 * e.g. setsockopt(IPV6_ADDRFORM).
 	 */
 	sock_family = READ_ONCE(sock->sk->sk_family);
 
@@ -80,31 +81,31 @@ static int current_check_access_socket(struct socket *const sock,
 		    (access_request == LANDLOCK_ACCESS_NET_CONNECT_SEND_UDP &&
 		     connecting)) {
 			/*
-			 * Connecting to an address with AF_UNSPEC dissolves
-			 * the remote association while retaining the socket
-			 * object (i.e., the file descriptor). For TCP, it has
-			 * the same effect as closing the connection. For UDP,
-			 * it removes any preset remote address. As for
-			 * dropping privileges, these actions are always
-			 * allowed.
-			 * Let the network stack handle potential
-			 * inconsistencies and return -EINVAL if needed.
+			 * Connecting to an address with AF_UNSPEC dissolves the
+			 * remote association while retaining the socket object
+			 * (i.e., the file descriptor). For TCP, it has the same
+			 * effect as closing the connection. For UDP, it removes
+			 * any preset remote address. As for dropping
+			 * privileges, these actions are always allowed.  Let
+			 * the network stack handle potential inconsistencies
+			 * and return -EINVAL if needed.
 			 */
 			return 0;
 		} else if (access_request ==
 			   LANDLOCK_ACCESS_NET_CONNECT_SEND_UDP) {
-			if (sock->sk->__sk_common.skc_family == AF_INET6) {
+			if (sock_family == AF_INET6) {
 				/*
 				 * We cannot allow sending UDP datagrams to an
 				 * explicit AF_UNSPEC address on IPv6 sockets,
 				 * even if AF_UNSPEC is treated as "no address"
-				 * on such sockets (so it should always be allowed).
-				 * That's because the socket's family can change under
-				 * our feet (if another thread calls setsockopt(IPV6_ADDRFORM))
-				 * to IPv4, which would then treat AF_UNSPEC as
-				 * AF_INET.
+				 * on such sockets (so it should always be
+				 * allowed).  That's because the socket's family
+				 * can change under our feet (if another thread
+				 * calls setsockopt(IPV6_ADDRFORM)) to IPv4,
+				 * which would then treat AF_UNSPEC as AF_INET.
 				 */
 				audit_net.family = AF_UNSPEC;
+				audit_net.sk = sock->sk;
 				landlock_init_layer_masks(
 					subject->domain, access_request,
 					&layer_masks, LANDLOCK_KEY_NET_PORT);
@@ -129,8 +130,8 @@ static int current_check_access_socket(struct socket *const sock,
 			 * setsockopt(IPV6_ADDRFORM), but that's ok: we either
 			 * reject entirely for IPv6 or require
 			 * %LANDLOCK_ACCESS_NET_BIND_TCP or
-			 * %LANDLOCK_ACCESS_NET_BIND_UDP for IPv4,
-			 * so it cannot be used to bypass the policy.
+			 * %LANDLOCK_ACCESS_NET_BIND_UDP for IPv4, so it cannot
+			 * be used to bypass the policy.
 			 *
 			 * IPv4 sockets map AF_UNSPEC to AF_INET for
 			 * retrocompatibility for bind accesses, only if the
@@ -163,8 +164,9 @@ static int current_check_access_socket(struct socket *const sock,
 			WARN_ON_ONCE(1);
 		}
 		/*
-		 * For bind(AF_UNSPEC+INADDR_ANY) on IPv4 socket and
-		 * for sending to AF_UNSPEC addresses on IPv4 socket.
+		 * AF_UNSPEC is treated as AF_INET only in
+		 * bind(AF_UNSPEC+INADDR_ANY) on IPv4 sockets and when sending
+		 * to AF_UNSPEC addresses on IPv4 sockets.
 		 */
 		fallthrough;
 	case AF_INET: {
@@ -247,55 +249,42 @@ static int current_check_access_socket(struct socket *const sock,
 
 	audit_net.family = address->sa_family;
 	audit_net.sk = sock->sk;
-	landlock_log_denial(subject,
-			    &(struct landlock_request){
-				    .type = LANDLOCK_REQUEST_NET_ACCESS,
-				    .audit.type = LSM_AUDIT_DATA_NET,
-				    .audit.u.net = &audit_net,
-				    .access = access_request,
-				    .layer_masks = &layer_masks,
-			    });
+	landlock_log_denial(
+		subject,
+		&(struct landlock_request){ .type = LANDLOCK_REQUEST_NET_ACCESS,
+					    .audit.type = LSM_AUDIT_DATA_NET,
+					    .audit.u.net = &audit_net,
+					    .access = access_request,
+					    .layer_masks = &layer_masks });
 	return -EACCES;
 }
 
 static int current_check_autobind_udp_socket(struct socket *const sock)
 {
-	struct sockaddr_storage port0 = { 0 };
+	struct sockaddr_storage port0 = {};
+	unsigned short num;
+	bool slow;
 
 	/*
-	 * On UDP sockets, if a local port has not already been bound,
-	 * calling connect() or sending a first datagram has the side
-	 * effect of autobinding an ephemeral port: we also have to check
-	 * that the process would have had the right to bind(0) explicitly.
-	 * Note: socket is not locked, so another thread could do an
-	 * explicit bind(!=0) on this socket, changing inet_num to non-zero
-	 * after we read it, but this would only have us enforce an
-	 * additional bind(0) access check and would not bypass policy.
+	 * On UDP sockets, if a local port has not already been bound, calling
+	 * connect() or sending a first datagram has the side effect of
+	 * autobinding an ephemeral port: we also have to check that the process
+	 * would have had the right to bind(0) explicitly.  Hold the socket lock
+	 * around the inet_num read to exclude udp_lib_get_port()'s transient
+	 * inet_num = snum write that is reverted to 0 on a failing reuseport
+	 * bind.
 	 */
-	if (inet_sk(sock->sk)->inet_num != 0)
+	slow = lock_sock_fast(sock->sk);
+	num = inet_sk(sock->sk)->inet_num;
+	unlock_sock_fast(sock->sk, slow);
+	if (num != 0)
 		return 0;
 
 	/*
-	 * Construct a struct sockaddr* with port 0 to pretend the
-	 * process tried to bind() on that address.
+	 * Construct a struct sockaddr* with port 0 to pretend the process tried
+	 * to bind() on that address.
 	 */
-	port0.ss_family = sock->sk->__sk_common.skc_family;
-	switch (port0.ss_family) {
-	case AF_INET: {
-		((struct sockaddr_in *)&port0)->sin_port = 0;
-		break;
-	}
-
-#if IS_ENABLED(CONFIG_IPV6)
-	case AF_INET6: {
-		((struct sockaddr_in6 *)&port0)->sin6_port = 0;
-		break;
-	}
-#endif /* IS_ENABLED(CONFIG_IPV6) */
-
-	default:
-		return 0;
-	}
+	port0.ss_family = READ_ONCE(sock->sk->sk_family);
 
 	return current_check_access_socket(sock, (struct sockaddr *)&port0,
 					   sizeof(port0),
@@ -335,7 +324,11 @@ static int hook_socket_connect(struct socket *const sock,
 	ret = current_check_access_socket(sock, address, addrlen,
 					  access_request, true);
 
-	if (ret == 0 && sk_is_udp(sock->sk))
+	/*
+	 * connect()ing to an AF_UNSPEC address does not trigger an autobind and
+	 * should never be restricted.
+	 */
+	if (ret == 0 && sk_is_udp(sock->sk) && address->sa_family != AF_UNSPEC)
 		ret = current_check_autobind_udp_socket(sock);
 
 	return ret;
