@@ -307,8 +307,8 @@ out_unset:
 /* clang-format on */
 
 /*
- * Parses ENV_QUIET_ACCESS_NAME and sets the quiet_access_fs,
- * quiet_access_net and quiet_scoped masks of @ruleset_attr accordingly.
+ * Parses ENV_QUIET_ACCESS_NAME and sets the quiet_access_fs, quiet_access_net
+ * and quiet_scoped masks of @ruleset_attr accordingly.
  */
 static int add_quiet_access(const char *const env_var,
 			    struct landlock_ruleset_attr *const ruleset_attr)

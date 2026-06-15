@@ -75,8 +75,7 @@ struct landlock_ruleset_attr {
 	 */
 	__u64 quiet_access_net;
 	/**
-	 * @quiet_scoped: Bitmask of scoped actions which should not be
-	 * logged.
+	 * @quiet_scoped: Bitmask of scoped actions which should not be logged.
 	 */
 	__u64 quiet_scoped;
 };

@@ -249,21 +249,29 @@ static int current_check_access_socket(struct socket *const sock,
 
 	audit_net.family = address->sa_family;
 	audit_net.sk = sock->sk;
-	landlock_log_denial(
-		subject,
-		&(struct landlock_request){ .type = LANDLOCK_REQUEST_NET_ACCESS,
-					    .audit.type = LSM_AUDIT_DATA_NET,
-					    .audit.u.net = &audit_net,
-					    .access = access_request,
-					    .layer_masks = &layer_masks });
+	landlock_log_denial(subject,
+			    &(struct landlock_request){
+				    .type = LANDLOCK_REQUEST_NET_ACCESS,
+				    .audit.type = LSM_AUDIT_DATA_NET,
+				    .audit.u.net = &audit_net,
+				    .access = access_request,
+				    .layer_masks = &layer_masks,
+			    });
 	return -EACCES;
 }
 
 static int current_check_autobind_udp_socket(struct socket *const sock)
 {
+	const struct access_masks bind_udp = {
+		.net = LANDLOCK_ACCESS_NET_BIND_UDP,
+	};
 	struct sockaddr_storage port0 = {};
 	unsigned short num;
 	bool slow;
+
+	/* Quick return for non-Landlocked tasks. */
+	if (!landlock_get_applicable_subject(current_cred(), bind_udp, NULL))
+		return 0;
 
 	/*
 	 * On UDP sockets, if a local port has not already been bound, calling
@@ -287,8 +295,7 @@ static int current_check_autobind_udp_socket(struct socket *const sock)
 	port0.ss_family = READ_ONCE(sock->sk->sk_family);
 
 	return current_check_access_socket(sock, (struct sockaddr *)&port0,
-					   sizeof(port0),
-					   LANDLOCK_ACCESS_NET_BIND_UDP, false);
+					   sizeof(port0), bind_udp.net, false);
 }
 
 static int hook_socket_bind(struct socket *const sock,
@@ -328,7 +335,9 @@ static int hook_socket_connect(struct socket *const sock,
 	 * connect()ing to an AF_UNSPEC address does not trigger an autobind and
 	 * should never be restricted.
 	 */
-	if (ret == 0 && sk_is_udp(sock->sk) && address->sa_family != AF_UNSPEC)
+	if (ret == 0 && sk_is_udp(sock->sk) &&
+	    addrlen >= offsetofend(typeof(*address), sa_family) &&
+	    address->sa_family != AF_UNSPEC)
 		ret = current_check_autobind_udp_socket(sock);
 
 	return ret;

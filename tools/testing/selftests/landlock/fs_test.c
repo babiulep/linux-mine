@@ -7827,8 +7827,8 @@ struct a_target {
 	/* If ftruncate fails, whether to expect an audit log. */
 	bool audit_truncate;
 	/*
-	 * If ioctl() is expected to be allowed (ioctl not attempted if
-	 * neither this nor expect_ioctl_denied is set).
+	 * If ioctl() is expected to be allowed (ioctl not attempted if neither
+	 * this nor expect_ioctl_denied is set).
 	 */
 	bool expect_ioctl_allowed;
 	/* If ioctl() is expected to be denied. */
@@ -8094,7 +8094,8 @@ FIXTURE_VARIANT_ADD(audit_quiet_layout1, quiet_simple) {
 		},
 		/*
 		 * Quiet flag only takes effect if all blocked access bits are
-		 * quieted, otherwise audit log emitted as normal (with all blockers)
+		 * quieted, otherwise audit log emitted as normal (with all
+		 * blockers)
 		 */
 		{
 			.target = file1_s1d1,
@@ -8428,8 +8429,8 @@ FIXTURE_VARIANT_ADD(audit_quiet_layout1, allow_all_quiet) {
 };
 
 /*
- * With LANDLOCK_RESTRICT_SELF_LOG_SUBDOMAINS_OFF, it doesn't matter what
- * the quiet flags below the layer say.
+ * With LANDLOCK_RESTRICT_SELF_LOG_SUBDOMAINS_OFF, it doesn't matter what the
+ * quiet flags below the layer say.
  */
 FIXTURE_VARIANT_ADD(audit_quiet_layout1, subdomains_off) {
 	.layers = {
@@ -8491,8 +8492,8 @@ FIXTURE_VARIANT_ADD(audit_quiet_layout1, subdomains_off) {
 };
 
 /*
- * With LANDLOCK_RESTRICT_SELF_LOG_SAME_EXEC_OFF, it doesn't matter what
- * the quiet flags on the layer say.
+ * With LANDLOCK_RESTRICT_SELF_LOG_SAME_EXEC_OFF, it doesn't matter what the
+ * quiet flags on the layer say.
  */
 FIXTURE_VARIANT_ADD(audit_quiet_layout1, same_exec_off) {
 	.layers = {
@@ -9183,8 +9184,8 @@ FIXTURE_VARIANT_ADD(audit_quiet_layout1, without_quiet_then_with_quiet) {
 };
 
 /*
- * The following TEST_F extend the above test cases to test more layers,
- * with the inserted layers having varying configurations.
+ * The following TEST_F extend the above test cases to test more layers, with
+ * the inserted layers having varying configurations.
  */
 
 /* Extra allow all layers, quiet or not, does not change any behaviour. */
@@ -9232,8 +9233,8 @@ TEST_F(audit_quiet_layout1, allow_all_layer)
 }
 
 /*
- * Add useless outer layers until we reach the layer limit.  Should not
- * change anything.
+ * Add useless outer layers until we reach the layer limit.  Should not change
+ * anything.
  */
 TEST_F(audit_quiet_layout1, many_outer_layers)
 {
@@ -9260,10 +9261,7 @@ TEST_F(audit_quiet_layout1, many_outer_layers)
 	audit_quiet_layout1_test_body(_metadata, self, variant->targets);
 }
 
-/*
- * An inner layer that denies and quiets everything should result in no
- * logs.
- */
+/* An inner layer that denies and quiets everything should result in no logs. */
 TEST_F(audit_quiet_layout1, deny_all_quiet_layer)
 {
 	struct a_layer deny_all_layer = {
@@ -9296,8 +9294,8 @@ TEST_F(audit_quiet_layout1, deny_all_quiet_layer)
 }
 
 /*
- * An inner layer that denies everything without quiet should produce logs
- * for all access.
+ * An inner layer that denies everything without quiet should produce logs for
+ * all access.
  */
 TEST_F(audit_quiet_layout1, deny_all_layer)
 {
@@ -9918,8 +9916,7 @@ TEST_F(audit_quiet_rename, two_layers_different_quiet3)
 	ASSERT_EQ(EACCES, errno);
 
 	/*
-	 * The youngest denial will be layer 2, in which everything is
-	 * quieted.
+	 * The youngest denial will be layer 2, in which everything is quieted.
 	 */
 	EXPECT_EQ(0, audit_count_records(self->audit_fd, &records));
 	ASSERT_EQ(0, records.access);
@@ -10014,9 +10011,7 @@ TEST_F(audit_quiet_rename,
 	ASSERT_EQ(-1, renameat(AT_FDCWD, file1_s1d1, AT_FDCWD, file1_s2d1));
 	ASSERT_EQ(EACCES, errno);
 
-	/*
-	 * Source is quieted but destination is not.
-	 */
+	/* Source is quieted but destination is not. */
 	ASSERT_EQ(0, matches_log_fs(_metadata, self->audit_fd,
 				    "fs\\.make_reg,fs\\.refer", dir_s2d1));
 	/* No other logs. */

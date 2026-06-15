@@ -36,8 +36,8 @@ struct landlock_layer {
 	struct {
 		/**
 		 * @quiet: Suppresses denial logs for the object covered by this
-		 * rule in this domain.  For filesystem rules, this inherits down
-		 * the file hierarchy.
+		 * rule in this domain.  For filesystem rules, this inherits
+		 * down the file hierarchy.
 		 */
 		u8 quiet : 1;
 	} flags;
@@ -156,8 +156,8 @@ struct landlock_ruleset {
 		 * @work_free: Enables to free a ruleset within a lockless
 		 * section.  This is only used by
 		 * landlock_put_ruleset_deferred() when @usage reaches zero.
-		 * The fields @lock, @usage, @num_rules, @num_layers, @quiet_masks
-		 * and @access_masks are then unused.
+		 * The fields @lock, @usage, @num_rules, @num_layers,
+		 * @quiet_masks and @access_masks are then unused.
 		 */
 		struct work_struct work_free;
 		struct {

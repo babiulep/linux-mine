@@ -64,10 +64,10 @@ static_assert(sizeof(typeof_member(union access_masks_all, masks)) ==
 /**
  * struct layer_mask - The access rights and rule flags for a layer.
  *
- * This has a bit for each access rights and rule flags.  During access
- * checks, it is used to represent the access rights for each layer which
- * still need to be fulfilled.  When all bits are 0, the access request is
- * considered to be fulfilled.
+ * This has a bit for each access rights and rule flags.  During access checks,
+ * it is used to represent the access rights for each layer which still need to
+ * be fulfilled.  When all bits are 0, the access request is considered to be
+ * fulfilled.
  */
 struct layer_mask {
 	/**
@@ -84,8 +84,8 @@ struct layer_mask {
 } __packed __aligned(sizeof(access_mask_t));
 
 /*
- * Make sure that we don't increase the size of struct layer_mask when
- * storing rule flags.
+ * Make sure that we don't increase the size of struct layer_mask when storing
+ * rule flags.
  */
 static_assert(sizeof(struct layer_mask) == sizeof(access_mask_t));
 

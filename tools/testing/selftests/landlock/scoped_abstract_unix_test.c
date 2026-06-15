@@ -299,35 +299,35 @@ FIXTURE_VARIANT(scoped_audit)
 	const __u64 quiet_scoped;
 };
 
-// clang-format off
+/* clang-format off */
 FIXTURE_VARIANT_ADD(scoped_audit, no_quiet)
 {
-	// clang-format on
+	/* clang-format on */
 	.scoped = LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET,
 	.quiet_scoped = 0,
 };
 
-// clang-format off
+/* clang-format off */
 FIXTURE_VARIANT_ADD(scoped_audit, quiet_abstract_socket)
 {
-	// clang-format on
+	/* clang-format on */
 	.scoped = LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET,
 	.quiet_scoped = LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET,
 };
 
-// clang-format off
+/* clang-format off */
 FIXTURE_VARIANT_ADD(scoped_audit, quiet_abstract_socket_2)
 {
-	// clang-format on
+	/* clang-format on */
 	.scoped = LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET | LANDLOCK_SCOPE_SIGNAL,
 	.quiet_scoped = LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET |
 			LANDLOCK_SCOPE_SIGNAL,
 };
 
-// clang-format off
+/* clang-format off */
 FIXTURE_VARIANT_ADD(scoped_audit, quiet_unrelated)
 {
-	// clang-format on
+	/* clang-format on */
 	.scoped = LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET | LANDLOCK_SCOPE_SIGNAL,
 	.quiet_scoped = LANDLOCK_SCOPE_SIGNAL,
 };

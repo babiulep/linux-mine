@@ -127,6 +127,9 @@ static bool valid_reparse_buffer(struct ntfs_inode *ni,
 static bool valid_reparse_data(struct ntfs_inode *ni,
 		const struct reparse_point *reparse_attr, size_t size)
 {
+	if (size < sizeof(*reparse_attr))
+		return false;
+
 	switch (reparse_attr->reparse_tag) {
 	case IO_REPARSE_TAG_MOUNT_POINT:
 	{
@@ -253,7 +256,7 @@ unsigned int ntfs_make_symlink(struct ntfs_inode *ni)
 
 	reparse_attr = ntfs_attr_readall(ni, AT_REPARSE_POINT, NULL, 0,
 					 &attr_size);
-	if (reparse_attr && attr_size &&
+	if (reparse_attr &&
 	    valid_reparse_data(ni, reparse_attr, attr_size)) {
 		err = -EINVAL;
 
@@ -334,7 +337,7 @@ unsigned int ntfs_reparse_tag_dt_types(struct ntfs_volume *vol, unsigned long mr
 	reparse_attr = (struct reparse_point *)ntfs_attr_readall(NTFS_I(vi),
 			AT_REPARSE_POINT, NULL, 0, &attr_size);
 
-	if (reparse_attr && attr_size) {
+	if (reparse_attr && attr_size >= sizeof(*reparse_attr)) {
 		switch (reparse_attr->reparse_tag) {
 		case IO_REPARSE_TAG_MOUNT_POINT:
 		case IO_REPARSE_TAG_SYMLINK:
@@ -360,6 +363,13 @@ unsigned int ntfs_reparse_tag_dt_types(struct ntfs_volume *vol, unsigned long mr
 
 	iput(vi);
 	return dt_type;
+}
+
+static bool ntfs_is_drive_letter(const char *target)
+{
+	return ((target[0] >= 'A' && target[0] <= 'Z') ||
+		(target[0] >= 'a' && target[0] <= 'z')) &&
+		target[1] == ':';
 }
 
 /*
@@ -407,8 +417,7 @@ int ntfs_translate_symlink_path(struct dentry *dentry, const char *target,
 		path += 4;
 
 	/* target must start with a drive character or '/'. */
-	if (((path[0] >= 'A' && path[0] <= 'Z') ||
-	     (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':') {
+	if (ntfs_is_drive_letter(path)) {
 		if (path[2] && path[2] != '/')
 			return -EOPNOTSUPP;
 		tail = path + 2;
@@ -782,6 +791,9 @@ int ntfs_reparse_set_wsl_symlink(struct ntfs_inode *ni,
 	if (err) {
 		kfree(ni->target);
 		ni->target = NULL;
+	} else {
+		ni->reparse_tag = IO_REPARSE_TAG_LX_SYMLINK;
+		ni->reparse_flags = 0;
 	}
 	return err;
 }
@@ -790,8 +802,7 @@ int ntfs_reparse_set_native_symlink(struct ntfs_inode *ni,
 				    const char *target, int target_len)
 {
 	int err = 0;
-	bool is_absolute;
-	char *norm_name = NULL;
+	bool is_absolute, prt_sub_shared = true;
 	char *sub_name = NULL;
 	char *prt_name = NULL;
 	__le16 *sub_name_utf16 = NULL;
@@ -802,44 +813,37 @@ int ntfs_reparse_set_native_symlink(struct ntfs_inode *ni,
 	struct symlink_reparse_data *data;
 	int i;
 
-	/* Determine if target is absolute (starts with drive letter like C:) */
-	is_absolute = (target_len > 1 && target[1] == ':');
+	/* Determine if target is absolute (starts with drive letter like C:/ or C:\) */
+	is_absolute = target_len > 2 &&
+		ntfs_is_drive_letter(target) &&
+		(target[2] == '/' || target[2] == '\\');
+
 
 	/* Normalize and prepare NLS paths */
-	norm_name = kstrdup(target, GFP_NOFS);
-	if (!norm_name)
+	prt_name = kstrdup(target, GFP_NOFS);
+	if (!prt_name)
 		return -ENOMEM;
 
 	/* Replace '/' with '\' */
 	for (i = 0; i < target_len; i++) {
-		if (norm_name[i] == '/')
-			norm_name[i] = '\\';
+		if (prt_name[i] == '/')
+			prt_name[i] = '\\';
 	}
 
 	if (is_absolute) {
-		prt_name = kstrdup(norm_name, GFP_NOFS);
-		if (!prt_name) {
-			err = -ENOMEM;
-			goto out;
-		}
 		/* Prepend '\??\' to Substitutename */
 		sub_name = kmalloc(target_len + 5, GFP_NOFS);
 		if (!sub_name) {
 			err = -ENOMEM;
 			goto out;
 		}
-		strscpy(sub_name, "\\??\\", target_len + 5);
-		strcat(sub_name, norm_name);
+		snprintf(sub_name, target_len + 5, "\\??\\%s", prt_name);
+		prt_sub_shared = false;
 	} else {
 		/* For relative symlinks (including absolute paths without drive letters),
 		 * SubstituteName and PrintName are identical.
 		 */
-		prt_name = kstrdup(norm_name, GFP_NOFS);
-		sub_name = kstrdup(norm_name, GFP_NOFS);
-		if (!prt_name || !sub_name) {
-			err = -ENOMEM;
-			goto out;
-		}
+		sub_name = prt_name;
 	}
 
 	/* Convert NLS paths to UTF-16 */
@@ -882,7 +886,7 @@ int ntfs_reparse_set_native_symlink(struct ntfs_inode *ni,
 	data->substitute_name_length = cpu_to_le16(sub_len * sizeof(__le16));
 	data->print_name_offset = data->substitute_name_length;
 	data->print_name_length = cpu_to_le16(prt_len * sizeof(__le16));
-	data->flags = cpu_to_le32(is_absolute ? 0 : SYMLINK_FLAG_RELATIVE);
+	data->flags = is_absolute ? 0 : cpu_to_le32(SYMLINK_FLAG_RELATIVE);
 
 	/* Copy names to path_buffer */
 	memcpy(data->path_buffer, sub_name_utf16, sub_len * sizeof(__le16));
@@ -890,22 +894,27 @@ int ntfs_reparse_set_native_symlink(struct ntfs_inode *ni,
 
 	err = ntfs_set_ntfs_reparse_data(ni, (char *)reparse, total_reparse_len);
 	if (!err) {
-		for (i = 0; i < target_len; i++) {
-			if (norm_name[i] == '\\')
-				norm_name[i] = '/';
+		int len = strlen(sub_name);
+
+		for (i = 0; i < len; i++) {
+			if (sub_name[i] == '\\')
+				sub_name[i] = '/';
 		}
-		ni->target = norm_name;
-		norm_name = NULL;
+		ni->target = sub_name;
+		sub_name = NULL;
+		if (prt_sub_shared)
+			prt_name = NULL;
+		ni->reparse_tag = IO_REPARSE_TAG_SYMLINK;
+		ni->reparse_flags = is_absolute ? 0 :
+			cpu_to_le32(SYMLINK_FLAG_RELATIVE);
 	}
 
 out:
-	kfree(norm_name);
-	kfree(sub_name);
 	kfree(prt_name);
-	if (sub_name_utf16)
-		kvfree(sub_name_utf16);
-	if (prt_name_utf16)
-		kvfree(prt_name_utf16);
+	if (!prt_sub_shared)
+		kfree(sub_name);
+	kvfree(sub_name_utf16);
+	kvfree(prt_name_utf16);
 	kvfree(reparse);
 	return err;
 }
@@ -945,6 +954,10 @@ int ntfs_reparse_set_wsl_not_symlink(struct ntfs_inode *ni, mode_t mode)
 		err = ntfs_set_ntfs_reparse_data(ni, (char *)reparse,
 						 reparse_len);
 		kvfree(reparse);
+		if (!err) {
+			ni->reparse_tag = reparse_tag;
+			ni->reparse_flags = 0;
+		}
 	}
 
 	return err;

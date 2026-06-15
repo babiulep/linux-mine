@@ -682,9 +682,9 @@ get_access_mask_t(const struct landlock_ruleset *const ruleset,
 /**
  * landlock_init_layer_masks - Initialize layer masks from an access request
  *
- * Populates @masks such that for each access right in @access_request,
- * the bits for all the layers are set where this access right is handled.
- * Rule flags are also zeroed.
+ * Populates @masks such that for each access right in @access_request, the bits
+ * for all the layers are set where this access right is handled.  Rule flags
+ * are also zeroed.
  *
  * @domain: The domain that defines the current restrictions.
  * @access_request: The requested access rights to check.

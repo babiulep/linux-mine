@@ -771,9 +771,9 @@ setting the local port of UDP sockets with the
 ability to trigger autobind of an ephemeral port by the kernel by e.g.
 sending a first datagram or setting the remote peer of a socket.
 The ``LANDLOCK_ACCESS_NET_CONNECT_SEND_UDP`` right controls setting the
-remote port of UDP sockets (via :manpage:`connect(2)`, and sending
+remote port of UDP sockets (via :manpage:`connect(2)`), and sending
 datagrams to an explicit remote port (ignoring any destination set on
-UDP sockets, via e.g. :manpage:`sendto(2)`.
+UDP sockets, via e.g. :manpage:`sendto(2)`).
 
 Quiet rule flag (ABI < 10)
 --------------------------

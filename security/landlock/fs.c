@@ -1918,21 +1918,20 @@ static bool control_current_fowner(struct fown_struct *const fown)
 	lockdep_assert_held(&fown->lock);
 
 	/*
+	 * A process-group or session owner (PIDTYPE_PGID/PIDTYPE_SID) fans the
+	 * signal out to every member at delivery time, so record the domain and
+	 * let hook_file_send_sigiotask() check the live scope per recipient.
+	 */
+	if (fown->pid_type != PIDTYPE_PID && fown->pid_type != PIDTYPE_TGID)
+		return true;
+
+	/*
 	 * Some callers (e.g. fcntl_dirnotify) may not be in an RCU read-side
 	 * critical section.
 	 */
 	guard(rcu)();
 	p = pid_task(fown->pid, fown->pid_type);
 	if (!p)
-		return true;
-
-	/*
-	 * A process-group fowner fans the signal out to every member at
-	 * delivery time, so record the domain for any non single-process target
-	 * -- even when it resolves to current as the group head -- and let
-	 * hook_file_send_sigiotask() check the live scope per recipient.
-	 */
-	if (fown->pid_type != PIDTYPE_PID && fown->pid_type != PIDTYPE_TGID)
 		return true;
 
 	return !same_thread_group(p, current);

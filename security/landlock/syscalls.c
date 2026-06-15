@@ -360,8 +360,8 @@ static int add_rule_path_beneath(struct landlock_ruleset *const ruleset,
 
 	/*
 	 * Informs about useless rule: empty allowed_access (i.e. deny rules)
-	 * are ignored in path walks.  However, the rule is not useless if it
-	 * is there to hold a quiet flag.
+	 * are ignored in path walks.  However, the rule is not useless if it is
+	 * there to hold a quiet flag.
 	 */
 	if (!flags && !path_beneath_attr.allowed_access)
 		return -ENOMSG;
@@ -401,8 +401,8 @@ static int add_rule_net_port(struct landlock_ruleset *ruleset,
 
 	/*
 	 * Informs about useless rule: empty allowed_access (i.e. deny rules)
-	 * are ignored by network actions.  However, the rule is not useless
-	 * if it is there to hold a quiet flag.
+	 * are ignored by network actions.  However, the rule is not useless if
+	 * it is there to hold a quiet flag.
 	 */
 	if (!flags && !net_port_attr.allowed_access)
 		return -ENOMSG;

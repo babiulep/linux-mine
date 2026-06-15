@@ -2,6 +2,8 @@
 #ifndef IOU_MPSCQ_H
 #define IOU_MPSCQ_H
 
+#include <linux/io_uring_types.h>
+
 /*
  * mpscq - lockless multi-producer, single-consumer FIFO queue
  *
@@ -94,6 +96,12 @@ static inline struct llist_node *mpscq_pop(struct mpscq *q,
 		head = READ_ONCE(head->next);
 		if (!head)
 			return NULL;
+		/*
+		 * The stub is now detached and stays quiescent until the
+		 * consumer reinserts it as the tail, so reset its ->next here,
+		 * ready for that.
+		 */
+		q->stub.next = NULL;
 		*headp = head;
 	}
 	next = READ_ONCE(head->next);
@@ -107,7 +115,6 @@ static inline struct llist_node *mpscq_pop(struct mpscq *q,
 	 * producer has made a new node the tail but hasn't linked 'head' to
 	 * it yet - bail and let the caller retry.
 	 */
-	q->stub.next = NULL;
 	if (try_cmpxchg(&q->tail, &head, &q->stub)) {
 		*headp = &q->stub;
 		return head;

@@ -166,8 +166,8 @@ get_layer_deny_mask(const access_mask_t all_existing_optional_access,
  *              deny_masks field on struct landlock_file_security).
  * @masks: The struct layer_masks collected during the path walk.
  *
- * Return: a bitmask of which optional accesses are denied by layers for
- * which the quiet flag was collected during the path walk.
+ * Return: a bitmask of which optional accesses are denied by layers for which
+ * the quiet flag was collected during the path walk.
  */
 optional_access_t landlock_get_quiet_optional_accesses(
 	const access_mask_t all_existing_optional_access,

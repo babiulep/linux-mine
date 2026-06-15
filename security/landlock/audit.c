@@ -282,9 +282,10 @@ get_layer_from_deny_masks(access_mask_t *const access_request,
 			} else if (layer == youngest_layer) {
 				missing |= BIT(access_bit);
 				/*
-				 * Whether the layer has rules with quiet flag covering
-				 * the file accessed does not depend on the access, and so
-				 * the following WARN_ON_ONCE() should not fail.
+				 * Whether the layer has rules with quiet flag
+				 * covering the file accessed does not depend on
+				 * the access, and so the following
+				 * WARN_ON_ONCE() should not fail.
 				 */
 				WARN_ON_ONCE(should_quiet && !layer_has_quiet);
 				should_quiet = layer_has_quiet;
@@ -613,9 +614,9 @@ void landlock_log_denial(const struct landlock_cred_security *const subject,
 
 	/*
 	 * Checks if the object is marked quiet by the layer that denied the
-	 * request.  If it's a different layer that marked it as quiet, but
-	 * that layer is not the one that denied the request, we should still
-	 * audit log the denial.
+	 * request.  If it's a different layer that marked it as quiet, but that
+	 * layer is not the one that denied the request, we should still audit
+	 * log the denial.
 	 */
 	if (object_quiet_flag) {
 		/*
@@ -629,8 +630,8 @@ void landlock_log_denial(const struct landlock_cred_security *const subject,
 		quiet_applicable_to_access = (quiet_mask & missing) == missing;
 	} else {
 		/*
-		 * Either the object is not quiet, or this is a scope request.  We
-		 * check request->type to distinguish between the two cases.
+		 * Either the object is not quiet, or this is a scope request.
+		 * We check request->type to distinguish between the two cases.
 		 */
 		const access_mask_t quiet_mask =
 			youngest_denied->quiet_masks.scope;
@@ -647,8 +648,8 @@ void landlock_log_denial(const struct landlock_cred_security *const subject,
 			break;
 		/*
 		 * Leave LANDLOCK_REQUEST_PTRACE and
-		 * LANDLOCK_REQUEST_FS_CHANGE_TOPOLOGY unhandled for now - they are
-		 * never quiet.
+		 * LANDLOCK_REQUEST_FS_CHANGE_TOPOLOGY unhandled for now - they
+		 * are never quiet.
 		 */
 		default:
 			break;
