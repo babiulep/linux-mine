@@ -8892,7 +8892,7 @@ Auto-merging tools/testing/selftests/tc-testing/tc-tests/infra/qdiscs.json
 Resolved 'drivers/net/ethernet/microsoft/mana/mana_en.c' using previous resolution.
 Automatic merge failed; fix conflicts and then commit the result.
 $ git commit --no-edit -v -a
-[master fb9199123a021] Merge branch 'main' of https://git.kernel.org/pub/scm/linux/kernel/git/netdev/net-next.git
+[master 49de6834fcc15] Merge branch 'main' of https://git.kernel.org/pub/scm/linux/kernel/git/netdev/net-next.git
 $ git diff -M --stat --summary HEAD^..
  .../ABI/testing/sysfs-class-ieee80211-rtw89        |   24 +
  Documentation/admin-guide/kernel-parameters.txt    |   20 +-
@@ -10775,8 +10775,8 @@ M	drivers/net/phy/air_en8811h.c
 $ git add -A .
 $ git commit -v -a --amend
 warning: notes ref refs/notes/commits is invalid
-[master 8edf85785e704] Merge branch 'main' of https://git.kernel.org/pub/scm/linux/kernel/git/netdev/net-next.git
- Date: Mon Jun 15 14:59:08 2026 +0100
+[master 43ddfcf33b534] Merge branch 'main' of https://git.kernel.org/pub/scm/linux/kernel/git/netdev/net-next.git
+ Date: Mon Jun 15 16:15:17 2026 +0100
 $ git am -3 ../patches/0001-net-mana-Fix-up-mismerge.patch
 Applying: net: mana: Fix up mismerge
 Using index info to reconstruct a base tree...
@@ -10799,8 +10799,8 @@ M	drivers/net/ethernet/microsoft/mana/mana_en.c
 $ git add -A .
 $ git commit -v -a --amend
 warning: notes ref refs/notes/commits is invalid
-[master b71badf3a64f5] Merge branch 'main' of https://git.kernel.org/pub/scm/linux/kernel/git/netdev/net-next.git
- Date: Mon Jun 15 14:59:08 2026 +0100
+[master e67ba4a1dcb1d] Merge branch 'main' of https://git.kernel.org/pub/scm/linux/kernel/git/netdev/net-next.git
+ Date: Mon Jun 15 16:15:17 2026 +0100
 Merging bpf-next/for-next (e4287bf34f97a selftests/bpf: Work around llvm stack overflow in crypto progs)
 $ git merge -m Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf-next.git bpf-next/for-next
 Auto-merging MAINTAINERS
@@ -10823,7 +10823,7 @@ Resolved 'include/linux/bpf.h' using previous resolution.
 Resolved 'kernel/bpf/inode.c' using previous resolution.
 Automatic merge failed; fix conflicts and then commit the result.
 $ git commit --no-edit -v -a
-[master da8f53cc172e8] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf-next.git
+[master 7ae7b49f6dc18] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf-next.git
 $ git diff -M --stat --summary HEAD^..
  Documentation/bpf/btf.rst                          |    6 +-
  Documentation/bpf/kfuncs.rst                       |   36 +-
@@ -11277,8 +11277,8 @@ M	tools/perf/util/btf.c
 $ git add -A .
 $ git commit -v -a --amend
 warning: notes ref refs/notes/commits is invalid
-[master c9a0bf766846b] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf-next.git
- Date: Mon Jun 15 14:59:24 2026 +0100
+[master f11fc42020e3a] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf-next.git
+ Date: Mon Jun 15 16:15:34 2026 +0100
 Merging ipsec-next/master (355f808d8a11f Merge branch 'xfrm: XFRM_MSG_MIGRATE_STATE new netlink message')
 $ git merge -m Merge branch 'master' of https://git.kernel.org/pub/scm/linux/kernel/git/klassert/ipsec-next.git ipsec-next/master
 Already up to date.
@@ -11501,7 +11501,7 @@ Resolved 'drivers/gpu/drm/drm_atomic.c' using previous resolution.
 Resolved 'include/drm/drm_colorop.h' using previous resolution.
 Automatic merge failed; fix conflicts and then commit the result.
 $ git commit --no-edit -v -a
-[master da628498663b0] Merge branch 'drm-next' of https://gitlab.freedesktop.org/drm/kernel.git
+[master 613fd6dfc4051] Merge branch 'drm-next' of https://gitlab.freedesktop.org/drm/kernel.git
 $ git diff -M --stat --summary HEAD^..
  Documentation/ABI/obsolete/sysfs-driver-ivpu       |    30 +
  Documentation/ABI/testing/sysfs-driver-ivpu        |    65 +
@@ -13701,8 +13701,8 @@ M	include/drm/drm_colorop.h
 $ git add -A .
 $ git commit -v -a --amend
 warning: notes ref refs/notes/commits is invalid
-[master ce44ca8d7036b] Merge branch 'drm-next' of https://gitlab.freedesktop.org/drm/kernel.git
- Date: Mon Jun 15 14:59:55 2026 +0100
+[master da611dd92d969] Merge branch 'drm-next' of https://gitlab.freedesktop.org/drm/kernel.git
+ Date: Mon Jun 15 16:16:05 2026 +0100
 Merging drm-exynos/for-linux-next (3a8660878839f Linux 6.18-rc1)
 $ git merge -m Merge branch 'for-linux-next' of https://git.kernel.org/pub/scm/linux/kernel/git/daeinki/drm-exynos.git drm-exynos/for-linux-next
 Already up to date.
@@ -13779,7 +13779,7 @@ Auto-merging kernel/events/core.c
 Resolved 'drivers/gpu/drm/xe/xe_guc_submit.c' using previous resolution.
 Automatic merge failed; fix conflicts and then commit the result.
 $ git commit --no-edit -v -a
-[master 052faf0a5a5cd] Merge branch 'drm-xe-next' of https://gitlab.freedesktop.org/drm/xe/kernel.git
+[master dda3a38e5955c] Merge branch 'drm-xe-next' of https://gitlab.freedesktop.org/drm/xe/kernel.git
 $ git diff -M --stat --summary HEAD^..
  drivers/gpu/drm/xe/Kconfig.profile            |  71 +++++++++++-------
  drivers/gpu/drm/xe/Makefile                   |   4 +-
@@ -13931,8 +13931,8 @@ M	drivers/gpu/drm/hyperv/Kconfig
 $ git add -A .
 $ git commit -v -a --amend
 warning: notes ref refs/notes/commits is invalid
-[master ba054c6f312d8] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/deller/linux-fbdev.git
- Date: Mon Jun 15 15:13:59 2026 +0100
+[master ece92605256ee] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/deller/linux-fbdev.git
+ Date: Mon Jun 15 16:16:26 2026 +0100
 Merging regmap/for-next (30b239c09eb6a Merge remote-tracking branch 'regmap/for-7.2' into regmap-next)
 $ git merge -m Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/broonie/regmap.git regmap/for-next
 Merge made by the 'ort' strategy.
@@ -14673,7 +14673,7 @@ CONFLICT (content): Merge conflict in mm/page_io.c
 Resolved 'mm/page_io.c' using previous resolution.
 Automatic merge failed; fix conflicts and then commit the result.
 $ git commit --no-edit -v -a
-[master 6ad1c5346e004] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/axboe/linux.git
+[master fc6709a6f69ed] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/axboe/linux.git
 $ git diff -M --stat --summary HEAD^..
  Documentation/block/error-injection.rst            |   59 +
  Documentation/block/index.rst                      |    1 +
@@ -14829,10 +14829,9 @@ M	include/linux/bio.h
 $ git add -A .
 $ git commit -v -a --amend
 warning: notes ref refs/notes/commits is invalid
-[master 795ca9824f5f5] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/axboe/linux.git
- Date: Mon Jun 15 15:14:18 2026 +0100
+[master c1c5197f2c272] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/axboe/linux.git
+ Date: Mon Jun 15 16:16:44 2026 +0100
 Merging device-mapper/for-next (55c99f2d901c7 dm-zoned-metadata: Use strscpy() to copy device name)
-  97cb8be0fd4c5 ("dm-raid: only requeue bios when dm is suspending")
 $ git merge -m Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/device-mapper/linux-dm.git device-mapper/for-next
 Auto-merging block/blk-crypto.c
 Auto-merging drivers/md/dm-cache-policy-smq.c
@@ -15033,7 +15032,6 @@ Merge made by the 'ort' strategy.
  create mode 100644 Documentation/devicetree/bindings/leds/backlight/maxim,max25014.yaml
  create mode 100644 drivers/video/backlight/max25014.c
 Merging battery/for-next (a888754e51e91 Documentation: ABI: sysfs-class-reboot-mode-reboot_modes: fix doc warnings)
-  0549c4c01338a ("power: supply: Remove unused jz4740-battery.h")
 $ git merge -m Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/sre/linux-power-supply.git battery/for-next
 Auto-merging drivers/power/supply/charger-manager.c
 Merge made by the 'ort' strategy.
@@ -15192,7 +15190,6 @@ Merge made by the 'ort' strategy.
  security/smack/smack_lsm.c    | 13 ++++---------
  7 files changed, 29 insertions(+), 37 deletions(-)
 Merging apparmor/apparmor-next (1ed40bd525c00 apparmor: fix label can not be immediately before a declaration)
-  d62d9bfe050f4 ("security/apparmor/apparmorfs.c: conditionally compile get_loaddata_common_ref()")
 $ git merge -m Merge branch 'apparmor-next' of https://git.kernel.org/pub/scm/linux/kernel/git/jj/linux-apparmor apparmor/apparmor-next
 Auto-merging MAINTAINERS
 Auto-merging security/apparmor/apparmorfs.c
@@ -15321,7 +15318,6 @@ Merging tpmdd-keys/for-next-keys (e4e6a50ca7888 keys: Pin request_key_auth paylo
 $ git merge -m Merge branch 'for-next-keys' of https://git.kernel.org/pub/scm/linux/kernel/git/jarkko/linux-tpmdd.git tpmdd-keys/for-next-keys
 Already up to date.
 Merging watchdog/watchdog-next (a298c7302ee95 watchdog: unregister PM notifier on watchdog unregister)
-  d651a264536b3 ("dt-bindings: watchdog: Convert TS-4800 to DT schema")
 $ git merge -m Merge branch 'watchdog-next' of https://git.kernel.org/pub/scm/linux/kernel/git/groeck/linux-staging.git watchdog/watchdog-next
 Auto-merging Documentation/watchdog/watchdog-api.rst
 Auto-merging Documentation/watchdog/watchdog-kernel-api.rst
@@ -15714,7 +15710,7 @@ Auto-merging drivers/spi/spi.c
 Resolved 'drivers/acpi/acpi_apd.c' using previous resolution.
 Automatic merge failed; fix conflicts and then commit the result.
 $ git commit --no-edit -v -a
-[master 9d6b11587c158] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/broonie/spi.git
+[master 5b20c955c0487] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/broonie/spi.git
 $ git diff -M --stat --summary HEAD^..
  .../devicetree/bindings/spi/nuvoton,npcm-fiu.txt   |  58 --
  .../bindings/spi/nuvoton,npcm750-fiu.yaml          |  93 +++
@@ -15987,7 +15983,6 @@ Merge made by the 'ort' strategy.
  include/linux/edac.h        |   3 +
  24 files changed, 1074 insertions(+), 591 deletions(-)
 Merging ftrace/for-next (8970865b788e9 Merge trace/for-next)
-  ae3197ee07cc8 ("seq_buf: Export seq_buf_putmem_hex() and add KUnit tests")
 $ git merge -m Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/trace/linux-trace.git ftrace/for-next
 Auto-merging drivers/cpufreq/amd-pstate.c
 Auto-merging include/linux/tracepoint.h
@@ -16013,7 +16008,7 @@ Resolved 'tools/tracing/rtla/src/timerlat_hist.c' using previous resolution.
 Resolved 'tools/tracing/rtla/src/timerlat_top.c' using previous resolution.
 Automatic merge failed; fix conflicts and then commit the result.
 $ git commit --no-edit -v -a
-[master 2edf469cbfa85] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/trace/linux-trace.git
+[master 6601f49d8185e] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/trace/linux-trace.git
 $ git diff -M --stat --summary HEAD^..
  Documentation/tools/rtla/common_appendix.txt       |   7 +-
  .../tools/rtla/common_timerlat_options.txt         |  11 +
@@ -16296,7 +16291,7 @@ Auto-merging virt/kvm/guest_memfd.c
 Resolved 'arch/x86/include/asm/tdx.h' using previous resolution.
 Automatic merge failed; fix conflicts and then commit the result.
 $ git commit --no-edit -v -a
-[master 67c03ed009bbc] Merge branch 'next' of https://github.com/kvm-x86/linux.git
+[master e42d2730b7f32] Merge branch 'next' of https://github.com/kvm-x86/linux.git
 $ git diff -M --stat --summary HEAD^..
  Documentation/virt/kvm/api.rst                     |  31 ++
  MAINTAINERS                                        |   1 +
@@ -16600,8 +16595,8 @@ M	drivers/hid/hid-asus.c
 $ git add -A .
 $ git commit -v -a --amend
 warning: notes ref refs/notes/commits is invalid
-[master b1e3d1716fb6a] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/pdx86/platform-drivers-x86.git
- Date: Mon Jun 15 15:15:56 2026 +0100
+[master 538d1c445fdb1] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/pdx86/platform-drivers-x86.git
+ Date: Mon Jun 15 16:33:05 2026 +0100
 $ git am -3 ../patches/0001-drivers-x86-hamoa-Fix-up-semantic-conflit-with-therm.patch
 Applying: drivers-x86: hamoa: Fix up semantic conflit with thermal tree
 $ git reset HEAD^
@@ -16610,8 +16605,8 @@ M	drivers/platform/arm64/qcom-hamoa-ec.c
 $ git add -A .
 $ git commit -v -a --amend
 warning: notes ref refs/notes/commits is invalid
-[master ced6f7e7bf3f4] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/pdx86/platform-drivers-x86.git
- Date: Mon Jun 15 15:15:56 2026 +0100
+[master b8bb1c2292fc3] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/pdx86/platform-drivers-x86.git
+ Date: Mon Jun 15 16:33:05 2026 +0100
 Merging chrome-platform/for-next (883f968dcbb08 platform/chrome: Prevent build for big-endian systems)
 $ git merge -m Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/chrome-platform/linux.git chrome-platform/for-next
 Merge made by the 'ort' strategy.
@@ -17629,16 +17624,6 @@ Merging iio/togreg (ae696dfa47c30 iio: adc: nxp-sar-adc: harden buffer ISR again
 $ git merge -m Merge branch 'togreg' of https://git.kernel.org/pub/scm/linux/kernel/git/jic23/iio.git iio/togreg
 Already up to date.
 Merging nfc/for-next (898fe2032bff8 nfc: Use named initializers for struct i2c_device_id)
-  014704bc9facb ("MAINTAINERS: Update address for David Heidelberg")
-  2c9ac2a9ecb72 ("nfc: nxp-nci: Add ISO15693 support")
-  5952d8c830c18 ("nfc: llcp: avoid userspace overflow on invalid optlen")
-  5df4a77d9bfec ("nfc: nxp-nci: treat -ENXIO in IRQ thread as no data available")
-  815dcef3401db ("nfc: trf7970a: fix comment typos")
-  898fe2032bff8 ("nfc: Use named initializers for struct i2c_device_id")
-  9f7ba8fc2a3bb ("nfc: nci: fix double completion race in nci_data_exchange_complete")
-  af5cc11e239cc ("nfc: llcp: read llcp_sock->local under the socket lock in getsockopt")
-  b27ba0b8f76ac ("nfc: nci: uart: Constify struct tty_ldisc_ops")
-  f6696b7206c3b ("nfc: digital: clamp SENSF_RES length to the destination buffer")
 $ git merge -m Merge branch 'for-next' of https://codeberg.org/linux-nfc/linux.git nfc/for-next
 Auto-merging MAINTAINERS
 Merge made by the 'ort' strategy.
@@ -17951,7 +17936,6 @@ Merging mux/for-next (59b723cd2adba Linux 6.12-rc6)
 $ git merge -m Merge branch 'for-next' of https://gitlab.com/peda-linux/mux.git mux/for-next
 Already up to date.
 Merging dmaengine/next (7524fe142b5a7 dt-bindings: dma: snps,dw-axi-dmac: Add fallback compatible for CV1800B)
-  75b28d74f90c7 ("dt-bindings: dma: fsl-edma: add dma-channel-mask property description")
 $ git merge -m Merge branch 'next' of https://git.kernel.org/pub/scm/linux/kernel/git/vkoul/dmaengine.git dmaengine/next
 Auto-merging MAINTAINERS
 Merge made by the 'ort' strategy.
@@ -18003,7 +17987,7 @@ CONFLICT (content): Merge conflict in tools/testing/selftests/cgroup/test_memcon
 Resolved 'tools/testing/selftests/cgroup/test_memcontrol.c' using previous resolution.
 Automatic merge failed; fix conflicts and then commit the result.
 $ git commit --no-edit -v -a
-[master 470f52bd08813] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/tj/cgroup.git
+[master e07992152e40b] Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/tj/cgroup.git
 $ git diff -M --stat --summary HEAD^..
  Documentation/admin-guide/cgroup-v1/cgroups.rst    |   2 +-
  Documentation/admin-guide/cgroup-v1/memcg_test.rst |   2 +-
@@ -18690,7 +18674,7 @@ CONFLICT (content): Merge conflict in MAINTAINERS
 Resolved 'MAINTAINERS' using previous resolution.
 Automatic merge failed; fix conflicts and then commit the result.
 $ git commit --no-edit -v -a
-[master 9be87420ae700] Merge branch 'next' of https://git.kernel.org/pub/scm/linux/kernel/git/cxl/cxl.git
+[master ec94e4d6da1dc] Merge branch 'next' of https://git.kernel.org/pub/scm/linux/kernel/git/cxl/cxl.git
 $ git diff -M --stat --summary HEAD^..
  MAINTAINERS                            |   1 +
  drivers/cxl/acpi.c                     |  10 +-
@@ -18750,7 +18734,7 @@ Auto-merging net/core/skbuff.c
 Resolved 'drivers/gpu/drm/panthor/panthor_mmu.c' using previous resolution.
 Automatic merge failed; fix conflicts and then commit the result.
 $ git commit --no-edit -v -a
-[master 02470b08b9f8f] Merge branch 'slab/for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/vbabka/slab.git
+[master 20d5ab9db4d49] Merge branch 'slab/for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/vbabka/slab.git
 $ git diff -M --stat --summary HEAD^..
  MAINTAINERS                           |    6 +
  Makefile                              |    5 +
@@ -18788,8 +18772,75 @@ M	drivers/gpu/drm/panthor/panthor_mmu.c
 $ git add -A .
 $ git commit -v -a --amend
 warning: notes ref refs/notes/commits is invalid
-[master 58fd8d11c4d01] Merge branch 'slab/for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/vbabka/slab.git
- Date: Mon Jun 15 15:31:50 2026 +0100
+[master b4f05591979f3] Merge branch 'slab/for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/vbabka/slab.git
+ Date: Mon Jun 15 16:49:53 2026 +0100
+$ git reset --hard HEAD^
+HEAD is now at f8bd834cd2fe0 Merge branch 'for-next' of https://git.kernel.org/pub/scm/linux/kernel/git/krisman/unicode.git
+Merging next-20260612 version of slab
+$ git merge -m next-20260612/slab 547a7a2a52dd1c560587ecb69a76aaa669dee02c
+Auto-merging MAINTAINERS
+Auto-merging Makefile
+Auto-merging block/blk-crypto-fallback.c
+Auto-merging drivers/gpu/drm/msm/msm_iommu.c
+Auto-merging drivers/gpu/drm/panthor/panthor_mmu.c
+CONFLICT (content): Merge conflict in drivers/gpu/drm/panthor/panthor_mmu.c
+Auto-merging include/linux/percpu.h
+Auto-merging include/linux/slab.h
+Auto-merging init/Kconfig
+Auto-merging io_uring/io_uring.c
+Auto-merging lib/test_meminit.c
+Auto-merging mm/Kconfig
+Auto-merging mm/kasan/kasan_test_c.c
+Auto-merging mm/kfence/core.c
+Auto-merging mm/kfence/kfence_test.c
+Auto-merging mm/memcontrol.c
+Auto-merging mm/slab_common.c
+Auto-merging mm/slub.c
+Auto-merging net/bpf/test_run.c
+Auto-merging net/core/skbuff.c
+Resolved 'drivers/gpu/drm/panthor/panthor_mmu.c' using previous resolution.
+Automatic merge failed; fix conflicts and then commit the result.
+$ git commit --no-edit -v -a
+[master cbd42de24975d] next-20260612/slab
+$ git diff -M --stat --summary HEAD^..
+ MAINTAINERS                           |    6 +
+ Makefile                              |    5 +
+ block/blk-crypto-fallback.c           |    9 +-
+ drivers/gpu/drm/msm/msm_iommu.c       |   13 +-
+ drivers/gpu/drm/panthor/panthor_mmu.c |   14 +-
+ include/linux/instruction_pointer.h   |   24 +
+ include/linux/mempool.h               |    2 +-
+ include/linux/percpu.h                |    2 +-
+ include/linux/slab.h                  |  325 +++++++---
+ init/Kconfig                          |    3 +
+ io_uring/io_uring.c                   |   23 +-
+ kernel/configs/hardening.config       |    2 +-
+ lib/test_meminit.c                    |   23 +-
+ mm/Kconfig                            |   73 ++-
+ mm/kasan/kasan_test_c.c               |    5 +-
+ mm/kfence/core.c                      |    2 +-
+ mm/kfence/kfence_test.c               |   13 +-
+ mm/memcontrol.c                       |    5 +-
+ mm/mempool.c                          |   27 +-
+ mm/slab.h                             |   33 +-
+ mm/slab_common.c                      |   52 +-
+ mm/slub.c                             | 1117 ++++++++++++++++++---------------
+ net/bpf/test_run.c                    |    7 +-
+ net/core/skbuff.c                     |   24 +-
+ tools/include/linux/slab.h            |    2 +-
+ tools/mm/slabinfo.c                   |    8 +-
+ tools/testing/shared/linux.c          |   19 +-
+ 27 files changed, 1090 insertions(+), 748 deletions(-)
+$ git am -3 ../patches/0001-drm-panthor-I-love-Werror.patch
+Applying: drm/panthor: I love -Werror
+$ git reset HEAD^
+Unstaged changes after reset:
+M	drivers/gpu/drm/panthor/panthor_mmu.c
+$ git add -A .
+$ git commit -v -a --amend
+warning: notes ref refs/notes/commits is invalid
+[master 4b5a0ca7a2f88] next-20260612/slab
+ Date: Mon Jun 15 16:53:18 2026 +0100
 Merging random/master (bb9ff576fdff4 virt: vmgenid: remap memory as decrypted)
 $ git merge -m Merge branch 'master' of https://git.kernel.org/pub/scm/linux/kernel/git/crng/random.git random/master
 Merge made by the 'ort' strategy.

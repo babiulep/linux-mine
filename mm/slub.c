@@ -4930,7 +4930,7 @@ static __fastpath_inline void *slab_alloc_node(struct kmem_cache *s,
 
 	object = alloc_from_pcs(s, gfpflags, ac->alloc_flags, node);
 
-	if (unlikely(!object))
+	if (!object)
 		object = __slab_alloc_node(s, gfpflags, node, ac);
 
 	maybe_wipe_obj_freeptr(s, object);
@@ -5337,10 +5337,9 @@ void *__kmalloc_large_node_noprof(size_t size, gfp_t flags, int node)
 EXPORT_SYMBOL(__kmalloc_large_node_noprof);
 
 static __always_inline
-void *__do_kmalloc_node(kmem_buckets *b, gfp_t flags, int node,
+void *__do_kmalloc_node(size_t size, kmem_buckets *b, gfp_t flags, int node,
 			kmalloc_token_t token, struct slab_alloc_context *ac)
 {
-	const size_t size = ac->orig_size;
 	struct kmem_cache *s;
 	void *ret;
 
@@ -5369,7 +5368,7 @@ void *__kmalloc_node_noprof(DECL_KMALLOC_PARAMS(size, b, token), gfp_t flags, in
 		.alloc_flags = SLAB_ALLOC_DEFAULT,
 	};
 
-	return __do_kmalloc_node(PASS_BUCKET_PARAM(b), flags, node,
+	return __do_kmalloc_node(size, PASS_BUCKET_PARAM(b), flags, node,
 				 PASS_TOKEN_PARAM(token), &ac);
 }
 EXPORT_SYMBOL(__kmalloc_node_noprof);
@@ -5382,7 +5381,7 @@ void *__kmalloc_noprof(DECL_TOKEN_PARAMS(size, token), gfp_t flags)
 		.alloc_flags = SLAB_ALLOC_DEFAULT,
 	};
 
-	return __do_kmalloc_node(NULL, flags,  NUMA_NO_NODE,
+	return __do_kmalloc_node(size, NULL, flags,  NUMA_NO_NODE,
 				 PASS_TOKEN_PARAM(token), &ac);
 }
 EXPORT_SYMBOL(__kmalloc_noprof);
@@ -5475,7 +5474,7 @@ void *_kmalloc_nolock_noprof(DECL_TOKEN_PARAMS(size, token), gfp_t gfp_flags, in
 	struct slab_alloc_context ac = {
 		.caller_addr = _RET_IP_,
 		.orig_size = size,
-		.alloc_flags = SLAB_ALLOC_NOLOCK,
+		.alloc_flags = SLAB_ALLOC_TRYLOCK,
 	};
 
 	return __kmalloc_nolock_noprof(PASS_TOKEN_PARAMS(size, token),
@@ -5492,7 +5491,7 @@ void *__kmalloc_node_track_caller_noprof(DECL_KMALLOC_PARAMS(size, b, token), gf
 		.alloc_flags = SLAB_ALLOC_DEFAULT,
 	};
 
-	return __do_kmalloc_node(PASS_BUCKET_PARAM(b), flags, node,
+	return __do_kmalloc_node(size, PASS_BUCKET_PARAM(b), flags, node,
 				 PASS_TOKEN_PARAM(token), &ac);
 }
 EXPORT_SYMBOL(__kmalloc_node_track_caller_noprof);
@@ -5549,7 +5548,7 @@ void *__kmalloc_flags_noprof(DECL_TOKEN_PARAMS(size, token), gfp_t flags,
 	};
 
 	if (alloc_flags_allow_spinning(alloc_flags)) {
-		return __do_kmalloc_node(NULL, flags, node,
+		return __do_kmalloc_node(size, NULL, flags, node,
 				PASS_TOKEN_PARAM(token), &ac);
 	} else {
 		return __kmalloc_nolock_noprof(PASS_TOKEN_PARAMS(size, token),
@@ -6928,7 +6927,7 @@ void *__kvmalloc_node_noprof(DECL_KMALLOC_PARAMS(size, b, token), unsigned long 
 	 * It doesn't really make sense to fallback to vmalloc for sub page
 	 * requests
 	 */
-	ret = __do_kmalloc_node(PASS_BUCKET_PARAM(b),
+	ret = __do_kmalloc_node(size, PASS_BUCKET_PARAM(b),
 				kmalloc_gfp_adjust(flags, size),
 				node, PASS_TOKEN_PARAM(token), &ac);
 	if (ret || size <= PAGE_SIZE)
