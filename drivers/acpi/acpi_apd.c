@@ -182,14 +182,14 @@ static const struct apd_device_desc hip08_spi_desc = {
 	.fixed_clk_rate = 250000000,
 };
 
-static const struct apd_device_desc leca_i2c_desc = {
-	.setup = acpi_apd_setup,
-	.fixed_clk_rate = 250000000,
-};
-
 static const struct apd_device_desc leca_spi_desc = {
 	.setup = acpi_apd_setup,
 	.fixed_clk_rate = 400000000,
+};
+
+static const struct apd_device_desc leca_i2c_desc = {
+	.setup = acpi_apd_setup,
+	.fixed_clk_rate = 250000000,
 };
 
 #endif /* CONFIG_ARM64 */

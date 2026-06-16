@@ -19,13 +19,13 @@
 
 /* slab's alloc_flags definitions */
 #define SLAB_ALLOC_DEFAULT	0x00 /* no flags */
-#define SLAB_ALLOC_TRYLOCK	0x01 /* a kmalloc_nolock() allocation */
+#define SLAB_ALLOC_NOLOCK	0x01 /* a kmalloc_nolock() allocation */
 #define SLAB_ALLOC_NEW_SLAB	0x02 /* a flag for alloc_slab_obj_exts() */
 #define SLAB_ALLOC_NO_RECURSE	0x04 /* prevent kmalloc() recursion */
 
 static inline bool alloc_flags_allow_spinning(const unsigned int alloc_flags)
 {
-	return !(alloc_flags & SLAB_ALLOC_TRYLOCK);
+	return !(alloc_flags & SLAB_ALLOC_NOLOCK);
 }
 
 void *__kmalloc_flags_noprof(DECL_TOKEN_PARAMS(size, token), gfp_t flags,

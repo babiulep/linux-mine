@@ -216,7 +216,7 @@ static DEFINE_STATIC_KEY_FALSE(strict_numa);
 /* Structure holding extra parameters for slab allocations */
 struct slab_alloc_context {
 	unsigned long caller_addr;
-	unsigned long orig_size;
+	size_t orig_size;
 	unsigned int alloc_flags;
 	struct list_lru *lru;
 };
@@ -2056,7 +2056,7 @@ static inline void dec_slabs_node(struct kmem_cache *s, int node,
  */
 #define OBJCGS_CLEAR_MASK	(__GFP_DMA | __GFP_RECLAIMABLE | \
 				__GFP_ACCOUNT | __GFP_NOFAIL | \
-				__GFP_THISNODE | __GFP_COMP )
+				__GFP_THISNODE | __GFP_COMP)
 
 #ifdef CONFIG_SLAB_OBJ_EXT
 
@@ -2462,7 +2462,7 @@ static void memcg_alloc_abort_single(struct kmem_cache *s, void *object);
 static __fastpath_inline
 bool memcg_slab_post_alloc_hook(struct kmem_cache *s, gfp_t flags,
 				size_t size, void **p,
-				struct slab_alloc_context *ac)
+				const struct slab_alloc_context *ac)
 {
 	if (likely(!memcg_kmem_online()))
 		return true;
@@ -2567,7 +2567,7 @@ bool memcg_slab_post_charge(void *p, gfp_t flags)
 static inline bool memcg_slab_post_alloc_hook(struct kmem_cache *s,
 					      gfp_t flags,
 					      size_t size, void **p,
-					      struct slab_alloc_context *ac)
+					      const struct slab_alloc_context *ac)
 {
 	return true;
 }
@@ -3691,7 +3691,7 @@ static inline void init_slab_obj_iter(struct kmem_cache *s, struct slab *slab,
  * and put the slab to the partial (or full) list.
  */
 static void *alloc_single_from_new_slab(struct kmem_cache *s, struct slab *slab,
-					struct slab_alloc_context *ac)
+					const struct slab_alloc_context *ac)
 {
 	bool allow_spin = alloc_flags_allow_spinning(ac->alloc_flags);
 	struct kmem_cache_node *n;
@@ -3824,7 +3824,7 @@ static bool get_partial_node_bulk(struct kmem_cache *s,
 static void *get_from_partial_node(struct kmem_cache *s,
 				   struct kmem_cache_node *n,
 				   gfp_t gfp_flags,
-				   struct slab_alloc_context *ac)
+				   const struct slab_alloc_context *ac)
 {
 	struct slab *slab, *slab2;
 	unsigned long flags;
@@ -3887,7 +3887,7 @@ static void *get_from_partial_node(struct kmem_cache *s,
  * Get an object from somewhere. Search in increasing NUMA distances.
  */
 static void *get_from_any_partial(struct kmem_cache *s, gfp_t gfp_flags,
-				  struct slab_alloc_context *ac)
+				  const struct slab_alloc_context *ac)
 {
 #ifdef CONFIG_NUMA
 	struct zonelist *zonelist;
@@ -3962,7 +3962,7 @@ static void *get_from_any_partial(struct kmem_cache *s, gfp_t gfp_flags,
  * Get an object from a partial slab
  */
 static void *get_from_partial(struct kmem_cache *s, int node, gfp_t flags,
-			      struct slab_alloc_context *ac)
+			      const struct slab_alloc_context *ac)
 {
 	int searchnode = node;
 	void *object;
@@ -4452,7 +4452,7 @@ static unsigned int alloc_from_new_slab(struct kmem_cache *s, struct slab *slab,
  * slab.
  */
 static void *___slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
-			   struct slab_alloc_context *ac)
+			   const struct slab_alloc_context *ac)
 {
 	bool allow_spin = alloc_flags_allow_spinning(ac->alloc_flags);
 	gfp_t trynode_flags;
@@ -4525,7 +4525,7 @@ success:
 }
 
 static void *__slab_alloc_node(struct kmem_cache *s, gfp_t gfpflags, int node,
-			       struct slab_alloc_context *ac)
+			       const struct slab_alloc_context *ac)
 {
 	void *object;
 
@@ -4570,7 +4570,7 @@ struct kmem_cache *slab_pre_alloc_hook(struct kmem_cache *s, gfp_t flags)
 
 static __fastpath_inline
 bool slab_post_alloc_hook(struct kmem_cache *s, gfp_t flags, size_t size,
-			  void **p, struct slab_alloc_context *ac)
+			  void **p, const struct slab_alloc_context *ac)
 {
 	bool init = slab_want_init_on_alloc(flags, s);
 	unsigned int zero_size = s->object_size;
@@ -4916,7 +4916,7 @@ do_alloc:
  * Otherwise we can simply pick the next object from the lockless free list.
  */
 static __fastpath_inline void *slab_alloc_node(struct kmem_cache *s,
-		gfp_t gfpflags, int node, struct slab_alloc_context *ac)
+		gfp_t gfpflags, int node, const struct slab_alloc_context *ac)
 {
 	void *object;
 
@@ -4930,7 +4930,7 @@ static __fastpath_inline void *slab_alloc_node(struct kmem_cache *s,
 
 	object = alloc_from_pcs(s, gfpflags, ac->alloc_flags, node);
 
-	if (!object)
+	if (unlikely(!object))
 		object = __slab_alloc_node(s, gfpflags, node, ac);
 
 	maybe_wipe_obj_freeptr(s, object);
@@ -4948,7 +4948,7 @@ out:
 void *kmem_cache_alloc_noprof(struct kmem_cache *s, gfp_t gfpflags)
 {
 	void *ret;
-	struct slab_alloc_context ac = {
+	const struct slab_alloc_context ac = {
 		.caller_addr = _RET_IP_,
 		.orig_size = s->object_size,
 		.alloc_flags = SLAB_ALLOC_DEFAULT,
@@ -4966,7 +4966,7 @@ void *kmem_cache_alloc_lru_noprof(struct kmem_cache *s, struct list_lru *lru,
 			   gfp_t gfpflags)
 {
 	void *ret;
-	struct slab_alloc_context ac = {
+	const struct slab_alloc_context ac = {
 		.caller_addr = _RET_IP_,
 		.orig_size = s->object_size,
 		.alloc_flags = SLAB_ALLOC_DEFAULT,
@@ -5006,7 +5006,7 @@ EXPORT_SYMBOL(kmem_cache_charge);
 void *kmem_cache_alloc_node_noprof(struct kmem_cache *s, gfp_t gfpflags, int node)
 {
 	void *ret;
-	struct slab_alloc_context ac = {
+	const struct slab_alloc_context ac = {
 		.caller_addr = _RET_IP_,
 		.orig_size = s->object_size,
 		.alloc_flags = SLAB_ALLOC_DEFAULT,
@@ -5255,7 +5255,7 @@ kmem_cache_alloc_from_sheaf_noprof(struct kmem_cache *s, gfp_t gfp,
 				   struct slab_sheaf *sheaf)
 {
 	void *ret = NULL;
-	struct slab_alloc_context ac = {
+	const struct slab_alloc_context ac = {
 		.orig_size = s->object_size,
 		.alloc_flags = SLAB_ALLOC_DEFAULT,
 	};
@@ -5337,9 +5337,10 @@ void *__kmalloc_large_node_noprof(size_t size, gfp_t flags, int node)
 EXPORT_SYMBOL(__kmalloc_large_node_noprof);
 
 static __always_inline
-void *__do_kmalloc_node(size_t size, kmem_buckets *b, gfp_t flags, int node,
-			kmalloc_token_t token, struct slab_alloc_context *ac)
+void *__do_kmalloc_node(kmem_buckets *b, gfp_t flags, int node,
+			kmalloc_token_t token, const struct slab_alloc_context *ac)
 {
+	const size_t size = ac->orig_size;
 	struct kmem_cache *s;
 	void *ret;
 
@@ -5362,32 +5363,32 @@ void *__do_kmalloc_node(size_t size, kmem_buckets *b, gfp_t flags, int node,
 }
 void *__kmalloc_node_noprof(DECL_KMALLOC_PARAMS(size, b, token), gfp_t flags, int node)
 {
-	struct slab_alloc_context ac = {
+	const struct slab_alloc_context ac = {
 		.caller_addr = _RET_IP_,
 		.orig_size = size,
 		.alloc_flags = SLAB_ALLOC_DEFAULT,
 	};
 
-	return __do_kmalloc_node(size, PASS_BUCKET_PARAM(b), flags, node,
+	return __do_kmalloc_node(PASS_BUCKET_PARAM(b), flags, node,
 				 PASS_TOKEN_PARAM(token), &ac);
 }
 EXPORT_SYMBOL(__kmalloc_node_noprof);
 
 void *__kmalloc_noprof(DECL_TOKEN_PARAMS(size, token), gfp_t flags)
 {
-	struct slab_alloc_context ac = {
+	const struct slab_alloc_context ac = {
 		.caller_addr = _RET_IP_,
 		.orig_size = size,
 		.alloc_flags = SLAB_ALLOC_DEFAULT,
 	};
 
-	return __do_kmalloc_node(size, NULL, flags,  NUMA_NO_NODE,
+	return __do_kmalloc_node(NULL, flags,  NUMA_NO_NODE,
 				 PASS_TOKEN_PARAM(token), &ac);
 }
 EXPORT_SYMBOL(__kmalloc_noprof);
 
 static void *__kmalloc_nolock_noprof(DECL_TOKEN_PARAMS(size, token), gfp_t gfp_flags,
-				     int node, struct slab_alloc_context *ac)
+				     int node, const struct slab_alloc_context *ac)
 {
 	struct kmem_cache *s;
 	bool can_retry = true;
@@ -5471,10 +5472,10 @@ success:
 
 void *_kmalloc_nolock_noprof(DECL_TOKEN_PARAMS(size, token), gfp_t gfp_flags, int node)
 {
-	struct slab_alloc_context ac = {
+	const struct slab_alloc_context ac = {
 		.caller_addr = _RET_IP_,
 		.orig_size = size,
-		.alloc_flags = SLAB_ALLOC_TRYLOCK,
+		.alloc_flags = SLAB_ALLOC_NOLOCK,
 	};
 
 	return __kmalloc_nolock_noprof(PASS_TOKEN_PARAMS(size, token),
@@ -5485,13 +5486,13 @@ EXPORT_SYMBOL_GPL(_kmalloc_nolock_noprof);
 void *__kmalloc_node_track_caller_noprof(DECL_KMALLOC_PARAMS(size, b, token), gfp_t flags,
 					 int node, unsigned long caller)
 {
-	struct slab_alloc_context ac = {
+	const struct slab_alloc_context ac = {
 		.caller_addr = caller,
 		.orig_size = size,
 		.alloc_flags = SLAB_ALLOC_DEFAULT,
 	};
 
-	return __do_kmalloc_node(size, PASS_BUCKET_PARAM(b), flags, node,
+	return __do_kmalloc_node(PASS_BUCKET_PARAM(b), flags, node,
 				 PASS_TOKEN_PARAM(token), &ac);
 }
 EXPORT_SYMBOL(__kmalloc_node_track_caller_noprof);
@@ -5499,7 +5500,7 @@ EXPORT_SYMBOL(__kmalloc_node_track_caller_noprof);
 void *__kmalloc_cache_noprof(struct kmem_cache *s, gfp_t gfpflags, size_t size)
 {
 	void *ret;
-	struct slab_alloc_context ac = {
+	const struct slab_alloc_context ac = {
 		.caller_addr = _RET_IP_,
 		.orig_size = size,
 		.alloc_flags = SLAB_ALLOC_DEFAULT,
@@ -5518,7 +5519,7 @@ void *__kmalloc_cache_node_noprof(struct kmem_cache *s, gfp_t gfpflags,
 				  int node, size_t size)
 {
 	void *ret;
-	struct slab_alloc_context ac = {
+	const struct slab_alloc_context ac = {
 		.caller_addr = _RET_IP_,
 		.orig_size = size,
 		.alloc_flags = SLAB_ALLOC_DEFAULT,
@@ -5541,14 +5542,14 @@ EXPORT_SYMBOL(__kmalloc_cache_node_noprof);
 void *__kmalloc_flags_noprof(DECL_TOKEN_PARAMS(size, token), gfp_t flags,
 			     unsigned int alloc_flags, int node)
 {
-	struct slab_alloc_context ac = {
+	const struct slab_alloc_context ac = {
 		.caller_addr = _RET_IP_,
 		.orig_size = size,
 		.alloc_flags = alloc_flags,
 	};
 
 	if (alloc_flags_allow_spinning(alloc_flags)) {
-		return __do_kmalloc_node(size, NULL, flags, node,
+		return __do_kmalloc_node(NULL, flags, node,
 				PASS_TOKEN_PARAM(token), &ac);
 	} else {
 		return __kmalloc_nolock_noprof(PASS_TOKEN_PARAMS(size, token),
@@ -6917,7 +6918,7 @@ void *__kvmalloc_node_noprof(DECL_KMALLOC_PARAMS(size, b, token), unsigned long 
 {
 	bool allow_block;
 	void *ret;
-	struct slab_alloc_context ac = {
+	const struct slab_alloc_context ac = {
 		.caller_addr = _RET_IP_,
 		.orig_size = size,
 		.alloc_flags = SLAB_ALLOC_DEFAULT,
@@ -6927,7 +6928,7 @@ void *__kvmalloc_node_noprof(DECL_KMALLOC_PARAMS(size, b, token), unsigned long 
 	 * It doesn't really make sense to fallback to vmalloc for sub page
 	 * requests
 	 */
-	ret = __do_kmalloc_node(size, PASS_BUCKET_PARAM(b),
+	ret = __do_kmalloc_node(PASS_BUCKET_PARAM(b),
 				kmalloc_gfp_adjust(flags, size),
 				node, PASS_TOKEN_PARAM(token), &ac);
 	if (ret || size <= PAGE_SIZE)
@@ -7354,7 +7355,7 @@ static bool __kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags,
 	int i;
 
 	if (IS_ENABLED(CONFIG_SLUB_TINY) || kmem_cache_debug(s)) {
-		struct slab_alloc_context ac = {
+		const struct slab_alloc_context ac = {
 			.caller_addr = _RET_IP_,
 			.orig_size = s->object_size,
 			.alloc_flags = SLAB_ALLOC_DEFAULT,
@@ -7403,7 +7404,7 @@ bool kmem_cache_alloc_bulk_noprof(struct kmem_cache *s, gfp_t flags,
 {
 	unsigned int i = 0;
 	void *kfence_obj;
-	struct slab_alloc_context ac = {
+	const struct slab_alloc_context ac = {
 		.orig_size = s->object_size,
 		.alloc_flags = SLAB_ALLOC_DEFAULT,
 	};
