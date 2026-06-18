@@ -600,7 +600,13 @@ static char *dso__get_filename(struct dso *dso, const char *root_dir,
 		size_t len = sizeof(newpath);
 
 		if (dso__decompress_kmodule_path(dso, name, newpath, len) < 0) {
-			errno = *dso__load_errno(dso);
+			/*
+			 * Use a standard errno value, not the negative custom
+			 * DSO_LOAD_ERRNO stored in dso__load_errno(dso):
+			 * __open_dso() computes fd = -errno, so a negative
+			 * errno produces a positive fd that looks valid.
+			 */
+			errno = EIO;
 			goto out;
 		}
 
@@ -876,6 +882,12 @@ static ssize_t bpf_read(struct dso *dso, u64 offset, char *data)
 
 	node = perf_env__find_bpf_prog_info(dso_bpf_prog->env, dso_bpf_prog->id);
 	if (!node || !node->info_linear) {
+		dso__data(dso)->status = DSO_DATA_STATUS_ERROR;
+		return -1;
+	}
+
+	/* jited_prog_insns is only valid if bpil_offs_to_addr() converted it */
+	if (!(node->info_linear->arrays & (1UL << PERF_BPIL_JITED_INSNS))) {
 		dso__data(dso)->status = DSO_DATA_STATUS_ERROR;
 		return -1;
 	}
@@ -1995,6 +2007,10 @@ const u8 *dso__read_symbol(struct dso *dso, const char *symfs_filename,
 			return NULL;
 		}
 		info_linear = info_node->info_linear;
+		if (!(info_linear->arrays & (1UL << PERF_BPIL_JITED_INSNS))) {
+			errno = SYMBOL_ANNOTATE_ERRNO__BPF_MISSING_BTF;
+			return NULL;
+		}
 		assert(len <= info_linear->info.jited_prog_len);
 		*out_buf_len = len;
 		return (const u8 *)(uintptr_t)(info_linear->info.jited_prog_insns);

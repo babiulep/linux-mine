@@ -31,6 +31,7 @@
  * SOFTWARE.
  */
 
+#include <linux/bitfield.h>
 #include <linux/kref.h>
 #include <linux/random.h>
 #include <linux/debugfs.h>
@@ -163,9 +164,8 @@ static int get_unchangeable_access_flags(struct mlx5_ib_dev *dev,
 #define MLX5_FRMR_POOLS_KEY_VENDOR_KEY_SUPPORTED \
 	MLX5_FRMR_POOLS_KEY_ACCESS_MODE_KSM_MASK
 
-#define MLX5_FRMR_POOLS_KERNEL_KEY_PH_SHIFT 16
-#define MLX5_FRMR_POOLS_KERNEL_KEY_PH_MASK 0xFF0000
-#define MLX5_FRMR_POOLS_KERNEL_KEY_ST_INDEX_MASK 0xFFFF
+#define MLX5_FRMR_POOLS_KERNEL_KEY_PH_MASK GENMASK_ULL(23, 16)
+#define MLX5_FRMR_POOLS_KERNEL_KEY_ST_INDEX_MASK GENMASK_ULL(15, 0)
 
 static struct mlx5_ib_mr *
 _mlx5_frmr_pool_alloc(struct mlx5_ib_dev *dev, struct ib_umem *umem,
@@ -194,7 +194,8 @@ _mlx5_frmr_pool_alloc(struct mlx5_ib_dev *dev, struct ib_umem *umem,
 		ph ^= MLX5_IB_NO_PH;
 
 	mr->ibmr.frmr.key.kernel_vendor_key =
-		st_index | (ph << MLX5_FRMR_POOLS_KERNEL_KEY_PH_SHIFT);
+		FIELD_PREP(MLX5_FRMR_POOLS_KERNEL_KEY_ST_INDEX_MASK, st_index) |
+		FIELD_PREP(MLX5_FRMR_POOLS_KERNEL_KEY_PH_MASK, ph);
 	err = ib_frmr_pool_pop(&dev->ib_dev, &mr->ibmr);
 	if (err) {
 		kfree(mr);
@@ -271,9 +272,10 @@ static int mlx5r_create_mkeys(struct ib_device *device, struct ib_frmr_key *key,
 		 get_mkc_octo_size(access_mode, key->num_dma_blocks));
 	MLX5_SET(mkc, mkc, log_page_size, PAGE_SHIFT);
 
-	st_index = key->kernel_vendor_key &
-		   MLX5_FRMR_POOLS_KERNEL_KEY_ST_INDEX_MASK;
-	ph = key->kernel_vendor_key & MLX5_FRMR_POOLS_KERNEL_KEY_PH_MASK;
+	st_index = FIELD_GET(MLX5_FRMR_POOLS_KERNEL_KEY_ST_INDEX_MASK,
+			     key->kernel_vendor_key);
+	ph = FIELD_GET(MLX5_FRMR_POOLS_KERNEL_KEY_PH_MASK,
+		       key->kernel_vendor_key);
 	if (ph) {
 		/* Normalize ph: swap MLX5_IB_NO_PH for 0 */
 		if (ph == MLX5_IB_NO_PH)
@@ -294,7 +296,7 @@ static int mlx5r_create_mkeys(struct ib_device *device, struct ib_frmr_key *key,
 free_in:
 	kfree(in);
 	if (err)
-		for (; i > 0; i--)
+		for (i--; i >= 0; i--)
 			mlx5_core_destroy_mkey(dev->mdev, handles[i]);
 	return err;
 }
@@ -1400,9 +1402,12 @@ static int mlx5r_handle_mkey_cleanup(struct mlx5_ib_mr *mr)
 	bool is_odp = is_odp_mr(mr);
 	int ret;
 
-	if (mr->ibmr.frmr.pool && !mlx5_umr_revoke_mr_with_lock(mr) &&
-	    !ib_frmr_pool_push(mr->ibmr.device, &mr->ibmr))
-		return 0;
+	if (mr->ibmr.frmr.pool) {
+		if (!mlx5_umr_revoke_mr_with_lock(mr)) {
+			ib_frmr_pool_push(mr->ibmr.device, &mr->ibmr);
+			return 0;
+		}
+	}
 
 	if (is_odp)
 		mutex_lock(&to_ib_umem_odp(mr->umem)->umem_mutex);
@@ -1423,6 +1428,10 @@ static int mlx5r_handle_mkey_cleanup(struct mlx5_ib_mr *mr)
 		dma_resv_unlock(
 			to_ib_umem_dmabuf(mr->umem)->attach->dmabuf->resv);
 	}
+
+	if (mr->ibmr.frmr.pool && !ret)
+		ib_frmr_pool_drop(&mr->ibmr);
+
 	return ret;
 }
 

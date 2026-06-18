@@ -1264,7 +1264,7 @@ static int panthor_vm_op_ctx_prealloc_pts(struct panthor_vm_op_ctx *op_ctx)
 		return -ENOMEM;
 
 	if (!kmem_cache_alloc_bulk(pt_cache, GFP_KERNEL, pt_count,
-			op_ctx->rsvd_page_tables.pages)) {
+				   op_ctx->rsvd_page_tables.pages)) {
 		op_ctx->rsvd_page_tables.count = 0;
 		return -ENOMEM;
 	}

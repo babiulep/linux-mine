@@ -2664,9 +2664,9 @@ static void sk_msg_clear_elem_copy(struct sk_msg *msg, u32 i)
 	__clear_bit(i, msg->sg.copy);
 }
 
-static void sk_msg_set_elem_copy(struct sk_msg *msg, u32 i)
+static void sk_msg_set_elem_copy(struct sk_msg *msg, u32 i, bool sg_copy)
 {
-	__set_bit(i, msg->sg.copy);
+	__assign_bit(i, msg->sg.copy, sg_copy);
 }
 
 static void sk_msg_clear_copy_range(struct sk_msg *msg, u32 start, u32 end)
@@ -2680,10 +2680,9 @@ static void sk_msg_clear_copy_range(struct sk_msg *msg, u32 start, u32 end)
 static void sk_msg_sg_move(struct sk_msg *msg, u32 dst, u32 src)
 {
 	msg->sg.data[dst] = msg->sg.data[src];
-	if (sk_msg_elem_is_copy(msg, src))
-		sk_msg_set_elem_copy(msg, dst);
-	else
-		sk_msg_clear_elem_copy(msg, dst);
+
+	sk_msg_set_elem_copy(msg, dst,	
+		sk_msg_elem_is_copy(msg, src));
 }
 
 static const struct bpf_func_proto bpf_msg_cork_bytes_proto = {
@@ -2765,6 +2764,7 @@ BPF_CALL_4(bpf_msg_pull_data, struct sk_msg *, msg, u32, start,
 		poffset += len;
 		sge->length = 0;
 		put_page(sg_page(sge));
+		sk_msg_clear_elem_copy(msg, i);
 
 		sk_msg_iter_var_next(i);
 	} while (i != last_sge);
@@ -2951,10 +2951,7 @@ BPF_CALL_4(bpf_msg_push_data, struct sk_msg *, msg, u32, start,
 
 	while (i != msg->sg.end) {
 		msg->sg.data[i] = sge;
-		if (sge_copy)
-			sk_msg_set_elem_copy(msg, i);
-		else
-			sk_msg_clear_elem_copy(msg, i);
+		sk_msg_set_elem_copy(msg, i, sge_copy);
 		sge = nsge;
 		sge_copy = nsge_copy;
 		sk_msg_iter_var_next(i);
@@ -2979,10 +2976,7 @@ place_new:
 		get_page(sg_page(&rsge));
 		sk_msg_iter_var_next(new);
 		msg->sg.data[new] = rsge;
-		if (rsge_copy)
-			sk_msg_set_elem_copy(msg, new);
-		else
-			sk_msg_clear_elem_copy(msg, new);
+		sk_msg_set_elem_copy(msg, new, rsge_copy);
 	}
 	sk_msg_clear_elem_copy(msg, msg->sg.end);
 
@@ -3031,10 +3025,7 @@ static void sk_msg_shift_right(struct sk_msg *msg, int i)
 
 	while (i != msg->sg.end) {
 		msg->sg.data[i] = sge;
-		if (sge_copy)
-			sk_msg_set_elem_copy(msg, i);
-		else
-			sk_msg_clear_elem_copy(msg, i);
+		sk_msg_set_elem_copy(msg, i, sge_copy);
 		sk_msg_iter_var_next(i);
 		sge = tmp;
 		sge_copy = tmp_copy;
@@ -3114,10 +3105,7 @@ BPF_CALL_4(bpf_msg_pop_data, struct sk_msg *, msg, u32, start,
 				sg_set_page(nsge,
 					    sg_page(sge),
 					    b, sge->offset + pop + a);
-				if (sge_copy)
-					sk_msg_set_elem_copy(msg, i);
-				else
-					sk_msg_clear_elem_copy(msg, i);
+				sk_msg_set_elem_copy(msg, i, sge_copy);
 			} else {
 				struct page *page, *orig;
 				u8 *to, *from;

@@ -2018,10 +2018,9 @@ F:	drivers/hwmon/applesmc.c
 
 APPLETALK NETWORK LAYER
 L:	netdev@vger.kernel.org
-S:	Odd fixes
-F:	include/linux/atalk.h
+S:	Obsolete
 F:	include/uapi/linux/atalk.h
-F:	net/appletalk/
+F:	include/uapi/linux/if_ltalk.h
 
 APPLIED MICRO (APM) X-GENE DEVICE TREE SUPPORT
 M:	Khuong Dinh <khuong@os.amperecomputing.com>
@@ -14192,6 +14191,7 @@ F:	virt/kvm/*
 KERNEL VIRTUAL MACHINE FOR ARM64 (KVM/arm64)
 M:	Marc Zyngier <maz@kernel.org>
 M:	Oliver Upton <oupton@kernel.org>
+R:	Fuad Tabba <tabba@google.com>
 R:	Joey Gouly <joey.gouly@arm.com>
 R:	Steffen Eiden <seiden@linux.ibm.com>
 R:	Suzuki K Poulose <suzuki.poulose@arm.com>

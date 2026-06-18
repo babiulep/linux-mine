@@ -32,9 +32,9 @@
 #include <linux/static_call.h>
 #include <linux/memcontrol.h>
 #include <linux/cfi.h>
+#include <linux/xattr.h>
 #include <linux/key.h>
 #include <linux/ftrace.h>
-#include <linux/xattr.h>
 #include <asm/rqspinlock.h>
 
 struct bpf_verifier_env;

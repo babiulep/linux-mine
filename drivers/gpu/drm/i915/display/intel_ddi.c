@@ -3501,8 +3501,6 @@ static void intel_ddi_enable_hdmi(struct intel_atomic_state *state,
 	}
 
 	intel_ddi_buf_enable(encoder, buf_ctl);
-
-	intel_hdmi_poll_for_scrambling_enable(crtc_state, connector);
 }
 
 static void intel_ddi_enable(struct intel_atomic_state *state,
@@ -4661,7 +4659,6 @@ static void intel_ddi_encoder_destroy(struct drm_encoder *encoder)
 
 	drm_encoder_cleanup(encoder);
 	kfree(dig_port->hdcp.port_data.streams);
-	intel_dp_link_cleanup(&dig_port->dp);
 	kfree(dig_port);
 }
 
@@ -4699,15 +4696,10 @@ static int intel_ddi_init_dp_connector(struct intel_digital_port *dig_port)
 	struct intel_display *display = to_intel_display(dig_port);
 	struct intel_connector *connector;
 	enum port port = dig_port->base.port;
-	int err;
 
 	connector = intel_connector_alloc();
 	if (!connector)
 		return -ENOMEM;
-
-	err = intel_dp_link_init(&dig_port->dp);
-	if (err)
-		goto err_dp_init;
 
 	dig_port->dp.output_reg = DDI_BUF_CTL(port);
 	if (DISPLAY_VER(display) >= 14)
@@ -4721,9 +4713,8 @@ static int intel_ddi_init_dp_connector(struct intel_digital_port *dig_port)
 	dig_port->dp.preemph_max = intel_ddi_dp_preemph_max;
 
 	if (!intel_dp_init_connector(dig_port, connector)) {
-		err = -EINVAL;
-
-		goto err_init_connector;
+		kfree(connector);
+		return -EINVAL;
 	}
 
 	if (dig_port->base.type == INTEL_OUTPUT_EDP) {
@@ -4739,13 +4730,6 @@ static int intel_ddi_init_dp_connector(struct intel_digital_port *dig_port)
 	}
 
 	return 0;
-
-err_init_connector:
-	intel_dp_link_cleanup(&dig_port->dp);
-err_dp_init:
-	kfree(connector);
-
-	return err;
 }
 
 static void intel_ddi_cleanup_dp_connector(struct intel_digital_port *dig_port)
@@ -4754,7 +4738,6 @@ static void intel_ddi_cleanup_dp_connector(struct intel_digital_port *dig_port)
 	struct intel_connector *connector = intel_dp->attached_connector;
 
 	intel_dp_cleanup_connector(dig_port, connector);
-	intel_dp_link_cleanup(intel_dp);
 	kfree(connector);
 }
 

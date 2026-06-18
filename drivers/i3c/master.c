@@ -744,7 +744,14 @@ static DEVICE_ATTR_RW(hotjoin);
 static ssize_t dev_nack_retry_count_show(struct device *dev,
 					 struct device_attribute *attr, char *buf)
 {
-	return sysfs_emit(buf, "%u\n", dev_to_i3cmaster(dev)->dev_nack_retry_count);
+	struct i3c_bus *i3cbus = dev_to_i3cbus(dev);
+	ssize_t ret;
+
+	i3c_bus_normaluse_lock(i3cbus);
+	ret = sysfs_emit(buf, "%u\n", dev_to_i3cmaster(dev)->dev_nack_retry_count);
+	i3c_bus_normaluse_unlock(i3cbus);
+
+	return ret;
 }
 
 static ssize_t dev_nack_retry_count_store(struct device *dev,
@@ -753,23 +760,26 @@ static ssize_t dev_nack_retry_count_store(struct device *dev,
 {
 	struct i3c_bus *i3cbus = dev_to_i3cbus(dev);
 	struct i3c_master_controller *master = dev_to_i3cmaster(dev);
-	unsigned long val;
+	unsigned int val;
 	int ret;
 
-	ret = kstrtoul(buf, 0, &val);
+	ret = kstrtouint(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	ret = i3c_master_rpm_get(master);
 	if (ret)
 		return ret;
 
 	i3c_bus_maintenance_lock(i3cbus);
 	ret = master->ops->set_dev_nack_retry(master, val);
+	if (!ret)
+		master->dev_nack_retry_count = val;
 	i3c_bus_maintenance_unlock(i3cbus);
 
-	if (ret)
-		return ret;
+	i3c_master_rpm_put(master);
 
-	master->dev_nack_retry_count = val;
-
-	return count;
+	return ret ?: count;
 }
 
 static DEVICE_ATTR_RW(dev_nack_retry_count);
