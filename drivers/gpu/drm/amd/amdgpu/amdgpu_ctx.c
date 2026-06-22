@@ -345,7 +345,7 @@ static int __amdgpu_ctx_set_stable_pstate(struct amdgpu_ctx *ctx,
 	enum amd_dpm_forced_level level;
 	struct amdgpu_ctx *current_ctx;
 	u32 current_stable_pstate;
-	int r;
+	int r = 0;
 
 	lockdep_assert_held(&adev->pm.stable_pstate_ctx_lock);
 
