@@ -1587,11 +1587,13 @@ static bool smb_break_all_write_oplock(struct ksmbd_work *work,
 }
 
 /**
- * smb_break_all_levII_oplock() - send level2 oplock or read lease break command
+ * __smb_break_all_levII_oplock() - send level2 oplock or read lease break command
  *	from server to client
- * @work:	smb work
- * @fp:		ksmbd file pointer
- * @is_trunc:	truncate on open
+ * @work:		smb work
+ * @fp:			ksmbd file pointer
+ * @is_trunc:		truncate on open
+ * @send_interim:	send interim response to the client
+ * @send_oplock_break:	send oplock break notification to the client
  */
 static void __smb_break_all_levII_oplock(struct ksmbd_work *work,
 					 struct ksmbd_file *fp, int is_trunc,

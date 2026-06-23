@@ -3955,7 +3955,7 @@ reconnected_fp:
 	 * preallocation and metadata rounding.
 	 */
 	if (!S_ISDIR(stat.mode) && stat.size > fp->allocation_size)
-		fp->allocation_size = roundup(stat.size, stat.blksize);
+		fp->allocation_size = round_up(stat.size, stat.blksize);
 	rsp->AllocationSize = cpu_to_le64(fp->allocation_size);
 	rsp->EndofFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
 	rsp->FileAttributes = fp->f_ci->m_fattr;
