@@ -967,6 +967,8 @@ out:
  * smb2_lease_break_noti() - break lease when a new client request
  *			write lease
  * @opinfo:		contains lease state information
+ * @wait_ack:		wait for lease break acknowledgment from the client
+ * @inc_epoch:		increment the lease epoch before sending the break
  *
  * Return:	0 on success, otherwise error
  */
@@ -1443,12 +1445,12 @@ int smb_grant_oplock(struct ksmbd_work *work, int req_op_level, u64 pid,
 		if (m_opinfo) {
 			lease_put(opinfo->o_lease);
 			lease_get(m_opinfo->o_lease);
-				opinfo->o_lease = m_opinfo->o_lease;
-				opinfo->level = m_opinfo->level;
-				new_lease = false;
-				opinfo_put(m_opinfo);
-				goto out;
-			}
+			opinfo->o_lease = m_opinfo->o_lease;
+			opinfo->level = m_opinfo->level;
+			new_lease = false;
+			opinfo_put(m_opinfo);
+			goto out;
+		}
 	}
 	prev_opinfo = opinfo_get_list(ci);
 	if (!prev_opinfo ||

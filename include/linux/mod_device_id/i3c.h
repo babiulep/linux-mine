@@ -22,6 +22,4 @@ struct i3c_device_id {
 	const void *data;
 };
 
-
 #endif /* ifndef LINUX_MOD_DEVICE_ID_I3C_H */
-

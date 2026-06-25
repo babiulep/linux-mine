@@ -58,7 +58,7 @@
 #include "mod_device_id/ssam.h"
 #include "mod_device_id/ssb.h"
 #include "mod_device_id/tb.h"
-#include "mod_device_id/tee.h"
+#include "mod_device_id/tee_client.h"
 #include "mod_device_id/typec.h"
 #include "mod_device_id/ulpi.h"
 #include "mod_device_id/usb.h"

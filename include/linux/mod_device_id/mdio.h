@@ -31,5 +31,4 @@ struct mdio_device_id {
 	__u32 phy_id_mask;
 };
 
-
 #endif /* ifndef LINUX_MOD_DEVICE_ID_MDIO_H */

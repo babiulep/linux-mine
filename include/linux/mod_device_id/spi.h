@@ -15,5 +15,4 @@ struct spi_device_id {
 	kernel_ulong_t driver_data;	/* Data private to the driver */
 };
 
-
 #endif /* ifndef LINUX_MOD_DEVICE_ID_SPI_H */

@@ -16,4 +16,3 @@ struct amba_id {
 };
 
 #endif /* ifndef LINUX_MOD_DEVICE_ID_AMBA_H */
-

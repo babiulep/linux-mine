@@ -6,4 +6,3 @@ struct vchiq_device_id {
 };
 
 #endif /* ifndef LINUX_MOD_DEVICE_ID_VCHIQ_H */
-

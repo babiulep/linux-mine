@@ -1,5 +1,5 @@
-#ifndef LINUX_MOD_DEVICE_ID_TEE_H
-#define LINUX_MOD_DEVICE_ID_TEE_H
+#ifndef LINUX_MOD_DEVICE_ID_TEE_CLIENT_H
+#define LINUX_MOD_DEVICE_ID_TEE_CLIENT_H
 
 #ifdef __KERNEL__
 #include <linux/uuid.h>
@@ -14,4 +14,4 @@ struct tee_client_device_id {
 	uuid_t uuid;
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_TEE_H */
+#endif /* ifndef LINUX_MOD_DEVICE_ID_TEE_CLIENT_H */

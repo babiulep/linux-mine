@@ -31,4 +31,3 @@ struct dfl_device_id {
 };
 
 #endif /* ifndef LINUX_MOD_DEVICE_ID_DFL_H */
-

@@ -18,4 +18,3 @@ struct parisc_device_id {
 };
 
 #endif /* ifndef LINUX_MOD_DEVICE_ID_PARISC_H */
-
