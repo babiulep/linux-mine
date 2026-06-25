@@ -95,27 +95,19 @@ static int ntfs_ioctl_fitrim(struct ntfs_sb_info *sbi, unsigned long arg)
 int ntfs_fileattr_get(struct dentry *dentry, struct file_kattr *fa)
 {
 	struct inode *inode = d_inode(dentry);
-	struct ntfs_inode *ni = ntfs_i(inode);
 	struct ntfs_sb_info *sbi = inode->i_sb->s_fs_info;
+	struct ntfs_inode *ni = ntfs_i(inode);
 	u32 flags = 0;
 
 	/* Avoid any operation if inode is bad. */
 	if (unlikely(is_bad_ni(ni)))
 		return -EINVAL;
 
-	/*
-	 * NTFS preserves case (the default). Case sensitivity depends on
-	 * mount options: with "nocase", NTFS is case-insensitive;
-	 * otherwise it is case-sensitive.
-	 */
-	if (sbi->options->nocase) {
-		fa->fsx_xflags |= FS_XFLAG_CASEFOLD;
-		fa->flags |= FS_CASEFOLD_FL;
-	}
-	if (inode->i_flags & S_IMMUTABLE) {
-		fa->fsx_xflags |= FS_XFLAG_IMMUTABLE;
-		fa->flags |= FS_IMMUTABLE_FL;
-	}
+	if (sbi->options->nocase)
+		flags |= FS_CASEFOLD_FL;
+
+	if (inode->i_flags & S_IMMUTABLE)
+		flags |= FS_IMMUTABLE_FL;
 
 	if (inode->i_flags & S_APPEND)
 		flags |= FS_APPEND_FL;

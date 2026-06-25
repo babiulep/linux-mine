@@ -88,7 +88,8 @@
 
 struct workqueue_struct *tt_wq __ro_after_init;
 
-struct dentry *d_testing, *d_command __ro_after_init;
+struct dentry *d_testing __ro_after_init;
+static struct dentry *d_command __ro_after_init;
 
 #define TT_COMMAND_SIZE		16
 

@@ -44,11 +44,6 @@ enum io_uring_cmd_flags {
 	IO_URING_F_COMPAT		= (1 << 12),
 };
 
-enum {
-	IO_BUF_DEST	= 1 << ITER_DEST,
-	IO_BUF_SOURCE	= 1 << ITER_SOURCE,
-};
-
 struct iou_loop_params;
 
 struct io_wq_work_node {

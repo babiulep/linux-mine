@@ -401,12 +401,6 @@ struct task_struct___preempt_rt {
 extern struct lowcore *bpf_get_lowcore(void) __weak __ksym;
 #endif
 
-#ifdef bpf_target_loongarch
-struct task_struct___local {
-	struct thread_info thread_info;
-} __attribute__((preserve_access_index));
-#endif
-
 static inline int get_preempt_count(void)
 {
 #if defined(bpf_target_x86)
@@ -430,17 +424,7 @@ static inline int get_preempt_count(void)
 #elif defined(bpf_target_s390)
 	return bpf_get_lowcore()->preempt_count;
 #elif defined(bpf_target_loongarch)
-	struct task_struct *task = bpf_get_current_task_btf();
-	struct task_struct___local *task_alt = (void *)task;
-
-	if (bpf_core_field_exists(task_alt->thread_info)) {
-		return BPF_CORE_READ(task_alt, thread_info.preempt_count);
-	} else {
-		void *stack = BPF_CORE_READ(task, stack);
-		struct thread_info *ti = (void *)stack;
-
-		return BPF_CORE_READ(ti, preempt_count);
-	}
+	return bpf_get_current_task_btf()->thread_info.preempt_count;
 #endif
 	return 0;
 }
