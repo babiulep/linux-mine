@@ -360,7 +360,7 @@ static int amd_ntb_link_enable(struct ntb_dev *ntb,
 
 	if (ndev->ntb.topo == NTB_TOPO_SEC)
 		return -EINVAL;
-	dev_dbg(&ntb->pdev->dev, "Disabling Link.\n");
+	dev_dbg(&ntb->pdev->dev, "Enabling Link.\n");
 
 	return 0;
 }
