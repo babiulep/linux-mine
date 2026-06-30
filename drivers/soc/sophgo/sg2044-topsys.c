@@ -6,7 +6,6 @@
  */
 
 #include <linux/mfd/core.h>
-#include <linux/device-id/of.h>
 #include <linux/module.h>
 #include <linux/property.h>
 #include <linux/resource.h>

@@ -11,7 +11,6 @@
 #include <linux/gpio/consumer.h>
 #include <linux/delay.h>
 #include <linux/module.h>
-#include <linux/device-id/of.h>
 #include <linux/regulator/consumer.h>
 
 #define FEIYANG_INIT_CMD_LEN	2

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef LINUX_MOD_DEVICE_ID_INPUT_H
 #define LINUX_MOD_DEVICE_ID_INPUT_H
 

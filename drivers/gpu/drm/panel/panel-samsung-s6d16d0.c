@@ -11,7 +11,6 @@
 #include <linux/gpio/consumer.h>
 #include <linux/regulator/consumer.h>
 #include <linux/delay.h>
-#include <linux/device-id/of.h>
 #include <linux/module.h>
 
 struct s6d16d0 {

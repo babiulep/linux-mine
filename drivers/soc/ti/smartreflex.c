@@ -15,7 +15,6 @@
  */
 
 #include <linux/module.h>
-#include <linux/device-id/of.h>
 #include <linux/interrupt.h>
 #include <linux/clk.h>
 #include <linux/io.h>
