@@ -790,8 +790,16 @@ static int exfat_extend_valid_size(struct inode *inode, loff_t new_valid_size)
 		loff_t gap_start = max(old_valid_size, ei->zeroed_size);
 
 		if (i_size_read(inode) < new_valid_size) {
-			i_size_write(inode, new_valid_size);
-			mark_inode_dirty(inode);
+			/*
+			 * The write extends the file past i_size. Allocate the
+			 * clusters up to new_valid_size before zeroing the gap;
+			 * otherwise the gap fill can be skipped where zeroed_size
+			 * already covers the range, leaving i_size beyond the last
+			 * allocated cluster and a later mapping hitting EOF.
+			 */
+			ret = exfat_cont_expand(inode, new_valid_size);
+			if (ret)
+				return ret;
 		}
 
 		/*

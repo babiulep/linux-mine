@@ -1366,8 +1366,10 @@ static inline bool is_kernel_owned_page(struct page *page)
 	 * Page-type bits live only on the head page, so resolve any tail
 	 * first.  The check takes no refcount; recheck the head afterwards
 	 * so a concurrent split or compound free cannot leave us trusting
-	 * a stale view.  A free->alloc->free in the same window is still
-	 * possible but closing it would require taking a reference here.
+	 * a stale view.  A residual free->alloc->free cannot be closed here
+	 * (frozen slab and large-kmalloc pages cannot be pinned), but is
+	 * harmless: where a wrong verdict could panic, memory_failure() has
+	 * already set PageHWPoison, which bars the page from the allocator.
 	 */
 retry:
 	head = compound_head(page);

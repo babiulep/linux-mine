@@ -35,7 +35,11 @@
 
 set -u
 
-ksft_skip=4
+# KTAP output helpers (ktap_print_msg, ktap_skip_all, ktap_exit_fail_msg, ...).
+DIR="$(dirname "$(readlink -f "$0")")"
+# shellcheck source=../kselftest/ktap_helpers.sh
+source "${DIR}"/../kselftest/ktap_helpers.sh
+
 sysctl_path=/proc/sys/vm/panic_on_unrecoverable_memory_failure
 inject_path=/sys/devices/system/memory/hard_offline_page
 kpageflags_path=/proc/kpageflags
@@ -53,24 +57,24 @@ pagesize=$(getconf PAGE_SIZE)
 
 kind=${1:-rodata}
 
-ksft_print() { echo "# $*"; }
-ksft_exit_skip() { ksft_print "$*"; exit "$ksft_skip"; }
-ksft_exit_fail() { echo "not ok 1 $*"; exit 1; }
-
 if [ "$(id -u)" -ne 0 ]; then
-	ksft_exit_skip "must run as root"
+	ktap_skip_all "must run as root"
+	exit "$KSFT_SKIP"
 fi
 
 if [ ! -w "$sysctl_path" ]; then
-	ksft_exit_skip "$sysctl_path not present (kernel without the sysctl?)"
+	ktap_skip_all "$sysctl_path not present (kernel without the sysctl?)"
+	exit "$KSFT_SKIP"
 fi
 
 if [ ! -w "$inject_path" ]; then
-	ksft_exit_skip "$inject_path not present (no MEMORY_HOTPLUG?)"
+	ktap_skip_all "$inject_path not present (no MEMORY_HOTPLUG?)"
+	exit "$KSFT_SKIP"
 fi
 
 if [ "${RUN_DESTRUCTIVE:-0}" != "1" ]; then
-	ksft_exit_skip "destructive test; re-run with RUN_DESTRUCTIVE=1 inside a disposable VM"
+	ktap_skip_all "destructive test; re-run with RUN_DESTRUCTIVE=1 inside a disposable VM"
+	exit "$KSFT_SKIP"
 fi
 
 # Pick a PFN inside the kernel image rodata region of /proc/iomem.
@@ -208,21 +212,22 @@ pgtable)
 	missing_msg="no usable page-table PFN found in $kpageflags_path"
 	;;
 *)
-	ksft_exit_fail "unknown kind '$kind' (expected: rodata|slab|pgtable)"
+	ktap_exit_fail_msg "unknown kind '$kind' (expected: rodata|slab|pgtable)"
 	;;
 esac
 
 if [ -z "$phys_addr" ]; then
-	ksft_exit_skip "$missing_msg"
+	ktap_skip_all "$missing_msg"
+	exit "$KSFT_SKIP"
 fi
 
-ksft_print "enabling $sysctl_path"
+ktap_print_msg "enabling $sysctl_path"
 prior=$(cat "$sysctl_path")
-echo 1 > "$sysctl_path" || ksft_exit_fail "failed to enable sysctl"
+echo 1 > "$sysctl_path" || ktap_exit_fail_msg "failed to enable sysctl"
 
 pfn=$((phys_addr / pagesize))
-ksft_print "injecting hwpoison at phys 0x$(printf '%x' "$phys_addr") (pfn 0x$(printf '%x' "$pfn"), kind=$kind)"
-ksft_print "expecting kernel panic: 'Memory failure: <pfn>: unrecoverable page'"
+ktap_print_msg "injecting hwpoison at phys 0x$(printf '%x' "$phys_addr") (pfn 0x$(printf '%x' "$pfn"), kind=$kind)"
+ktap_print_msg "expecting kernel panic: 'Memory failure: <pfn>: unrecoverable page'"
 
 # A successful run never returns from the inject -- it panics the kernel.
 # Reaching the code below therefore means no panic fired.  Note whether
@@ -243,7 +248,8 @@ try_unpoison "$pfn"
 # if it raced to another type the run is inconclusive, so skip instead.
 kpageflags_bit_set "$pfn" "$recheck_bit"
 case $? in
-0)	ksft_exit_fail "$verdict (page still $kind)" ;;
-1)	ksft_exit_skip "target PFN no longer $kind; raced before inject, inconclusive" ;;
-*)	ksft_exit_fail "$verdict (could not reconfirm page type via $kpageflags_path)" ;;
+0)	ktap_exit_fail_msg "$verdict (page still $kind)" ;;
+1)	ktap_skip_all "target PFN no longer $kind; raced before inject, inconclusive"
+	exit "$KSFT_SKIP" ;;
+*)	ktap_exit_fail_msg "$verdict (could not reconfirm page type via $kpageflags_path)" ;;
 esac

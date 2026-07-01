@@ -3598,7 +3598,6 @@ static int smb3_simple_fallocate_range(unsigned int xid,
 	struct file_allocated_range_buffer in_data, *out_data = NULL, *tmp_data;
 	u32 out_data_len;
 	char *buf = NULL;
-	u64 range_start, range_len, range_end;
 	loff_t l;
 	int rc;
 
@@ -3635,21 +3634,13 @@ static int smb3_simple_fallocate_range(unsigned int xid,
 			goto out;
 		}
 
-		range_start = le64_to_cpu(tmp_data->file_offset);
-		range_len = le64_to_cpu(tmp_data->length);
-		if (check_add_overflow(range_start, range_len, &range_end) ||
-		    range_end > S64_MAX) {
-			rc = -EINVAL;
-			goto out;
-		}
-
-		if (off < range_start) {
+		if (off < le64_to_cpu(tmp_data->file_offset)) {
 			/*
 			 * We are at a hole. Write until the end of the region
 			 * or until the next allocated data,
 			 * whichever comes next.
 			 */
-			l = range_start - off;
+			l = le64_to_cpu(tmp_data->file_offset) - off;
 			if (len < l)
 				l = len;
 			rc = smb3_simple_fallocate_write_range(xid, tcon,
@@ -3666,13 +3657,11 @@ static int smb3_simple_fallocate_range(unsigned int xid,
 		 * until the end of the data or the end of the region
 		 * we are supposed to fallocate, whichever comes first.
 		 */
-		if (off < range_end) {
-			l = range_end - off;
-			if (len < l)
-				l = len;
-			off += l;
-			len -= l;
-		}
+		l = le64_to_cpu(tmp_data->length);
+		if (len < l)
+			l = len;
+		off += l;
+		len -= l;
 
 		tmp_data = &tmp_data[1];
 		out_data_len -= sizeof(struct file_allocated_range_buffer);
@@ -3695,6 +3684,7 @@ static long smb3_simple_falloc(struct file *file, struct cifs_tcon *tcon,
 	unsigned int xid;
 	loff_t old_eof, new_eof;
 	struct smb2_file_all_info file_inf;
+	struct kstatfs fsstat;
 	u64 asize;
 	int qrc;
 
@@ -3763,19 +3753,65 @@ static long smb3_simple_falloc(struct file *file, struct cifs_tcon *tcon,
 			goto out;
 		}
 
-		if (cifsi->cifsAttrs & FILE_ATTRIBUTE_SPARSE_FILE) {
-			rc = smb2_set_sparse(xid, tcon, cfile, inode, false);
+		if (cifsi->cifsAttrs & FILE_ATTRIBUTE_SPARSE_FILE)
+			smb2_set_sparse(xid, tcon, cfile, inode, false);
+
+		new_eof = off + len;
+
+		qrc = SMB2_query_info(xid, tcon,
+				      cfile->fid.persistent_fid,
+				      cfile->fid.volatile_fid, &file_inf);
+		if (qrc == 0)
+			asize = le64_to_cpu(file_inf.AllocationSize);
+
+		/*
+		 * FILE_ALLOCATION_INFORMATION can only describe allocation up to
+		 * new_eof. Some servers may accept it without allocating blocks,
+		 * so refresh AllocationSize before updating i_blocks.
+		 */
+		if (off == 0 || off == old_eof) {
+			if (qrc == 0 && new_eof > asize &&
+			    vfs_statfs(&file->f_path, &fsstat) == 0 &&
+			    fsstat.f_bsize) {
+				u64 bytes_needed = (u64)new_eof - asize;
+				u64 blocks_needed;
+
+				blocks_needed = DIV_ROUND_UP_ULL(bytes_needed,
+								 fsstat.f_bsize);
+				if (blocks_needed > fsstat.f_bavail) {
+					rc = -ENOSPC;
+					goto out;
+				}
+			}
+
+			rc = SMB2_set_allocation(xid, tcon,
+						 cfile->fid.persistent_fid,
+						 cfile->fid.volatile_fid,
+						 cfile->pid, new_eof);
 			if (rc)
 				goto out;
 		}
 
-		new_eof = off + len;
 		rc = SMB2_set_eof(xid, tcon, cfile->fid.persistent_fid,
 				  cfile->fid.volatile_fid, cfile->pid, new_eof);
-		if (rc == 0) {
-			netfs_resize_file(&cifsi->netfs, new_eof, true);
-			cifs_setsize(inode, new_eof);
+		if (rc)
+			goto out;
+
+		netfs_resize_file(&cifsi->netfs, new_eof, true);
+		cifs_setsize(inode, new_eof);
+
+		qrc = SMB2_query_info(xid, tcon,
+				      cfile->fid.persistent_fid,
+				      cfile->fid.volatile_fid, &file_inf);
+		spin_lock(&inode->i_lock);
+		if (qrc == 0) {
+			asize = le64_to_cpu(file_inf.AllocationSize);
+			if (asize >= new_eof)
+				inode->i_blocks = CIFS_INO_BLOCKS(asize);
+		} else {
+			cifsi->time = 0;
 		}
+		spin_unlock(&inode->i_lock);
 		goto out;
 	}
 
@@ -3842,7 +3878,8 @@ static long smb3_simple_falloc(struct file *file, struct cifs_tcon *tcon,
 		}
 	}
 
-	rc = smb2_set_sparse(xid, tcon, cfile, inode, false);
+	smb2_set_sparse(xid, tcon, cfile, inode, false);
+	rc = 0;
 
 out:
 	if (rc)

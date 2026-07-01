@@ -110,6 +110,7 @@ dma-mapping-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/mszyprowski/li
 drivers-x86-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/pdx86/platform-drivers-x86.git#fixes
 samsung-krzk-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux.git#fixes
 pinctrl-samsung-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/pinctrl/samsung.git#fixes
+pinctrl-qcom-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/brgl/linux.git#pinctrl-qcom/for-current
 devicetree-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/robh/linux.git#dt/linus
 dt-krzk-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux-dt.git#fixes
 scsi-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/mkp/scsi.git#fixes
@@ -379,6 +380,7 @@ pinctrl		https://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-pinctrl.gi
 pinctrl-intel	https://git.kernel.org/pub/scm/linux/kernel/git/pinctrl/intel.git#for-next
 pinctrl-renesas	https://git.kernel.org/pub/scm/linux/kernel/git/geert/renesas-drivers.git#renesas-pinctrl
 pinctrl-samsung	https://git.kernel.org/pub/scm/linux/kernel/git/pinctrl/samsung.git#for-next
+pinctrl-qcom	https://git.kernel.org/pub/scm/linux/kernel/git/brgl/linux.git#pinctrl-qcom/for-next
 pwm		https://git.kernel.org/pub/scm/linux/kernel/git/ukleinek/linux.git#pwm/for-next
 ktest		https://git.kernel.org/pub/scm/linux/kernel/git/rostedt/linux-ktest.git#for-next
 kselftest	https://git.kernel.org/pub/scm/linux/kernel/git/shuah/linux-kselftest.git#next
