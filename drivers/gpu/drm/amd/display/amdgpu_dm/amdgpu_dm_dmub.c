@@ -124,11 +124,11 @@ bool dm_register_dmub_notify_callback(struct amdgpu_device *adev,
 				      dmub_notify_interrupt_callback_t callback,
 				      bool dmub_int_thread_offload)
 {
-	if (callback != NULL && type < ARRAY_SIZE(adev->dm.dmub_thread_offload)) {
-		adev->dm.dmub_callback[type] = callback;
-		adev->dm.dmub_thread_offload[type] = dmub_int_thread_offload;
-	} else
+	if (!callback || type >= ARRAY_SIZE(adev->dm.dmub_thread_offload))
 		return false;
+
+	adev->dm.dmub_callback[type] = callback;
+	adev->dm.dmub_thread_offload[type] = dmub_int_thread_offload;
 
 	return true;
 }
@@ -452,10 +452,6 @@ enum dmub_ips_disable_type dm_get_default_ips_mode(
 	case IP_VERSION(3, 6, 0):
 	case IP_VERSION(3, 5, 1):
 		ret =  DMUB_IPS_RCG_IN_ACTIVE_IPS2_IN_OFF;
-		break;
-	case IP_VERSION(4, 2, 0):
-	case IP_VERSION(4, 2, 1):
-		ret =  DMUB_IPS_ENABLE;
 		break;
 	default:
 		/* ASICs older than DCN35 do not have IPSs */
@@ -801,12 +797,26 @@ int amdgpu_dm_process_dmub_aux_transfer_sync(
 		payload->reply[0] = (adev->dm.dmub_notify->aux_reply.command >> 4) & 0xF;
 
 	/*write req may receive a byte indicating partially written number as well*/
-	if (p_notify->aux_reply.length)
-		memcpy(payload->data, p_notify->aux_reply.data,
-				p_notify->aux_reply.length);
+	if (p_notify->aux_reply.length && payload->data) {
+		/* Bound the reply to the scratch buffer it was read into. */
+		ret = min((uint32_t)p_notify->aux_reply.length,
+			  (uint32_t)sizeof(p_notify->aux_reply.data));
 
-	/* success */
-	ret = p_notify->aux_reply.length;
+		/*
+		 * During a write-status-update retry the caller zeroes
+		 * payload->length while still expecting the partial-write
+		 * status byte in payload->data (see dce_aux_transfer_with_retries),
+		 * so only clamp to payload->length for regular transfers.
+		 */
+		if (!payload->write_status_update)
+			ret = min(ret, payload->length);
+
+		memcpy(payload->data, p_notify->aux_reply.data, ret);
+	} else {
+		/* success */
+		ret = p_notify->aux_reply.length;
+	}
+
 	*operation_result = p_notify->result;
 out:
 	reinit_completion(&adev->dm.dmub_aux_transfer_done);

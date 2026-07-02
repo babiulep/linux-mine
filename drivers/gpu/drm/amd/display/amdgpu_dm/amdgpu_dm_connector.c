@@ -466,7 +466,7 @@ void amdgpu_dm_update_connector_after_detect(
 	struct drm_device *dev = connector->dev;
 
 	/* MST handled by drm_mst framework */
-	if (aconnector->mst_mgr.mst_state == true)
+	if (aconnector->mst_mgr.mst_state)
 		return;
 
 	sink = aconnector->dc_link->local_sink;
@@ -824,16 +824,11 @@ static void fill_stream_properties_from_drm_display_mode(
 	timing_out->v_border_top = 0;
 	timing_out->v_border_bottom = 0;
 	/* TODO: un-hardcode */
-	if (drm_mode_is_420_only(info, mode_in)
-			&& (stream->signal == SIGNAL_TYPE_HDMI_TYPE_A ||
-			    stream->signal == SIGNAL_TYPE_HDMI_FRL)
-			&& aconnector
-			&& aconnector->force_yuv_pixel_format == PIXEL_ENCODING_YCBCR420)
-		timing_out->pixel_encoding = PIXEL_ENCODING_YCBCR420;
-	else if (drm_mode_is_420_also(info, mode_in)
-			&& aconnector
-			&& (aconnector->force_yuv_pixel_format == PIXEL_ENCODING_YCBCR420
-			|| aconnector->force_yuv420_output))
+	if (drm_mode_is_420_only(info, mode_in) ||
+	    (aconnector &&
+	     (aconnector->force_yuv_pixel_format == PIXEL_ENCODING_YCBCR420 ||
+	      aconnector->force_yuv420_output) &&
+	     drm_mode_is_420_also(info, mode_in)))
 		timing_out->pixel_encoding = PIXEL_ENCODING_YCBCR420;
 	else if ((connector->display_info.color_formats & BIT(DRM_OUTPUT_COLOR_FORMAT_YCBCR422))
 			&& aconnector
@@ -1791,33 +1786,34 @@ static void amdgpu_dm_connector_destroy(struct drm_connector *connector)
 
 void amdgpu_dm_connector_funcs_reset(struct drm_connector *connector)
 {
-	struct dm_connector_state *state =
+	struct dm_connector_state *old_state =
 		to_dm_connector_state(connector->state);
+	struct dm_connector_state *state;
+
+	state = kzalloc_obj(*state);
+	if (!state)
+		return;
 
 	if (connector->state)
 		__drm_atomic_helper_connector_destroy_state(connector->state);
 
-	kfree(state);
+	kfree(old_state);
 
-	state = kzalloc_obj(*state);
+	__drm_atomic_helper_connector_reset(connector, &state->base);
 
-	if (state) {
-		state->scaling = RMX_OFF;
-		state->underscan_enable = false;
-		state->underscan_hborder = 0;
-		state->underscan_vborder = 0;
-		state->base.max_requested_bpc = 8;
-		state->vcpi_slots = 0;
-		state->pbn = 0;
+	state->scaling = RMX_OFF;
+	state->underscan_enable = false;
+	state->underscan_hborder = 0;
+	state->underscan_vborder = 0;
+	state->base.max_requested_bpc = 8;
+	state->vcpi_slots = 0;
+	state->pbn = 0;
 
-		if (connector->connector_type == DRM_MODE_CONNECTOR_eDP) {
-			if (amdgpu_dm_abm_level <= 0)
-				state->abm_level = ABM_LEVEL_IMMEDIATE_DISABLE;
-			else
-				state->abm_level = amdgpu_dm_abm_level;
-		}
-
-		__drm_atomic_helper_connector_reset(connector, &state->base);
+	if (connector->connector_type == DRM_MODE_CONNECTOR_eDP) {
+		if (amdgpu_dm_abm_level <= 0)
+			state->abm_level = ABM_LEVEL_IMMEDIATE_DISABLE;
+		else
+			state->abm_level = amdgpu_dm_abm_level;
 	}
 }
 EXPORT_IF_KUNIT(amdgpu_dm_connector_funcs_reset);

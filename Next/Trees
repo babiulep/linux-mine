@@ -96,7 +96,7 @@ backlight-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/lee/backlight.gi
 mtd-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/mtd/linux.git#mtd/fixes
 mfd-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/lee/mfd.git#for-mfd-fixes
 v4l-dvb-fixes	git://linuxtv.org/media-ci/media-pending.git#fixes
-reset-fixes	https://git.pengutronix.de/git/pza/linux#reset/fixes
+reset-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/pza/linux#reset/fixes
 mips-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/mips/linux.git#mips-fixes
 at91-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/at91/linux.git#at91-fixes
 omap-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/khilman/linux-omap.git#fixes
@@ -139,7 +139,7 @@ iommufd-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/jgg/iommufd.git#fo
 rust-fixes	https://github.com/Rust-for-Linux/linux.git#rust-fixes
 w1-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux-w1.git#fixes
 pmdomain-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/ulfh/linux-pm.git#fixes
-i2c-host-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/andi.shyti/linux.git#i2c/i2c-host-fixes
+i2c-andi-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/andi.shyti/linux.git#i2c/i2c-fixes
 i2c-rust-fixes	https://github.com/ikrtn/rust-for-linux#rust-i2c-fixes
 sparc-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/alarsson/linux-sparc.git#for-linus
 clk-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/clk/linux.git#clk-fixes
@@ -152,7 +152,7 @@ ftrace-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/trace/linux-trace.g
 ring-buffer-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/trace/linux-trace.git#ring-buffer/fixes
 trace-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/trace/linux-trace.git#trace/fixes
 tracefs-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/trace/linux-trace.git#tracefs/fixes
-spacemit-fixes	https://github.com/spacemit-com/linux#fixes
+spacemit-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/spacemit/linux#fixes
 tip-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git#tip/urgent
 slab-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/vbabka/slab.git#slab/for-next-fixes
 kexec-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/liveupdate/linux.git#kexec-fixes
@@ -203,13 +203,13 @@ mvebu		https://git.kernel.org/pub/scm/linux/kernel/git/gclement/mvebu.git#for-ne
 omap		https://git.kernel.org/pub/scm/linux/kernel/git/khilman/linux-omap.git#for-next
 qcom		https://git.kernel.org/pub/scm/linux/kernel/git/qcom/linux.git#for-next
 renesas		https://git.kernel.org/pub/scm/linux/kernel/git/geert/renesas-devel.git#next
-reset		https://git.pengutronix.de/git/pza/linux#reset/next
+reset		https://git.kernel.org/pub/scm/linux/kernel/git/pza/linux#reset/next
 rockchip	https://git.kernel.org/pub/scm/linux/kernel/git/mmind/linux-rockchip.git#for-next
 samsung-krzk	https://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux.git#for-next
 scmi		https://git.kernel.org/pub/scm/linux/kernel/git/sudeep.holla/linux.git#for-linux-next
 sophgo		https://github.com/sophgo/linux.git#for-next
 sophgo-soc	https://github.com/sophgo/linux.git#soc-for-next
-spacemit	https://github.com/spacemit-com/linux#for-next
+spacemit	https://git.kernel.org/pub/scm/linux/kernel/git/spacemit/linux#for-next
 stm32		https://git.kernel.org/pub/scm/linux/kernel/git/atorgue/stm32.git#stm32-next
 sunxi		https://git.kernel.org/pub/scm/linux/kernel/git/sunxi/linux.git#sunxi/for-next
 tee		https://git.kernel.org/pub/scm/linux/kernel/git/jenswi/linux-tee.git#next
@@ -247,7 +247,7 @@ pci		https://git.kernel.org/pub/scm/linux/kernel/git/pci/pci.git#next
 pstore		https://git.kernel.org/pub/scm/linux/kernel/git/kees/linux.git#for-next/pstore
 hid		https://git.kernel.org/pub/scm/linux/kernel/git/hid/hid.git#for-next
 i2c		https://git.kernel.org/pub/scm/linux/kernel/git/wsa/linux.git#i2c/for-next
-i2c-host	https://git.kernel.org/pub/scm/linux/kernel/git/andi.shyti/linux.git#i2c/i2c-host
+i2c-andi	https://git.kernel.org/pub/scm/linux/kernel/git/andi.shyti/linux.git#i2c/i2c-next
 i2c-rust	https://github.com/ikrtn/rust-for-linux#rust-i2c-next
 i3c		https://git.kernel.org/pub/scm/linux/kernel/git/i3c/linux.git#i3c/next
 dmi		https://git.kernel.org/pub/scm/linux/kernel/git/jdelvare/staging.git#dmi-for-next

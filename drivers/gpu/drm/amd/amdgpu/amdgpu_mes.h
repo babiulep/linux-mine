@@ -274,6 +274,7 @@ struct mes_remove_queue_input {
 	uint32_t        xcc_id;
 	uint32_t	doorbell_offset;
 	uint64_t	gang_context_addr;
+	uint32_t	queue_type;
 	bool		remove_queue_after_reset;
 };
 
@@ -305,12 +306,14 @@ struct mes_suspend_gang_input {
 	uint64_t	gang_context_addr;
 	uint64_t	suspend_fence_addr;
 	uint32_t	suspend_fence_value;
+	uint32_t	doorbell_offset;
 };
 
 struct mes_resume_gang_input {
 	uint32_t	xcc_id;
 	bool		resume_all_gangs;
 	uint64_t	gang_context_addr;
+	uint32_t	doorbell_offset;
 };
 
 struct mes_reset_queue_input {

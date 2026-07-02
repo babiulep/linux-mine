@@ -2282,6 +2282,7 @@ int amdgpu_gfx_reset_mes_compute(struct amdgpu_device *adev,
 	struct mes_remove_queue_input *queue_input = (struct mes_remove_queue_input *)faulty_queue_input;
 	struct amdgpu_gfx_deferred_entry deferred_end[AMDGPU_MAX_COMPUTE_RINGS + 1];
 	int n_deferred = 0;
+	int ring_err;
 
 	guard(mutex)(&adev->gfx.mec.reset_mutex);
 	/* stop the drm schedulers for all compute queues */
@@ -2358,9 +2359,14 @@ fence_reset:
 		 * preempted successfuly. Remove it before resume all so it
 		 * doesn't get mapped back
 		 */
+		if (!down_read_trylock(&adev->reset_domain->sem)) {
+			r = -EIO;
+			goto out;
+		}
 		amdgpu_mes_lock(&adev->mes);
 		r = adev->mes.funcs->remove_hw_queue(&adev->mes, queue_input);
 		amdgpu_mes_unlock(&adev->mes);
+		up_read(&adev->reset_domain->sem);
 	}
 
 out:
@@ -2370,17 +2376,23 @@ out:
 	/* Now CP is running again — replay backed-up commands and ring
 	 * doorbells on each reset queue.
 	 */
+	ring_err = r;
 	for (i = 0; i < n_deferred; i++) {
 		int er = amdgpu_ring_reset_helper_end(deferred_end[i].ring,
 						      deferred_end[i].fence);
-		if (er && !r)
-			r = er;
+
+		if (er && !ring_err)
+			ring_err = er;
 	}
 
-	if (!r)
+	if (!ring_err)
 		amdgpu_gfx_reset_start_compute_scheds(adev, ring);
 
-	return r;
+	/* If this reset is triggered by non-KCQ, the KCQ result after resume must
+	 * not override the reset result; otherwise a false reset failure is returned
+	 * to the non-KCQ caller
+	 */
+	return ring ? ring_err : r;
 }
 
 int amdgpu_gfx_cleaner_shader_sw_init(struct amdgpu_device *adev,
@@ -2721,9 +2733,8 @@ void amdgpu_gfx_profile_ring_begin_use(struct amdgpu_ring *ring)
 	else
 		profile = PP_SMC_POWER_PROFILE_COMPUTE;
 
-	atomic_inc(&adev->gfx.total_submission_cnt);
-
-	cancel_delayed_work_sync(&adev->gfx.idle_work);
+	if (!atomic_fetch_inc(&adev->gfx.total_submission_cnt))
+		cancel_delayed_work_sync(&adev->gfx.idle_work);
 
 	/* We can safely return early here because we've cancelled the
 	 * the delayed work so there is no one else to set it to false
@@ -2751,9 +2762,9 @@ void amdgpu_gfx_profile_ring_end_use(struct amdgpu_ring *ring)
 	if (amdgpu_dpm_is_overdrive_enabled(adev))
 		return;
 
-	atomic_dec(&ring->adev->gfx.total_submission_cnt);
-
-	schedule_delayed_work(&ring->adev->gfx.idle_work, GFX_PROFILE_IDLE_TIMEOUT);
+	if (atomic_dec_and_test(&ring->adev->gfx.total_submission_cnt))
+		schedule_delayed_work(&ring->adev->gfx.idle_work,
+				      GFX_PROFILE_IDLE_TIMEOUT);
 }
 
 /**
