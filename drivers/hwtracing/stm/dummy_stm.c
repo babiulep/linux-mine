@@ -8,7 +8,6 @@
  */
 
 #undef DEBUG
-#include <linux/trace_printk.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/slab.h>

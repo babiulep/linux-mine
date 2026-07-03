@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_WMI_H
-#define LINUX_MOD_DEVICE_ID_WMI_H
+#ifndef LINUX_DEVICE_ID_WMI_H
+#define LINUX_DEVICE_ID_WMI_H
 
 /* WMI */
 
@@ -16,4 +16,4 @@ struct wmi_device_id {
 	const void *context;
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_WMI_H */
+#endif /* ifndef LINUX_DEVICE_ID_WMI_H */

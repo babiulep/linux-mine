@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_IEEE1394_H
-#define LINUX_MOD_DEVICE_ID_IEEE1394_H
+#ifndef LINUX_DEVICE_ID_IEEE1394_H
+#define LINUX_DEVICE_ID_IEEE1394_H
 
 #ifdef __KERNEL__
 #include <linux/types.h>
@@ -24,4 +24,4 @@ struct ieee1394_device_id {
 	};
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_IEEE1394_H */
+#endif /* ifndef LINUX_DEVICE_ID_IEEE1394_H */

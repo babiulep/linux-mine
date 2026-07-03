@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_SLIM_H
-#define LINUX_MOD_DEVICE_ID_SLIM_H
+#ifndef LINUX_DEVICE_ID_SLIM_H
+#define LINUX_DEVICE_ID_SLIM_H
 
 #ifdef __KERNEL__
 #include <linux/types.h>
@@ -20,4 +20,4 @@ struct slim_device_id {
 	kernel_ulong_t driver_data;
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_SLIM_H */
+#endif /* ifndef LINUX_DEVICE_ID_SLIM_H */

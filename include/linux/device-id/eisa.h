@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_EISA_H
-#define LINUX_MOD_DEVICE_ID_EISA_H
+#ifndef LINUX_DEVICE_ID_EISA_H
+#define LINUX_DEVICE_ID_EISA_H
 
 #ifdef __KERNEL__
 typedef unsigned long kernel_ulong_t;
@@ -18,4 +18,4 @@ struct eisa_device_id {
 
 #define EISA_DEVICE_MODALIAS_FMT "eisa:s%s"
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_EISA_H */
+#endif /* ifndef LINUX_DEVICE_ID_EISA_H */

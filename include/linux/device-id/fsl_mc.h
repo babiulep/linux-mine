@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_FSL_MC_H
-#define LINUX_MOD_DEVICE_ID_FSL_MC_H
+#ifndef LINUX_DEVICE_ID_FSL_MC_H
+#define LINUX_DEVICE_ID_FSL_MC_H
 
 #ifdef __KERNEL__
 #include <linux/types.h>
@@ -19,4 +19,4 @@ struct fsl_mc_device_id {
 	const char obj_type[16];
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_FSL_MC_H */
+#endif /* ifndef LINUX_DEVICE_ID_FSL_MC_H */

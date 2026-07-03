@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_USB_H
-#define LINUX_MOD_DEVICE_ID_USB_H
+#ifndef LINUX_DEVICE_ID_USB_H
+#define LINUX_DEVICE_ID_USB_H
 
 #ifdef __KERNEL__
 #include <linux/types.h>
@@ -108,4 +108,4 @@ struct usb_device_id {
 #define USB_DEVICE_ID_MATCH_INT_PROTOCOL	0x0200
 #define USB_DEVICE_ID_MATCH_INT_NUMBER		0x0400
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_USB_H */
+#endif /* ifndef LINUX_DEVICE_ID_USB_H */

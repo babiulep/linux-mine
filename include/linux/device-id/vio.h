@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_VIO_H
-#define LINUX_MOD_DEVICE_ID_VIO_H
+#ifndef LINUX_DEVICE_ID_VIO_H
+#define LINUX_DEVICE_ID_VIO_H
 
 /* VIO */
 struct vio_device_id {
@@ -8,4 +8,4 @@ struct vio_device_id {
 	char compat[32];
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_VIO_H */
+#endif /* ifndef LINUX_DEVICE_ID_VIO_H */

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_INPUT_H
-#define LINUX_MOD_DEVICE_ID_INPUT_H
+#ifndef LINUX_DEVICE_ID_INPUT_H
+#define LINUX_DEVICE_ID_INPUT_H
 
 #ifdef __KERNEL__
 #include <linux/types.h>
@@ -59,4 +59,4 @@ struct input_device_id {
 	kernel_ulong_t driver_info;
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_INPUT_H */
+#endif /* ifndef LINUX_DEVICE_ID_INPUT_H */

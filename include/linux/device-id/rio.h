@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_RIO_H
-#define LINUX_MOD_DEVICE_ID_RIO_H
+#ifndef LINUX_DEVICE_ID_RIO_H
+#define LINUX_DEVICE_ID_RIO_H
 
 #ifdef __KERNEL__
 #include <linux/types.h>
@@ -25,4 +25,4 @@ struct rio_device_id {
 	__u16 asm_did, asm_vid;
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_RIO_H */
+#endif /* ifndef LINUX_DEVICE_ID_RIO_H */

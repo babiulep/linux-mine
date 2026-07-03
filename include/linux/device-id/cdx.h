@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_CDX_H
-#define LINUX_MOD_DEVICE_ID_CDX_H
+#ifndef LINUX_DEVICE_ID_CDX_H
+#define LINUX_DEVICE_ID_CDX_H
 
 #ifdef __KERNEL__
 #include <linux/types.h>
@@ -37,4 +37,4 @@ struct cdx_device_id {
 	__u32 override_only;
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_CDX_H */
+#endif /* ifndef LINUX_DEVICE_ID_CDX_H */

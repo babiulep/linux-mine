@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_AMBA_H
-#define LINUX_MOD_DEVICE_ID_AMBA_H
+#ifndef LINUX_DEVICE_ID_AMBA_H
+#define LINUX_DEVICE_ID_AMBA_H
 
 /**
  * struct amba_id - identifies a device on an AMBA bus
@@ -16,4 +16,4 @@ struct amba_id {
 	void			*data;
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_AMBA_H */
+#endif /* ifndef LINUX_DEVICE_ID_AMBA_H */

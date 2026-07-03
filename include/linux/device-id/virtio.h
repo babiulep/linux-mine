@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_VIRTIO_H
-#define LINUX_MOD_DEVICE_ID_VIRTIO_H
+#ifndef LINUX_DEVICE_ID_VIRTIO_H
+#define LINUX_DEVICE_ID_VIRTIO_H
 
 #ifdef __KERNEL__
 #include <linux/types.h>
@@ -13,4 +13,4 @@ struct virtio_device_id {
 	__u32 vendor;
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_VIRTIO_H */
+#endif /* ifndef LINUX_DEVICE_ID_VIRTIO_H */

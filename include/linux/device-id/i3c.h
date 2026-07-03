@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_I3C_H
-#define LINUX_MOD_DEVICE_ID_I3C_H
+#ifndef LINUX_DEVICE_ID_I3C_H
+#define LINUX_DEVICE_ID_I3C_H
 
 #ifdef __KERNEL__
 #include <linux/types.h>
@@ -23,4 +23,4 @@ struct i3c_device_id {
 	const void *data;
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_I3C_H */
+#endif /* ifndef LINUX_DEVICE_ID_I3C_H */

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_ISAPNP_H
-#define LINUX_MOD_DEVICE_ID_ISAPNP_H
+#ifndef LINUX_DEVICE_ID_ISAPNP_H
+#define LINUX_DEVICE_ID_ISAPNP_H
 
 #ifdef __KERNEL__
 typedef unsigned long kernel_ulong_t;
@@ -13,4 +13,4 @@ struct isapnp_device_id {
 	kernel_ulong_t driver_data;	/* data private to the driver */
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_ISAPNP_H */
+#endif /* ifndef LINUX_DEVICE_ID_ISAPNP_H */

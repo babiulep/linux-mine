@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_PNP_H
-#define LINUX_MOD_DEVICE_ID_PNP_H
+#ifndef LINUX_DEVICE_ID_PNP_H
+#define LINUX_DEVICE_ID_PNP_H
 
 #ifdef __KERNEL__
 #include <linux/types.h>
@@ -23,4 +23,4 @@ struct pnp_card_device_id {
 	} devs[PNP_MAX_DEVICES];
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_PNP_H */
+#endif /* ifndef LINUX_DEVICE_ID_PNP_H */

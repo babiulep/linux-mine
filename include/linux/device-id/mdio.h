@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_MDIO_H
-#define LINUX_MOD_DEVICE_ID_MDIO_H
+#ifndef LINUX_DEVICE_ID_MDIO_H
+#define LINUX_DEVICE_ID_MDIO_H
 
 #ifdef __KERNEL__
 #include <linux/types.h>
@@ -32,4 +32,4 @@ struct mdio_device_id {
 	__u32 phy_id_mask;
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_MDIO_H */
+#endif /* ifndef LINUX_DEVICE_ID_MDIO_H */

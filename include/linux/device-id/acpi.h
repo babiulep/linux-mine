@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_ACPI_H
-#define LINUX_MOD_DEVICE_ID_ACPI_H
+#ifndef LINUX_DEVICE_ID_ACPI_H
+#define LINUX_DEVICE_ID_ACPI_H
 
 #ifdef __KERNEL__
 #include <linux/types.h>
@@ -29,4 +29,4 @@ struct acpi_device_id {
  */
 #define ACPI_DEVICE_CLASS(_cls, _msk)	.cls = (_cls), .cls_msk = (_msk),
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_ACPI_H */
+#endif /* ifndef LINUX_DEVICE_ID_ACPI_H */

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_OF_H
-#define LINUX_MOD_DEVICE_ID_OF_H
+#ifndef LINUX_DEVICE_ID_OF_H
+#define LINUX_DEVICE_ID_OF_H
 
 /*
  * Struct used for matching a device
@@ -12,4 +12,4 @@ struct of_device_id {
 	const void *data;
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_OF_H */
+#endif /* ifndef LINUX_DEVICE_ID_OF_H */

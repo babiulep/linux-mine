@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_SSB_H
-#define LINUX_MOD_DEVICE_ID_SSB_H
+#ifndef LINUX_DEVICE_ID_SSB_H
+#define LINUX_DEVICE_ID_SSB_H
 
 #ifdef __KERNEL__
 #include <linux/types.h>
@@ -21,4 +21,4 @@ struct ssb_device_id {
 #define SSB_DEVICE(_vendor, _coreid, _revision)  \
 	{ .vendor = _vendor, .coreid = _coreid, .revision = _revision }
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_SSB_H */
+#endif /* ifndef LINUX_DEVICE_ID_SSB_H */

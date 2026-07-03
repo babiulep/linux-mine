@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_DMI_H
-#define LINUX_MOD_DEVICE_ID_DMI_H
+#ifndef LINUX_DEVICE_ID_DMI_H
+#define LINUX_DEVICE_ID_DMI_H
 
 #define DMI_MATCH(a, b)	{ .slot = a, .substr = b }
 #define DMI_EXACT_MATCH(a, b)	{ .slot = a, .substr = b, .exact_match = 1 }
@@ -55,4 +55,4 @@ struct dmi_system_id {
  */
 #define dmi_device_id dmi_system_id
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_DMI_H */
+#endif /* ifndef LINUX_DEVICE_ID_DMI_H */

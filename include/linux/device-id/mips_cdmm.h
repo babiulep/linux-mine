@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef LINUX_MOD_DEVICE_ID_MIPS_CDMM_H
-#define LINUX_MOD_DEVICE_ID_MIPS_CDMM_H
+#ifndef LINUX_DEVICE_ID_MIPS_CDMM_H
+#define LINUX_DEVICE_ID_MIPS_CDMM_H
 
 #ifdef __KERNEL__
 #include <linux/types.h>
@@ -14,4 +14,4 @@ struct mips_cdmm_device_id {
 	__u8	type;
 };
 
-#endif /* ifndef LINUX_MOD_DEVICE_ID_MIPS_CDMM_H */
+#endif /* ifndef LINUX_DEVICE_ID_MIPS_CDMM_H */
