@@ -43,8 +43,8 @@ CFLAGS_overflow_kunit.o = $(call cc-disable-warning, tautological-constant-out-o
 obj-$(CONFIG_OVERFLOW_KUNIT_TEST) += overflow_kunit.o
 # GCC < 12.1 can miscompile errptr() test when branch profiling is enabled.
 CFLAGS_printf_kunit.o += -DDISABLE_BRANCH_PROFILING
-obj-$(CONFIG_PRINTF_KUNIT_TEST) += printf_kunit.o
 obj-$(CONFIG_PRANDOM_KUNIT_TEST) += random32_kunit.o
+obj-$(CONFIG_PRINTF_KUNIT_TEST) += printf_kunit.o
 obj-$(CONFIG_RANDSTRUCT_KUNIT_TEST) += randstruct_kunit.o
 obj-$(CONFIG_SCANF_KUNIT_TEST) += scanf_kunit.o
 obj-$(CONFIG_SEQ_BUF_KUNIT_TEST) += seq_buf_kunit.o

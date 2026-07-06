@@ -237,15 +237,21 @@ static void nfsd_net_free(struct percpu_ref *ref)
  */
 #define	NFSD_MAXSERVS		8192
 
+/**
+ * nfsd_nrthreads - report a namespace's configured nfsd thread count
+ * @net: network namespace to query
+ *
+ * Return: the configured thread ceiling, or 0 when no service runs.
+ */
 int nfsd_nrthreads(struct net *net)
 {
-	int i, rv = 0;
+	int rv = 0;
 	struct nfsd_net *nn = net_generic(net, nfsd_net_id);
 
+	/* nfsd_mutex keeps nn->nfsd_serv valid across the read. */
 	mutex_lock(&nfsd_mutex);
 	if (nn->nfsd_serv)
-		for (i = 0; i < nn->nfsd_serv->sv_nrpools; ++i)
-			rv += nn->nfsd_serv->sv_pools[i].sp_nrthrmax;
+		rv = svc_serv_maxthreads(nn->nfsd_serv);
 	mutex_unlock(&nfsd_mutex);
 	return rv;
 }
@@ -815,7 +821,7 @@ nfsd_acl_init_request(struct svc_rqst *rqstp,
 
 	ret->mismatch.lovers = NFSD_ACL_NRVERS;
 	for (i = NFSD_ACL_MINVERS; i < NFSD_ACL_NRVERS; i++) {
-		if (nfsd_support_acl_version(rqstp->rq_vers) &&
+		if (nfsd_support_acl_version(i) &&
 		    nfsd_vers(nn, i, NFSD_TEST)) {
 			ret->mismatch.lovers = i;
 			break;
@@ -825,7 +831,7 @@ nfsd_acl_init_request(struct svc_rqst *rqstp,
 		return rpc_prog_unavail;
 	ret->mismatch.hivers = NFSD_ACL_MINVERS;
 	for (i = NFSD_ACL_NRVERS - 1; i >= NFSD_ACL_MINVERS; i--) {
-		if (nfsd_support_acl_version(rqstp->rq_vers) &&
+		if (nfsd_support_acl_version(i) &&
 		    nfsd_vers(nn, i, NFSD_TEST)) {
 			ret->mismatch.hivers = i;
 			break;
@@ -960,6 +966,20 @@ nfsd(void *vrqstp)
 	return 0;
 }
 
+/*
+ * Set rq_status_counter back to an even value, indicating that the rqstp
+ * fields are no longer meaningful to a lockless reader. This pairs with the
+ * odd-valued store made once the request has been decoded, and must run on
+ * every return path that follows it so that the seq-lock like protocol used
+ * by nfsd_nl_rpc_status_get_dumpit() is not left permanently odd. The store
+ * also advances the counter so a concurrent reader detects the transition.
+ */
+static void nfsd_status_counter_set_idle(struct svc_rqst *rqstp)
+{
+	smp_store_release(&rqstp->rq_status_counter,
+			  (rqstp->rq_status_counter | 1) + 1);
+}
+
 /**
  * nfsd_dispatch - Process an NFS or NFSACL or LOCALIO Request
  * @rqstp: incoming request
@@ -1022,14 +1042,9 @@ int nfsd_dispatch(struct svc_rqst *rqstp)
 	if (!proc->pc_encode(rqstp, &rqstp->rq_res_stream))
 		goto out_encode_err;
 
-	/*
-	 * Release rq_status_counter setting it to an even value after the rpc
-	 * request has been properly processed.
-	 */
-	smp_store_release(&rqstp->rq_status_counter, rqstp->rq_status_counter + 1);
-
 	nfsd_cache_update(rqstp, rp, ntli->ntli_cachetype, nfs_reply);
 out_cached_reply:
+	nfsd_status_counter_set_idle(rqstp);
 	return 1;
 
 out_decode_err:
@@ -1040,12 +1055,14 @@ out_decode_err:
 out_update_drop:
 	nfsd_cache_update(rqstp, rp, RC_NOCACHE, NULL);
 out_dropit:
+	nfsd_status_counter_set_idle(rqstp);
 	return 0;
 
 out_encode_err:
 	trace_nfsd_cant_encode_err(rqstp);
 	nfsd_cache_update(rqstp, rp, RC_NOCACHE, NULL);
 	*statp = rpc_system_err;
+	nfsd_status_counter_set_idle(rqstp);
 	return 1;
 }
 

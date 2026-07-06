@@ -1013,17 +1013,16 @@ static vm_fault_t exfat_page_mkwrite(struct vm_fault *vmf)
 		}
 
 		/*
-		 * Only advance zeroed_size to new_valid_size, which is
-		 * clamped to i_size. The tail of the straddle page beyond
-		 * i_size, [i_size, mmap_valid_size), is zeroed in the page
-		 * cache but is never written back (writeback stops at
-		 * i_size), so it must not be treated as zeroed on disk.
-		 * Advancing zeroed_size to the page-rounded mmap_valid_size
-		 * would let a later valid_size extension skip that range and
-		 * expose stale on-disk data.
+		 * Advance zeroed_size to the block boundary of new_valid_size,
+		 * which is clamped to i_size. The block that straddles i_size is
+		 * written back in full with its tail zeroed, so recording it as
+		 * zeroed is safe. Rounding up to the page boundary instead would
+		 * cover blocks entirely beyond i_size that writeback never
+		 * persists (writeback stops at i_size), letting a later
+		 * valid_size extension skip them and expose stale on-disk data.
 		 */
-		if (ei->zeroed_size < new_valid_size)
-			ei->zeroed_size = new_valid_size;
+		if (ei->zeroed_size < round_up(new_valid_size, i_blocksize(inode)))
+			ei->zeroed_size = round_up(new_valid_size, i_blocksize(inode));
 		ei->valid_size = new_valid_size;
 		mark_inode_dirty(inode);
 	}
@@ -1032,7 +1031,7 @@ static vm_fault_t exfat_page_mkwrite(struct vm_fault *vmf)
 	file_update_time(vmf->vma->vm_file);
 
 	filemap_invalidate_lock_shared(inode->i_mapping);
-	ret = iomap_page_mkwrite(vmf, &exfat_write_iomap_ops, NULL);
+	ret = iomap_page_mkwrite(vmf, &exfat_iomap_ops, NULL);
 	filemap_invalidate_unlock_shared(inode->i_mapping);
 	sb_end_pagefault(inode->i_sb);
 	inode_unlock(inode);

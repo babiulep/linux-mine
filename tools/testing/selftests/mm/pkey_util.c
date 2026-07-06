@@ -8,6 +8,10 @@
 
 #include "pkey-helpers.h"
 
+int iteration_nr = 1;
+int test_nr;
+int dprint_in_signal;
+
 #if CONTROL_TRACING > 0
 static void cat_into_file(char *str, char *file)
 {
@@ -20,7 +24,7 @@ static void cat_into_file(char *str, char *file)
 	 * pkey_assert()
 	 */
 	if (fd < 0) {
-		fprintf(stderr, "error opening '%s'\n", str);
+		fprintf(stderr, "error opening '%s'\n", file);
 		perror("error: ");
 		exit(__LINE__);
 	}

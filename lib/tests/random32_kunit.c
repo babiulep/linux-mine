@@ -179,3 +179,4 @@ kunit_test_suite(prandom_test_suite);
 
 MODULE_DESCRIPTION("KUnit test for prandom");
 MODULE_LICENSE("GPL");
+MODULE_IMPORT_NS("EXPORTED_FOR_KUNIT_TESTING");

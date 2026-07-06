@@ -89,6 +89,7 @@ loopy_wait()
 {
 	local sleep_cmd=$1; shift
 	local timeout_ms=$1; shift
+	local current_time
 
 	local start_time=$(timestamp_ms)
 	while true

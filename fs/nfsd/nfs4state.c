@@ -1873,13 +1873,20 @@ static void revoke_one_stid(struct nfsd_net *nn, struct nfs4_client *clp,
  * being released.  Thus nfsd will no longer prevent the filesystem from being
  * unmounted.
  *
- * The clients which own the states will subsequently being notified that the
+ * The clients which own the states will subsequently be notified that the
  * states have been "admin-revoked".
+ *
+ * Context: Caller must hold nfsd_mutex with nn->nfsd_serv confirmed
+ *          non-NULL.  nfs4_state_destroy_net() frees conf_id_hashtbl
+ *          at server shutdown without clearing the pointer, so a
+ *          walk without these guarantees iterates freed slab memory.
  */
 void nfsd4_revoke_states(struct nfsd_net *nn, struct super_block *sb)
 {
 	unsigned int idhashval;
 	unsigned int sc_types;
+
+	lockdep_assert_held(&nfsd_mutex);
 
 	sc_types = SC_TYPE_OPEN | SC_TYPE_LOCK | SC_TYPE_DELEG | SC_TYPE_LAYOUT;
 
@@ -1946,11 +1953,18 @@ static struct nfs4_stid *find_one_export_stid(struct nfs4_client *clp,
  *
  * Userspace (exportfs -u) sends this after removing the last client
  * for a path, enabling the underlying filesystem to be unmounted.
+ *
+ * Context: Caller must hold nfsd_mutex with nn->nfsd_serv confirmed
+ *          non-NULL.  nfs4_state_destroy_net() frees conf_id_hashtbl
+ *          at server shutdown without clearing the pointer, so a
+ *          walk without these guarantees iterates freed slab memory.
  */
 void nfsd4_revoke_export_states(struct nfsd_net *nn, const struct path *path)
 {
 	unsigned int idhashval;
 	unsigned int sc_types;
+
+	lockdep_assert_held(&nfsd_mutex);
 
 	sc_types = SC_TYPE_OPEN | SC_TYPE_LOCK | SC_TYPE_DELEG | SC_TYPE_LAYOUT;
 
@@ -2052,12 +2066,10 @@ gen_sessionid(struct nfsd4_session *ses)
 static struct shrinker *nfsd_slot_shrinker;
 static DEFINE_SPINLOCK(nfsd_session_list_lock);
 static LIST_HEAD(nfsd_session_list);
-/* The sum of "target_slots-1" on every session.  The shrinker can push this
- * down, though it can take a little while for the memory to actually
- * be freed.  The "-1" is because we can never free slot 0 while the
- * session is active.
- */
+/* The sum of "target_slots" on every session, slot 0 included. */
 static atomic_t nfsd_total_target_slots = ATOMIC_INIT(0);
+/* Session count, subtracted from the sum to exclude slot 0. */
+static atomic_t nfsd_total_sessions = ATOMIC_INIT(0);
 
 static void
 free_session_slots(struct nfsd4_session *ses, int from)
@@ -2081,26 +2093,21 @@ free_session_slots(struct nfsd4_session *ses, int from)
 	}
 	ses->se_fchannel.maxreqs = from;
 	if (ses->se_target_maxslots > from) {
-		int new_target = from ?: 1;
-		atomic_sub(ses->se_target_maxslots - new_target, &nfsd_total_target_slots);
-		ses->se_target_maxslots = new_target;
+		int delta = ses->se_target_maxslots - from;
+
+		atomic_sub(delta, &nfsd_total_target_slots);
+		/* Retain one slot so the session can make forward progress. */
+		ses->se_target_maxslots = from ?: 1;
 	}
 }
 
-/**
- * reduce_session_slots - reduce the target max-slots of a session if possible
- * @ses:  The session to affect
- * @dec:  how much to decrease the target by
- *
+/*
  * This interface can be used by a shrinker to reduce the target max-slots
  * for a session so that some slots can eventually be freed.
  * It uses spin_trylock() as it may be called in a context where another
  * spinlock is held that has a dependency on client_lock.  As shrinkers are
- * best-effort, skiping a session is client_lock is already held has no
- * great coast
- *
- * Return value:
- *   The number of slots that the target was reduced by.
+ * best-effort, skipping a session with the client_lock already held has no
+ * great cost.
  */
 static int
 reduce_session_slots(struct nfsd4_session *ses, int dec)
@@ -2179,7 +2186,7 @@ static struct nfsd4_session *alloc_session(struct nfsd4_channel_attrs *fattrs,
 	fattrs->maxreqs = i;
 	memcpy(&new->se_fchannel, fattrs, sizeof(struct nfsd4_channel_attrs));
 	new->se_target_maxslots = i;
-	atomic_add(i - 1, &nfsd_total_target_slots);
+	atomic_add(i, &nfsd_total_target_slots);
 	new->se_cb_slot_avail = ~0U;
 	new->se_cb_highest_slot = min(battrs->maxreqs - 1,
 				      NFSD_BC_SLOT_TABLE_SIZE - 1);
@@ -2304,21 +2311,51 @@ static void free_session(struct nfsd4_session *ses)
 	__free_session(ses);
 }
 
+/**
+ * nfsd_slot_shrinker_count - report reclaimable DRC slots
+ * @s: shrinker descriptor (unused)
+ * @sc: shrink control (unused)
+ *
+ * Return: a positive count of reclaimable slots, or SHRINK_EMPTY when
+ * there is nothing to reclaim.
+ */
 static unsigned long
-nfsd_slot_count(struct shrinker *s, struct shrink_control *sc)
+nfsd_slot_shrinker_count(struct shrinker *s, struct shrink_control *sc)
 {
-	unsigned long cnt = atomic_read(&nfsd_total_target_slots);
+	int count;
 
-	return cnt ? cnt : SHRINK_EMPTY;
+	/*
+	 * To prevent session deadlock, one slot of each session (slot 0)
+	 * is not reclaimable while the session is active. Thus the number
+	 * of sessions is subtracted from the total number of target slots.
+	 */
+	count = atomic_read(&nfsd_total_target_slots) -
+		atomic_read(&nfsd_total_sessions);
+
+	return count > 0 ? count : SHRINK_EMPTY;
 }
 
+/**
+ * nfsd_slot_shrinker_scan - reclaim DRC slots under memory pressure
+ * @s: shrinker descriptor (unused)
+ * @sc: shrink control; @sc->nr_to_scan bounds the sessions visited,
+ *      @sc->nr_scanned reports how many were visited
+ *
+ * Return: the number of session slots NFSD will release.
+ */
 static unsigned long
-nfsd_slot_scan(struct shrinker *s, struct shrink_control *sc)
+nfsd_slot_shrinker_scan(struct shrinker *s, struct shrink_control *sc)
 {
 	struct nfsd4_session *ses;
 	unsigned long scanned = 0;
 	unsigned long freed = 0;
 
+	/*
+	 * Each visited session releases at most one slot. After
+	 * nr_to_scan sessions have been visited, the list head is
+	 * rotated past the last visited session so the next scan
+	 * resumes from there.
+	 */
 	spin_lock(&nfsd_session_list_lock);
 	list_for_each_entry(ses, &nfsd_session_list, se_all_sessions) {
 		freed += reduce_session_slots(ses, 1);
@@ -2360,6 +2397,7 @@ static void init_session(struct svc_rqst *rqstp, struct nfsd4_session *new, stru
 
 	spin_lock(&nfsd_session_list_lock);
 	list_add_tail(&new->se_all_sessions, &nfsd_session_list);
+	atomic_inc(&nfsd_total_sessions);
 	spin_unlock(&nfsd_session_list_lock);
 
 	{
@@ -2433,6 +2471,7 @@ unhash_session(struct nfsd4_session *ses)
 	spin_unlock(&ses->se_client->cl_lock);
 	spin_lock(&nfsd_session_list_lock);
 	list_del(&ses->se_all_sessions);
+	atomic_dec(&nfsd_total_sessions);
 	spin_unlock(&nfsd_session_list_lock);
 }
 
@@ -2581,7 +2620,17 @@ unhash_client_locked(struct nfs4_client *clp)
 	spin_lock(&nfsd_session_list_lock);
 	list_for_each_entry(ses, &clp->cl_sessions, se_perclnt) {
 		list_del_init(&ses->se_hash);
-		list_del_init(&ses->se_all_sessions);
+		/*
+		 * unhash_client_locked() can run more than once for a
+		 * client; the session stays on cl_sessions across calls.
+		 * The first pass empties se_all_sessions via
+		 * list_del_init(), so skip the decrement on later passes
+		 * to keep nfsd_total_sessions from being double-counted.
+		 */
+		if (!list_empty(&ses->se_all_sessions)) {
+			list_del_init(&ses->se_all_sessions);
+			atomic_dec(&nfsd_total_sessions);
+		}
 	}
 	spin_unlock(&nfsd_session_list_lock);
 	spin_unlock(&clp->cl_lock);
@@ -4630,15 +4679,26 @@ nfsd4_sequence(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	 * gently try to allocate another 20%.  This allows
 	 * fairly quick growth without grossly over-shooting what
 	 * the client might use.
+	 *
+	 * Bound that growth by the service's thread ceiling:
+	 * slots beyond the nfsd thread count cannot raise this
+	 * client's throughput, only deepen its backlog.  Cap each
+	 * session independently, since a session cannot use
+	 * another's slots; a shared budget would let idle sessions
+	 * pin an active client small.  Compare against the
+	 * configured maximum, not the running thread count, so a
+	 * client resuming from idle can grow back before the pool
+	 * scales up.
 	 */
 	if (seq->slotid == session->se_fchannel.maxreqs - 1 &&
-	    session->se_target_maxslots >= session->se_fchannel.maxreqs &&
-	    session->se_fchannel.maxreqs < NFSD_MAX_SLOTS_PER_SESSION) {
+	    session->se_target_maxslots >= session->se_fchannel.maxreqs) {
 		int s = session->se_fchannel.maxreqs;
-		int cnt = DIV_ROUND_UP(s, 5);
+		int ceiling = min_t(int, NFSD_MAX_SLOTS_PER_SESSION,
+				    svc_serv_maxthreads(rqstp->rq_server));
+		int cnt = min(DIV_ROUND_UP(s, 5), ceiling - s);
 		void *prev_slot;
 
-		do {
+		while (cnt-- > 0) {
 			/*
 			 * GFP_NOWAIT both allows allocation under a
 			 * spinlock, and only succeeds if there is
@@ -4646,13 +4706,14 @@ nfsd4_sequence(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 			 */
 			slot = nfsd4_alloc_slot(&session->se_fchannel, s,
 						GFP_NOWAIT);
+			if (!slot)
+				break;
 			prev_slot = xa_load(&session->se_slots, s);
-			if (xa_is_value(prev_slot) && slot) {
+			if (xa_is_value(prev_slot)) {
 				slot->sl_seqid = xa_to_value(prev_slot);
 				slot->sl_flags |= NFSD4_SLOT_REUSED;
 			}
-			if (slot &&
-			    !xa_is_err(xa_store(&session->se_slots, s, slot,
+			if (!xa_is_err(xa_store(&session->se_slots, s, slot,
 						GFP_NOWAIT))) {
 				s += 1;
 				session->se_fchannel.maxreqs = s;
@@ -4661,9 +4722,9 @@ nfsd4_sequence(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 				session->se_target_maxslots = s;
 			} else {
 				kfree(slot);
-				slot = NULL;
+				break;
 			}
-		} while (slot && --cnt > 0);
+		}
 	}
 
 out:
@@ -6823,7 +6884,7 @@ bool nfsd4_force_end_grace(struct nfsd_net *nn)
  */
 static bool clients_still_reclaiming(struct nfsd_net *nn)
 {
-	time64_t double_grace_period_end = nn->boot_time +
+	time64_t double_grace_period_end = nn->boot_time_bt +
 					   2 * nn->nfsd4_lease;
 
 	if (test_bit(NFSD_NET_GRACE_END_FORCED, &nn->flags))
@@ -6837,9 +6898,8 @@ static bool clients_still_reclaiming(struct nfsd_net *nn)
 		if (atomic_read(&nn->nr_reclaim_complete) == size)
 			return false;
 	}
-	if (!test_bit(NFSD_NET_SOMEBODY_RECLAIMED, &nn->flags))
+	if (!test_and_clear_bit(NFSD_NET_SOMEBODY_RECLAIMED, &nn->flags))
 		return false;
-	clear_bit(NFSD_NET_SOMEBODY_RECLAIMED, &nn->flags);
 	/*
 	 * If we've given them *two* lease times to reclaim, and they're
 	 * still not done, give up:
@@ -7830,7 +7890,7 @@ retry:
 		return status;
 	stp = openlockstateid(s);
 	if (nfsd4_cstate_assign_replay(cstate, stp->st_stateowner) == -EAGAIN) {
-		nfs4_put_stateowner(stp->st_stateowner);
+		nfs4_put_stid(&stp->st_stid);
 		goto retry;
 	}
 
@@ -8076,6 +8136,10 @@ nfsd4_delegreturn(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		goto out;
 	dp = delegstateid(s);
 	status = nfsd4_stid_check_stateid_generation(stateid, &dp->dl_stid, nfsd4_has_session(cstate));
+	if (status)
+		goto put_stateid;
+
+	status = nfs4_check_fh(&cstate->current_fh, &dp->dl_stid);
 	if (status)
 		goto put_stateid;
 
@@ -8549,6 +8613,9 @@ nfsd4_lock(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	status = nfserr_no_grace;
 	if (!locks_in_grace(net) && lock->lk_reclaim)
 		goto out;
+	if (lock->lk_reclaim &&
+	    test_bit(NFSD4_CLIENT_RECLAIM_COMPLETE, &cstate->clp->cl_flags))
+		goto out;
 
 	if (lock->lk_reclaim)
 		flags |= FL_RECLAIM;
@@ -8585,10 +8652,11 @@ nfsd4_lock(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		goto out;
 	}
 
-	if (lock->lk_type & (NFS4_READW_LT | NFS4_WRITEW_LT) &&
-		nfsd4_has_session(cstate) &&
-		locks_can_async_lock(nf->nf_file->f_op))
-			flags |= FL_SLEEP;
+	if ((lock->lk_type == NFS4_READW_LT ||
+	     lock->lk_type == NFS4_WRITEW_LT) &&
+	    nfsd4_has_session(cstate) &&
+	    locks_can_async_lock(nf->nf_file->f_op))
+		flags |= FL_SLEEP;
 
 	nbl = find_or_allocate_block(lock_sop, &fp->fi_fhandle, nn);
 	if (!nbl) {
@@ -9193,6 +9261,7 @@ static int nfs4_state_create_net(struct net *net)
 	nn->conf_name_tree = RB_ROOT;
 	nn->unconf_name_tree = RB_ROOT;
 	nn->boot_time = ktime_get_real_seconds();
+	nn->boot_time_bt = ktime_get_boottime_seconds();
 	clear_bit(NFSD_NET_GRACE_ENDED, &nn->flags);
 	clear_bit(NFSD_NET_GRACE_END_FORCED, &nn->flags);
 	nn->nfsd4_manager.block_opens = true;
@@ -9312,8 +9381,8 @@ nfs4_state_start(void)
 		rhltable_destroy(&nfs4_file_rhltable);
 		return -ENOMEM;
 	}
-	nfsd_slot_shrinker->count_objects = nfsd_slot_count;
-	nfsd_slot_shrinker->scan_objects = nfsd_slot_scan;
+	nfsd_slot_shrinker->count_objects = nfsd_slot_shrinker_count;
+	nfsd_slot_shrinker->scan_objects = nfsd_slot_shrinker_scan;
 	shrinker_register(nfsd_slot_shrinker);
 
 	set_max_delegations();
