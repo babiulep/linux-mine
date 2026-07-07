@@ -49,6 +49,7 @@
 #include <trace/events/migrate.h>
 
 #include "internal.h"
+#include "page_alloc.h"
 #include "swap.h"
 
 static const struct movable_operations *offline_movable_ops;
@@ -362,7 +363,7 @@ static bool remove_migration_pte(struct folio *folio,
 			idx = linear_page_index(vma, pvmw.address) - pvmw.pgoff;
 		new = folio_page(folio, idx);
 
-#ifdef CONFIG_ARCH_SUPPORTS_PMD_SOFTLEAF
+#ifdef CONFIG_ARCH_HAS_PMD_SOFTLEAVES
 		/* PMD-mapped THP migration entry */
 		if (!pvmw.pte) {
 			VM_BUG_ON_FOLIO(folio_test_hugetlb(folio) ||
@@ -371,7 +372,11 @@ static bool remove_migration_pte(struct folio *folio,
 			continue;
 		}
 #endif
-		old_pte = ptep_get(pvmw.pte);
+		if (folio_test_hugetlb(folio))
+			old_pte = huge_ptep_get(vma->vm_mm, pvmw.address,
+						pvmw.pte);
+		else
+			old_pte = ptep_get(pvmw.pte);
 		if (rmap_walk_arg->map_unused_to_zeropage &&
 		    try_to_map_unused_to_zeropage(&pvmw, folio, old_pte, idx))
 			continue;
@@ -545,7 +550,7 @@ fail:
 }
 #endif
 
-#ifdef CONFIG_ARCH_SUPPORTS_PMD_SOFTLEAF
+#ifdef CONFIG_ARCH_HAS_PMD_SOFTLEAVES
 void pmd_migration_entry_wait(struct mm_struct *mm, pmd_t *pmd)
 {
 	spinlock_t *ptl;

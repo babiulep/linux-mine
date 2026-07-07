@@ -6353,7 +6353,7 @@ F:	.clang-format
 
 CLANG/LLVM BUILD SUPPORT
 M:	Nathan Chancellor <nathan@kernel.org>
-R:	Nick Desaulniers <nick.desaulniers+lkml@gmail.com>
+R:	Nick Desaulniers <ndesaulniers@google.com>
 R:	Bill Wendling <morbo@google.com>
 R:	Justin Stitt <justinstitt@google.com>
 L:	llvm@lists.linux.dev
@@ -14357,6 +14357,7 @@ S:	Maintained
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/liveupdate/linux.git
 F:	Documentation/admin-guide/mm/kho.rst
 F:	Documentation/core-api/kho/*
+F:	include/asm-generic/kexec_handover.h
 F:	include/linux/kexec_handover.h
 F:	include/linux/kho/
 F:	include/linux/kho_block.h
@@ -17193,6 +17194,7 @@ F:	mm/debug_page_alloc.c
 F:	mm/debug_page_ref.c
 F:	mm/fail_page_alloc.c
 F:	mm/page_alloc.c
+F:	mm/page_alloc.h
 F:	mm/page_ext.c
 F:	mm/page_frag_cache.c
 F:	mm/page_isolation.c
@@ -19564,13 +19566,6 @@ L:	netdev@vger.kernel.org
 S:	Maintained
 F:	Documentation/devicetree/bindings/ptp/nxp,ptp-netc.yaml
 F:	drivers/ptp/ptp_netc.c
-
-NXP NXPWIFI WIRELESS DRIVER
-M:	Jeff Chen <jeff.chen_1@nxp.com>
-R:	Francesco Dolcini <francesco@dolcini.it>
-L:	linux-wireless@vger.kernel.org
-S:	Maintained
-F:	drivers/net/wireless/nxp/nxpwifi
 
 NXP PF5300/PF5301/PF5302 PMIC REGULATOR DEVICE DRIVER
 M:	Woodrow Douglass <wdouglass@carnegierobotics.com>
@@ -27003,6 +26998,13 @@ W:	https://linuxtv.org
 Q:	http://patchwork.linuxtv.org/project/linux-media/list/
 T:	git git://linuxtv.org/mhadli/v4l-dvb-davinci_devices.git
 F:	drivers/media/platform/ti/am437x/
+
+TI AM654 SDHCI DRIVER
+M:	Judith Mendez <jm@ti.com>
+L:	linux-mmc@vger.kernel.org
+S:	Supported
+F:	Documentation/devicetree/bindings/mmc/sdhci-am654.yaml
+F:	drivers/mmc/host/sdhci_am654.c
 
 TI BANDGAP AND THERMAL DRIVER
 M:	Eduardo Valentin <edubezval@gmail.com>
