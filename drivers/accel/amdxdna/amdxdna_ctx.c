@@ -310,6 +310,7 @@ int amdxdna_drm_destroy_hwctx_ioctl(struct drm_device *dev, void *data, struct d
 	if (!drm_dev_enter(dev, &idx))
 		return -ENODEV;
 
+	mutex_lock(&xdna->client_lock);
 	mutex_lock(&xdna->dev_lock);
 	hwctx = xa_erase(&client->hwctx_xa, args->handle);
 	if (!hwctx) {
@@ -328,6 +329,7 @@ int amdxdna_drm_destroy_hwctx_ioctl(struct drm_device *dev, void *data, struct d
 	XDNA_DBG(xdna, "PID %d destroyed HW context %d", client->pid, args->handle);
 out:
 	mutex_unlock(&xdna->dev_lock);
+	mutex_unlock(&xdna->client_lock);
 	drm_dev_exit(idx);
 	return ret;
 }
@@ -388,6 +390,7 @@ int amdxdna_drm_config_hwctx_ioctl(struct drm_device *dev, void *data, struct dr
 		goto free_buf;
 	}
 
+	mutex_lock(&xdna->client_lock);
 	mutex_lock(&xdna->dev_lock);
 	hwctx = xa_load(&client->hwctx_xa, args->handle);
 	if (!hwctx) {
@@ -400,6 +403,7 @@ int amdxdna_drm_config_hwctx_ioctl(struct drm_device *dev, void *data, struct dr
 
 unlock:
 	mutex_unlock(&xdna->dev_lock);
+	mutex_unlock(&xdna->client_lock);
 	amdxdna_pm_suspend_put(xdna);
 free_buf:
 	kfree(buf);
@@ -428,6 +432,7 @@ int amdxdna_hwctx_sync_debug_bo(struct amdxdna_client *client, u32 debug_bo_hdl)
 	}
 
 	abo = to_xdna_obj(gobj);
+	mutex_lock(&xdna->client_lock);
 	mutex_lock(&xdna->dev_lock);
 	hwctx = xa_load(&client->hwctx_xa, abo->assigned_hwctx);
 	if (!hwctx) {
@@ -439,6 +444,7 @@ int amdxdna_hwctx_sync_debug_bo(struct amdxdna_client *client, u32 debug_bo_hdl)
 
 unlock:
 	mutex_unlock(&xdna->dev_lock);
+	mutex_unlock(&xdna->client_lock);
 	amdxdna_pm_suspend_put(xdna);
 put_obj:
 	drm_gem_object_put(gobj);
@@ -466,9 +472,7 @@ static int amdxdna_hwctx_expand_heap(struct amdxdna_hwctx *hwctx)
 			break;
 		}
 
-		mutex_unlock(&client->mm_lock);
 		ret = xdna->dev_info->ops->hwctx_heap_expand(hwctx, heap);
-		mutex_lock(&client->mm_lock);
 		if (ret) {
 			amdxdna_gem_unpin(heap);
 			drm_gem_object_put(to_gobj(heap));
@@ -487,18 +491,26 @@ int amdxdna_update_heap(struct amdxdna_client *client, struct amdxdna_hwctx *hwc
 	unsigned long hwctx_id;
 	int ret;
 
-	guard(mutex)(&client->mm_lock);
+	ret = amdxdna_pm_resume_get_locked(client->xdna);
+	if (ret)
+		return ret;
 
-	if (hwctx)
-		return amdxdna_hwctx_expand_heap(hwctx);
+	mutex_lock(&client->mm_lock);
 
-	amdxdna_for_each_hwctx(client, hwctx_id, hwctx) {
+	if (hwctx) {
 		ret = amdxdna_hwctx_expand_heap(hwctx);
-		if (ret)
-			return ret;
+	} else {
+		amdxdna_for_each_hwctx(client, hwctx_id, hwctx) {
+			ret = amdxdna_hwctx_expand_heap(hwctx);
+			if (ret)
+				break;
+		}
 	}
+	mutex_unlock(&client->mm_lock);
 
-	return 0;
+	amdxdna_pm_suspend_put(client->xdna);
+
+	return ret;
 }
 
 static void

@@ -1634,7 +1634,7 @@ static void kvm_update_masterclock(struct kvm *kvm)
  */
 static unsigned long get_cpu_tsc_khz(void)
 {
-	if (static_cpu_has(X86_FEATURE_CONSTANT_TSC))
+	if (cpu_feature_enabled(X86_FEATURE_CONSTANT_TSC))
 		return tsc_khz;
 	else
 		return __this_cpu_read(cpu_tsc_khz);
@@ -1651,7 +1651,7 @@ static void __get_kvmclock(struct kvm *kvm, struct kvm_clock_data *data)
 
 	data->flags = 0;
 	if (ka->use_master_clock &&
-	    (static_cpu_has(X86_FEATURE_CONSTANT_TSC) || __this_cpu_read(cpu_tsc_khz))) {
+	    (cpu_feature_enabled(X86_FEATURE_CONSTANT_TSC) || __this_cpu_read(cpu_tsc_khz))) {
 #ifdef CONFIG_X86_64
 		struct timespec64 ts;
 

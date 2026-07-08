@@ -1054,8 +1054,9 @@ static void test_simple(void)
 /*
  * A range that was populated and then MADV_DONTNEED'd is genuine pte_none
  * with no uffd-wp marker. Such a pte must read the same regardless of which
- * PAGEMAP_SCAN path serves the request: the PAGE_IS_WRITTEN fast path and the
- * generic path (reached e.g. via category_anyof_mask) must agree.
+ * PAGEMAP_SCAN path serves the request: both the PAGE_IS_WRITTEN fast path and
+ * the generic path (reached e.g. via category_anyof_mask) must report every
+ * page written.
  */
 static void unpopulated_scan_test(void)
 {
@@ -1093,9 +1094,9 @@ static void unpopulated_scan_test(void)
 	for (i = 0; i < ret; i++)
 		slow += LEN(regions[i]);
 
-	ksft_test_result(fast == slow,
-			 "%s unpopulated ptes agree across scan paths (%ld vs %ld)\n",
-			 __func__, fast, slow);
+	ksft_test_result(fast == npages && slow == npages,
+			 "%s unpopulated ptes reported written by both paths (%ld, %ld of %d)\n",
+			 __func__, fast, slow, npages);
 
 	wp_free(mem, mem_size);
 	munmap(mem, mem_size);

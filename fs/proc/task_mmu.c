@@ -2435,17 +2435,15 @@ static unsigned long pagemap_page_category(struct pagemap_scan_private *p,
 
 	if (pte_none(pte)) {
 		/*
-		 * An unpopulated pte carries no uffd-wp marker, so like any
-		 * other entry that is not write-protected it reads as written
-		 * on a uffd-wp VMA. This matches the PAGE_IS_WRITTEN fast path
-		 * in pagemap_scan_pmd_entry(); without it a scan forced onto
-		 * this generic path (extra category bits, anyof or inverted
-		 * masks) would report the same pte differently and, under
-		 * PM_SCAN_WP_MATCHING, skip arming its marker.
+		 * An unpopulated pte carries no uffd-wp marker, i.e. it is not
+		 * write-protected, the same condition under which the present
+		 * and swap cases below report PAGE_IS_WRITTEN. Report it here
+		 * too so this generic path agrees with the PAGE_IS_WRITTEN fast
+		 * path in pagemap_scan_pmd_entry(), which reports pte_none as
+		 * written and, under PM_SCAN_WP_MATCHING, arms a marker. The
+		 * fast path applies no VMA test, so neither does this.
 		 */
-		if (userfaultfd_wp(vma))
-			return PAGE_IS_WRITTEN;
-		return 0;
+		return PAGE_IS_WRITTEN;
 	}
 
 	if (pte_present(pte)) {

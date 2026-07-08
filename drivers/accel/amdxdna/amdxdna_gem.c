@@ -198,6 +198,7 @@ amdxdna_gem_destroy_obj(struct amdxdna_gem_obj *abo)
  */
 void *amdxdna_gem_vmap(struct amdxdna_gem_obj *abo)
 {
+	struct amdxdna_dev *xdna = to_xdna_dev(to_gobj(abo)->dev);
 	struct iosys_map map = IOSYS_MAP_INIT_VADDR(NULL);
 	int ret;
 
@@ -210,7 +211,7 @@ void *amdxdna_gem_vmap(struct amdxdna_gem_obj *abo)
 	if (!abo->mem.kva) {
 		ret = drm_gem_vmap(to_gobj(abo), &map);
 		if (ret)
-			XDNA_ERR(abo->client->xdna, "Vmap bo failed, ret %d", ret);
+			XDNA_ERR(xdna, "Vmap bo failed, ret %d", ret);
 		else
 			abo->mem.kva = map.vaddr;
 	}
@@ -354,7 +355,13 @@ static int amdxdna_hmm_register(struct amdxdna_gem_obj *abo,
 	unsigned long nr_pages;
 	int ret;
 
-	if (!amdxdna_pasid_on(abo->client)) {
+	/*
+	 * When PASID is off, amdxdna_gem_obj_open() called amdxdna_dma_map_bo()
+	 * and mem.dma_addr is valid; use the DMA address directly and skip HMM.
+	 * Avoid dereferencing abo->client which may be NULL (cleared in close())
+	 * while internal kernel references are still held.
+	 */
+	if (abo->mem.dma_addr != AMDXDNA_INVALID_ADDR) {
 		/* Need to set uva for heap uva validation */
 		abo->mem.uva = addr;
 		return 0;
@@ -664,8 +671,11 @@ static int amdxdna_gem_obj_open(struct drm_gem_object *gobj, struct drm_file *fi
 	/* No need to set up dma addr mapping in PASID mode. */
 	if (!amdxdna_pasid_on(abo->client)) {
 		ret = amdxdna_dma_map_bo(xdna, abo);
-		if (ret)
+		if (ret) {
+			abo->open_ref--;
+			abo->client = NULL;
 			return ret;
+		}
 	}
 
 	amdxdna_gem_add_bo_usage(abo);

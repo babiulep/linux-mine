@@ -70,7 +70,6 @@ struct page_owner_filter_state {
 	enum page_owner_print_mode print_mode;
 	nodemask_t nid_filter;
 	bool nid_filter_enabled;
-	spinlock_t lock;
 };
 
 static bool page_owner_enabled __initdata;
@@ -605,16 +604,13 @@ print_page_owner(char __user *buf, size_t count, unsigned long pfn,
 	int ret, pageblock_mt, page_mt;
 	char *kbuf;
 	enum page_owner_print_mode print_mode;
-	unsigned long flags;
 
 	count = min_t(size_t, count, PAGE_SIZE);
 	kbuf = kmalloc(count, GFP_KERNEL);
 	if (!kbuf)
 		return -ENOMEM;
 
-	spin_lock_irqsave(&state->lock, flags);
 	print_mode = state->print_mode;
-	spin_unlock_irqrestore(&state->lock, flags);
 
 	ret = scnprintf(kbuf, count,
 			"Page allocated via order %u, mask %#x(%pGg), pid %d, tgid %d (%s), ts %llu ns\n",
@@ -734,7 +730,6 @@ read_page_owner(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 	struct page_owner *page_owner;
 	depot_stack_handle_t handle;
 	struct page_owner_filter_state *state = file->private_data;
-	unsigned long flags;
 
 	if (!static_branch_unlikely(&page_owner_inited))
 		return -EINVAL;
@@ -806,7 +801,6 @@ read_page_owner(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 		if (!handle)
 			goto ext_put_continue;
 
-		spin_lock_irqsave(&state->lock, flags);
 		if (state->nid_filter_enabled) {
 			int nid;
 			memdesc_flags_t page_flags = READ_ONCE(page->flags);
@@ -815,17 +809,12 @@ read_page_owner(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 			 * Bypass PF_POISONED_CHECK() in page_to_nid() to avoid
 			 * VM_BUG_ON when accessing poisoned pages.
 			 */
-			if (page_flags.f == PAGE_POISON_PATTERN) {
-				spin_unlock_irqrestore(&state->lock, flags);
+			if (page_flags.f == PAGE_POISON_PATTERN)
 				goto ext_put_continue;
-			}
 			nid = memdesc_nid(&page_flags);
-			if (!node_isset(nid, state->nid_filter)) {
-				spin_unlock_irqrestore(&state->lock, flags);
+			if (!node_isset(nid, state->nid_filter))
 				goto ext_put_continue;
-			}
 		}
-		spin_unlock_irqrestore(&state->lock, flags);
 
 		/* Record the next PFN to read in the file offset */
 		*ppos = pfn + 1;
@@ -931,7 +920,6 @@ static int page_owner_open(struct inode *inode, struct file *file)
 	if (!state)
 		return -ENOMEM;
 
-	spin_lock_init(&state->lock);
 	state->print_mode = PAGE_OWNER_PRINT_STACK;
 	nodes_clear(state->nid_filter);
 	state->nid_filter_enabled = false;
@@ -954,18 +942,16 @@ static ssize_t page_owner_write(struct file *file,
 	char *token;
 	int ret;
 	struct page_owner_filter_state *state = file->private_data;
+	enum page_owner_print_mode new_print_mode;
 	nodemask_t new_nid_filter;
 	bool new_nid_filter_enabled;
-	enum page_owner_print_mode new_print_mode;
-	unsigned long flags;
 
 	/*
 	 * Maximum input length for filter commands:
 	 * - 32: print_mode command max length is 17 ("mode=stack_handle")
 	 *        with sufficient buffer
 	 * - 6 * MAX_NUMNODES: worst case for nid list
-	 *   Worst case per node: ",NNNNN" (comma + 5-digit node number) = 6
-	 *   bytes
+	 *   Worst case per node: ",NNNNN" (comma + 5-digit node number) = 6 bytes
 	 */
 	if (count > 32 + 6 * MAX_NUMNODES)
 		return -EINVAL;
@@ -976,11 +962,9 @@ static ssize_t page_owner_write(struct file *file,
 
 	orig = kbuf;
 
-	spin_lock_irqsave(&state->lock, flags);
 	new_print_mode = state->print_mode;
 	new_nid_filter = state->nid_filter;
 	new_nid_filter_enabled = state->nid_filter_enabled;
-	spin_unlock_irqrestore(&state->lock, flags);
 
 	while ((token = strsep(&kbuf, " \t\n")) != NULL) {
 		if (*token == '\0')
@@ -1019,11 +1003,9 @@ static ssize_t page_owner_write(struct file *file,
 	}
 
 	/* Commit all filter changes */
-	spin_lock_irqsave(&state->lock, flags);
 	state->print_mode = new_print_mode;
 	state->nid_filter = new_nid_filter;
 	state->nid_filter_enabled = new_nid_filter_enabled;
-	spin_unlock_irqrestore(&state->lock, flags);
 
 	ret = count;
 
