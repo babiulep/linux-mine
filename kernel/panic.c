@@ -396,13 +396,16 @@ static bool panic_try_force_cpu(const char *fmt, va_list args)
 		return false;
 	}
 
-	/* Bail only if a different CPU is already handling it. */
-	if (panic_in_progress() && atomic_read(&panic_cpu) != this_cpu)
+	/* Another panic already in progress */
+	if (panic_in_progress())
 		return false;
 
-	/* Which CPU won the race? */
+	/*
+	 * Only one CPU can do the redirect. Use atomic cmpxchg to ensure
+	 * we don't race with another CPU also trying to redirect.
+	 */
 	if (!atomic_try_cmpxchg(&panic_redirect_cpu, &old_cpu, this_cpu))
-		return old_cpu != this_cpu;
+		return false;
 
 	/*
 	 * Use dynamically allocated buffer if available, otherwise
@@ -439,9 +442,6 @@ static bool panic_try_force_cpu(const char *fmt, va_list args)
 			panic_force_cpu, this_cpu);
 		return false;
 	}
-
-	/* Hand panic_cpu to the target so it wins its own panic_try_start. */
-	atomic_set(&panic_cpu, panic_force_cpu);
 
 	/* IPI/NMI sent, this CPU should stop */
 	return true;
