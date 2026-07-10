@@ -422,11 +422,6 @@ static inline void scx_call_op_set_cpumask(struct scx_sched *sch, struct rq *rq,
 					   struct task_struct *task,
 					   const struct cpumask *cpumask)
 {
-	WARN_ON_ONCE(current->scx.kf_tasks[0]);
-	current->scx.kf_tasks[0] = task;
-	if (rq)
-		update_locked_rq(rq);
-
 	if (scx_is_cid_type()) {
 		struct scx_cmask *kern_va = *this_cpu_ptr(sch->set_cmask_scratch);
 		/*
@@ -435,14 +430,11 @@ static inline void scx_call_op_set_cpumask(struct scx_sched *sch, struct rq *rq,
 		 * the sole user of the scratch area.
 		 */
 		scx_cpumask_to_cmask(cpumask, kern_va);
-		sch->ops_cid.set_cmask(task, scx_kaddr_to_arena(sch, kern_va));
+		SCX_CALL_CID_OP_TASK(sch, set_cmask, rq, task,
+				     scx_kaddr_to_arena(sch, kern_va));
 	} else {
-		sch->ops.set_cpumask(task, cpumask);
+		SCX_CALL_OP_TASK(sch, set_cpumask, rq, task, cpumask);
 	}
-
-	if (rq)
-		update_locked_rq(NULL);
-	current->scx.kf_tasks[0] = NULL;
 }
 
 enum scx_dsq_iter_flags {
@@ -1844,7 +1836,7 @@ static void enqueue_task_scx(struct rq *rq, struct task_struct *p, int core_enq_
 {
 	struct scx_sched *sch = scx_task_sched(p);
 	int sticky_cpu = p->scx.sticky_cpu;
-	u64 enq_flags = core_enq_flags | rq->scx.extra_enq_flags;
+	u64 enq_flags = core_enq_flags | rq->scx.remote_activate_enq_flags;
 
 	if (enq_flags & ENQUEUE_WAKEUP)
 		rq->scx.flags |= SCX_RQ_IN_WAKEUP;
@@ -2116,13 +2108,13 @@ static void move_remote_task_to_local_dsq(struct task_struct *p, u64 enq_flags,
 	/*
 	 * We want to pass scx-specific enq_flags but activate_task() will
 	 * truncate the upper 32 bit. As we own @rq, we can pass them through
-	 * @rq->scx.extra_enq_flags instead.
+	 * @rq->scx.remote_activate_enq_flags instead.
 	 */
 	WARN_ON_ONCE(!cpumask_test_cpu(cpu_of(dst_rq), p->cpus_ptr));
-	WARN_ON_ONCE(dst_rq->scx.extra_enq_flags);
-	dst_rq->scx.extra_enq_flags = enq_flags;
+	WARN_ON_ONCE(dst_rq->scx.remote_activate_enq_flags);
+	dst_rq->scx.remote_activate_enq_flags = enq_flags;
 	activate_task(dst_rq, p, 0);
-	dst_rq->scx.extra_enq_flags = 0;
+	dst_rq->scx.remote_activate_enq_flags = 0;
 }
 
 /*
@@ -2203,13 +2195,14 @@ static bool task_can_run_on_remote_rq(struct scx_sched *sch,
 }
 
 /**
- * unlink_dsq_and_lock_src_rq() - Unlink task from its DSQ and lock its task_rq
+ * unlink_dsq_and_switch_rq_lock() - Unlink task and switch to its rq lock
  * @p: target task
  * @dsq: locked DSQ @p is currently on
+ * @locked_rq: currently locked rq
  * @src_rq: rq @p is currently on, stable with @dsq locked
  *
- * Called with @dsq locked but no rq's locked. We want to move @p to a different
- * DSQ, including any local DSQ, but are not locking @src_rq. Locking @src_rq is
+ * Called with @dsq and @locked_rq locked. We want to move @p to a different DSQ,
+ * including any local DSQ, but are not locking @src_rq. Locking @src_rq is
  * required when transferring into a local DSQ. Even when transferring into a
  * non-local DSQ, it's better to use the same mechanism to protect against
  * dequeues and maintain the invariant that @p->scx.dsq can only change while
@@ -2231,20 +2224,22 @@ static bool task_can_run_on_remote_rq(struct scx_sched *sch,
  * On return, @dsq is unlocked and @src_rq is locked. Returns %true if @p is
  * still valid. %false if lost to dequeue.
  */
-static bool unlink_dsq_and_lock_src_rq(struct task_struct *p,
-				       struct scx_dispatch_q *dsq,
-				       struct rq *src_rq)
+static bool unlink_dsq_and_switch_rq_lock(struct task_struct *p,
+					  struct scx_dispatch_q *dsq,
+					  struct rq *locked_rq,
+					  struct rq *src_rq)
 {
 	s32 cpu = raw_smp_processor_id();
 
 	lockdep_assert_held(&dsq->lock);
+	lockdep_assert_rq_held(locked_rq);
 
 	WARN_ON_ONCE(p->scx.holding_cpu >= 0);
 	task_unlink_from_dsq(p, dsq);
 	p->scx.holding_cpu = cpu;
 
 	raw_spin_unlock(&dsq->lock);
-	raw_spin_rq_lock(src_rq);
+	switch_rq_lock(locked_rq, src_rq);
 
 	/* task_rq couldn't have changed if we're still the holding cpu */
 	return likely(p->scx.holding_cpu == cpu) &&
@@ -2255,14 +2250,11 @@ static bool consume_remote_task(struct rq *this_rq,
 				struct task_struct *p, u64 enq_flags,
 				struct scx_dispatch_q *dsq, struct rq *src_rq)
 {
-	raw_spin_rq_unlock(this_rq);
-
-	if (unlink_dsq_and_lock_src_rq(p, dsq, src_rq)) {
+	if (unlink_dsq_and_switch_rq_lock(p, dsq, this_rq, src_rq)) {
 		move_remote_task_to_local_dsq(p, enq_flags, src_rq, this_rq);
 		return true;
 	} else {
-		raw_spin_rq_unlock(src_rq);
-		raw_spin_rq_lock(this_rq);
+		switch_rq_lock(src_rq, this_rq);
 		return false;
 	}
 }
@@ -2435,7 +2427,7 @@ static void dispatch_to_local_dsq(struct scx_sched *sch, struct rq *rq,
 	 * As DISPATCHING guarantees that @p is wholly ours, we can pretend that
 	 * we're moving from a DSQ and use the same mechanism - mark the task
 	 * under transfer with holding_cpu, release DISPATCHING and then follow
-	 * the same protocol. See unlink_dsq_and_lock_src_rq().
+	 * the same protocol. See unlink_dsq_and_switch_rq_lock().
 	 */
 	p->scx.holding_cpu = raw_smp_processor_id();
 
@@ -6394,11 +6386,6 @@ struct scx_sched *scx_alloc_and_add_sched(struct scx_enable_cmd *cmd,
 		sch->ops = *cmd->ops;
 	}
 
-	rcu_assign_pointer(ops->priv, sch);
-
-	sch->kobj.kset = scx_kset;
-	INIT_LIST_HEAD(&sch->all);
-
 #ifdef CONFIG_EXT_SUB_SCHED
 	char *buf = kzalloc(PATH_MAX, GFP_KERNEL);
 	if (!buf) {
@@ -6416,7 +6403,19 @@ struct scx_sched *scx_alloc_and_add_sched(struct scx_enable_cmd *cmd,
 	sch->cgrp = cgrp;
 	INIT_LIST_HEAD(&sch->children);
 	INIT_LIST_HEAD(&sch->sibling);
+#endif	/* CONFIG_EXT_SUB_SCHED */
 
+	/*
+	 * Publishing makes @sch visible to scx_prog_sched() readers. Failure
+	 * paths after this point must free @sch through kobject_put() whose
+	 * release path defers the actual freeing by an RCU grace period.
+	 */
+	rcu_assign_pointer(ops->priv, sch);
+
+	sch->kobj.kset = scx_kset;
+	INIT_LIST_HEAD(&sch->all);
+
+#ifdef CONFIG_EXT_SUB_SCHED
 	if (parent) {
 		/*
 		 * Pin @parent for @sch's lifetime. The kobject hierarchy pins
@@ -6471,7 +6470,6 @@ struct scx_sched *scx_alloc_and_add_sched(struct scx_enable_cmd *cmd,
 
 #ifdef CONFIG_EXT_SUB_SCHED
 err_free_lb_resched:
-	RCU_INIT_POINTER(ops->priv, NULL);
 	free_cpumask_var(sch->stall_cpus);
 #endif
 err_free_lb_resched_cpumask:
@@ -7028,6 +7026,21 @@ static bool bpf_scx_is_valid_access(int off, int size,
 	return btf_ctx_access(off, size, type, prog, info);
 }
 
+/* common to both forms: only scx.disallow is writable */
+static int bpf_scx_btf_struct_access_common(const struct bpf_reg_state *reg,
+					    int off, int size)
+{
+	const struct btf_type *t;
+
+	t = btf_type_by_id(reg->btf, reg->btf_id);
+	if (t == task_struct_type &&
+	    off >= offsetof(struct task_struct, scx.disallow) &&
+	    off + size <= offsetofend(struct task_struct, scx.disallow))
+		return SCALAR_VALUE;
+
+	return -EACCES;
+}
+
 static int bpf_scx_btf_struct_access(struct bpf_verifier_log *log,
 				     const struct bpf_reg_state *reg, int off,
 				     int size)
@@ -7036,29 +7049,34 @@ static int bpf_scx_btf_struct_access(struct bpf_verifier_log *log,
 
 	t = btf_type_by_id(reg->btf, reg->btf_id);
 	if (t == task_struct_type) {
-		/*
-		 * COMPAT: Will be removed in v6.23.
-		 */
 		if ((off >= offsetof(struct task_struct, scx.slice) &&
 		     off + size <= offsetofend(struct task_struct, scx.slice)) ||
 		    (off >= offsetof(struct task_struct, scx.dsq_vtime) &&
-		     off + size <= offsetofend(struct task_struct, scx.dsq_vtime))) {
-			pr_warn_ratelimited("sched_ext: Writing directly to p->scx.slice/dsq_vtime is deprecated, use scx_bpf_task_set_slice/dsq_vtime()\n");
-			return SCALAR_VALUE;
-		}
-
-		if (off >= offsetof(struct task_struct, scx.disallow) &&
-		    off + size <= offsetofend(struct task_struct, scx.disallow))
+		     off + size <= offsetofend(struct task_struct, scx.dsq_vtime)))
 			return SCALAR_VALUE;
 	}
 
-	return -EACCES;
+	return bpf_scx_btf_struct_access_common(reg, off, size);
+}
+
+/* cid-form rejects direct slice and dsq_vtime writes in favor of the kfuncs */
+static int bpf_scx_cid_btf_struct_access(struct bpf_verifier_log *log,
+					 const struct bpf_reg_state *reg, int off,
+					 int size)
+{
+	return bpf_scx_btf_struct_access_common(reg, off, size);
 }
 
 static const struct bpf_verifier_ops bpf_scx_verifier_ops = {
 	.get_func_proto = bpf_base_func_proto,
 	.is_valid_access = bpf_scx_is_valid_access,
 	.btf_struct_access = bpf_scx_btf_struct_access,
+};
+
+static const struct bpf_verifier_ops bpf_scx_cid_verifier_ops = {
+	.get_func_proto = bpf_base_func_proto,
+	.is_valid_access = bpf_scx_is_valid_access,
+	.btf_struct_access = bpf_scx_cid_btf_struct_access,
 };
 
 static int bpf_scx_init_member(const struct btf_type *t,
@@ -7401,7 +7419,7 @@ static struct sched_ext_ops_cid __bpf_ops_sched_ext_ops_cid = {
  * verified to match by the BUILD_BUG_ON checks in scx_init().
  */
 static struct bpf_struct_ops bpf_sched_ext_ops_cid = {
-	.verifier_ops = &bpf_scx_verifier_ops,
+	.verifier_ops = &bpf_scx_cid_verifier_ops,
 	.reg = bpf_scx_reg_cid,
 	.unreg = bpf_scx_unreg,
 	.check_member = bpf_scx_check_member,
@@ -7795,7 +7813,7 @@ __bpf_kfunc_start_defs();
  * When called from ops.select_cpu() or ops.enqueue(), it's for direct dispatch
  * and @p must match the task being enqueued.
  *
- * When called from ops.select_cpu(), @enq_flags and @dsp_id are stored, and @p
+ * When called from ops.select_cpu(), @enq_flags and @dsq_id are stored, and @p
  * will be directly inserted into the corresponding dispatch queue after
  * ops.select_cpu() returns. If @p is inserted into SCX_DSQ_LOCAL, it will be
  * inserted into the local DSQ of the CPU returned by ops.select_cpu().
@@ -8542,10 +8560,10 @@ __bpf_kfunc void scx_bpf_kick_cpu(s32 cpu, u64 flags, const struct bpf_prog_aux 
  * @flags: %SCX_KICK_* flags
  * @aux: implicit BPF argument to access bpf_prog_aux hidden from BPF progs
  *
- * cid-addressed equivalent of scx_bpf_kick_cpu(). Return 0 on success,
- * -errno otherwise.
+ * cid-addressed equivalent of scx_bpf_kick_cpu(). An invalid @cid aborts the
+ * scheduler via scx_cid_to_cpu().
  */
-__bpf_kfunc s32 scx_bpf_kick_cid(s32 cid, u64 flags, const struct bpf_prog_aux *aux)
+__bpf_kfunc void scx_bpf_kick_cid(s32 cid, u64 flags, const struct bpf_prog_aux *aux)
 {
 	struct scx_sched *sch;
 	s32 cpu;
@@ -8553,12 +8571,11 @@ __bpf_kfunc s32 scx_bpf_kick_cid(s32 cid, u64 flags, const struct bpf_prog_aux *
 	guard(rcu)();
 	sch = scx_prog_sched(aux);
 	if (unlikely(!sch))
-		return -ENODEV;
+		return;
 	cpu = scx_cid_to_cpu(sch, cid);
 	if (cpu < 0)
-		return cpu;
+		return;
 	scx_kick_cpu(sch, cpu, flags);
-	return 0;
 }
 
 /**

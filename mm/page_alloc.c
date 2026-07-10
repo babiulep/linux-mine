@@ -1386,13 +1386,14 @@ static __always_inline bool __free_pages_prepare(struct page *page,
 					bad++;
 					continue;
 				}
+
+				if (tail_page->private) {
+					bad_page(tail_page, "nonzero private");
+					bad++;
+					continue;
+				}
 			}
 			tail_page->flags.f &= ~PAGE_FLAGS_CHECK_AT_PREP;
-			if (is_check_pages_enabled() && tail_page->private) {
-				bad_page(tail_page, "nonzero private");
-				bad++;
-				continue;
-			}
 		}
 	}
 	if (folio_test_anon(folio)) {

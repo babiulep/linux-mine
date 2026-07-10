@@ -352,8 +352,8 @@ static void tk_setup_internals(struct timekeeper *tk, struct clocksource *clock)
 	tk->tkr_raw.cycle_last = tk->tkr_mono.cycle_last;
 
 	/* Do the ns -> cycle conversion first, using original mult */
-	interval = NTP_INTERVAL_LENGTH << clock->shift;
-	interval += clock->mult/2;
+	interval = (u64)NTP_INTERVAL_LENGTH << clock->shift;
+	interval += clock->mult / 2;
 	do_div(interval, clock->mult);
 	if (interval == 0)
 		interval = 1;

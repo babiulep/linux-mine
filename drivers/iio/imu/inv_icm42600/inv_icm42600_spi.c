@@ -3,12 +3,12 @@
  * Copyright (C) 2020 InvenSense, Inc.
  */
 
-#include <linux/kernel.h>
 #include <linux/device.h>
+#include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/spi/spi.h>
-#include <linux/regmap.h>
 #include <linux/property.h>
+#include <linux/regmap.h>
+#include <linux/spi/spi.h>
 
 #include "inv_icm42600.h"
 

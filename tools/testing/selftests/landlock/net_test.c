@@ -1284,9 +1284,11 @@ TEST_F(protocol, connect_unspec)
 TEST_F(protocol, tcp_fastopen)
 {
 	const bool restricted = variant->sandbox == TCP_SANDBOX &&
-		variant->prot.type == SOCK_STREAM &&
-		(variant->prot.protocol == IPPROTO_TCP || variant->prot.protocol == IPPROTO_IP) &&
-		(variant->prot.domain == AF_INET || variant->prot.domain == AF_INET6);
+				variant->prot.type == SOCK_STREAM &&
+				(variant->prot.protocol == IPPROTO_TCP ||
+				 variant->prot.protocol == IPPROTO_IP) &&
+				(variant->prot.domain == AF_INET ||
+				 variant->prot.domain == AF_INET6);
 	const struct landlock_ruleset_attr ruleset_attr = {
 		.handled_access_net = LANDLOCK_ACCESS_NET_CONNECT_TCP,
 	};
@@ -1331,7 +1333,8 @@ TEST_F(protocol, tcp_fastopen)
 		}
 
 		/* Fast Open to a denied address. */
-		ret = sendto_variant(connect_fd, &self->srv0, "A", 1, MSG_FASTOPEN);
+		ret = sendto_variant(connect_fd, &self->srv0, "A", 1,
+				     MSG_FASTOPEN);
 		if (restricted) {
 			EXPECT_EQ(-EACCES, ret);
 		} else if (self->srv0.protocol.domain == AF_UNIX &&
