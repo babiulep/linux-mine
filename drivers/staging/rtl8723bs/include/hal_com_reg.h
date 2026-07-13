@@ -342,7 +342,6 @@
 #define VENDOR_ID				BIT(19)
 
 #define RTL_ID					BIT(23) /*  TestChip ID, 1:Test(RLE); 0:MP(RL) */
-#define SPS_SEL					BIT(24) /*  1:LDO regulator mode; 0:Switching regulator mode */
 
 
 #define CHIP_VER_RTL_MASK		0xF000	/* Bit 12 ~ 15 */
@@ -590,9 +589,6 @@
 #define C2H_EVT_FW_CLOSE		0xFF	/*  Set by FW indicating that FW had set the C2H command message and it's not yet read by driver. */
 
 /* 2REG_MULTI_FUNC_CTRL(For RTL8723 Only) */
-#define WL_HWPDN_SL			BIT(1)	/*  WiFi HW PDn polarity control */
-#define WL_FUNC_EN				BIT(2)	/*  WiFi function enable */
 #define BT_FUNC_EN				BIT(18)	/*  BT function enable */
-#define GPS_FUNC_EN			BIT(22)	/*  GPS function enable */
 
 #endif /* __HAL_COMMON_H__ */

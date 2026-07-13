@@ -44,7 +44,8 @@ signed int _rtw_init_recv_priv(struct recv_priv *precvpriv, struct adapter *pada
 
 	precvpriv->free_recvframe_cnt = NR_RECVFRAME;
 
-	precvpriv->pallocated_frame_buf = vzalloc(NR_RECVFRAME * sizeof(union recv_frame) + RXFRAME_ALIGN_SZ);
+	precvpriv->pallocated_frame_buf = vzalloc(NR_RECVFRAME * sizeof(union recv_frame)
+						 + RXFRAME_ALIGN_SZ);
 
 	if (!precvpriv->pallocated_frame_buf) {
 		res = _FAIL;
@@ -1447,7 +1448,6 @@ static signed int validate_recv_frame(struct adapter *adapter, union recv_frame 
 	u8 type;
 	u8 subtype;
 	signed int retval = _SUCCESS;
-	u8 bDumpRxPkt;
 
 	struct rx_pkt_attrib *pattrib = &precv_frame->u.hdr.attrib;
 
@@ -1473,7 +1473,6 @@ static signed int validate_recv_frame(struct adapter *adapter, union recv_frame 
 	pattrib->mdata = GetMData(ptr);
 	pattrib->privacy = GetPrivacy(ptr);
 	pattrib->order = GetOrder(ptr);
-	rtw_hal_get_def_var(adapter, HAL_DEF_DBG_DUMP_RXPKT, &(bDumpRxPkt));
 
 	switch (type) {
 	case WIFI_MGT_TYPE: /* mgnt */

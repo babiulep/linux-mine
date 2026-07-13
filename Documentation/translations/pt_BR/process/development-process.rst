@@ -22,3 +22,6 @@ conhecimento profundo de programação de kernel para ser compreendida.
    3.Early-stage
    4.Coding
    5.Posting
+   6.Followthrough
+   7.AdvancedTopics
+   8.Conclusion

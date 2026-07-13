@@ -386,6 +386,12 @@ void kcov_task_init(struct task_struct *t)
 	kcov_task_reset(t);
 	t->kcov_remote = NULL;
 	t->kcov_handle = current->kcov_handle;
+	t->kcov_softirq = 0;
+	t->kcov_saved_mode = 0;
+	t->kcov_saved_size = 0;
+	t->kcov_saved_area = NULL;
+	t->kcov_saved_kcov = NULL;
+	t->kcov_saved_sequence = 0;
 }
 
 static void kcov_reset(struct kcov *kcov)
@@ -1072,11 +1078,9 @@ void kcov_remote_stop(void)
 		kcov_move_area(kcov->mode, kcov->area, kcov->size, area);
 	spin_unlock(&kcov->lock);
 
-	if (1) {
-		spin_lock(&kcov_remote_lock);
-		kcov_remote_area_put(area, size, !in_task());
-		spin_unlock(&kcov_remote_lock);
-	}
+	spin_lock(&kcov_remote_lock);
+	kcov_remote_area_put(area, size, !in_task());
+	spin_unlock(&kcov_remote_lock);
 
 	local_unlock_irqrestore(&kcov_percpu_data.lock, flags);
 
@@ -1132,6 +1136,8 @@ static int __init kcov_init(void)
 		void *area = vmalloc(CONFIG_KCOV_IRQ_AREA_SIZE * sizeof(unsigned long));
 		unsigned long flags;
 
+		if (!area)
+			return -ENOMEM;
 		spin_lock_irqsave(&kcov_remote_lock, flags);
 		kcov_remote_area_put(area, CONFIG_KCOV_IRQ_AREA_SIZE, true);
 		spin_unlock_irqrestore(&kcov_remote_lock, flags);

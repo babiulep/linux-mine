@@ -3724,6 +3724,26 @@ static const struct ata_scsi_cmd ata_supported_cmds[] = {
 		.sa_valid = true,
 		.sa = SAI_READ_CAPACITY_16
 	},
+	{
+		.op = SERVICE_ACTION_IN_16,	.cdb_len = 16,
+		.sa_valid = true,
+		.sa = SAI_GET_PHYSICAL_ELEMENT_STATUS
+	},
+	{
+		.op = SERVICE_ACTION_IN_16,	.cdb_len = 16,
+		.sa_valid = true,
+		.sa = SAI_REMOVE_ELEMENT_AND_TRUNCATE
+	},
+	{
+		.op = SERVICE_ACTION_IN_16,	.cdb_len = 16,
+		.sa_valid = true,
+		.sa = SAI_RESTORE_ELEMENTS_AND_REBUILD
+	},
+	{
+		.op = SERVICE_ACTION_IN_16,	.cdb_len = 16,
+		.sa_valid = true,
+		.sa = SAI_REMOVE_ELEMENT_AND_MODIFY_ZONES
+	},
 	{	.op = REPORT_LUNS,		.cdb_len = 12	},
 	{	.op = ATA_12,			.cdb_len = 12	},
 	{	.op = SECURITY_PROTOCOL_IN,	.cdb_len = 12	},
@@ -3804,6 +3824,19 @@ static bool ata_scsi_cmd_is_supported(struct ata_device *dev, u8 op, u16 sa,
 	case ZBC_IN:
 	case ZBC_OUT:
 		return ata_dev_is_zoned(dev);
+	case SERVICE_ACTION_IN_16:
+		switch (sa) {
+		case SAI_GET_PHYSICAL_ELEMENT_STATUS:
+		case SAI_REMOVE_ELEMENT_AND_TRUNCATE:
+			return dev->flags & ATA_DFLAG_DEPOP;
+		case SAI_RESTORE_ELEMENTS_AND_REBUILD:
+			return dev->flags & ATA_DFLAG_DEPOP_RESTORE;
+		case SAI_REMOVE_ELEMENT_AND_MODIFY_ZONES:
+			return dev->flags & ATA_DFLAG_DEPOP_MODIFY;
+		default:
+			return true;
+		}
+		break;
 	case SECURITY_PROTOCOL_IN:
 	case SECURITY_PROTOCOL_OUT:
 		return dev->flags & ATA_DFLAG_TRUSTED;
@@ -4575,6 +4608,245 @@ static unsigned int ata_scsi_security_inout_xlat(struct ata_queued_cmd *qc)
 	return 0;
 }
 
+/*
+ * Convert T-13 little-endian field representation of GET PHYSICAL ELEMENT
+ * STATUS DMA command reply into T-10 big-endian field representation.
+ */
+static void ata_scsi_get_phys_element_status_complete(struct ata_queued_cmd *qc)
+{
+	struct scsi_cmnd *scmd = qc->scsicmd;
+	struct sg_mapping_iter miter;
+	unsigned int bytes = 0;
+
+	lockdep_assert_held(qc->ap->lock);
+
+	sg_miter_start(&miter, scsi_sglist(scmd), scsi_sg_count(scmd),
+		       SG_MITER_TO_SG | SG_MITER_ATOMIC);
+
+	while (sg_miter_next(&miter)) {
+		unsigned int offset = 0;
+
+		if (bytes == 0) {
+			u32 num_desc, num_desc_returned, id;
+			u16 max_depop, cur_depop;
+			char *hdr;
+
+			/* Swizzle the header */
+			hdr = miter.addr;
+			num_desc = get_unaligned_le32(&hdr[0]);
+			num_desc_returned = get_unaligned_le32(&hdr[4]);
+			id = get_unaligned_le32(&hdr[8]);
+			max_depop = get_unaligned_le16(&hdr[12]);
+			cur_depop = get_unaligned_le16(&hdr[14]);
+
+			put_unaligned_be32(num_desc, &hdr[0]);
+			put_unaligned_be32(num_desc_returned, &hdr[4]);
+			put_unaligned_be32(id, &hdr[8]);
+			put_unaligned_be16(max_depop, &hdr[12]);
+			put_unaligned_be16(cur_depop, &hdr[14]);
+
+			offset += 32;
+			bytes += 32;
+		}
+
+		/* Swizzle the descriptors. */
+		while (offset < miter.length) {
+			char *desc;
+			u32 id;
+			u8 type;
+
+			desc = miter.addr + offset;
+			id = get_unaligned_le32(&desc[4]);
+			put_unaligned_be32(id, &desc[4]);
+
+			type = desc[14];
+			if (type == SCSI_PHYS_ELEM_TYPE_ALL_ACCESS_STORAGE) {
+				u64 capacity = get_unaligned_le64(&desc[16]);
+
+				put_unaligned_be64(capacity, &desc[16]);
+			} else {
+				u64 num_zones;
+
+				id = get_unaligned_le32(&desc[16]);
+				num_zones = get_unaligned_le64(&desc[24]);
+
+				put_unaligned_be32(id, &desc[16]);
+				put_unaligned_be64(num_zones, &desc[24]);
+			}
+
+			offset += 32;
+			bytes += 32;
+		}
+	}
+	sg_miter_stop(&miter);
+
+	ata_scsi_qc_complete(qc);
+}
+
+static unsigned int
+ata_scsi_get_phys_element_status_xlat(struct ata_queued_cmd *qc)
+{
+	struct scsi_cmnd *scmd = qc->scsicmd;
+	const u8 *cdb = scmd->cmnd;
+	struct ata_device *dev = qc->dev;
+	struct ata_taskfile *tf = &qc->tf;
+	u32 starting_element, len;
+
+	/* ATA_CMD_GET_PHYS_ELEMENT_STATUS is a DMA command. */
+	if (!(dev->flags & ATA_DFLAG_DEPOP) || !ata_dma_enabled(dev)) {
+		ata_scsi_set_sense(dev, scmd, ILLEGAL_REQUEST, 0x20, 0x0);
+		return 1;
+	}
+
+	len = get_unaligned_be32(&cdb[10]) / ATA_SECT_SIZE;
+	if (!len || len > U16_MAX) {
+		ata_scsi_set_invalid_field(dev, scmd, 10, 0);
+		return 1;
+	}
+
+	tf->protocol = ATA_PROT_DMA;
+	tf->command = ATA_CMD_GET_PHYS_ELEMENT_STATUS;
+	tf->hob_feature = cdb[14];
+	tf->hob_nsect = (len >> 8) & 0xff;
+	tf->nsect = len & 0xff;
+
+	starting_element = get_unaligned_be32(&cdb[6]);
+	if (starting_element) {
+		tf->hob_lbal = (starting_element >> 24) & 0xff;
+		tf->lbah = (starting_element >> 16) & 0xff;
+		tf->lbam = (starting_element >> 8) & 0xff;
+		tf->lbal = starting_element & 0xff;
+	}
+	tf->device = ATA_LBA;
+	tf->flags |= ATA_TFLAG_ISADDR | ATA_TFLAG_DEVICE | ATA_TFLAG_LBA48;
+
+	ata_qc_set_pc_nbytes(qc);
+
+	qc->flags |= ATA_QCFLAG_RESULT_TF;
+	qc->complete_fn = ata_scsi_get_phys_element_status_complete;
+
+	return 0;
+}
+
+static void ata_scsi_depop_ua_cap_changed_complete(struct ata_queued_cmd *qc)
+{
+	struct scsi_cmnd *scmd = qc->scsicmd;
+	u8 *cdb = scmd->cmnd;
+	bool is_ata_passthru = cdb[0] == ATA_16 || cdb[0] == ATA_12;
+	bool is_success = qc->err_mask == 0;
+
+	/*
+	 * For successful non-passthrough commands, raise a UNIT ATTENTION with
+	 * the additional sense code set to CAPACITY DATA HAS CHANGED to be
+	 * raised. Note that this should be done only if the capacity has
+	 * actually changed, which may not be the case if the element that was
+	 * specified for depopulation was already depopulated, or we did not
+	 * restore any removed element. But a capacity change unit attention is
+	 * harmless, so always raise the unit attention.
+	 */
+	if (is_success && !is_ata_passthru)
+		ata_scsi_set_sense(qc->dev, scmd, UNIT_ATTENTION,
+				   UA_CHANGED_ASC, CAPACITY_CHANGED_ASCQ);
+	ata_scsi_qc_complete(qc);
+}
+
+static unsigned int
+ata_scsi_remove_element_and_truncate_xlat(struct ata_queued_cmd *qc)
+{
+	struct scsi_cmnd *scmd = qc->scsicmd;
+	const u8 *cdb = scmd->cmnd;
+	struct ata_device *dev = qc->dev;
+	struct ata_taskfile *tf = &qc->tf;
+	u64 req_capacity;
+	u32 id;
+
+	if (!(dev->flags & ATA_DFLAG_DEPOP)) {
+		ata_scsi_set_sense(dev, scmd, ILLEGAL_REQUEST, 0x20, 0x0);
+		return 1;
+	}
+
+	req_capacity = get_unaligned_be64(&cdb[2]);
+	if (req_capacity == 1) {
+		ata_scsi_set_invalid_field(dev, scmd, 2, 0);
+		return 1;
+	}
+
+	id = get_unaligned_be32(&cdb[10]);
+
+	tf->protocol = ATA_PROT_NODATA;
+	tf->command = ATA_CMD_REMOVE_ELEMENT_AND_TRUNCATE;
+	tf->hob_feature = (id >> 24) & 0xff;
+	tf->feature = (id >> 16) & 0xff;
+	tf->hob_nsect = (id >> 8) & 0xff;
+	tf->nsect = id & 0xff;
+	tf->hob_lbah = (req_capacity >> 40) & 0xff;
+	tf->hob_lbam = (req_capacity >> 32) & 0xff;
+	tf->hob_lbal = (req_capacity >> 24) & 0xff;
+	tf->lbah = (req_capacity >> 16) & 0xff;
+	tf->lbam = (req_capacity >> 8) & 0xff;
+	tf->lbal = req_capacity & 0xff;
+	tf->device = ATA_LBA;
+	tf->flags |= ATA_TFLAG_ISADDR | ATA_TFLAG_DEVICE | ATA_TFLAG_LBA48;
+
+	qc->flags |= ATA_QCFLAG_RESULT_TF;
+	qc->complete_fn = ata_scsi_depop_ua_cap_changed_complete;
+
+	return 0;
+}
+
+static unsigned int
+ata_scsi_remove_element_and_modify_zones_xlat(struct ata_queued_cmd *qc)
+{
+	struct scsi_cmnd *scmd = qc->scsicmd;
+	const u8 *cdb = scmd->cmnd;
+	struct ata_device *dev = qc->dev;
+	struct ata_taskfile *tf = &qc->tf;
+	u32 id;
+
+	if (!(dev->flags & ATA_DFLAG_DEPOP_MODIFY)) {
+		ata_scsi_set_sense(dev, scmd, ILLEGAL_REQUEST, 0x20, 0x0);
+		return 1;
+	}
+
+	id = get_unaligned_be32(&cdb[10]);
+
+	tf->protocol = ATA_PROT_NODATA;
+	tf->command = ATA_CMD_REMOVE_ELEMENT_AND_MODIFY_ZONES;
+	tf->hob_feature = (id >> 24) & 0xff;
+	tf->feature = (id >> 16) & 0xff;
+	tf->hob_nsect = (id >> 8) & 0xff;
+	tf->nsect = id & 0xff;
+	tf->device = ATA_LBA;
+	tf->flags |= ATA_TFLAG_ISADDR | ATA_TFLAG_DEVICE | ATA_TFLAG_LBA48;
+
+	qc->flags |= ATA_QCFLAG_RESULT_TF;
+
+	return 0;
+}
+
+static unsigned int
+ata_scsi_restore_elements_and_rebuild_xlat(struct ata_queued_cmd *qc)
+{
+	struct scsi_cmnd *scmd = qc->scsicmd;
+	struct ata_device *dev = qc->dev;
+	struct ata_taskfile *tf = &qc->tf;
+
+	if (!(dev->flags & ATA_DFLAG_DEPOP_RESTORE)) {
+		ata_scsi_set_sense(dev, scmd, ILLEGAL_REQUEST, 0x20, 0x0);
+		return 1;
+	}
+
+	tf->protocol = ATA_PROT_NODATA;
+	tf->command = ATA_CMD_RESTORE_ELEMENTS_AND_REBUILD;
+	tf->device = ATA_LBA;
+	tf->flags |= ATA_TFLAG_ISADDR | ATA_TFLAG_DEVICE | ATA_TFLAG_LBA48;
+
+	qc->flags |= ATA_QCFLAG_RESULT_TF;
+	qc->complete_fn = ata_scsi_depop_ua_cap_changed_complete;
+
+	return 0;
+}
+
 /**
  *	ata_scsi_var_len_cdb_xlat - SATL variable length CDB to Handler
  *	@qc: Command to be translated
@@ -4606,7 +4878,7 @@ static unsigned int ata_scsi_var_len_cdb_xlat(struct ata_queued_cmd *qc)
 /**
  *	ata_get_xlat_func - check if SCSI to ATA translation is possible
  *	@dev: ATA device
- *	@cmd: SCSI command opcode to consider
+ *	@cdb: CDB of the SCSI command to consider
  *
  *	Look up the SCSI command given, and determine whether the
  *	SCSI command is to be translated or simulated.
@@ -4615,9 +4887,12 @@ static unsigned int ata_scsi_var_len_cdb_xlat(struct ata_queued_cmd *qc)
  *	Pointer to translation function if possible, %NULL if not.
  */
 
-static inline ata_xlat_func_t ata_get_xlat_func(struct ata_device *dev, u8 cmd)
+static inline ata_xlat_func_t ata_get_xlat_func(struct ata_device *dev,
+						u8 *cdb)
 {
-	switch (cmd) {
+	u8 sa;
+
+	switch (cdb[0]) {
 	case READ_6:
 	case READ_10:
 	case READ_16:
@@ -4650,6 +4925,18 @@ static inline ata_xlat_func_t ata_get_xlat_func(struct ata_device *dev, u8 cmd)
 	case MODE_SELECT:
 	case MODE_SELECT_10:
 		return ata_scsi_mode_select_xlat;
+
+	case SERVICE_ACTION_IN_16:
+		sa = cdb[1] & 0x1f;
+		if (sa == SAI_GET_PHYSICAL_ELEMENT_STATUS)
+			return ata_scsi_get_phys_element_status_xlat;
+		if (sa == SAI_REMOVE_ELEMENT_AND_TRUNCATE)
+			return ata_scsi_remove_element_and_truncate_xlat;
+		if (sa == SAI_REMOVE_ELEMENT_AND_MODIFY_ZONES)
+			return ata_scsi_remove_element_and_modify_zones_xlat;
+		if (sa == SAI_RESTORE_ELEMENTS_AND_REBUILD)
+			return ata_scsi_restore_elements_and_rebuild_xlat;
+		break;
 
 	case ZBC_IN:
 		return ata_scsi_zbc_in_xlat;
@@ -4748,7 +5035,8 @@ enum scsi_qc_status __ata_scsi_queuecmd(struct scsi_cmnd *scmd,
 					struct ata_port *ap)
 	__must_hold(ap->lock)
 {
-	u8 scsi_op = scmd->cmnd[0];
+	u8 *cdb = scmd->cmnd;
+	u8 scsi_op = cdb[0];
 	ata_xlat_func_t xlat_func;
 
 	/*
@@ -4768,7 +5056,7 @@ enum scsi_qc_status __ata_scsi_queuecmd(struct scsi_cmnd *scmd,
 		if (unlikely(scmd->cmd_len > dev->cdb_len))
 			goto bad_cdb_len;
 
-		xlat_func = ata_get_xlat_func(dev, scsi_op);
+		xlat_func = ata_get_xlat_func(dev, cdb);
 	} else if (likely((scsi_op != ATA_16) || !atapi_passthru16)) {
 		/* relay SCSI command to ATAPI device */
 		int len = COMMAND_SIZE(scsi_op);
@@ -4784,7 +5072,7 @@ enum scsi_qc_status __ata_scsi_queuecmd(struct scsi_cmnd *scmd,
 		if (unlikely(scmd->cmd_len > 16))
 			goto bad_cdb_len;
 
-		xlat_func = ata_get_xlat_func(dev, scsi_op);
+		xlat_func = ata_get_xlat_func(dev, cdb);
 	}
 
 	if (xlat_func)

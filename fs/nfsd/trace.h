@@ -12,6 +12,7 @@
 #include <linux/sunrpc/clnt.h>
 #include <linux/sunrpc/xprt.h>
 #include <trace/misc/fs.h>
+#include <trace/misc/fsnotify.h>
 #include <trace/misc/nfs.h>
 #include <trace/misc/sunrpc.h>
 
@@ -1377,6 +1378,28 @@ TRACE_EVENT(nfsd_file_fsnotify_handle_event,
 			__entry->nlink, __entry->mode, __entry->mask)
 );
 
+TRACE_EVENT(nfsd_handle_dir_event,
+	TP_PROTO(u32 mask, const struct inode *dir, const struct qstr *name),
+	TP_ARGS(mask, dir, name),
+	TP_STRUCT__entry(
+		__field(u32, mask)
+		__field(dev_t, s_dev)
+		__field(u64, i_ino)
+		__string_len(name, name ? name->name : NULL,
+				   name ? name->len : 0)
+	),
+	TP_fast_assign(
+		__entry->mask = mask;
+		__entry->s_dev = dir ? dir->i_sb->s_dev : 0;
+		__entry->i_ino = dir ? dir->i_ino : 0;
+		__assign_str(name);
+	),
+	TP_printk("inode=0x%x:0x%x:0x%llx mask=%s name=%s",
+			MAJOR(__entry->s_dev), MINOR(__entry->s_dev),
+			__entry->i_ino, show_fsnotify_mask(__entry->mask),
+			__get_str(name))
+);
+
 DECLARE_EVENT_CLASS(nfsd_file_gc_class,
 	TP_PROTO(
 		const struct nfsd_file *nf
@@ -1677,6 +1700,7 @@ TRACE_EVENT(nfsd_cb_setup_err,
 		{ OP_CB_RECALL,			"CB_RECALL" },		\
 		{ OP_CB_LAYOUTRECALL,		"CB_LAYOUTRECALL" },	\
 		{ OP_CB_RECALL_ANY,		"CB_RECALL_ANY" },	\
+		{ OP_CB_NOTIFY,			"CB_NOTIFY" },		\
 		{ OP_CB_NOTIFY_LOCK,		"CB_NOTIFY_LOCK" },	\
 		{ OP_CB_OFFLOAD,		"CB_OFFLOAD" })
 
