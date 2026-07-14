@@ -3617,7 +3617,7 @@ static int smb3_simple_fallocate_range(unsigned int xid,
 	loff_t l;
 	int rc;
 
-	buf = kzalloc(min_t(loff_t, len, SMB2_MAX_BUFFER_SIZE), GFP_KERNEL);
+	buf = kvzalloc(min_t(loff_t, len, SMB2_MAX_BUFFER_SIZE), GFP_KERNEL);
 	if (!buf) {
 		rc = -ENOMEM;
 		goto out;
@@ -3701,7 +3701,7 @@ static int smb3_simple_fallocate_range(unsigned int xid,
 
  out:
 	kfree(out_data);
-	kfree(buf);
+	kvfree(buf);
 	return rc;
 }
 

@@ -52,6 +52,7 @@ arm-current	https://git.kernel.org/pub/scm/linux/kernel/git/rmk/linux.git#fixes
 arm64-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux#for-next/fixes
 arm-soc-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/soc/soc.git#arm/fixes
 davinci-current	https://git.kernel.org/pub/scm/linux/kernel/git/brgl/linux.git#davinci/for-current
+realtek-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/yu_chun/linux.git#fixes
 drivers-memory-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux-mem-ctrl.git#fixes
 sophgo-fixes	https://github.com/sophgo/linux.git#fixes
 sophgo-soc-fixes	https://github.com/sophgo/linux.git#soc-fixes

@@ -156,7 +156,7 @@ bool folio_isolate_hugetlb(struct folio *folio, struct list_head *list);
 int get_hwpoison_hugetlb_folio(struct folio *folio, bool *hugetlb, bool unpoison);
 void folio_putback_hugetlb(struct folio *folio);
 void move_hugetlb_state(struct folio *old_folio, struct folio *new_folio,
-			enum migrate_reason reason);
+		enum migrate_reason reason);
 void hugetlb_fix_reserve_counts(struct inode *inode);
 extern struct mutex *hugetlb_fault_mutex_table;
 u32 hugetlb_fault_mutex_hash(struct address_space *mapping, pgoff_t idx);
@@ -427,7 +427,7 @@ static inline void folio_putback_hugetlb(struct folio *folio)
 }
 
 static inline void move_hugetlb_state(struct folio *old_folio,
-					struct folio *new_folio, enum migrate_reason reason)
+		struct folio *new_folio, enum migrate_reason reason)
 {
 }
 
@@ -801,8 +801,7 @@ static inline pgoff_t hugetlb_linear_page_index(struct vm_area_struct *vma,
 {
 	struct hstate *h = hstate_vma(vma);
 
-	return ((address - vma->vm_start) >> huge_page_shift(h)) +
-		(vma->vm_pgoff >> huge_page_order(h));
+	return linear_page_index(vma, address) >> huge_page_order(h);
 }
 
 static inline bool order_is_gigantic(unsigned int order)

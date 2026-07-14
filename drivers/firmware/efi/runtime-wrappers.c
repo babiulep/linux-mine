@@ -210,7 +210,7 @@ void efi_call_virt_check_flags(unsigned long flags, const void *caller)
  */
 static DEFINE_SEMAPHORE(efi_runtime_lock, 1);
 
-static struct task_struct *efi_runtime_lock_owner;
+static struct task_struct *efi_runtime_lock_owner __used;
 
 /*
  * Expose the EFI runtime lock to the UV platform
@@ -224,7 +224,7 @@ extern struct semaphore __efi_uv_runtime_lock __alias(efi_runtime_lock);
  * have been disabled and its efi_rts_work is abandoned. Loop in schedule()
  * so a spurious wakeup cannot resume it.
  */
-void efi_rts_park_worker(void)
+void __noreturn efi_rts_park_worker(void)
 {
 	for (;;) {
 		set_current_state(TASK_IDLE);

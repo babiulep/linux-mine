@@ -654,12 +654,14 @@ static void queue_folios_pmd(pmd_t *pmd, struct mm_walk *walk)
 {
 	struct folio *folio;
 	struct queue_pages *qp = walk->private;
+	pmd_t pmdval = pmdp_get(pmd);
 
-	if (unlikely(pmd_is_migration_entry(*pmd))) {
-		qp->nr_failed++;
+	if (unlikely(!pmd_present(pmdval))) {
+		if (pmd_is_migration_entry(pmdval))
+			qp->nr_failed++;
 		return;
 	}
-	folio = pmd_folio(*pmd);
+	folio = pmd_folio(pmdval);
 	if (is_huge_zero_folio(folio)) {
 		walk->action = ACTION_CONTINUE;
 		return;
@@ -2049,8 +2051,8 @@ struct mempolicy *get_vma_policy(struct vm_area_struct *vma,
 		pol = get_task_policy(current);
 	if (pol->mode == MPOL_INTERLEAVE ||
 	    pol->mode == MPOL_WEIGHTED_INTERLEAVE) {
-		*ilx += vma->vm_pgoff >> order;
-		*ilx += (addr - vma->vm_start) >> (PAGE_SHIFT + order);
+		*ilx += vma_start_pgoff(vma) >> order;
+		*ilx += linear_page_delta(vma, addr) >> order;
 	}
 	return pol;
 }
@@ -3244,16 +3246,17 @@ EXPORT_SYMBOL_FOR_MODULES(mpol_shared_policy_init, "kvm");
 int mpol_set_shared_policy(struct shared_policy *sp,
 			struct vm_area_struct *vma, struct mempolicy *pol)
 {
-	int err;
+	const pgoff_t pgoff = vma_start_pgoff(vma);
+	const pgoff_t pgoff_end = vma_end_pgoff(vma);
 	struct sp_node *new = NULL;
-	unsigned long sz = vma_pages(vma);
+	int err;
 
 	if (pol) {
-		new = sp_alloc(vma->vm_pgoff, vma->vm_pgoff + sz, pol);
+		new = sp_alloc(pgoff, pgoff_end, pol);
 		if (!new)
 			return -ENOMEM;
 	}
-	err = shared_policy_replace(sp, vma->vm_pgoff, vma->vm_pgoff + sz, new);
+	err = shared_policy_replace(sp, pgoff, pgoff_end, new);
 	if (err && new)
 		sp_free(new);
 	return err;

@@ -253,7 +253,7 @@ static void shmem_swapin_range(struct vm_area_struct *vma,
 			continue;
 
 		addr = vma->vm_start +
-			((xas.xa_index - vma->vm_pgoff) << PAGE_SHIFT);
+			((xas.xa_index - vma_start_pgoff(vma)) << PAGE_SHIFT);
 		xas_pause(&xas);
 		rcu_read_unlock();
 
@@ -318,7 +318,7 @@ static long madvise_willneed(struct madvise_behavior *madv_behavior)
 	mark_mmap_lock_dropped(madv_behavior);
 	get_file(file);
 	offset = (loff_t)(start - vma->vm_start)
-			+ ((loff_t)vma->vm_pgoff << PAGE_SHIFT);
+			+ ((loff_t)vma_start_pgoff(vma) << PAGE_SHIFT);
 	mmap_read_unlock(mm);
 	vfs_fadvise(file, offset, end - start, POSIX_FADV_WILLNEED);
 	fput(file);
@@ -388,8 +388,8 @@ static int madvise_cold_or_pageout_pte_range(pmd_t *pmd,
 			goto huge_unlock;
 
 		if (unlikely(!pmd_present(orig_pmd))) {
-			VM_BUG_ON(thp_migration_supported() &&
-					!pmd_is_migration_entry(orig_pmd));
+			VM_WARN_ON_ONCE(!pmd_is_migration_entry(orig_pmd) &&
+					!pmd_is_device_private_entry(orig_pmd));
 			goto huge_unlock;
 		}
 
@@ -1022,7 +1022,7 @@ static long madvise_remove(struct madvise_behavior *madv_behavior)
 		return -EACCES;
 
 	offset = (loff_t)(start - vma->vm_start)
-			+ ((loff_t)vma->vm_pgoff << PAGE_SHIFT);
+			+ ((loff_t)vma_start_pgoff(vma) << PAGE_SHIFT);
 
 	/*
 	 * Filesystem's fallocate may need to take i_rwsem.  We need to
