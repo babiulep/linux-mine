@@ -58,18 +58,9 @@ static __always_inline bool arch_ptrace_report_syscall_permit_entry(struct pt_re
 }
 #endif
 
-long trace_syscall_enter(struct pt_regs *regs, long syscall);
+void trace_syscall_enter(struct pt_regs *regs);
 void trace_syscall_exit(struct pt_regs *regs, long ret);
-
-static inline void syscall_enter_audit(struct pt_regs *regs, long syscall)
-{
-	if (unlikely(audit_context())) {
-		unsigned long args[6];
-
-		syscall_get_arguments(current, regs, args);
-		audit_syscall_entry(syscall, args[0], args[1], args[2], args[3]);
-	}
-}
+void syscall_enter_audit(struct pt_regs *regs);
 
 static __always_inline long syscall_trace_enter(struct pt_regs *regs, unsigned long work,
 						long syscall)
@@ -81,7 +72,7 @@ static __always_inline long syscall_trace_enter(struct pt_regs *regs, unsigned l
 	 */
 	if (work & SYSCALL_WORK_SYSCALL_USER_DISPATCH) {
 		if (syscall_user_dispatch(regs))
-			return -1L;
+			return false;
 	}
 
 	/*
@@ -96,24 +87,25 @@ static __always_inline long syscall_trace_enter(struct pt_regs *regs, unsigned l
 	if (work & (SYSCALL_WORK_SYSCALL_TRACE | SYSCALL_WORK_SYSCALL_EMU)) {
 		if (!arch_ptrace_report_syscall_permit_entry(regs) ||
 		    (work & SYSCALL_WORK_SYSCALL_EMU))
-			return -1L;
+			return false;
+
+		/* ptrace might have changed work flags */
+		work = READ_ONCE(current_thread_info()->syscall_work);
 	}
 
 	/* Do seccomp after ptrace, to catch any tracer changes. */
 	if (work & SYSCALL_WORK_SECCOMP) {
 		if (!__seccomp_permit_syscall())
-			return -1L;
+			return false;
 	}
 
-	/* Either of the above might have changed the syscall number */
-	syscall = syscall_get_nr(current, regs);
-
 	if (unlikely(work & SYSCALL_WORK_SYSCALL_TRACEPOINT))
-		syscall = trace_syscall_enter(regs, syscall);
+		trace_syscall_enter(regs);
 
-	syscall_enter_audit(regs, syscall);
+	if (unlikely(audit_context()))
+		syscall_enter_audit(regs);
 
-	return syscall;
+	return true;
 }
 
 /**
@@ -122,16 +114,15 @@ static __always_inline long syscall_trace_enter(struct pt_regs *regs, unsigned l
  * @regs:	Pointer to currents pt_regs
  * @syscall:	The syscall number
  *
- * Invoked from architecture specific syscall entry code with interrupts
- * enabled after invoking enter_from_user_mode(), enabling interrupts and
- * extra architecture specific work.
+ * Invoked from architecture specific syscall entry code with interrupts enabled
+ * after invoking enter_from_user_mode(), enabling interrupts and extra
+ * architecture specific work with the syscall return value preset to -ENOSYS.
  *
- * Returns: The original or a modified syscall number
+ * Returns: True if the syscall should be invoked, False otherwise.
  *
- * If the returned syscall number is -1 then the syscall should be
- * skipped. In this case the caller may invoke syscall_set_error() or
- * syscall_set_return_value() first.  If neither of those are called and -1
- * is returned, then the syscall will fail with ENOSYS.
+ * If the return value is false, the caller must skip the syscall and leave the
+ * syscall return value unmodified as it might have been set by one of the entry
+ * work functions.
  *
  * It handles the following work items:
  *
@@ -139,14 +130,20 @@ static __always_inline long syscall_trace_enter(struct pt_regs *regs, unsigned l
  *     ptrace_report_syscall_permit_entry(), __seccomp_permit_syscall(), trace_sys_enter()
  *  2) Invocation of audit_syscall_entry()
  */
-static __always_inline long syscall_enter_from_user_mode_work(struct pt_regs *regs, long syscall)
+static __always_inline bool syscall_enter_from_user_mode_work(struct pt_regs *regs, long *syscall)
 {
 	unsigned long work = READ_ONCE(current_thread_info()->syscall_work);
 
-	if (work & SYSCALL_WORK_ENTER)
-		syscall = syscall_trace_enter(regs, work, syscall);
+	if (!(work & SYSCALL_WORK_ENTER))
+		return true;
 
-	return syscall;
+	if (unlikely(!syscall_trace_enter(regs, work, *syscall)))
+		return false;
+
+	/* Reread the syscall number as it might have been modified */
+	*syscall = syscall_get_nr(current, regs);
+
+	return true;
 }
 
 /**
