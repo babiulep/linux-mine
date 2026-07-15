@@ -952,10 +952,10 @@ S:	Maintained
 F:	drivers/mailbox/mailbox-altera.c
 
 ALTERA MSGDMA IP CORE DRIVER
-M:	Olivier Dautricourt <olivierdautricourt@gmail.com>
+M:	Adrian Ng Ho Yin <adrian.ho.yin.ng@altera.com>
 R:	Stefan Roese <sr@denx.de>
 L:	dmaengine@vger.kernel.org
-S:	Odd Fixes
+S:	Maintained
 F:	Documentation/devicetree/bindings/dma/altr,msgdma.yaml
 F:	drivers/dma/altera-msgdma.c
 
@@ -2624,6 +2624,7 @@ F:	Documentation/devicetree/bindings/power/apple*
 F:	Documentation/devicetree/bindings/power/reset/apple,smc-reboot.yaml
 F:	Documentation/devicetree/bindings/pwm/apple,s5l-fpwm.yaml
 F:	Documentation/devicetree/bindings/rtc/apple,smc-rtc.yaml
+F:	Documentation/devicetree/bindings/soc/apple/apple,t6000-pmgr-misc.yaml
 F:	Documentation/devicetree/bindings/spi/apple,spi.yaml
 F:	Documentation/devicetree/bindings/spmi/apple,spmi.yaml
 F:	Documentation/devicetree/bindings/usb/apple,dwc3.yaml
@@ -13410,6 +13411,7 @@ INTEL SKYLAKE INT3472 ACPI DEVICE DRIVER
 M:	Daniel Scally <dan.scally@ideasonboard.com>
 M:	Sakari Ailus <sakari.ailus@linux.intel.com>
 S:	Maintained
+T:	git git://linuxtv.org/media.git
 F:	drivers/platform/x86/intel/int3472/
 F:	include/linux/platform_data/x86/int3472.h
 
@@ -19323,7 +19325,7 @@ F:	drivers/ntb/hw/intel/
 NTFS FILESYSTEM
 M:	Namjae Jeon <linkinjeon@kernel.org>
 M:	Hyunchul Lee <hyc.lee@gmail.com>
-L:	linux-fsdevel@vger.kernel.org
+L:	ntfs@lists.linux.dev
 S:	Maintained
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/linkinjeon/ntfs.git
 F:	Documentation/filesystems/ntfs.rst

@@ -546,12 +546,6 @@ static int __meminit vmemmap_populate_compound_pages(unsigned long start_pfn,
 
 #endif
 
-#ifndef vmemmap_populate_finalize
-static void __meminit vmemmap_populate_finalize(void)
-{
-}
-#endif
-
 struct page * __meminit __populate_section_memmap(unsigned long pfn,
 		unsigned long nr_pages, int nid, struct vmem_altmap *altmap,
 		struct dev_pagemap *pgmap)
@@ -572,7 +566,7 @@ struct page * __meminit __populate_section_memmap(unsigned long pfn,
 	if (r < 0)
 		return NULL;
 
-	vmemmap_populate_finalize();
+	flush_cache_vmap(start, end);
 
 	return pfn_to_page(pfn);
 }

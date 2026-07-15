@@ -818,10 +818,8 @@ static struct thpsize *thpsize_create(int order, struct kobject *parent)
 
 	ret = kobject_init_and_add(&thpsize->kobj, &thpsize_ktype, parent,
 				   "hugepages-%lukB", size);
-	if (ret) {
-		kfree(thpsize);
-		goto err;
-	}
+	if (ret)
+		goto err_put;
 
 
 	ret = sysfs_add_group(&thpsize->kobj, &any_ctrl_attr_grp);
@@ -4063,7 +4061,6 @@ static int __folio_split(struct folio *folio, unsigned int new_order,
 	bool is_anon = folio_test_anon(folio);
 	struct address_space *mapping = NULL;
 	struct anon_vma *anon_vma = NULL;
-	struct inode *inode = NULL;
 	int old_order = folio_order(folio);
 	struct folio *new_folio, *next;
 	int nr_shmem_dropped = 0;
@@ -4135,20 +4132,6 @@ static int __folio_split(struct folio *folio, unsigned int new_order,
 		}
 
 		anon_vma = NULL;
-
-		/*
-		 * The locked @lock_at folio keeps the inode alive: eviction
-		 * cannot remove it from the page cache while it is locked. But
-		 * the split drops it if it lies beyond EOF, after which we
-		 * still touch @mapping (shmem_uncharge(), i_mmap_unlock_read()).
-		 * Hold an inode reference across the split to be safe.
-		 */
-		inode = igrab(mapping->host);
-		if (!inode) {
-			/* Inode is being evicted; nothing to split. */
-			ret = -EBUSY;
-			goto out;
-		}
 		i_mmap_lock_read(mapping);
 
 		/*
@@ -4231,8 +4214,6 @@ out_unlock:
 	}
 	if (mapping)
 		i_mmap_unlock_read(mapping);
-	if (inode)
-		iput(inode);
 out:
 	xas_destroy(&xas);
 	if (is_pmd_order(old_order))

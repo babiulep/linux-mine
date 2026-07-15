@@ -182,7 +182,7 @@ static inline bool iommufd_lock_obj(struct iommufd_object *obj)
 	return true;
 }
 
-int iommufd_inc_users(struct iommufd_ctx *ictx, struct iommufd_object *obj);
+int iommufd_try_inc_users(struct iommufd_ctx *ictx, struct iommufd_object *obj);
 struct iommufd_object *iommufd_get_object(struct iommufd_ctx *ictx, u32 id,
 					  enum iommufd_object_type type);
 static inline void iommufd_put_object(struct iommufd_ctx *ictx,

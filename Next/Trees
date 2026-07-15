@@ -203,6 +203,7 @@ mediatek	https://git.kernel.org/pub/scm/linux/kernel/git/mediatek/linux.git#for-
 mvebu		https://git.kernel.org/pub/scm/linux/kernel/git/gclement/mvebu.git#for-next
 omap		https://git.kernel.org/pub/scm/linux/kernel/git/khilman/linux-omap.git#for-next
 qcom		https://git.kernel.org/pub/scm/linux/kernel/git/qcom/linux.git#for-next
+realtek		https://git.kernel.org/pub/scm/linux/kernel/git/yu_chun/linux.git#for-next
 renesas		https://git.kernel.org/pub/scm/linux/kernel/git/geert/renesas-devel.git#next
 reset		https://git.kernel.org/pub/scm/linux/kernel/git/pza/linux#reset/next
 rockchip	https://git.kernel.org/pub/scm/linux/kernel/git/mmind/linux-rockchip.git#for-next
