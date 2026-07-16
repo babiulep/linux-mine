@@ -3089,19 +3089,12 @@ static int pagemap_scan_pte_hole(unsigned long addr, unsigned long end,
 		return 0;
 
 	/*
-	 * An unpopulated range with no page table -- e.g. a 2MB anon THP
-	 * dropped via MADV_DONTNEED, which pagemap_page_category() never sees
-	 * -- reads as written on a uffd-wp VMA, matching the pte_none case
-	 * there. Reporting it also lets the PM_SCAN_WP_MATCHING arming below
-	 * install markers (uffd_wp_range() allocates the page table under
-	 * WP_UNPOPULATED), so the next scan sees it clean until re-written.
+	 * In a uffd-wp VMA an unpopulated range is treated as written:
+	 * uffd-wp registration populates page tables and installs markers
+	 * with WP_UNPOPULATED, so a missing marker means the range was
+	 * zapped. See the pte_none() handling in pagemap_page_category().
 	 *
-	 * hugetlb is excluded: pagemap_hugetlb_category() reports an empty
-	 * hugetlb entry (huge_pte_none) as not-written, unlike
-	 * pagemap_page_category(), which reports pte_none as written. This
-	 * path fires for a hugetlb slot only when it has no page table;
-	 * keeping that not-written matches how an allocated-but-empty
-	 * hugetlb entry reads, so the two agree within the VMA.
+	 * hugetlb differs, see pagemap_hugetlb_category().
 	 */
 	categories = p->cur_vma_category;
 	if (userfaultfd_wp(vma) && !is_vm_hugetlb_page(vma))

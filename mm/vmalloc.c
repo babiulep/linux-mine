@@ -181,12 +181,11 @@ static int vmap_try_huge_pmd(pmd_t *pmd, unsigned long addr, unsigned long end,
 		return pmd_set_huge(pmd, phys_addr, prot);
 
 	/*
-	 * Kernel page table walkers either walk ranges they own exclusively or
-	 * hold the mmap write lock on init_mm (ptdump being the motivating
-	 * case).
+	 * Acquire the mmap read lock to exclude ptdump, which walks kernel
+	 * page tables it does not own under the mmap write lock.
 	 *
-	 * Therefore, acquire the mmap read lock to prevent use-after-free when
-	 * freeing page tables.
+	 * Concurrent read lock holders are safe: each exclusively owns the
+	 * range it operates on and cannot reach this page table.
 	 */
 	scoped_cond_guard(mmap_read_lock_try, return 0, &init_mm) {
 		if (!pmd_free_pte_page(pmd, addr))
@@ -616,6 +615,7 @@ static int vmap_pages_pmd_range(pud_t *pud, unsigned long addr,
 {
 	pmd_t *pmd;
 	unsigned long next;
+	int err;
 
 	pmd = pmd_alloc_track(&init_mm, pud, addr, mask);
 	if (!pmd)
@@ -642,8 +642,9 @@ static int vmap_pages_pmd_range(pud_t *pud, unsigned long addr,
 			}
 		}
 
-		if (vmap_pages_pte_range(pmd, addr, next, prot, pages, nr, mask, shift))
-			return -ENOMEM;
+		err = vmap_pages_pte_range(pmd, addr, next, prot, pages, nr, mask, shift);
+		if (err)
+			return err;
 	} while (pmd++, addr = next, addr != end);
 	return 0;
 }
@@ -654,14 +655,16 @@ static int vmap_pages_pud_range(p4d_t *p4d, unsigned long addr,
 {
 	pud_t *pud;
 	unsigned long next;
+	int err;
 
 	pud = pud_alloc_track(&init_mm, p4d, addr, mask);
 	if (!pud)
 		return -ENOMEM;
 	do {
 		next = pud_addr_end(addr, end);
-		if (vmap_pages_pmd_range(pud, addr, next, prot, pages, nr, mask, shift))
-			return -ENOMEM;
+		err = vmap_pages_pmd_range(pud, addr, next, prot, pages, nr, mask, shift);
+		if (err)
+			return err;
 	} while (pud++, addr = next, addr != end);
 	return 0;
 }
@@ -672,14 +675,16 @@ static int vmap_pages_p4d_range(pgd_t *pgd, unsigned long addr,
 {
 	p4d_t *p4d;
 	unsigned long next;
+	int err;
 
 	p4d = p4d_alloc_track(&init_mm, pgd, addr, mask);
 	if (!p4d)
 		return -ENOMEM;
 	do {
 		next = p4d_addr_end(addr, end);
-		if (vmap_pages_pud_range(p4d, addr, next, prot, pages, nr, mask, shift))
-			return -ENOMEM;
+		err = vmap_pages_pud_range(p4d, addr, next, prot, pages, nr, mask, shift);
+		if (err)
+			return err;
 	} while (p4d++, addr = next, addr != end);
 	return 0;
 }
@@ -3591,6 +3596,7 @@ static inline unsigned int vm_shift(pgprot_t prot, unsigned long size)
 static inline int get_vmap_batch_order(struct page **pages,
 		pgprot_t prot, unsigned int max_steps, unsigned int idx)
 {
+	unsigned long pfn;
 	unsigned int nr_contig;
 	int order;
 
@@ -3602,9 +3608,11 @@ static inline int get_vmap_batch_order(struct page **pages,
 		return 0;
 
 	order = ilog2(nr_contig);
+	pfn = page_to_pfn(pages[idx]);
 
 	/* Limit order by pfn alignment */
-	order = min_t(int, order, __ffs(page_to_pfn(pages[idx])));
+	if (pfn > 0)
+		order = min_t(int, order, __ffs(pfn));
 
 	if (vm_shift(prot, PAGE_SIZE << order) == PAGE_SHIFT)
 		return 0;
@@ -3621,7 +3629,7 @@ static int vmap_pages_range_batched(unsigned long addr, unsigned long end,
 	int err;
 
 	err = kmsan_vmap_pages_range_noflush(addr, end, prot, pages,
-						PAGE_SHIFT, GFP_KERNEL);
+					     PAGE_SHIFT, GFP_KERNEL);
 	if (err)
 		goto out;
 
@@ -4199,11 +4207,7 @@ void *__vmalloc_node_range_noprof(unsigned long size, unsigned long align,
 		 * supporting them.
 		 */
 
-		if (arch_vmap_pmd_supported(prot) && size >= PMD_SIZE)
-			shift = PMD_SHIFT;
-		else
-			shift = arch_vmap_pte_supported_shift(size);
-
+		shift = vm_shift(prot, size);
 		align = max(original_align, 1UL << shift);
 	}
 

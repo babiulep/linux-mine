@@ -792,8 +792,13 @@ pub trait Driver {
     }
 
     /// Driver's `adjust_perf` callback.
-    fn adjust_perf(_policy: &mut Policy, _min_perf: usize, _target_perf: usize,
-                   _max_perf: usize, _capacity: usize) {
+    fn adjust_perf(
+        _policy: &mut Policy,
+        _min_perf: usize,
+        _target_perf: usize,
+        _max_perf: usize,
+        _capacity: usize,
+    ) {
         build_error!(VTABLE_DEFAULT_ERROR)
     }
 

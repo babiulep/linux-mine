@@ -667,11 +667,9 @@ int exfat_file_fsync(struct file *filp, loff_t start, loff_t end, int datasync)
  * past the byte-granular valid_size but below the block-aligned zeroed_size.
  * So zero with block granularity instead.  Leave uptodate blocks (which hold
  * the live data, or zeroes for a never-written gap page) intact and only zero
- * the not-uptodate blocks, which are stale on disk.  @ops selects whether
- * clusters may be allocated for the gap.
+ * the not-uptodate blocks, which are stale on disk.
  */
-static int exfat_zero_new_range(struct inode *inode, loff_t start, loff_t end,
-		const struct iomap_ops *ops)
+static int exfat_zero_new_range(struct inode *inode, loff_t start, loff_t end)
 {
 	struct address_space *mapping = inode->i_mapping;
 	unsigned int blocksize = i_blocksize(inode);
@@ -687,7 +685,7 @@ static int exfat_zero_new_range(struct inode *inode, loff_t start, loff_t end,
 		folio = filemap_get_folio(mapping, pos >> PAGE_SHIFT);
 		if (IS_ERR(folio)) {
 			err = iomap_zero_range(inode, pos, next - pos, NULL,
-					       ops, NULL, NULL);
+					       &exfat_iomap_ops, NULL, NULL);
 			if (err < 0)
 				return err;
 			pos = next;
@@ -720,7 +718,7 @@ static int exfat_zero_new_range(struct inode *inode, loff_t start, loff_t end,
 			if (folio->mapping != mapping) {
 				folio_unlock(folio);
 				err = iomap_zero_range(inode, bpos, next - bpos,
-						NULL, ops, NULL, NULL);
+						NULL, &exfat_iomap_ops, NULL, NULL);
 				if (err < 0) {
 					folio_put(folio);
 					return err;
@@ -744,7 +742,7 @@ static int exfat_zero_new_range(struct inode *inode, loff_t start, loff_t end,
 
 			folio_unlock(folio);
 			err = iomap_zero_range(inode, rstart, rend - rstart,
-					NULL, ops, NULL, NULL);
+					NULL, &exfat_iomap_ops, NULL, NULL);
 			if (err < 0) {
 				folio_put(folio);
 				return err;
@@ -818,13 +816,18 @@ static int exfat_extend_valid_size(struct inode *inode, loff_t new_valid_size)
 		if (gap_start < new_valid_size)
 			unmap_mapping_range(inode->i_mapping, gap_start,
 					new_valid_size - gap_start, 0);
-		ret = exfat_zero_new_range(inode, gap_start, new_valid_size,
-				&exfat_write_iomap_ops);
+		ret = exfat_zero_new_range(inode, gap_start, new_valid_size);
 		filemap_invalidate_unlock(inode->i_mapping);
 		if (ret) {
 			truncate_setsize(inode, old_valid_size);
 			exfat_truncate(inode);
+			return ret;
 		}
+
+		ei->valid_size = new_valid_size;
+		if (ei->zeroed_size < round_up(new_valid_size, i_blocksize(inode)))
+			ei->zeroed_size = round_up(new_valid_size, i_blocksize(inode));
+		mark_inode_dirty(inode);
 	}
 
 	return ret;
@@ -1005,7 +1008,7 @@ static vm_fault_t exfat_page_mkwrite(struct vm_fault *vmf)
 			 * page when the mmap_prepare-time extend is dropped.
 			 */
 			err = exfat_zero_new_range(inode, ei->zeroed_size,
-					fault_page_start, &exfat_iomap_ops);
+					fault_page_start);
 			if (err < 0) {
 				inode_unlock(inode);
 				return vmf_fs_error(err);
