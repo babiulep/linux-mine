@@ -1509,6 +1509,10 @@ static void iwl_mvm_report_wakeup_reasons(struct iwl_mvm *mvm,
 		if (WARN_ON_ONCE(truncated < 0))
 			truncated = 0;
 
+		/* this would be a firmware bug */
+		if (WARN_ON_ONCE(pktsize < sizeof(*hdr)))
+			return;
+
 		if (ieee80211_is_data(hdr->frame_control)) {
 			int hdrlen = ieee80211_hdrlen(hdr->frame_control);
 			int ivlen = 0, icvlen = 4; /* also FCS */
@@ -1516,10 +1520,6 @@ static void iwl_mvm_report_wakeup_reasons(struct iwl_mvm *mvm,
 			pkt = alloc_skb(pktsize, GFP_KERNEL);
 			if (!pkt)
 				goto report;
-
-			skb_put_data(pkt, pktdata, hdrlen);
-			pktdata += hdrlen;
-			pktsize -= hdrlen;
 
 			if (ieee80211_has_protected(hdr->frame_control)) {
 				/*
@@ -1546,6 +1546,17 @@ static void iwl_mvm_report_wakeup_reasons(struct iwl_mvm *mvm,
 				truncated = 0;
 			}
 
+			if (IWL_FW_CHECK(mvm,
+					 pktsize <= hdrlen + ivlen + icvlen,
+					 "pktsize is too small %d\n",
+					 pktsize)) {
+				kfree_skb(pkt);
+				return;
+			}
+
+			skb_put_data(pkt, pktdata, hdrlen);
+			pktdata += hdrlen;
+			pktsize -= hdrlen;
 			pktsize -= ivlen + icvlen;
 			pktdata += ivlen;
 
@@ -2448,13 +2459,15 @@ iwl_mvm_netdetect_query_results(struct iwl_mvm *mvm,
 
 	if (fw_has_api(&mvm->fw->ucode_capa,
 		       IWL_UCODE_TLV_API_SCAN_OFFLOAD_CHANS)) {
-		query_len = sizeof(struct iwl_scan_offload_match_info);
 		matches_len = sizeof(struct iwl_scan_offload_profile_match) *
 			max_profiles;
+		query_len = offsetof(struct iwl_scan_offload_match_info,
+				     matches) + matches_len;
 	} else {
-		query_len = sizeof(struct iwl_scan_offload_profiles_query_v1);
 		matches_len = sizeof(struct iwl_scan_offload_profile_match_v1) *
 			max_profiles;
+		query_len = sizeof(struct iwl_scan_offload_profiles_query_v1) +
+			matches_len;
 	}
 
 	len = iwl_rx_packet_payload_len(cmd.resp_pkt);
@@ -2756,7 +2769,7 @@ static int iwl_mvm_wowlan_store_wake_pkt(struct iwl_mvm *mvm,
 					 struct iwl_wowlan_status_data *status,
 					 u32 len)
 {
-	u32 data_size, packet_len = le32_to_cpu(notif->wake_packet_length);
+	u32 data_size, packet_len;
 
 	if (len < sizeof(*notif)) {
 		IWL_ERR(mvm, "Invalid WoWLAN wake packet notification!\n");
@@ -2775,6 +2788,7 @@ static int iwl_mvm_wowlan_store_wake_pkt(struct iwl_mvm *mvm,
 		return -EIO;
 	}
 
+	packet_len = le32_to_cpu(notif->wake_packet_length);
 	data_size = len - offsetof(struct iwl_wowlan_wake_pkt_notif, wake_packet);
 
 	/* data_size got the padding from the notification, remove it. */
@@ -2807,7 +2821,8 @@ static void iwl_mvm_nd_match_info_handler(struct iwl_mvm *mvm,
 	if (IS_ERR_OR_NULL(vif))
 		return;
 
-	if (len < sizeof(struct iwl_scan_offload_match_info) + matches_len) {
+	if (len < offsetof(struct iwl_scan_offload_match_info, matches) +
+		    matches_len) {
 		IWL_ERR(mvm, "Invalid scan match info notification\n");
 		return;
 	}

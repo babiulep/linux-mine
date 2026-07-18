@@ -410,7 +410,7 @@ static void __cpa_flush_tlb(void *data)
 
 static int collapse_large_pages(unsigned long addr, struct list_head *pgtables);
 
-static void cpa_collapse_large_pages(struct cpa_data *cpa)
+static void __cpa_collapse_large_pages(struct cpa_data *cpa)
 {
 	unsigned long start, addr, end;
 	struct ptdesc *ptdesc, *tmp;
@@ -440,19 +440,24 @@ static void cpa_collapse_large_pages(struct cpa_data *cpa)
 
 	flush_tlb_all();
 
-	/*
-	 * ptdump might read these page tables, so avoid a use-after-free by
-	 * acquiring the mmap read lock on init_mm (ptdump acquires the mmap
-	 * write lock).
-	 */
-	scoped_guard(mmap_read_lock, &init_mm) {
-		list_for_each_entry_safe(ptdesc, tmp, &pgtables, pt_list) {
-			list_del(&ptdesc->pt_list);
-			pagetable_free(ptdesc);
-		}
+	list_for_each_entry_safe(ptdesc, tmp, &pgtables, pt_list) {
+		list_del(&ptdesc->pt_list);
+		pagetable_free(ptdesc);
 	}
 
 	spin_unlock(&cpa_lock);
+}
+
+static void cpa_collapse_large_pages(struct cpa_data *cpa)
+{
+	/*
+	 * Take the mmap write lock on init_mm to:
+	 * - Avoid a use-after-free if raced by ptdump (which takes its own
+	 *   write lock on init_mm).
+	 * - Serialise concurrent CPA walkers.
+	 */
+	scoped_guard(mmap_write_lock, &init_mm)
+		__cpa_collapse_large_pages(cpa);
 }
 
 static void cpa_flush(struct cpa_data *cpa, int cache)

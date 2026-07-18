@@ -83,3 +83,9 @@ kernel e sobre como ver seu trabalho integrado.
    Conformidade de DTS para SoC <process/maintainer-soc-clean-dts>
    Processo do subsistema KVM x86 <process/maintainer-kvm-x86>
    Adicionando uma nova chamada de Sistema <process/adding-syscalls>
+   Declaração sobre Drivers do Kernel <process/kernel-driver-statement>
+   Lista de verificação para submissão de patches do kernel Linux <process/submit-checklist>
+   Interpretação do Código de Conduta do Kernel Linux <process/code-of-conduct-interpretation>
+   Código de Conduta de Compromisso do Colaborador <process/code-of-conduct>
+   Interfaces, recursos de linguagem, atributos e convenções obsoletos <process/deprecated>
+

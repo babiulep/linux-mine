@@ -7,23 +7,18 @@ use kernel::{
     device,
     dma::Coherent,
     io::poll::read_poll_timeout,
-    time::Delta, //
+    time::Delta,
+    types::ScopeGuard, //
 };
 
 use crate::{
-    driver::Bar0,
     falcon::{
         gsp::Gsp as GspEngine,
-        sec2::Sec2,
         Falcon, //
     },
     fb::FbLayout,
-    fsp::{
-        FmcBootArgs,
-        Fsp, //
-    },
+    fsp::FmcBootArgs,
     gsp::{
-        boot::BootUnloadGuard,
         hal::{
             GspHal,
             UnloadBundle, //
@@ -117,22 +112,16 @@ fn wait_for_gsp_lockdown_release(
 struct FspUnloadBundle;
 
 impl UnloadBundle for FspUnloadBundle {
-    fn run(
-        &self,
-        dev: &device::Device<device::Bound>,
-        _bar: Bar0<'_>,
-        gsp_falcon: &Falcon<'_, GspEngine>,
-        _sec2_falcon: &Falcon<'_, Sec2>,
-    ) -> Result {
+    fn run(&self, ctx: &mut GspBootContext<'_, '_>) -> Result {
         // GSP falcon does most of the work of resetting, so just wait for it to finish.
         read_poll_timeout(
-            || Ok(gsp_falcon.is_riscv_active()),
+            || Ok(ctx.gsp_falcon.is_riscv_active()),
             |&active| !active,
             Delta::from_millis(10),
             Delta::from_secs(5),
         )
         .map(|_| ())
-        .inspect_err(|_| dev_err!(dev, "GSP falcon failed to halt\n"))
+        .inspect_err(|_| dev_err!(ctx.dev(), "GSP falcon failed to halt\n"))
     }
 }
 
@@ -143,28 +132,20 @@ impl GspHal for Gh100 {
     ///
     /// This path uses FSP to establish a chain of trust and boot GSP-FMC. FSP handles
     /// the GSP boot internally - no manual GSP reset/boot is needed.
-    fn boot<'a>(
+    fn boot(
         &self,
-        gsp: &'a Gsp,
-        ctx: &GspBootContext<'a>,
+        gsp: &Gsp,
+        ctx: &mut GspBootContext<'_, '_>,
         fb_layout: &FbLayout,
         wpr_meta: &Coherent<GspFwWprMeta>,
-    ) -> Result<BootUnloadGuard<'a>> {
+    ) -> Result<Option<crate::gsp::UnloadBundle>> {
         let dev = ctx.dev();
-        let bar = ctx.bar;
         let chipset = ctx.chipset;
         let gsp_falcon = ctx.gsp_falcon;
-        let sec2_falcon = ctx.sec2_falcon;
 
         let unload_bundle = crate::gsp::UnloadBundle(
             KBox::new(FspUnloadBundle, GFP_KERNEL)? as KBox<dyn UnloadBundle>
         );
-
-        // Wrap the unload bundle into a drop guard so it is automatically run upon failure.
-        let unload_guard =
-            BootUnloadGuard::new(gsp, dev, bar, gsp_falcon, sec2_falcon, Some(unload_bundle));
-
-        let mut fsp = Fsp::wait_secure_boot(dev, bar, chipset)?;
 
         let args = FmcBootArgs::new(
             dev,
@@ -174,11 +155,23 @@ impl GspHal for Gh100 {
             false,
         )?;
 
+        // Wait for the GSP RISC-V core to halt in case of error. We create this guard after `args`
+        // to make sure that boot args are kept alive until halt, in case they are still being
+        // accessed.
+        let mut unload_guard =
+            ScopeGuard::new_with_data((unload_bundle, ctx), |(unload_bundle, ctx)| {
+                let _ = unload_bundle.0.run(ctx);
+            });
+
+        let fsp = unload_guard.1.fsp.as_mut().ok_or(ENODEV)?;
+
         fsp.boot_fmc(dev, fb_layout, &args)?;
 
+        // Wait for GSP-FMC to release the GSP lockdown, indicating that `args` is not accessed
+        // anymore.
         wait_for_gsp_lockdown_release(dev, gsp_falcon, args.boot_params_dma_handle())?;
 
-        Ok(unload_guard)
+        Ok(Some(unload_guard.dismiss().0))
     }
 }
 

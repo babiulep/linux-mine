@@ -181,11 +181,11 @@ static int vmap_try_huge_pmd(pmd_t *pmd, unsigned long addr, unsigned long end,
 		return pmd_set_huge(pmd, phys_addr, prot);
 
 	/*
-	 * Acquire the mmap read lock to exclude ptdump, which walks kernel
-	 * page tables it does not own under the mmap write lock.
+	 * Acquire the mmap read lock to exclude ptdump, which walks
+	 * kernel page tables it does not own under the mmap write lock.
 	 *
-	 * Concurrent read lock holders are safe: each exclusively owns the
-	 * range it operates on and cannot reach this page table.
+	 * Concurrent read lock holders are safe: each exclusively owns
+	 * the range it operates on and cannot reach this page table.
 	 */
 	scoped_cond_guard(mmap_read_lock_try, return 0, &init_mm) {
 		if (!pmd_free_pte_page(pmd, addr))

@@ -3908,8 +3908,6 @@ check_alloc_wmark:
 		if (!zone_watermark_fast(zone, order, mark,
 				       ac->highest_zoneidx, alloc_flags,
 				       gfp_mask)) {
-			int ret;
-
 			if (cond_accept_memory(zone, order, alloc_flags))
 				goto try_this_zone;
 
@@ -3930,22 +3928,13 @@ check_alloc_wmark:
 			    !zone_allows_reclaim(zonelist_zone(ac->preferred_zoneref), zone))
 				continue;
 
-			ret = node_reclaim(zone->zone_pgdat, gfp_mask, order);
-			switch (ret) {
-			case NODE_RECLAIM_NOSCAN:
-				/* did not scan */
+			if (!node_reclaim(zone->zone_pgdat, gfp_mask, order))
 				continue;
-			case NODE_RECLAIM_FULL:
-				/* scanned but unreclaimable */
-				continue;
-			default:
-				/* did we reclaim enough */
-				if (zone_watermark_ok(zone, order, mark,
-					ac->highest_zoneidx, alloc_flags))
-					goto try_this_zone;
 
+			/* did we reclaim enough */
+			if (!zone_watermark_ok(zone, order, mark,
+					       ac->highest_zoneidx, alloc_flags))
 				continue;
-			}
 		}
 
 try_this_zone:
@@ -6411,8 +6400,8 @@ void free_reserved_pages(struct page *page, unsigned int order)
 
 	for (i = 0; i < nr_pages; i++) {
 		clear_page_tag_ref(page + i);
-		ClearPageReserved(page + i);
 		set_page_count(page + i, 0);
+		ClearPageReserved(page + i);
 	}
 	adjust_managed_page_count(page, nr_pages);
 	__free_frozen_pages(page, order, FPI_NONE);

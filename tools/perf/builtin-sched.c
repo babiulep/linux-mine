@@ -4027,8 +4027,8 @@ out:
 	else
 		fprintf(stderr, "[ perf sched stats: Failed !! ]\n");
 
+	perf_session__delete(session);
 	evlist__put(evlist);
-	close(fd);
 	return err;
 }
 
@@ -4631,6 +4631,8 @@ static int perf_sched__process_schedstat(const struct perf_tool *tool __maybe_un
 			domain_second_pass = list_first_entry(&cpu_second_pass->domain_head,
 							      struct schedstat_domain, domain_list);
 			store_schedstat_cpu_diff(temp);
+			free(temp->cpu_data);
+			free(temp);
 		}
 	} else if (event->header.type == PERF_RECORD_SCHEDSTAT_DOMAIN) {
 		struct schedstat_cpu *cpu_tail;
@@ -4651,6 +4653,8 @@ static int perf_sched__process_schedstat(const struct perf_tool *tool __maybe_un
 		} else {
 			store_schedstat_domain_diff(temp);
 			domain_second_pass = list_next_entry(domain_second_pass, domain_list);
+			free(temp->domain_data);
+			free(temp);
 		}
 	}
 
@@ -5255,19 +5259,20 @@ int cmd_sched(int argc, const char **argv)
 			if (argc)
 				argc = parse_options(argc, argv, stats_options,
 						     stats_usage, 0);
-			return perf_sched__schedstat_record(&sched, argc, argv);
+			ret = perf_sched__schedstat_record(&sched, argc, argv);
 		} else if (argv[0] && !strcmp(argv[0], "report")) {
 			if (argc)
 				argc = parse_options(argc, argv, stats_options,
 						     stats_usage, 0);
-			return perf_sched__schedstat_report(&sched);
+			ret = perf_sched__schedstat_report(&sched);
 		} else if (argv[0] && !strcmp(argv[0], "diff")) {
 			if (argc)
 				argc = parse_options(argc, argv, stats_options,
 						     stats_usage, 0);
-			return perf_sched__schedstat_diff(&sched, argc, argv);
+			ret = perf_sched__schedstat_diff(&sched, argc, argv);
+		} else {
+			ret = perf_sched__schedstat_live(&sched, argc, argv);
 		}
-		return perf_sched__schedstat_live(&sched, argc, argv);
 	} else {
 		usage_with_options(sched_usage, sched_options);
 	}

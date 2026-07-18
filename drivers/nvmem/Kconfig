@@ -117,6 +117,7 @@ endif # NVMEM_SYSFS
 
 config NVMEM_AIROHA_SMC_EFUSES
 	tristate "Airoha SMC eFuse support"
+	depends on ARM64
 	depends on ARCH_AIROHA || COMPILE_TEST
 	depends on HAVE_ARM_SMCCC
 	default ARCH_AIROHA
@@ -326,6 +327,17 @@ config NVMEM_MTK_EFUSE
 
 	  This driver can also be built as a module. If so, the module
 	  will be called efuse-mtk.
+
+config NVMEM_MT6323_EFUSE
+	tristate "Mediatek MT6323 PMIC EFUSE support"
+	depends on ARCH_MEDIATEK || COMPILE_TEST
+	depends on MFD_MT6397
+	help
+	  This is a driver to access hardware related data like sensor
+	  calibration, etc.
+
+	  This driver can also be built as a module. If so, the module
+	  will be called efuse-mt6323.
 
 config NVMEM_MXS_OCOTP
 	tristate "Freescale MXS On-Chip OTP Memory Support"
