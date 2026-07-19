@@ -761,8 +761,7 @@ void amdgpu_gmc_flush_gpu_tlb(struct amdgpu_device *adev, uint32_t vmid,
 	r = amdgpu_job_alloc_with_ib(ring->adev, &adev->mman.default_entity.base,
 				     AMDGPU_FENCE_OWNER_UNDEFINED,
 				     16 * 4, AMDGPU_IB_POOL_IMMEDIATE,
-				     AMDGPU_KERNEL_JOB_ID_FLUSH_GPU_TLB,
-				     &job);
+				     &job, AMDGPU_KERNEL_JOB_ID_FLUSH_GPU_TLB);
 	if (r)
 		goto error_alloc;
 
@@ -1764,15 +1763,10 @@ int amdgpu_gmc_init_mem_ranges(struct amdgpu_device *adev)
 		valid = true;
 	else
 		valid = amdgpu_gmc_validate_partition_info(adev);
-	if (!valid)
+	if (!valid) {
+		/* TODO: handle invalid case */
 		dev_warn(adev->dev,
 			 "Mem ranges not matching with hardware config\n");
-
-	if (!adev->gmc.num_mem_partitions) {
-		dev_err(adev->dev, "num_mem_partitions is zero\n");
-		kfree(adev->gmc.mem_partitions);
-		adev->gmc.mem_partitions = NULL;
-		return -EINVAL;
 	}
 
 	return 0;

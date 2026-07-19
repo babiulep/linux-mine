@@ -2967,11 +2967,8 @@ static void hda_codec_pm_complete(struct device *dev)
 		dev->power.power_state = PMSG_RESUME;
 
 	if (pm_runtime_suspended(dev) && (codec->jackpoll_interval ||
-	    hda_codec_need_resume(codec) || codec->forced_resume ||
-	    codec->acomp_requested_resume)) {
-		codec->acomp_requested_resume = 0;
+	    hda_codec_need_resume(codec) || codec->forced_resume))
 		pm_request_resume(dev);
-	}
 }
 
 static int hda_codec_pm_suspend(struct device *dev)

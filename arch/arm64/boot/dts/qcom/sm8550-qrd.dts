@@ -818,6 +818,8 @@
 };
 
 &ipa {
+	qcom,gsi-loader = "self";
+	memory-region = <&ipa_fw_mem>;
 	firmware-name = "qcom/sm8550/ipa_fws.mbn";
 	status = "okay";
 };
@@ -910,7 +912,7 @@
 	status = "okay";
 };
 
-&pcie0_port0 {
+&pcieport0 {
 	wifi@0 {
 		compatible = "pci17cb,1107";
 		reg = <0x10000 0x0 0x0 0x0 0x0>;

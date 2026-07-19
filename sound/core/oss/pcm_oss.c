@@ -2495,7 +2495,9 @@ static int snd_pcm_oss_open(struct inode *inode, struct file *file)
 	int nonblock;
 	wait_queue_entry_t wait;
 
-	nonseekable_open(inode, file);
+	err = nonseekable_open(inode, file);
+	if (err < 0)
+		return err;
 
 	pcm = snd_lookup_oss_minor_data(iminor(inode),
 					SNDRV_OSS_DEVICE_TYPE_PCM);
@@ -2507,7 +2509,7 @@ static int snd_pcm_oss_open(struct inode *inode, struct file *file)
 	if (err < 0)
 		goto __error1;
 	if (!try_module_get(pcm->card->module)) {
-		err = -ENODEV;
+		err = -EFAULT;
 		goto __error2;
 	}
 	if (snd_task_name(current, task_name, sizeof(task_name)) < 0) {
@@ -3127,16 +3129,17 @@ static inline void snd_pcm_oss_proc_done(struct snd_pcm *pcm)
  *  ENTRY functions
  */
 
-static const struct file_operations snd_pcm_oss_f_reg = {
-	.owner		=	THIS_MODULE,
-	.read		=	snd_pcm_oss_read,
-	.write		=	snd_pcm_oss_write,
-	.open		=	snd_pcm_oss_open,
-	.release	=	snd_pcm_oss_release,
-	.poll		=	snd_pcm_oss_poll,
-	.unlocked_ioctl	=	snd_pcm_oss_ioctl,
-	.compat_ioctl	=	snd_pcm_oss_ioctl_compat,
-	.mmap		=	snd_pcm_oss_mmap,
+static const struct file_operations snd_pcm_oss_f_reg =
+{
+	.owner =	THIS_MODULE,
+	.read =		snd_pcm_oss_read,
+	.write =	snd_pcm_oss_write,
+	.open =		snd_pcm_oss_open,
+	.release =	snd_pcm_oss_release,
+	.poll =		snd_pcm_oss_poll,
+	.unlocked_ioctl =	snd_pcm_oss_ioctl,
+	.compat_ioctl =	snd_pcm_oss_ioctl_compat,
+	.mmap =		snd_pcm_oss_mmap,
 };
 
 static void register_oss_dsp(struct snd_pcm *pcm, int index)

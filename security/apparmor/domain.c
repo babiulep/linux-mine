@@ -24,7 +24,6 @@
 #include "include/domain.h"
 #include "include/file.h"
 #include "include/ipc.h"
-#include "include/lib.h"
 #include "include/match.h"
 #include "include/path.h"
 #include "include/policy.h"

@@ -324,6 +324,8 @@ int erdma_query_device(struct ib_device *ibdev, struct ib_device_attr *attr,
 	if (err)
 		return err;
 
+	memset(attr, 0, sizeof(*attr));
+
 	attr->max_mr_size = dev->attrs.max_mr_size;
 	attr->vendor_id = PCI_VENDOR_ID_ALIBABA;
 	attr->vendor_part_id = dev->pdev->device;

@@ -8,6 +8,7 @@
 
 #include <uapi/linux/mdio.h>
 #include <linux/bitfield.h>
+#include <linux/mod_devicetable.h>
 
 struct gpio_desc;
 struct mii_bus;

@@ -269,10 +269,7 @@ static u8 hci_cc_reset(struct hci_dev *hdev, void *data, struct sk_buff *skb)
 {
 	struct hci_ev_status *rp = data;
 
-	if (rp->status)
-		bt_dev_err(hdev, "status 0x%2.2x", rp->status);
-	else
-		bt_dev_dbg(hdev, "status 0x%2.2x", rp->status);
+	bt_dev_dbg(hdev, "status 0x%2.2x", rp->status);
 
 	clear_bit(HCI_RESET, &hdev->flags);
 

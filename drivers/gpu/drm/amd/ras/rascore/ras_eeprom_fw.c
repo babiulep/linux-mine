@@ -72,7 +72,7 @@ int ras_fw_get_badpage_count(struct ras_core_context *ras_core,
 		if (ret != -EBUSY)
 			return ret;
 
-		usleep_range(10000, 15000);
+		mdelay(10);
 		now = (uint64_t)ktime_to_ms(ktime_get());
 	} while (now < end);
 

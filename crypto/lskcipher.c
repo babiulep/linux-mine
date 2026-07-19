@@ -528,7 +528,8 @@ struct lskcipher_instance *lskcipher_alloc_instance_simple(
 		int len;
 
 		err = -EINVAL;
-		len = strscpy(ecb_name, &cipher_alg->co.base.cra_name[4]);
+		len = strscpy(ecb_name, &cipher_alg->co.base.cra_name[4],
+			      sizeof(ecb_name));
 		if (len < 2)
 			goto err_free_inst;
 

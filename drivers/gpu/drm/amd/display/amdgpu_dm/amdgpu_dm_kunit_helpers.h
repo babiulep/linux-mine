@@ -10,7 +10,6 @@
 #define STATIC_IFN_KUNIT
 #define INLINE_IFN_KUNIT inline
 #define EXPORT_IF_KUNIT(symbol) EXPORT_SYMBOL(symbol)
-
 #else
 #define STATIC_IFN_KUNIT static
 #define INLINE_IFN_KUNIT

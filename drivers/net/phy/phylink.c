@@ -153,7 +153,8 @@ static DECLARE_PHY_INTERFACE_MASK(phylink_sfp_interfaces);
  * phylink_set_port_modes() - set the port type modes in the ethtool mask
  * @mask: ethtool link mode mask
  *
- * Sets all the port type modes in the ethtool mask.
+ * Sets all the port type modes in the ethtool mask.  MAC drivers should
+ * use this in their 'validate' callback.
  */
 void phylink_set_port_modes(unsigned long *mask)
 {
@@ -2094,9 +2095,9 @@ static int phylink_bringup_phy(struct phylink *pl, struct phy_device *phy,
 	/*
 	 * This is the new way of dealing with flow control for PHYs,
 	 * as described by Timur Tabi in commit 529ed1275263 ("net: phy:
-	 * phy drivers should not set SUPPORTED_[Asym_]Pause"). MAC drivers
-	 * set their support using the MAC_SYM_PAUSE and MAC_ASYM_PAUSE
-	 * capabilities and must NOT change the phy's pause settings directly.
+	 * phy drivers should not set SUPPORTED_[Asym_]Pause") except
+	 * using our validate call to the MAC, we rely upon the MAC
+	 * clearing the bits from both supported and advertising fields.
 	 */
 	phy_support_asym_pause(phy);
 
@@ -3930,9 +3931,9 @@ static int phylink_sfp_connect_phy(void *upstream, struct phy_device *phy)
 	/*
 	 * This is the new way of dealing with flow control for PHYs,
 	 * as described by Timur Tabi in commit 529ed1275263 ("net: phy:
-	 * phy drivers should not set SUPPORTED_[Asym_]Pause"). MAC drivers
-	 * set their support using the MAC_SYM_PAUSE and MAC_ASYM_PAUSE
-	 * capabilities and must NOT change the phy's pause settings directly.
+	 * phy drivers should not set SUPPORTED_[Asym_]Pause") except
+	 * using our validate call to the MAC, we rely upon the MAC
+	 * clearing the bits from both supported and advertising fields.
 	 */
 	phy_support_asym_pause(phy);
 

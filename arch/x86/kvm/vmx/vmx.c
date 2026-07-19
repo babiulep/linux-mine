@@ -72,7 +72,6 @@
 #include "x86.h"
 #include "x86_ops.h"
 #include "smm.h"
-#include "tss.h"
 #include "vmx_onhyperv.h"
 #include "vmenter.h"
 #include "posted_intr.h"
@@ -1187,18 +1186,6 @@ static void vmx_remove_autostore_msr(struct vcpu_vmx *vmx, u32 msr)
 	vmx_remove_auto_msr(&vmx->msr_autostore, msr, VM_EXIT_MSR_STORE_COUNT);
 }
 
-static u16 vmx_store_ldt(void)
-{
-	u16 ldt;
-	asm("sldt %0" : "=g"(ldt));
-	return ldt;
-}
-
-static void vmx_load_ldt(u16 sel)
-{
-	asm("lldt %0" : : "rm"(sel));
-}
-
 #ifdef CONFIG_X86_32
 /*
  * On 32-bit kernels, VM exits still load the FS and GS bases from the
@@ -1216,7 +1203,7 @@ static unsigned long segment_base(u16 selector)
 	table = get_current_gdt_ro();
 
 	if ((selector & SEGMENT_TI_MASK) == SEGMENT_LDT) {
-		u16 ldt_selector = vmx_store_ldt();
+		u16 ldt_selector = kvm_read_ldt();
 
 		if (!(ldt_selector & ~SEGMENT_RPL_MASK))
 			return 0;
@@ -1371,7 +1358,7 @@ void vmx_prepare_switch_to_guest(struct kvm_vcpu *vcpu)
 	 * Set host fs and gs selectors.  Unfortunately, 22.2.3 does not
 	 * allow segment selectors with cpl > 0 or ti == 1.
 	 */
-	host_state->ldt_sel = vmx_store_ldt();
+	host_state->ldt_sel = kvm_read_ldt();
 
 #ifdef CONFIG_X86_64
 	savesegment(ds, host_state->ds_sel);
@@ -1418,7 +1405,7 @@ static void vmx_prepare_switch_to_host(struct vcpu_vmx *vmx)
 	rdmsrq(MSR_KERNEL_GS_BASE, vmx->msr_guest_kernel_gs_base);
 #endif
 	if (host_state->ldt_sel || (host_state->gs_sel & 7)) {
-		vmx_load_ldt(host_state->ldt_sel);
+		kvm_load_ldt(host_state->ldt_sel);
 #ifdef CONFIG_X86_64
 		load_gs_index(host_state->gs_sel);
 #else
@@ -2159,7 +2146,7 @@ int vmx_get_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		    !guest_has_spec_ctrl_msr(vcpu))
 			return 1;
 
-		msr_info->data = vmx->spec_ctrl;
+		msr_info->data = to_vmx(vcpu)->spec_ctrl;
 		break;
 	case MSR_IA32_SYSENTER_CS:
 		msr_info->data = vmcs_read32(GUEST_SYSENTER_CS);
@@ -2191,7 +2178,7 @@ int vmx_get_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		if (!msr_info->host_initiated &&
 		    !guest_cpu_cap_has(vcpu, X86_FEATURE_SGX_LC))
 			return 1;
-		msr_info->data = vmx->msr_ia32_sgxlepubkeyhash
+		msr_info->data = to_vmx(vcpu)->msr_ia32_sgxlepubkeyhash
 			[msr_info->index - MSR_IA32_SGXLEPUBKEYHASH0];
 		break;
 	case KVM_FIRST_EMULATED_VMX_MSR ... KVM_LAST_EMULATED_VMX_MSR:
@@ -2404,7 +2391,7 @@ int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 
 		vmx_guest_debugctl_write(vcpu, data);
 
-		if (intel_pmu_lbr_is_enabled(vcpu) && !vmx->lbr_desc.event &&
+		if (intel_pmu_lbr_is_enabled(vcpu) && !to_vmx(vcpu)->lbr_desc.event &&
 		    (data & DEBUGCTLMSR_LBR))
 			intel_pmu_create_guest_lbr_event(vcpu);
 		return 0;
@@ -2483,7 +2470,7 @@ int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		break;
 	case MSR_IA32_MCG_EXT_CTL:
 		if ((!msr_info->host_initiated &&
-		     !(vmx->msr_ia32_feature_control &
+		     !(to_vmx(vcpu)->msr_ia32_feature_control &
 		       FEAT_CTL_LMCE_ENABLED)) ||
 		    (data & ~MCG_EXT_CTL_LMCE_EN))
 			return 1;
@@ -3042,7 +3029,7 @@ struct vmcs *alloc_vmcs_cpu(bool shadow, int cpu, gfp_t flags)
 	struct page *pages;
 	struct vmcs *vmcs;
 
-	pages = alloc_pages_node(node, flags, 0);
+	pages = __alloc_pages_node(node, flags, 0);
 	if (!pages)
 		return NULL;
 	vmcs = page_address(pages);
@@ -3680,14 +3667,13 @@ void vmx_get_segment(struct kvm_vcpu *vcpu, struct kvm_segment *var, int seg)
 
 u64 vmx_get_segment_base(struct kvm_vcpu *vcpu, int seg)
 {
-	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	struct kvm_segment s;
 
-	if (vmx->rmode.vm86_active) {
+	if (to_vmx(vcpu)->rmode.vm86_active) {
 		vmx_get_segment(vcpu, &s, seg);
 		return s.base;
 	}
-	return vmx_read_guest_seg_base(vmx, seg);
+	return vmx_read_guest_seg_base(to_vmx(vcpu), seg);
 }
 
 static int __vmx_get_cpl(struct kvm_vcpu *vcpu, bool no_cache)
@@ -5254,9 +5240,6 @@ bool vmx_interrupt_blocked(struct kvm_vcpu *vcpu)
 
 int vmx_interrupt_allowed(struct kvm_vcpu *vcpu, bool for_injection)
 {
-	if (vmx_interrupt_blocked(vcpu))
-		return 0;
-
 	if (vcpu->arch.nested_run_pending)
 		return -EBUSY;
 
@@ -5267,7 +5250,7 @@ int vmx_interrupt_allowed(struct kvm_vcpu *vcpu, bool for_injection)
 	if (for_injection && is_guest_mode(vcpu) && nested_exit_on_intr(vcpu))
 		return -EBUSY;
 
-	return 1;
+	return !vmx_interrupt_blocked(vcpu);
 }
 
 int vmx_set_tss_addr(struct kvm *kvm, unsigned int addr)
@@ -5765,6 +5748,9 @@ static int handle_dr(struct kvm_vcpu *vcpu)
 	if (!kvm_require_dr(vcpu, dr))
 		return 1;
 
+	if (vmx_get_cpl(vcpu) > 0)
+		goto out;
+
 	dr7 = vmcs_readl(GUEST_DR7);
 	if (dr7 & DR7_GD) {
 		/*
@@ -5784,9 +5770,6 @@ static int handle_dr(struct kvm_vcpu *vcpu)
 			return 1;
 		}
 	}
-
-	if (vmx_get_cpl(vcpu) > 0)
-		goto out;
 
 	if (vcpu->guest_debug == 0) {
 		exec_controls_clearbit(to_vmx(vcpu), CPU_BASED_MOV_DR_EXITING);
@@ -8722,7 +8705,7 @@ __init int vmx_hardware_setup(void)
 
 	/*
 	 * Setup shadow_me_value/shadow_me_mask to include MKTME KeyID
-	 * bits into the MMU's struct kvm_page_format.
+	 * bits to shadow_zero_check.
 	 */
 	vmx_setup_me_spte_mask();
 
@@ -8789,7 +8772,6 @@ __init int vmx_hardware_setup(void)
 		if (r)
 			return r;
 	}
-	vmx_nested_ops.enabled = nested;
 
 	kvm_set_posted_intr_wakeup_handler(pi_wakeup_handler);
 

@@ -6,6 +6,12 @@
 
 #![crate_name = "rust_binder"]
 #![recursion_limit = "256"]
+#![allow(
+    clippy::as_underscore,
+    clippy::ref_as_ptr,
+    clippy::ptr_as_ptr,
+    clippy::cast_lossless
+)]
 
 use kernel::{
     bindings::{self, seq_file},
@@ -411,7 +417,7 @@ unsafe extern "C" fn rust_binder_ioctl(
     // SAFETY: We previously set `private_data` in `rust_binder_open`.
     let f = unsafe { Arc::<Process>::borrow((*file).private_data) };
     // SAFETY: The caller ensures that the file is valid.
-    match Process::ioctl(f, unsafe { File::from_raw_file(file) }, cmd, arg) {
+    match Process::ioctl(f, unsafe { File::from_raw_file(file) }, cmd as _, arg as _) {
         Ok(()) => 0,
         Err(err) => err.to_errno() as isize,
     }
@@ -505,7 +511,7 @@ unsafe extern "C" fn rust_binder_proc_show(
     _: *mut kernel::ffi::c_void,
 ) -> kernel::ffi::c_int {
     // SAFETY: Accessing the private field of `seq_file` is okay.
-    let pid = unsafe { (*ptr).private }.addr() as Pid;
+    let pid = (unsafe { (*ptr).private }) as usize as Pid;
     // SAFETY: The caller ensures that the pointer is valid and exclusive for the duration in which
     // this method is called.
     let m = unsafe { SeqFile::from_raw(ptr) };

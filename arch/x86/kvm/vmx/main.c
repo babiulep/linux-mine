@@ -995,6 +995,8 @@ struct kvm_x86_ops vt_x86_ops __initdata = {
 
 	.update_cpu_dirty_logging = vt_op(update_cpu_dirty_logging),
 
+	.nested_ops = &vmx_nested_ops,
+
 	.pi_update_irte = vmx_pi_update_irte,
 	.pi_start_bypass = vmx_pi_start_bypass,
 
@@ -1036,7 +1038,6 @@ struct kvm_x86_init_ops vt_init_ops __initdata = {
 
 	.runtime_ops = &vt_x86_ops,
 	.pmu_ops = &intel_pmu_ops,
-	.nested_ops = &vmx_nested_ops,
 };
 
 static void __exit vt_exit(void)

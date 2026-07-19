@@ -474,10 +474,16 @@ static void set_io_from_upio(struct uart_port *p)
 static void
 serial_port_out_sync(struct uart_port *p, int offset, int value)
 {
-	if (uart_iotype_mmio(p->iotype)) {
+	switch (p->iotype) {
+	case UPIO_MEM:
+	case UPIO_MEM16:
+	case UPIO_MEM32:
+	case UPIO_MEM32BE:
+	case UPIO_AU:
 		p->serial_out(p, offset, value);
 		p->serial_in(p, UART_LCR);	/* safe, no side-effects */
-	} else {
+		break;
+	default:
 		p->serial_out(p, offset, value);
 	}
 }
@@ -2885,7 +2891,13 @@ static int serial8250_request_std_resource(struct uart_8250_port *up)
 	unsigned int size = serial8250_port_size(up);
 	struct uart_port *port = &up->port;
 
-	if (uart_iotype_mmio(port->iotype)) {
+	switch (port->iotype) {
+	case UPIO_AU:
+	case UPIO_TSI:
+	case UPIO_MEM32:
+	case UPIO_MEM32BE:
+	case UPIO_MEM16:
+	case UPIO_MEM:
 		if (!port->mapbase)
 			return -EINVAL;
 
@@ -2899,9 +2911,14 @@ static int serial8250_request_std_resource(struct uart_8250_port *up)
 				return -ENOMEM;
 			}
 		}
-	} else if (uart_iotype_io(port->iotype)) {
+		return 0;
+	case UPIO_HUB6:
+	case UPIO_PORT:
 		if (!request_region(port->iobase, size, "serial"))
 			return -EBUSY;
+		return 0;
+	case UPIO_UNKNOWN:
+		break;
 	}
 
 	return 0;
@@ -2912,9 +2929,15 @@ static void serial8250_release_std_resource(struct uart_8250_port *up)
 	unsigned int size = serial8250_port_size(up);
 	struct uart_port *port = &up->port;
 
-	if (uart_iotype_mmio(port->iotype)) {
+	switch (port->iotype) {
+	case UPIO_AU:
+	case UPIO_TSI:
+	case UPIO_MEM32:
+	case UPIO_MEM32BE:
+	case UPIO_MEM16:
+	case UPIO_MEM:
 		if (!port->mapbase)
-			return;
+			break;
 
 		if (port->flags & UPF_IOREMAP) {
 			iounmap(port->membase);
@@ -2922,8 +2945,14 @@ static void serial8250_release_std_resource(struct uart_8250_port *up)
 		}
 
 		release_mem_region(port->mapbase, size);
-	} else if (uart_iotype_io(port->iotype)) {
+		break;
+
+	case UPIO_HUB6:
+	case UPIO_PORT:
 		release_region(port->iobase, size);
+		break;
+	case UPIO_UNKNOWN:
+		break;
 	}
 }
 

@@ -15,6 +15,7 @@ use kernel::{
 };
 
 use crate::{
+    driver::Bar0,
     falcon::{
         sec2::Sec2,
         Falcon,
@@ -292,7 +293,8 @@ impl BooterFirmware {
         kind: BooterKind,
         chipset: Chipset,
         ver: &str,
-        falcon: &Falcon<'_, <Self as FalconFirmware>::Target>,
+        falcon: &Falcon<<Self as FalconFirmware>::Target>,
+        bar: Bar0<'_>,
     ) -> Result<Self> {
         let fw_name = match kind {
             BooterKind::Loader => "booter_load",
@@ -337,8 +339,11 @@ impl BooterFirmware {
             } else {
                 // Obtain the version from the fuse register, and extract the corresponding
                 // signature.
-                let reg_fuse_version = falcon
-                    .signature_reg_fuse_version(brom_params.engine_id_mask, brom_params.ucode_id)?;
+                let reg_fuse_version = falcon.signature_reg_fuse_version(
+                    bar,
+                    brom_params.engine_id_mask,
+                    brom_params.ucode_id,
+                )?;
 
                 // `0` means the last signature should be used.
                 const FUSE_VERSION_USE_LAST_SIG: u32 = 0;
@@ -400,14 +405,18 @@ impl BooterFirmware {
     pub(crate) fn run<T>(
         &self,
         dev: &device::Device<device::Bound>,
-        sec2_falcon: &Falcon<'_, Sec2>,
+        bar: Bar0<'_>,
+        sec2_falcon: &Falcon<Sec2>,
         wpr_meta: &Coherent<T>,
     ) -> Result {
-        sec2_falcon.reset()?;
-        sec2_falcon.load(self)?;
+        sec2_falcon.reset(bar)?;
+        sec2_falcon.load(dev, bar, self)?;
         let wpr_handle = wpr_meta.dma_handle();
-        let (mbox0, mbox1) =
-            sec2_falcon.boot(Some(wpr_handle as u32), Some((wpr_handle >> 32) as u32))?;
+        let (mbox0, mbox1) = sec2_falcon.boot(
+            bar,
+            Some(wpr_handle as u32),
+            Some((wpr_handle >> 32) as u32),
+        )?;
         dev_dbg!(dev, "SEC2 MBOX0: {:#x}, MBOX1: {:#x}\n", mbox0, mbox1);
 
         if mbox0 != 0 {

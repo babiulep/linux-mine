@@ -105,17 +105,12 @@ static __be32 nfsd3_proc_setacl(struct svc_rqst *rqstp)
 
 	inode_lock(inode);
 
-	error = 0;
-	if (argp->mask & NFS_ACL) {
-		error = set_posix_acl(&nop_mnt_idmap, fh->fh_dentry,
-				      ACL_TYPE_ACCESS, argp->acl_access);
-		if (error)
-			goto out_drop_lock;
-	}
-	if (argp->mask & NFS_DFACL) {
-		error = set_posix_acl(&nop_mnt_idmap, fh->fh_dentry,
-				      ACL_TYPE_DEFAULT, argp->acl_default);
-	}
+	error = set_posix_acl(&nop_mnt_idmap, fh->fh_dentry, ACL_TYPE_ACCESS,
+			      argp->acl_access);
+	if (error)
+		goto out_drop_lock;
+	error = set_posix_acl(&nop_mnt_idmap, fh->fh_dentry, ACL_TYPE_DEFAULT,
+			      argp->acl_default);
 
 out_drop_lock:
 	inode_unlock(inode);

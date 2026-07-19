@@ -632,11 +632,8 @@ static int bcm63xx_spi_suspend(struct device *dev)
 {
 	struct spi_controller *host = dev_get_drvdata(dev);
 	struct bcm63xx_spi *bs = spi_controller_get_devdata(host);
-	int ret;
 
-	ret = spi_controller_suspend(host);
-	if (ret)
-		return ret;
+	spi_controller_suspend(host);
 
 	clk_disable_unprepare(bs->clk);
 

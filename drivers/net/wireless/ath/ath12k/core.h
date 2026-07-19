@@ -665,8 +665,7 @@ struct ath12k {
 
 	/* protects the radio specific data like debug stats, ppdu_stats_info stats,
 	 * vdev_stop_status info, scan data, ath12k_sta info, ath12k_link_vif info,
-	 * channel context data, survey info, test mode data, regd_channel_update_queue,
-	 * peer_delete_waits.
+	 * channel context data, survey info, test mode data, regd_channel_update_queue.
 	 */
 	spinlock_t data_lock;
 
@@ -688,7 +687,7 @@ struct ath12k {
 	u8 radio_idx;
 
 	struct completion peer_assoc_done;
-	struct list_head peer_delete_waits;
+	struct completion peer_delete_done;
 
 	int install_key_status;
 	struct completion install_key_done;

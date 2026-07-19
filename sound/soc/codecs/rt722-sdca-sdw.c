@@ -557,13 +557,7 @@ static int rt722_sdca_dev_resume(struct device *dev)
 	}
 
 	regcache_cache_only(rt722->regmap, false);
-	ret = regcache_sync(rt722->regmap);
-	if (ret) {
-		regcache_cache_only(rt722->regmap, true);
-		regcache_mark_dirty(rt722->regmap);
-		return ret;
-	}
-
+	regcache_sync(rt722->regmap);
 	return 0;
 }
 

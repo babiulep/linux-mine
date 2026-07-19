@@ -147,8 +147,8 @@ static int erofs_init_device(struct erofs_buf *buf, struct super_block *sb,
 	if (!sbi->devs->flatdev) {
 		file = erofs_is_fileio_mode(sbi) ?
 				filp_open(dif->path, O_RDONLY | O_LARGEFILE, 0) :
-				fs_bdev_file_open_by_path(dif->path,
-						BLK_OPEN_READ, sb->s_type, sb);
+				bdev_file_open_by_path(dif->path,
+						BLK_OPEN_READ, sb->s_type, NULL);
 		if (IS_ERR(file)) {
 			if (file == ERR_PTR(-ENOTBLK))
 				return -EINVAL;
@@ -790,34 +790,28 @@ static int erofs_fc_reconfigure(struct fs_context *fc)
 
 static int erofs_release_device_info(int id, void *ptr, void *data)
 {
-	struct super_block *sb = data;
 	struct erofs_device_info *dif = ptr;
 
 	fs_put_dax(dif->dax_dev, NULL);
-	if (dif->file) {
-		if (S_ISBLK(file_inode(dif->file)->i_mode))
-			fs_bdev_file_release(dif->file, sb);
-		else
-			fput(dif->file);
-	}
+	if (dif->file)
+		fput(dif->file);
 	kfree(dif->path);
 	kfree(dif);
 	return 0;
 }
 
-static void erofs_free_dev_context(struct erofs_dev_context *devs,
-				   struct super_block *sb)
+static void erofs_free_dev_context(struct erofs_dev_context *devs)
 {
 	if (!devs)
 		return;
-	idr_for_each(&devs->tree, &erofs_release_device_info, sb);
+	idr_for_each(&devs->tree, &erofs_release_device_info, NULL);
 	idr_destroy(&devs->tree);
 	kfree(devs);
 }
 
-static void erofs_sb_free(struct erofs_sb_info *sbi, struct super_block *sb)
+static void erofs_sb_free(struct erofs_sb_info *sbi)
 {
-	erofs_free_dev_context(sbi->devs, sb);
+	erofs_free_dev_context(sbi->devs);
 	kfree_sensitive(sbi->domain_id);
 	if (sbi->dif0.file)
 		fput(sbi->dif0.file);
@@ -829,13 +823,8 @@ static void erofs_fc_free(struct fs_context *fc)
 {
 	struct erofs_sb_info *sbi = fc->s_fs_info;
 
-	/*
-	 * Freed here only if an error occurs before the sb is set up; at that
-	 * point no block-backed device has been claimed (that happens in
-	 * fill_super), so the NULL sb never reaches fs_bdev_file_release().
-	 */
-	if (sbi)
-		erofs_sb_free(sbi, NULL);
+	if (sbi) /* free here if an error occurs before transferring to sb */
+		erofs_sb_free(sbi);
 }
 
 static const struct fs_context_operations erofs_context_ops = {
@@ -889,7 +878,7 @@ static void erofs_kill_sb(struct super_block *sb)
 		kill_block_super(sb);
 	erofs_drop_internal_inodes(sbi);
 	fs_put_dax(sbi->dif0.dax_dev, NULL);
-	erofs_sb_free(sbi, sb);
+	erofs_sb_free(sbi);
 	sb->s_fs_info = NULL;
 }
 
@@ -901,7 +890,7 @@ static void erofs_put_super(struct super_block *sb)
 	erofs_shrinker_unregister(sb);
 	erofs_xattr_prefixes_cleanup(sb);
 	erofs_drop_internal_inodes(sbi);
-	erofs_free_dev_context(sbi->devs, sb);
+	erofs_free_dev_context(sbi->devs);
 	sbi->devs = NULL;
 }
 

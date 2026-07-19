@@ -787,7 +787,10 @@ static void cx8802_remove(struct pci_dev *pci_dev)
 
 static const struct pci_device_id cx8802_pci_tbl[] = {
 	{
-		PCI_DEVICE(0x14f1, 0x8802),
+		.vendor       = 0x14f1,
+		.device       = 0x8802,
+		.subvendor    = PCI_ANY_ID,
+		.subdevice    = PCI_ANY_ID,
 	}, {
 		/* --- end of list --- */
 	}

@@ -1696,15 +1696,9 @@ static int wsa883x_runtime_suspend(struct device *dev)
 static int wsa883x_runtime_resume(struct device *dev)
 {
 	struct regmap *regmap = dev_get_regmap(dev, NULL);
-	int ret;
 
 	regcache_cache_only(regmap, false);
-	ret = regcache_sync(regmap);
-	if (ret) {
-		regcache_cache_only(regmap, true);
-		regcache_mark_dirty(regmap);
-		return ret;
-	}
+	regcache_sync(regmap);
 
 	return 0;
 }

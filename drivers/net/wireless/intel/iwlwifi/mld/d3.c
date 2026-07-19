@@ -573,42 +573,18 @@ iwl_mld_convert_wowlan_notif_v5(const struct iwl_wowlan_info_notif_v5 *notif_v5,
 	}
 }
 
-static bool iwl_mld_validate_wowlan_notif_size(struct iwl_mld *mld, u32 len,
-					       const void *notif_data,
+static bool iwl_mld_validate_wowlan_notif_size(struct iwl_mld *mld,
+					       u32 len,
+					       u32 expected_len,
+					       u8 num_mlo_keys,
 					       int version)
 {
 	u32 len_with_mlo_keys;
-	u32 expected_len;
-	u8 num_mlo_keys;
 
-	/* Extract num_mlo_keys from the void pointer based on version */
-	if (version == 5) {
-		const struct iwl_wowlan_info_notif_v5 *notif_v5 = notif_data;
-
-		expected_len = sizeof(*notif_v5);
-
-		if (IWL_FW_CHECK(mld, len < expected_len,
-				 "Invalid wowlan_info_notif v5 (expected=%u got=%u)\n",
-				 expected_len, len))
-			return false;
-
-		num_mlo_keys = notif_v5->num_mlo_link_keys;
-	} else if (version == 6) {
-		const struct iwl_wowlan_info_notif *notif = notif_data;
-
-		expected_len = sizeof(*notif);
-
-		if (IWL_FW_CHECK(mld, len < expected_len,
-				 "Invalid wowlan_info_notif v6 (expected=%u got=%u)\n",
-				 expected_len, len))
-			return false;
-
-		num_mlo_keys = notif->num_mlo_link_keys;
-	} else {
-		IWL_WARN(mld, "Unsupported wowlan_info_notif version %d\n",
-			 version);
+	if (IWL_FW_CHECK(mld, len < expected_len,
+			 "Invalid wowlan_info_notif v%d (expected=%u got=%u)\n",
+			 version, expected_len, len))
 		return false;
-	}
 
 	len_with_mlo_keys = expected_len +
 		(num_mlo_keys * sizeof(struct iwl_wowlan_mlo_gtk));
@@ -640,14 +616,16 @@ iwl_mld_handle_wowlan_info_notif(struct iwl_mld *mld,
 
 	if (wowlan_info_ver == 5) {
 		/* v5 format - validate before conversion */
-		const struct iwl_wowlan_info_notif_v5 *_notif =
-			(void *)pkt->data;
+		const struct iwl_wowlan_info_notif_v5 *notif_v5 = (void *)pkt->data;
 
-		if (!iwl_mld_validate_wowlan_notif_size(mld, len, _notif, 5))
+		if (!iwl_mld_validate_wowlan_notif_size(mld, len,
+							sizeof(*notif_v5),
+							notif_v5->num_mlo_link_keys,
+							5))
 			return true;
 
 		converted_notif = kzalloc_flex(*converted_notif, mlo_gtks,
-					       _notif->num_mlo_link_keys,
+					       notif_v5->num_mlo_link_keys,
 					       GFP_ATOMIC);
 		if (!converted_notif) {
 			IWL_ERR(mld,
@@ -655,12 +633,15 @@ iwl_mld_handle_wowlan_info_notif(struct iwl_mld *mld,
 			return true;
 		}
 
-		iwl_mld_convert_wowlan_notif_v5(_notif, converted_notif);
+		iwl_mld_convert_wowlan_notif_v5(notif_v5,
+						converted_notif);
 		notif = converted_notif;
 	} else if (wowlan_info_ver == 6) {
 		notif = (void *)pkt->data;
-
-		if (!iwl_mld_validate_wowlan_notif_size(mld, len, notif, 6))
+		if (!iwl_mld_validate_wowlan_notif_size(mld, len,
+							sizeof(*notif),
+							notif->num_mlo_link_keys,
+							6))
 			return true;
 	} else {
 		/* smaller versions are not supported */
@@ -705,7 +686,7 @@ iwl_mld_handle_wake_pkt_notif(struct iwl_mld *mld,
 {
 	const struct iwl_wowlan_wake_pkt_notif *notif = (void *)pkt->data;
 	u32 actual_size, len = iwl_rx_packet_payload_len(pkt);
-	u32 expected_size;
+	u32 expected_size = le32_to_cpu(notif->wake_packet_length);
 
 	if (IWL_FW_CHECK(mld, len < sizeof(*notif),
 			 "Invalid WoWLAN wake packet notification (expected size=%zu got=%u)\n",
@@ -718,7 +699,6 @@ iwl_mld_handle_wake_pkt_notif(struct iwl_mld *mld,
 			 wowlan_status->wakeup_reasons))
 		return true;
 
-	expected_size = le32_to_cpu(notif->wake_packet_length);
 	actual_size = len - offsetof(struct iwl_wowlan_wake_pkt_notif,
 				     wake_packet);
 
@@ -1469,16 +1449,8 @@ static bool iwl_mld_handle_d3_notif(struct iwl_notif_wait_data *notif_wait,
 	}
 	case WIDE_ID(PROT_OFFLOAD_GROUP, D3_END_NOTIFICATION): {
 		struct iwl_d3_end_notif *notif = (void *)pkt->data;
-		u32 len = iwl_rx_packet_payload_len(pkt);
 
-		if (IWL_FW_CHECK(mld, len < sizeof(*notif),
-				 "Invalid D3_END notification (expected=%zu got=%u)\n",
-				 sizeof(*notif), len)) {
-			resume_data->notif_handling_err = true;
-		} else {
-			resume_data->d3_end_flags = le32_to_cpu(notif->flags);
-		}
-
+		resume_data->d3_end_flags = le32_to_cpu(notif->flags);
 		resume_data->notifs_received |= IWL_D3_NOTIF_D3_END_NOTIF;
 		break;
 	}

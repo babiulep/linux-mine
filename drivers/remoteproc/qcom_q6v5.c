@@ -36,40 +36,6 @@ static int q6v5_load_state_toggle(struct qcom_q6v5 *q6v5, bool enable)
 	return ret;
 }
 
-static void q6v5_handover_irq_enable(struct qcom_q6v5 *q6v5)
-{
-	unsigned long flags;
-	bool enable = false;
-
-	spin_lock_irqsave(&q6v5->handover_lock, flags);
-	if (!q6v5->handover_irq_enabled) {
-		q6v5->handover_irq_enabled = true;
-		enable = true;
-	}
-	spin_unlock_irqrestore(&q6v5->handover_lock, flags);
-
-	if (enable)
-		enable_irq(q6v5->handover_irq);
-}
-
-static void q6v5_handover_irq_disable(struct qcom_q6v5 *q6v5, bool sync)
-{
-	unsigned long flags;
-	bool disable = false;
-
-	spin_lock_irqsave(&q6v5->handover_lock, flags);
-	if (q6v5->handover_irq_enabled) {
-		q6v5->handover_irq_enabled = false;
-		disable = true;
-	}
-	spin_unlock_irqrestore(&q6v5->handover_lock, flags);
-
-	if (disable)
-		disable_irq_nosync(q6v5->handover_irq);
-	if (sync)
-		synchronize_irq(q6v5->handover_irq);
-}
-
 /**
  * qcom_q6v5_prepare() - reinitialize the qcom_q6v5 context before start
  * @q6v5:	reference to qcom_q6v5 context to be reinitialized
@@ -98,7 +64,7 @@ int qcom_q6v5_prepare(struct qcom_q6v5 *q6v5)
 	q6v5->running = true;
 	q6v5->handover_issued = false;
 
-	q6v5_handover_irq_enable(q6v5);
+	enable_irq(q6v5->handover_irq);
 
 	return 0;
 }
@@ -112,8 +78,7 @@ EXPORT_SYMBOL_GPL(qcom_q6v5_prepare);
  */
 int qcom_q6v5_unprepare(struct qcom_q6v5 *q6v5)
 {
-	q6v5_handover_irq_disable(q6v5, true);
-
+	disable_irq(q6v5->handover_irq);
 	q6v5_load_state_toggle(q6v5, false);
 
 	/* Disable interconnect vote, in case handover never happened */
@@ -199,14 +164,17 @@ static irqreturn_t q6v5_handover_interrupt(int irq, void *data)
 {
 	struct qcom_q6v5 *q6v5 = data;
 
-	q6v5->handover_issued = true;
-
-	q6v5_handover_irq_disable(q6v5, false);
+	if (q6v5->handover_issued) {
+		dev_err(q6v5->dev, "Handover signaled, but it already happened\n");
+		return IRQ_HANDLED;
+	}
 
 	if (q6v5->handover)
 		q6v5->handover(q6v5);
 
 	icc_set_bw(q6v5->path, 0, 0);
+
+	q6v5->handover_issued = true;
 
 	return IRQ_HANDLED;
 }
@@ -234,8 +202,7 @@ int qcom_q6v5_request_stop(struct qcom_q6v5 *q6v5, struct qcom_sysmon *sysmon)
 	q6v5->running = false;
 
 	/* Don't perform SMP2P dance if remote isn't running */
-	if ((q6v5->rproc->state != RPROC_RUNNING && q6v5->rproc->state != RPROC_ATTACHED) ||
-	    qcom_sysmon_shutdown_acked(sysmon))
+	if (q6v5->rproc->state != RPROC_RUNNING || qcom_sysmon_shutdown_acked(sysmon))
 		return 0;
 
 	qcom_smem_state_update_bits(q6v5->state,
@@ -289,8 +256,6 @@ int qcom_q6v5_init(struct qcom_q6v5 *q6v5, struct platform_device *pdev,
 	q6v5->crash_reason = crash_reason;
 	q6v5->handover = handover;
 
-	spin_lock_init(&q6v5->handover_lock);
-
 	init_completion(&q6v5->start_done);
 	init_completion(&q6v5->stop_done);
 
@@ -339,13 +304,13 @@ int qcom_q6v5_init(struct qcom_q6v5 *q6v5, struct platform_device *pdev,
 
 	ret = devm_request_threaded_irq(&pdev->dev, q6v5->handover_irq,
 					NULL, q6v5_handover_interrupt,
-					IRQF_TRIGGER_RISING | IRQF_ONESHOT |
-					IRQF_NO_AUTOEN,
+					IRQF_TRIGGER_RISING | IRQF_ONESHOT,
 					"q6v5 handover", q6v5);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to acquire handover IRQ\n");
 		return ret;
 	}
+	disable_irq(q6v5->handover_irq);
 
 	q6v5->stop_irq = platform_get_irq_byname(pdev, "stop-ack");
 	if (q6v5->stop_irq < 0)

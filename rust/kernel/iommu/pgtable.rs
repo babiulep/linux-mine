@@ -102,7 +102,8 @@ impl<F: IoPageTableFmt> IoPageTable<F> {
             coherent_walk: config.coherent_walk,
             tlb: &raw const NOOP_FLUSH_OPS,
             iommu_dev: dev.as_raw(),
-            ..Zeroable::zeroed()
+            // SAFETY: All zeroes is a valid value for `struct io_pgtable_cfg`.
+            ..unsafe { core::mem::zeroed() }
         };
 
         // SAFETY:

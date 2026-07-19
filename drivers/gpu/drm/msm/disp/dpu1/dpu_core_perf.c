@@ -34,7 +34,7 @@ enum dpu_perf_mode {
 /**
  * dpu_core_perf_adjusted_mode_clk - Adjust given mode clock rate according to
  *   the perf clock factor.
- * @mode_clk_rate: unadjusted mode clock rate
+ * @crtc_clk_rate - Unadjusted mode clock rate
  * @perf_cfg: performance configuration
  */
 u64 dpu_core_perf_adjusted_mode_clk(u64 mode_clk_rate,

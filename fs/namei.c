@@ -4140,6 +4140,11 @@ EXPORT_SYMBOL(end_renaming);
  * after setgid stripping allows the same ordering for both non-POSIX ACL and
  * POSIX ACL supporting filesystems.
  *
+ * Note that it's currently valid for @type to be 0 if a directory is created.
+ * Filesystems raise that flag individually and we need to check whether each
+ * filesystem can deal with receiving S_IFDIR from the vfs before we enforce a
+ * non-zero type.
+ *
  * Returns: mode to be passed to the filesystem
  */
 static inline umode_t vfs_prepare_mode(struct mnt_idmap *idmap,
@@ -4185,7 +4190,7 @@ int vfs_create(struct mnt_idmap *idmap, struct dentry *dentry, umode_t mode,
 		return error;
 
 	if (!dir->i_op->create)
-		return -EOPNOTSUPP;
+		return -EACCES;	/* shouldn't it be ENOSYS? */
 
 	mode = vfs_prepare_mode(idmap, dir, mode, S_IALLUGO, S_IFREG);
 	error = security_inode_create(dir, dentry, mode);
@@ -4194,7 +4199,7 @@ int vfs_create(struct mnt_idmap *idmap, struct dentry *dentry, umode_t mode,
 	error = try_break_deleg(dir, LEASE_BREAK_DIR_CREATE, di);
 	if (error)
 		return error;
-	error = dir->i_op->create(idmap, dir, dentry, mode);
+	error = dir->i_op->create(idmap, dir, dentry, mode, true);
 	if (!error)
 		fsnotify_create(dir, dentry);
 	return error;
@@ -4496,11 +4501,12 @@ static struct dentry *lookup_open(struct nameidata *nd, struct file *file,
 		file->f_mode |= FMODE_CREATED;
 		audit_inode_child(dir_inode, dentry, AUDIT_TYPE_CHILD_CREATE);
 		if (!dir_inode->i_op->create) {
-			error = -EOPNOTSUPP;
+			error = -EACCES;
 			goto out_dput;
 		}
 
-		error = dir_inode->i_op->create(idmap, dir_inode, dentry, mode);
+		error = dir_inode->i_op->create(idmap, dir_inode, dentry,
+						mode, open_flag & O_EXCL);
 		if (error)
 			goto out_dput;
 	}
@@ -5111,7 +5117,7 @@ int vfs_mknod(struct mnt_idmap *idmap, struct inode *dir,
 		return -EPERM;
 
 	if (!dir->i_op->mknod)
-		return -EOPNOTSUPP;
+		return -EPERM;
 
 	mode = vfs_prepare_mode(idmap, dir, mode, mode, mode);
 	error = devcgroup_inode_mknod(mode, dev);
@@ -5250,11 +5256,11 @@ struct dentry *vfs_mkdir(struct mnt_idmap *idmap, struct inode *dir,
 	if (error)
 		goto err;
 
-	error = -EOPNOTSUPP;
+	error = -EPERM;
 	if (!dir->i_op->mkdir)
 		goto err;
 
-	mode = vfs_prepare_mode(idmap, dir, mode, S_IRWXUGO | S_ISVTX, S_IFDIR);
+	mode = vfs_prepare_mode(idmap, dir, mode, S_IRWXUGO | S_ISVTX, 0);
 	error = security_inode_mkdir(dir, dentry, mode);
 	if (error)
 		goto err;
@@ -5354,7 +5360,7 @@ int vfs_rmdir(struct mnt_idmap *idmap, struct inode *dir,
 		return error;
 
 	if (!dir->i_op->rmdir)
-		return -EOPNOTSUPP;
+		return -EPERM;
 
 	dget(dentry);
 	inode_lock(dentry->d_inode);
@@ -5490,7 +5496,7 @@ int vfs_unlink(struct mnt_idmap *idmap, struct inode *dir,
 		return error;
 
 	if (!dir->i_op->unlink)
-		return -EOPNOTSUPP;
+		return -EPERM;
 
 	inode_lock(target);
 	if (IS_SWAPFILE(target))
@@ -5641,7 +5647,7 @@ int vfs_symlink(struct mnt_idmap *idmap, struct inode *dir,
 		return error;
 
 	if (!dir->i_op->symlink)
-		return -EOPNOTSUPP;
+		return -EPERM;
 
 	error = security_inode_symlink(dir, dentry, oldname);
 	if (error)
@@ -5763,7 +5769,7 @@ int vfs_link(struct dentry *old_dentry, struct mnt_idmap *idmap,
 	if (HAS_UNMAPPED_ID(idmap, inode))
 		return -EPERM;
 	if (!dir->i_op->link)
-		return -EOPNOTSUPP;
+		return -EPERM;
 	if (S_ISDIR(inode->i_mode))
 		return -EPERM;
 
@@ -5972,7 +5978,7 @@ int vfs_rename(struct renamedata *rd)
 		return error;
 
 	if (!old_dir->i_op->rename)
-		return -EOPNOTSUPP;
+		return -EPERM;
 
 	/*
 	 * If we are going to change the parent - check write permissions,

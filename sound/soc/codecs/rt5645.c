@@ -3518,15 +3518,9 @@ static int rt5645_suspend(struct snd_soc_component *component)
 static int rt5645_resume(struct snd_soc_component *component)
 {
 	struct rt5645_priv *rt5645 = snd_soc_component_get_drvdata(component);
-	int ret;
 
 	regcache_cache_only(rt5645->regmap, false);
-	ret = regcache_sync(rt5645->regmap);
-	if (ret) {
-		regcache_cache_only(rt5645->regmap, true);
-		regcache_mark_dirty(rt5645->regmap);
-		return ret;
-	}
+	regcache_sync(rt5645->regmap);
 
 	return 0;
 }
@@ -4337,15 +4331,9 @@ static int rt5645_sys_suspend(struct device *dev)
 static int rt5645_sys_resume(struct device *dev)
 {
 	struct rt5645_priv *rt5645 = dev_get_drvdata(dev);
-	int ret;
 
 	regcache_cache_only(rt5645->regmap, false);
-	ret = regcache_sync(rt5645->regmap);
-	if (ret) {
-		regcache_cache_only(rt5645->regmap, true);
-		regcache_mark_dirty(rt5645->regmap);
-		return ret;
-	}
+	regcache_sync(rt5645->regmap);
 
 	if (rt5645->hp_jack) {
 		rt5645->jack_type = 0;

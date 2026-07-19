@@ -12,11 +12,6 @@ use kernel::{
         Device,
         DmaMask, //
     },
-    io::{
-        io_project,
-        io_read,
-        Io, //
-    },
     page, pci,
     prelude::*,
     scatterlist::{Owned, SGTable},
@@ -39,7 +34,6 @@ const TEST_VALUES: [(u32, u32); 5] = [
     (0xcd, 0xef),
 ];
 
-#[derive(FromBytes, IntoBytes)]
 struct MyStruct {
     h: u32,
     b: u32,
@@ -83,7 +77,7 @@ impl pci::Driver for DmaSampleDriver {
                 Coherent::zeroed_slice(pdev.as_ref(), TEST_VALUES.len(), GFP_KERNEL)?;
 
             for (i, value) in TEST_VALUES.into_iter().enumerate() {
-                io_project!(ca, [panic: i]).copy_write(MyStruct::new(value.0, value.1));
+                kernel::dma_write!(ca, [try: i], MyStruct::new(value.0, value.1));
             }
 
             let size = 4 * page::PAGE_SIZE;
@@ -103,8 +97,8 @@ impl pci::Driver for DmaSampleDriver {
 impl DmaSampleDriver {
     fn check_dma(&self) {
         for (i, value) in TEST_VALUES.into_iter().enumerate() {
-            let val0 = io_read!(self.ca, [panic: i].h);
-            let val1 = io_read!(self.ca, [panic: i].b);
+            let val0 = kernel::dma_read!(self.ca, [panic: i].h);
+            let val1 = kernel::dma_read!(self.ca, [panic: i].b);
 
             assert_eq!(val0, value.0);
             assert_eq!(val1, value.1);

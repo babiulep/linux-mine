@@ -106,7 +106,6 @@ struct efa_com_create_ah_result {
 
 struct efa_com_destroy_ah_params {
 	u16 ah;
-	u8 gid[EFA_GID_SIZE];
 	u16 pdn;
 };
 

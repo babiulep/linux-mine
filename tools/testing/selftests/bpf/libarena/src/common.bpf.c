@@ -4,8 +4,9 @@
 #include <libarena/asan.h>
 #include <libarena/buddy.h>
 
+const volatile u32 zero = 0;
+
 struct buddy __arena buddy;
-volatile u32 zero = 0;
 
 int arena_fls(__u64 word)
 {
@@ -35,12 +36,6 @@ __weak int arena_buddy_reset(void)
 	buddy_destroy(&buddy);
 
 	return buddy_init(&buddy);
-}
-
-SEC("syscall")
-__weak int arena_buddy_destroy(void)
-{
-	return buddy_destroy(&buddy);
 }
 
 __weak void __arena *arena_malloc(size_t size)

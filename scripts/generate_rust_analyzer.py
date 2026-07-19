@@ -250,7 +250,6 @@ def generate_crates(
         "macros",
         srctree / "rust" / "macros" / "lib.rs",
         [std, proc_macro, proc_macro2, quote, syn],
-        cfg=generated_cfg,
     )
 
     zerocopy_derive = append_proc_macro_crate(

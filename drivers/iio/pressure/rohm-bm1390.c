@@ -621,15 +621,17 @@ static const struct iio_buffer_setup_ops bm1390_buffer_ops = {
 	.predisable = bm1390_buffer_predisable,
 };
 
-static bool bm1390_handle_trigger(struct iio_dev *idev)
+static irqreturn_t bm1390_trigger_handler(int irq, void *p)
 {
+	struct iio_poll_func *pf = p;
+	struct iio_dev *idev = pf->indio_dev;
 	struct bm1390_data *data = iio_priv(idev);
 	int ret, status;
 
 	/* DRDY is acked by reading status reg */
 	ret = regmap_read(data->regmap, BM1390_REG_STATUS, &status);
 	if (ret || !status)
-		return false;
+		return IRQ_NONE;
 
 	dev_dbg(data->dev, "DRDY trig status 0x%x\n", status);
 
@@ -637,7 +639,7 @@ static bool bm1390_handle_trigger(struct iio_dev *idev)
 		ret = bm1390_pressure_read(data, &data->buf.pressure);
 		if (ret) {
 			dev_warn(data->dev, "sample read failed %d\n", ret);
-			return false;
+			return IRQ_NONE;
 		}
 	}
 
@@ -646,26 +648,15 @@ static bool bm1390_handle_trigger(struct iio_dev *idev)
 				       &data->buf.temp, sizeof(data->buf.temp));
 		if (ret) {
 			dev_warn(data->dev, "temp read failed %d\n", ret);
-			return true;
+			return IRQ_HANDLED;
 		}
 	}
 
 	iio_push_to_buffers_with_ts(idev, &data->buf, sizeof(data->buf),
 				    data->timestamp);
-
-	return true;
-}
-
-static irqreturn_t bm1390_trigger_handler(int irq, void *p)
-{
-	struct iio_poll_func *pf = p;
-	struct iio_dev *idev = pf->indio_dev;
-	bool result;
-
-	result = bm1390_handle_trigger(idev);
 	iio_trigger_notify_done(idev->trig);
 
-	return IRQ_RETVAL(result);
+	return IRQ_HANDLED;
 }
 
 /* Get timestamps and wake the thread if we need to read data */

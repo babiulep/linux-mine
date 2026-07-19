@@ -5,7 +5,11 @@
 #include <linux/err.h>
 #include <linux/errno.h>
 #include <linux/types.h>
-#include <asm-generic/kexec_handover.h>
+
+struct kho_scratch {
+	phys_addr_t addr;
+	phys_addr_t size;
+};
 
 struct kho_vmalloc;
 

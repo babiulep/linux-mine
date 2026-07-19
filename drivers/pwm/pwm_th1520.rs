@@ -20,11 +20,13 @@
 //!   this method is not used in this driver.
 //!
 
+use core::ops::Deref;
 use kernel::{
     clk::Clk,
     device::{Bound, Core, Device},
+    devres,
     io::{
-        mem::DevresIoMem,
+        mem::IoMem,
         Io, //
     },
     of, platform,
@@ -84,7 +86,7 @@ struct Th1520WfHw {
 #[pin_data(PinnedDrop)]
 struct Th1520PwmDriverData {
     #[pin]
-    iomem: DevresIoMem<TH1520_PWM_REG_SIZE>,
+    iomem: devres::Devres<IoMem<'static, TH1520_PWM_REG_SIZE>>,
     clk: Clk,
 }
 
@@ -211,7 +213,8 @@ impl pwm::PwmOps for Th1520PwmDriverData {
     ) -> Result<Self::WfHw> {
         let data = chip.drvdata();
         let hwpwm = pwm.hwpwm();
-        let iomap = data.iomem.access(parent_dev)?;
+        let iomem_accessor = data.iomem.access(parent_dev)?;
+        let iomap = iomem_accessor.deref();
 
         let ctrl = iomap.try_read32(th1520_pwm_ctrl(hwpwm))?;
         let period_cycles = iomap.try_read32(th1520_pwm_per(hwpwm))?;
@@ -245,7 +248,8 @@ impl pwm::PwmOps for Th1520PwmDriverData {
     ) -> Result {
         let data = chip.drvdata();
         let hwpwm = pwm.hwpwm();
-        let iomap = data.iomem.access(parent_dev)?;
+        let iomem_accessor = data.iomem.access(parent_dev)?;
+        let iomap = iomem_accessor.deref();
         let duty_cycles = iomap.try_read32(th1520_pwm_fp(hwpwm))?;
         let was_enabled = duty_cycles != 0;
 

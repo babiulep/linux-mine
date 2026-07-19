@@ -65,14 +65,12 @@ static loff_t zisofs_uncompress_block(struct inode *inode, loff_t block_start,
 	/* Empty block? */
 	if (block_size == 0) {
 		for ( i = 0 ; i < pcount ; i++ ) {
-			unsigned int off = i ? 0 : poffset;
-
 			if (!pages[i])
 				continue;
-			memzero_page(pages[i], off, PAGE_SIZE - off);
+			memzero_page(pages[i], 0, PAGE_SIZE);
 			SetPageUptodate(pages[i]);
 		}
-		return (((loff_t)pcount) << PAGE_SHIFT) - poffset;
+		return ((loff_t)pcount) << PAGE_SHIFT;
 	}
 
 	/* Because zlib is not thread-safe, do all the I/O at the top. */

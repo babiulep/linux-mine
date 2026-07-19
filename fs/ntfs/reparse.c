@@ -317,7 +317,8 @@ unsigned int ntfs_make_symlink(struct ntfs_inode *ni)
 	} else
 		ni->flags &= ~FILE_ATTR_REPARSE_POINT;
 
-	kvfree(reparse_attr);
+	if (reparse_attr)
+		kvfree(reparse_attr);
 
 	return mode;
 }
@@ -357,7 +358,8 @@ unsigned int ntfs_reparse_tag_dt_types(struct ntfs_volume *vol, unsigned long mr
 		}
 	}
 
-	kvfree(reparse_attr);
+	if (reparse_attr)
+		kvfree(reparse_attr);
 
 	iput(vi);
 	return dt_type;

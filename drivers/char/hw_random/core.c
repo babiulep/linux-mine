@@ -596,13 +596,11 @@ int hwrng_register(struct hwrng *rng)
 			 */
 			err = set_current_rng(rng);
 			if (err)
-				goto out_list_del;
+				goto out_unlock;
 		}
 	}
 	mutex_unlock(&rng_mutex);
 	return 0;
-out_list_del:
-	list_del_init(&rng->list);
 out_unlock:
 	mutex_unlock(&rng_mutex);
 out:

@@ -367,7 +367,6 @@ static ssize_t o2nm_node_local_store(struct config_item *item, const char *page,
 	if (!tmp && cluster->cl_has_local &&
 	    cluster->cl_local_node == node->nd_num) {
 		o2net_stop_listening(node);
-		cluster->cl_has_local = 0;
 		cluster->cl_local_node = O2NM_INVALID_NODE_NUM;
 	}
 
@@ -783,12 +782,12 @@ void o2nm_undepend_item(struct config_item *item)
 	configfs_undepend_item(item);
 }
 
-int o2nm_depend_node(u8 node_num)
+int o2nm_depend_this_node(void)
 {
 	int ret = 0;
 	struct o2nm_node *local_node;
 
-	local_node = o2nm_get_node_by_num(node_num);
+	local_node = o2nm_get_node_by_num(o2nm_this_node());
 	if (!local_node) {
 		ret = -EINVAL;
 		goto out;
@@ -801,25 +800,15 @@ out:
 	return ret;
 }
 
-void o2nm_undepend_node(u8 node_num)
+void o2nm_undepend_this_node(void)
 {
 	struct o2nm_node *local_node;
 
-	local_node = o2nm_get_node_by_num(node_num);
+	local_node = o2nm_get_node_by_num(o2nm_this_node());
 	BUG_ON(!local_node);
 
 	o2nm_undepend_item(&local_node->nd_item);
 	o2nm_node_put(local_node);
-}
-
-int o2nm_depend_this_node(void)
-{
-	return o2nm_depend_node(o2nm_this_node());
-}
-
-void o2nm_undepend_this_node(void)
-{
-	o2nm_undepend_node(o2nm_this_node());
 }
 
 

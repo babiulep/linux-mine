@@ -185,10 +185,8 @@ static int rockchip_dfi_enable(struct rockchip_dfi *dfi)
 	}
 
 	ret = rockchip_dfi_ddrtype_to_ctrl(dfi, &ctrl);
-	if (ret) {
-		clk_disable_unprepare(dfi->clk);
+	if (ret)
 		goto out;
-	}
 
 	for (i = 0; i < dfi->max_channels; i++) {
 
@@ -356,7 +354,7 @@ static ssize_t ddr_perf_cpumask_show(struct device *dev,
 	struct pmu *pmu = dev_get_drvdata(dev);
 	struct rockchip_dfi *dfi = container_of(pmu, struct rockchip_dfi, pmu);
 
-	return sysfs_emit(buf, "%*pbl\n", cpumask_pr_args(cpumask_of(dfi->cpu)));
+	return cpumap_print_to_pagebuf(true, buf, cpumask_of(dfi->cpu));
 }
 
 static struct device_attribute ddr_perf_cpumask_attr =

@@ -10,15 +10,7 @@ use r570_144 as bindings;
 use core::ops::Range;
 
 use kernel::{
-    bitfield,
-    dma::{
-        Coherent,
-        CoherentView, //
-    },
-    io::{
-        io_read,
-        io_write, //
-    },
+    dma::Coherent,
     prelude::*,
     ptr::{
         Alignable,
@@ -51,6 +43,59 @@ use crate::{
         FromSafeCast, //
     },
 };
+
+// TODO: Replace with `IoView` projections once available.
+pub(super) mod gsp_mem {
+    use core::sync::atomic::{
+        fence,
+        Ordering, //
+    };
+
+    use kernel::{
+        dma::Coherent,
+        dma_read,
+        dma_write, //
+    };
+
+    use crate::gsp::cmdq::{
+        GspMem,
+        MSGQ_NUM_PAGES, //
+    };
+
+    pub(in crate::gsp) fn gsp_write_ptr(qs: &Coherent<GspMem>) -> u32 {
+        dma_read!(qs, .gspq.tx.0.writePtr) % MSGQ_NUM_PAGES
+    }
+
+    pub(in crate::gsp) fn gsp_read_ptr(qs: &Coherent<GspMem>) -> u32 {
+        dma_read!(qs, .gspq.rx.0.readPtr) % MSGQ_NUM_PAGES
+    }
+
+    pub(in crate::gsp) fn cpu_read_ptr(qs: &Coherent<GspMem>) -> u32 {
+        dma_read!(qs, .cpuq.rx.0.readPtr) % MSGQ_NUM_PAGES
+    }
+
+    pub(in crate::gsp) fn advance_cpu_read_ptr(qs: &Coherent<GspMem>, count: u32) {
+        let rptr = cpu_read_ptr(qs).wrapping_add(count) % MSGQ_NUM_PAGES;
+
+        // Ensure read pointer is properly ordered.
+        fence(Ordering::SeqCst);
+
+        dma_write!(qs, .cpuq.rx.0.readPtr, rptr);
+    }
+
+    pub(in crate::gsp) fn cpu_write_ptr(qs: &Coherent<GspMem>) -> u32 {
+        dma_read!(qs, .cpuq.tx.0.writePtr) % MSGQ_NUM_PAGES
+    }
+
+    pub(in crate::gsp) fn advance_cpu_write_ptr(qs: &Coherent<GspMem>, count: u32) {
+        let wptr = cpu_write_ptr(qs).wrapping_add(count) % MSGQ_NUM_PAGES;
+
+        dma_write!(qs, .cpuq.tx.0.writePtr, wptr);
+
+        // Ensure all command data is visible before triggering the GSP read.
+        fence(Ordering::SeqCst);
+    }
+}
 
 /// Maximum size of a single GSP message queue element in bytes.
 pub(crate) const GSP_MSG_QUEUE_ELEMENT_SIZE_MAX: usize =
@@ -174,6 +219,7 @@ impl GspFwWprMeta {
         gsp_firmware: &'a GspFirmware,
         fb_layout: &'a FbLayout,
     ) -> impl Init<Self> + 'a {
+        #[allow(non_snake_case)]
         let init_inner = init!(bindings::GspFwWprMeta {
             // CAST: we want to store the bits of `GSP_FW_WPR_META_MAGIC` unmodified.
             magic: bindings::GSP_FW_WPR_META_MAGIC as u64,
@@ -628,6 +674,7 @@ impl LibosMemoryRegionInitArgument {
             u64::from_ne_bytes(bytes)
         }
 
+        #[allow(non_snake_case)]
         let init_inner = init!(bindings::LibosMemoryRegionInitArgument {
             id8: id8(name),
             pa: obj.dma_handle(),
@@ -673,16 +720,6 @@ impl MsgqTxHeader {
             entryOff: num::usize_into_u32::<GSP_PAGE_SIZE>(),
         })
     }
-
-    /// Returns the value of the write pointer for this queue.
-    pub(crate) fn write_ptr(this: CoherentView<'_, Self>) -> u32 {
-        io_read!(this, .0.writePtr)
-    }
-
-    /// Sets the value of the write pointer for this queue.
-    pub(crate) fn set_write_ptr(this: CoherentView<'_, Self>, val: u32) {
-        io_write!(this, .0.writePtr, val)
-    }
 }
 
 // SAFETY: Padding is explicit and does not contain uninitialized data.
@@ -698,16 +735,6 @@ impl MsgqRxHeader {
     pub(crate) fn new() -> Self {
         Self(Default::default())
     }
-
-    /// Returns the value of the read pointer for this queue.
-    pub(crate) fn read_ptr(this: CoherentView<'_, Self>) -> u32 {
-        io_read!(this, .0.readPtr)
-    }
-
-    /// Sets the value of the read pointer for this queue.
-    pub(crate) fn set_read_ptr(this: CoherentView<'_, Self>, val: u32) {
-        io_write!(this, .0.readPtr, val)
-    }
 }
 
 // SAFETY: Padding is explicit and does not contain uninitialized data.
@@ -715,8 +742,8 @@ unsafe impl AsBytes for MsgqRxHeader {}
 
 bitfield! {
     struct MsgHeaderVersion(u32) {
-        31:24 major;
-        23:16 minor;
+        31:24 major as u8;
+        23:16 minor as u8;
     }
 }
 
@@ -725,9 +752,9 @@ impl MsgHeaderVersion {
     const MINOR_TOT: u8 = 0;
 
     fn new() -> Self {
-        Self::zeroed()
-            .with_major(Self::MAJOR_TOT)
-            .with_minor(Self::MINOR_TOT)
+        Self::default()
+            .set_major(Self::MAJOR_TOT)
+            .set_minor(Self::MINOR_TOT)
     }
 }
 
@@ -766,6 +793,7 @@ impl GspMsgElement {
     /// * `sequence` - Sequence number of the message.
     /// * `cmd_size` - Size of the command (not including the message element), in bytes.
     /// * `function` - Function of the message.
+    #[allow(non_snake_case)]
     pub(crate) fn init(
         sequence: u32,
         cmd_size: usize,
@@ -848,6 +876,7 @@ pub(crate) struct GspArgumentsCached {
 impl GspArgumentsCached {
     /// Creates the arguments for starting the GSP up using `cmdq` as its command queue.
     pub(crate) fn new(cmdq: &Cmdq) -> impl Init<Self> + '_ {
+        #[allow(non_snake_case)]
         let init_inner = init!(bindings::GSP_ARGUMENTS_CACHED {
             messageQueueInitArguments <- MessageQueueInitArguments::new(cmdq),
             bDmemStack: 1,
@@ -894,6 +923,7 @@ type MessageQueueInitArguments = bindings::MESSAGE_QUEUE_INIT_ARGUMENTS;
 
 impl MessageQueueInitArguments {
     /// Creates a new init arguments structure for `cmdq`.
+    #[allow(non_snake_case)]
     fn new(cmdq: &Cmdq) -> impl Init<Self> + '_ {
         init!(MessageQueueInitArguments {
             sharedMemPhysAddr: cmdq.dma_handle,
@@ -917,6 +947,7 @@ type GspAcrBootGspRmParams = bindings::GSP_ACR_BOOT_GSP_RM_PARAMS;
 
 impl GspAcrBootGspRmParams {
     fn new(target: GspDmaTarget, wpr_meta_addr: u64) -> impl Init<Self> {
+        #[allow(non_snake_case)]
         let params = init!(Self {
             target: target as u32,
             gspRmDescSize: num::usize_into_u32::<{ size_of::<GspFwWprMeta>() }>(),
@@ -935,6 +966,7 @@ type GspRmParams = bindings::GSP_RM_PARAMS;
 
 impl GspRmParams {
     fn new(target: GspDmaTarget, libos_addr: u64) -> impl Init<Self> {
+        #[allow(non_snake_case)]
         let params = init!(Self {
             target: target as u32,
             bootArgsOffset: libos_addr,
@@ -954,6 +986,7 @@ unsafe impl FromBytes for GspFmcBootParams {}
 
 impl GspFmcBootParams {
     pub(crate) fn new(wpr_meta_addr: u64, libos_addr: u64) -> impl Init<Self> {
+        #[allow(non_snake_case)]
         let init = init!(Self {
             // Blackwell FSP obtains WPR info from other sources, so
             // wprCarveoutOffset and wprCarveoutSize are left zero.

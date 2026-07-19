@@ -63,6 +63,8 @@ static void l2_guest_code(void)
 
 static void guest_code(void *arg)
 {
+	#define L2_GUEST_STACK_SIZE 64
+	unsigned long l2_guest_stack[L2_GUEST_STACK_SIZE];
 	u64 apicbase = rdmsr(MSR_IA32_APICBASE);
 	struct svm_test_data *svm = arg;
 	struct vmx_pages *vmx_pages = arg;
@@ -79,11 +81,13 @@ static void guest_code(void *arg)
 
 	if (arg) {
 		if (this_cpu_has(X86_FEATURE_SVM)) {
-			generic_svm_setup(svm, l2_guest_code);
+			generic_svm_setup(svm, l2_guest_code,
+					  &l2_guest_stack[L2_GUEST_STACK_SIZE]);
 		} else {
 			GUEST_ASSERT(prepare_for_vmx_operation(vmx_pages));
 			GUEST_ASSERT(load_vmcs(vmx_pages));
-			prepare_vmcs(vmx_pages, l2_guest_code);
+			prepare_vmcs(vmx_pages, l2_guest_code,
+				     &l2_guest_stack[L2_GUEST_STACK_SIZE]);
 		}
 
 		sync_with_host(5);

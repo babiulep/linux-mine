@@ -20,13 +20,14 @@ bool dcn42_set_mcm_luts(struct pipe_ctx *pipe_ctx,
 
 void dcn42_populate_mcm_luts(struct dc *dc,
 		struct pipe_ctx *pipe_ctx,
-		const struct dc_plane_cm *cm,
+		struct dc_cm2_func_luts mcm_luts,
 		bool lut_bank_a);
 
 bool dcn42_program_rmcm_luts(
 	struct hubp *hubp,
 	struct pipe_ctx *pipe_ctx,
-	const struct dc_plane_cm *cm,
+	enum dc_cm2_transfer_func_source lut3d_src,
+	struct dc_cm2_func_luts *mcm_luts,
 	struct mpc *mpc,
 	bool lut_bank_a,
 	int mpcc_id);

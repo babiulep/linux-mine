@@ -794,6 +794,7 @@ static int atmel_aes_dma_transfer_start(struct atmel_aes_dev *dd,
 	struct dma_slave_config config;
 	dma_async_tx_callback callback;
 	struct atmel_aes_dma *dma;
+	int err;
 
 	memset(&config, 0, sizeof(config));
 	config.src_addr_width = addr_width;
@@ -818,9 +819,12 @@ static int atmel_aes_dma_transfer_start(struct atmel_aes_dev *dd,
 		return -EINVAL;
 	}
 
-	desc = dmaengine_prep_config_sg(dma->chan, dma->sg, dma->sg_len, dir,
-					DMA_PREP_INTERRUPT | DMA_CTRL_ACK,
-					&config);
+	err = dmaengine_slave_config(dma->chan, &config);
+	if (err)
+		return err;
+
+	desc = dmaengine_prep_slave_sg(dma->chan, dma->sg, dma->sg_len, dir,
+				       DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
 	if (!desc)
 		return -ENOMEM;
 

@@ -75,8 +75,7 @@ static int vmgenid_add_acpi(struct device *dev, struct vmgenid_state *state)
 	phys_addr = (obj->package.elements[0].integer.value << 0) |
 		    (obj->package.elements[1].integer.value << 32);
 
-	virt_addr = devm_memremap(&device->dev, phys_addr, VMGENID_SIZE,
-				  MEMREMAP_WB | MEMREMAP_DEC);
+	virt_addr = devm_memremap(&device->dev, phys_addr, VMGENID_SIZE, MEMREMAP_WB);
 	if (IS_ERR(virt_addr)) {
 		ret = PTR_ERR(virt_addr);
 		goto out;

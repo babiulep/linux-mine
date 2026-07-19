@@ -1196,12 +1196,17 @@ static struct sock *unix_find_bsd(struct sockaddr_un *sunaddr, int addr_len,
 	unix_mkname_bsd(sunaddr, addr_len);
 
 	if (flags & SOCK_COREDUMP) {
-		scoped_with_init_fs() {
-			scoped_with_kernel_creds()
-				err = kern_path(sunaddr->sun_path,
-						LOOKUP_NO_SYMLINKS |
-						LOOKUP_NO_MAGICLINKS, &path);
-		}
+		struct path root;
+
+		task_lock(&init_task);
+		get_fs_root(init_task.fs, &root);
+		task_unlock(&init_task);
+
+		scoped_with_kernel_creds()
+			err = vfs_path_lookup(root.dentry, root.mnt, sunaddr->sun_path,
+					      LOOKUP_BENEATH | LOOKUP_NO_SYMLINKS |
+					      LOOKUP_NO_MAGICLINKS, &path);
+		path_put(&root);
 		if (err)
 			goto fail;
 	} else {

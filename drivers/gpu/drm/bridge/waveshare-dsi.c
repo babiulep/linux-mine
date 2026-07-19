@@ -12,7 +12,6 @@
 #include <linux/of_graph.h>
 #include <linux/regmap.h>
 
-#include <drm/drm_atomic_state_helper.h>
 #include <drm/drm_bridge.h>
 #include <drm/drm_mipi_dsi.h>
 #include <drm/drm_of.h>
@@ -93,8 +92,7 @@ static int ws_bridge_bridge_attach(struct drm_bridge *bridge,
 				 &ws->bridge, flags);
 }
 
-static void ws_bridge_bridge_enable(struct drm_bridge *bridge,
-				    struct drm_atomic_commit *commit)
+static void ws_bridge_bridge_enable(struct drm_bridge *bridge)
 {
 	struct ws_bridge *ws = bridge_to_ws_bridge(bridge);
 
@@ -102,8 +100,7 @@ static void ws_bridge_bridge_enable(struct drm_bridge *bridge,
 	backlight_enable(ws->backlight);
 }
 
-static void ws_bridge_bridge_disable(struct drm_bridge *bridge,
-				     struct drm_atomic_commit *commit)
+static void ws_bridge_bridge_disable(struct drm_bridge *bridge)
 {
 	struct ws_bridge *ws = bridge_to_ws_bridge(bridge);
 
@@ -112,11 +109,8 @@ static void ws_bridge_bridge_disable(struct drm_bridge *bridge,
 }
 
 static const struct drm_bridge_funcs ws_bridge_bridge_funcs = {
-	.atomic_create_state = drm_atomic_helper_bridge_create_state,
-	.atomic_destroy_state = drm_atomic_helper_bridge_destroy_state,
-	.atomic_duplicate_state = drm_atomic_helper_bridge_duplicate_state,
-	.atomic_enable = ws_bridge_bridge_enable,
-	.atomic_disable = ws_bridge_bridge_disable,
+	.enable = ws_bridge_bridge_enable,
+	.disable = ws_bridge_bridge_disable,
 	.attach = ws_bridge_bridge_attach,
 };
 

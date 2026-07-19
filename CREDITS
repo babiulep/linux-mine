@@ -640,10 +640,6 @@ S: 25-29 St Giles
 S: Oxford
 S: United Kingdom
 
-N: Bingbu Cao
-E: bingbu.cao@amd.com
-D: Ipu6, ipu7 and camera sensor drivers
-
 N: Luiz Fernando N. Capitulino
 E: lcapitulino@mandriva.com.br
 E: lcapitulino@gmail.com
@@ -1506,10 +1502,6 @@ S: South Africa
 N: Andy Gross
 E: agross@kernel.org
 D: Qualcomm SoC subsystem and drivers
-
-N: Mark Gross
-E: markgross@kernel.org
-D: x86/mellanox platform maintenance and various x86 specific drivers
 
 N: Grant Grundler
 E: grantgrundler@gmail.com
@@ -3104,10 +3096,6 @@ N: Jens Osterkamp
 E: jens@de.ibm.com
 D: Maintainer of Spidernet network driver for Cell
 
-N: Kent Overstreet
-E: kent.overstreet@linux.dev
-D: Co-authored and contributed to Memory Allocation Profiling
-
 N: Gadi Oxman
 E: gadio@netvision.net.il
 D: Original author and maintainer of IDE/ATAPI floppy/tape drivers
@@ -3345,9 +3333,6 @@ N: Richard Purdie
 E: rpurdie@rpsys.net
 D: Backlight subsystem maintainer
 S: United Kingdom
-
-N: Tian Shu Qiu
-D: Ipu6, ipu7 and camera sensor drivers
 
 N: Daniel Quinlan
 E: quinlan@pathname.com

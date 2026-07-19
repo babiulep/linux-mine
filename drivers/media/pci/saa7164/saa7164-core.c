@@ -1535,7 +1535,10 @@ static void saa7164_finidev(struct pci_dev *pci_dev)
 static const struct pci_device_id saa7164_pci_tbl[] = {
 	{
 		/* SAA7164 */
-		PCI_DEVICE(0x1131, 0x7164),
+		.vendor       = 0x1131,
+		.device       = 0x7164,
+		.subvendor    = PCI_ANY_ID,
+		.subdevice    = PCI_ANY_ID,
 	}, {
 		/* --- end of list --- */
 	}

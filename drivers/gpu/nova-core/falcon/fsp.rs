@@ -21,6 +21,7 @@ use kernel::{
 };
 
 use crate::{
+    driver::Bar0,
     falcon::{
         Falcon,
         FalconEngine,
@@ -47,18 +48,18 @@ impl RegisterBase<PFalcon2Base> for Fsp {
 
 impl FalconEngine for Fsp {}
 
-impl<'a> Falcon<'a, Fsp> {
+impl Falcon<Fsp> {
     /// Writes `data` to FSP external memory at offset `0`.
     ///
     /// `data` is interpreted as little-endian 32-bit words. Returns `EINVAL`
     /// if the `data` length is not 4-byte aligned.
-    fn write_emem(&mut self, data: &[u8]) -> Result {
+    fn write_emem(&mut self, bar: Bar0<'_>, data: &[u8]) -> Result {
         if data.len() % 4 != 0 {
             return Err(EINVAL);
         }
 
         // Begin a write burst at offset `0`, auto-incrementing on each write.
-        self.bar.write(
+        bar.write(
             WithBase::of::<Fsp>(),
             regs::NV_PFALCON_FALCON_EMEMC::zeroed().with_aincw(true),
         );
@@ -67,7 +68,7 @@ impl<'a> Falcon<'a, Fsp> {
             let value = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
 
             // Write the next 32-bit `value`; hardware advances the offset.
-            self.bar.write(
+            bar.write(
                 WithBase::of::<Fsp>(),
                 regs::NV_PFALCON_FALCON_EMEMD::zeroed().with_data(value),
             );
@@ -80,23 +81,20 @@ impl<'a> Falcon<'a, Fsp> {
     ///
     /// `data` is stored as little-endian 32-bit words. Returns `EINVAL` if
     /// the `data` length is not 4-byte aligned.
-    fn read_emem(&mut self, data: &mut [u8]) -> Result {
+    fn read_emem(&mut self, bar: Bar0<'_>, data: &mut [u8]) -> Result {
         if data.len() % 4 != 0 {
             return Err(EINVAL);
         }
 
         // Begin a read burst at offset `0`, auto-incrementing on each read.
-        self.bar.write(
+        bar.write(
             WithBase::of::<Fsp>(),
             regs::NV_PFALCON_FALCON_EMEMC::zeroed().with_aincr(true),
         );
 
         for chunk in data.chunks_exact_mut(4) {
             // Read the next 32-bit word; hardware advances the offset.
-            let value = self
-                .bar
-                .read(regs::NV_PFALCON_FALCON_EMEMD::of::<Fsp>())
-                .data();
+            let value = bar.read(regs::NV_PFALCON_FALCON_EMEMD::of::<Fsp>()).data();
             chunk.copy_from_slice(&value.to_le_bytes());
         }
 
@@ -109,9 +107,9 @@ impl<'a> Falcon<'a, Fsp> {
     ///
     /// The FSP message queue is not circular. Pointers are reset to 0 after each
     /// message exchange, so `tail >= head` is always true when data is present.
-    fn poll_msgq(&self) -> u32 {
-        let head = self.bar.read(regs::NV_PFSP_MSGQ_HEAD::at(0)).val();
-        let tail = self.bar.read(regs::NV_PFSP_MSGQ_TAIL::at(0)).val();
+    fn poll_msgq(&self, bar: Bar0<'_>) -> u32 {
+        let head = bar.read(regs::NV_PFSP_MSGQ_HEAD::at(0)).val();
+        let tail = bar.read(regs::NV_PFSP_MSGQ_TAIL::at(0)).val();
 
         if head == tail {
             return 0;
@@ -124,20 +122,20 @@ impl<'a> Falcon<'a, Fsp> {
     /// Writes `packet` to FSP EMEM and updates the queue pointers to notify FSP.
     ///
     /// Returns `EINVAL` if `packet` is empty or its length is not 4-byte aligned.
-    pub(crate) fn send_msg(&mut self, packet: &[u8]) -> Result {
+    pub(crate) fn send_msg(&mut self, bar: Bar0<'_>, packet: &[u8]) -> Result {
         if packet.is_empty() {
             return Err(EINVAL);
         }
 
-        self.write_emem(packet)?;
+        self.write_emem(bar, packet)?;
 
         // Update queue pointers. TAIL points at the last DWORD written.
         let tail_offset = u32::try_from(packet.len() - 4).map_err(|_| EINVAL)?;
-        self.bar.write(
+        bar.write(
             Array::at(0),
             regs::NV_PFSP_QUEUE_TAIL::zeroed().with_address(tail_offset),
         );
-        self.bar.write(
+        bar.write(
             Array::at(0),
             regs::NV_PFSP_QUEUE_HEAD::zeroed().with_address(0),
         );
@@ -150,9 +148,9 @@ impl<'a> Falcon<'a, Fsp> {
     ///
     /// Returns `ETIMEDOUT` if no message was available until timeout, or a regular error code if a
     /// memory allocation error occurred.
-    pub(crate) fn recv_msg(&mut self) -> Result<KVec<u8>> {
+    pub(crate) fn recv_msg(&mut self, bar: Bar0<'_>) -> Result<KVec<u8>> {
         let msg_size = read_poll_timeout(
-            || Ok(self.poll_msgq()),
+            || Ok(self.poll_msgq(bar)),
             |&size| size > 0,
             Delta::from_millis(10),
             Delta::from_millis(FSP_MSG_TIMEOUT_MS),
@@ -162,13 +160,11 @@ impl<'a> Falcon<'a, Fsp> {
         let mut buffer = KVec::<u8>::new();
         buffer.resize(msg_size, 0, GFP_KERNEL)?;
 
-        self.read_emem(&mut buffer)?;
+        self.read_emem(bar, &mut buffer)?;
 
         // Reset message queue pointers after reading.
-        self.bar
-            .write(Array::at(0), regs::NV_PFSP_MSGQ_TAIL::zeroed().with_val(0));
-        self.bar
-            .write(Array::at(0), regs::NV_PFSP_MSGQ_HEAD::zeroed().with_val(0));
+        bar.write(Array::at(0), regs::NV_PFSP_MSGQ_TAIL::zeroed().with_val(0));
+        bar.write(Array::at(0), regs::NV_PFSP_MSGQ_HEAD::zeroed().with_val(0));
 
         Ok(buffer)
     }

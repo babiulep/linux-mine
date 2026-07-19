@@ -10,7 +10,6 @@
 
 #include <linux/array_size.h>
 #include <linux/bits.h>
-#include <linux/cleanup.h>
 #include <linux/delay.h>
 #include <linux/dev_printk.h>
 #include <linux/errno.h>
@@ -101,14 +100,9 @@ struct opt3001_chip_info {
 
 struct opt3001 {
 	struct i2c_client	*client;
+	struct device		*dev;
 
-	/*
-	 * Ensure data capture and read-modify-write sequences are
-	 * not interrupted.
-	 */
 	struct mutex		lock;
-
-	/* Allows for IRQs to bypass locking mechanism */
 	bool			ok_to_ignore_lock;
 	bool			result_ready;
 	wait_queue_head_t	result_ready_queue;
@@ -229,10 +223,11 @@ static const struct opt3001_scale opt3002_scales[] = {
 	},
 };
 
-static int opt3001_find_scale(const struct opt3001 *opt, int val, int val2,
-			      u8 *exponent)
+static int opt3001_find_scale(const struct opt3001 *opt, int val,
+		int val2, u8 *exponent)
 {
-	for (unsigned int i = 0; i < ARRAY_SIZE(*opt->chip_info->scales); i++) {
+	int i;
+	for (i = 0; i < ARRAY_SIZE(*opt->chip_info->scales); i++) {
 		const struct opt3001_scale *scale = &(*opt->chip_info->scales)[i];
 		/*
 		 * Compare the integer and micro parts to determine value scale.
@@ -247,8 +242,8 @@ static int opt3001_find_scale(const struct opt3001 *opt, int val, int val2,
 	return -EINVAL;
 }
 
-static void opt3001_to_iio_ret(struct opt3001 *opt, u8 exponent, u16 mantissa,
-			       int *val, int *val2)
+static void opt3001_to_iio_ret(struct opt3001 *opt, u8 exponent,
+		u16 mantissa, int *val, int *val2)
 {
 	int ret;
 	int whole = opt->chip_info->factor_whole;
@@ -317,8 +312,6 @@ static const struct iio_chan_spec opt3002_channels[] = {
 
 static int opt3001_get_processed(struct opt3001 *opt, int *val, int *val2)
 {
-	struct i2c_client *client = opt->client;
-	struct device *dev = &client->dev;
 	int ret;
 	u16 mantissa;
 	u16 reg;
@@ -332,12 +325,12 @@ static int opt3001_get_processed(struct opt3001 *opt, int *val, int *val2)
 		 * doing so will overwrite the low-level limit value however we
 		 * will restore this value later on.
 		 */
-		ret = i2c_smbus_write_word_swapped(client,
-						   OPT3001_LOW_LIMIT,
-						   OPT3001_LOW_LIMIT_EOC_ENABLE);
+		ret = i2c_smbus_write_word_swapped(opt->client,
+					OPT3001_LOW_LIMIT,
+					OPT3001_LOW_LIMIT_EOC_ENABLE);
 		if (ret < 0) {
-			dev_err(dev, "failed to write register %02x\n",
-				OPT3001_LOW_LIMIT);
+			dev_err(opt->dev, "failed to write register %02x\n",
+					OPT3001_LOW_LIMIT);
 			return ret;
 		}
 
@@ -349,28 +342,29 @@ static int opt3001_get_processed(struct opt3001 *opt, int *val, int *val2)
 	opt->result_ready = false;
 
 	/* Configure for single-conversion mode and start a new conversion */
-	ret = i2c_smbus_read_word_swapped(client, OPT3001_CONFIGURATION);
+	ret = i2c_smbus_read_word_swapped(opt->client, OPT3001_CONFIGURATION);
 	if (ret < 0) {
-		dev_err(dev, "failed to read register %02x\n",
-			OPT3001_CONFIGURATION);
+		dev_err(opt->dev, "failed to read register %02x\n",
+				OPT3001_CONFIGURATION);
 		goto err;
 	}
 
 	reg = ret;
 	opt3001_set_mode(opt, &reg, OPT3001_CONFIGURATION_M_SINGLE);
 
-	ret = i2c_smbus_write_word_swapped(client, OPT3001_CONFIGURATION, reg);
+	ret = i2c_smbus_write_word_swapped(opt->client, OPT3001_CONFIGURATION,
+			reg);
 	if (ret < 0) {
-		dev_err(dev, "failed to write register %02x\n",
-			OPT3001_CONFIGURATION);
+		dev_err(opt->dev, "failed to write register %02x\n",
+				OPT3001_CONFIGURATION);
 		goto err;
 	}
 
 	if (opt->use_irq) {
 		/* Wait for the IRQ to indicate the conversion is complete */
 		ret = wait_event_timeout(opt->result_ready_queue,
-					 opt->result_ready,
-					 msecs_to_jiffies(OPT3001_RESULT_READY_LONG));
+				opt->result_ready,
+				msecs_to_jiffies(OPT3001_RESULT_READY_LONG));
 		if (ret == 0) {
 			ret = -ETIMEDOUT;
 			goto err;
@@ -382,9 +376,10 @@ static int opt3001_get_processed(struct opt3001 *opt, int *val, int *val2)
 		msleep(timeout);
 
 		/* Check result ready flag */
-		ret = i2c_smbus_read_word_swapped(client, OPT3001_CONFIGURATION);
+		ret = i2c_smbus_read_word_swapped(opt->client,
+						  OPT3001_CONFIGURATION);
 		if (ret < 0) {
-			dev_err(dev, "failed to read register %02x\n",
+			dev_err(opt->dev, "failed to read register %02x\n",
 				OPT3001_CONFIGURATION);
 			goto err;
 		}
@@ -395,9 +390,9 @@ static int opt3001_get_processed(struct opt3001 *opt, int *val, int *val2)
 		}
 
 		/* Obtain value */
-		ret = i2c_smbus_read_word_swapped(client, OPT3001_RESULT);
+		ret = i2c_smbus_read_word_swapped(opt->client, OPT3001_RESULT);
 		if (ret < 0) {
-			dev_err(dev, "failed to read register %02x\n",
+			dev_err(opt->dev, "failed to read register %02x\n",
 				OPT3001_RESULT);
 			goto err;
 		}
@@ -422,12 +417,12 @@ err:
 		 * bit-overlap and therefore can't be done.
 		 */
 		value = (opt->low_thresh_exp << 12) | opt->low_thresh_mantissa;
-		ret = i2c_smbus_write_word_swapped(client,
+		ret = i2c_smbus_write_word_swapped(opt->client,
 						   OPT3001_LOW_LIMIT,
 						   value);
 		if (ret < 0) {
-			dev_err(dev, "failed to write register %02x\n",
-				OPT3001_LOW_LIMIT);
+			dev_err(opt->dev, "failed to write register %02x\n",
+					OPT3001_LOW_LIMIT);
 			return ret;
 		}
 	}
@@ -450,15 +445,13 @@ static int opt3001_get_int_time(struct opt3001 *opt, int *val, int *val2)
 
 static int opt3001_set_int_time(struct opt3001 *opt, int time)
 {
-	struct i2c_client *client = opt->client;
-	struct device *dev = &client->dev;
 	int ret;
 	u16 reg;
 
-	ret = i2c_smbus_read_word_swapped(client, OPT3001_CONFIGURATION);
+	ret = i2c_smbus_read_word_swapped(opt->client, OPT3001_CONFIGURATION);
 	if (ret < 0) {
-		dev_err(dev, "failed to read register %02x\n",
-			OPT3001_CONFIGURATION);
+		dev_err(opt->dev, "failed to read register %02x\n",
+				OPT3001_CONFIGURATION);
 		return ret;
 	}
 
@@ -477,14 +470,16 @@ static int opt3001_set_int_time(struct opt3001 *opt, int time)
 		return -EINVAL;
 	}
 
-	return i2c_smbus_write_word_swapped(client, OPT3001_CONFIGURATION, reg);
+	return i2c_smbus_write_word_swapped(opt->client, OPT3001_CONFIGURATION,
+			reg);
 }
 
 static int opt3001_read_raw(struct iio_dev *iio,
-			    struct iio_chan_spec const *chan,
-			    int *val, int *val2, long mask)
+		struct iio_chan_spec const *chan, int *val, int *val2,
+		long mask)
 {
 	struct opt3001 *opt = iio_priv(iio);
+	int ret;
 
 	if (opt->mode == OPT3001_CONFIGURATION_M_CONTINUOUS)
 		return -EBUSY;
@@ -492,24 +487,31 @@ static int opt3001_read_raw(struct iio_dev *iio,
 	if (chan->type != opt->chip_info->chan_type)
 		return -EINVAL;
 
-	guard(mutex)(&opt->lock);
+	mutex_lock(&opt->lock);
 
 	switch (mask) {
 	case IIO_CHAN_INFO_RAW:
 	case IIO_CHAN_INFO_PROCESSED:
-		return opt3001_get_processed(opt, val, val2);
+		ret = opt3001_get_processed(opt, val, val2);
+		break;
 	case IIO_CHAN_INFO_INT_TIME:
-		return opt3001_get_int_time(opt, val, val2);
+		ret = opt3001_get_int_time(opt, val, val2);
+		break;
 	default:
-		return -EINVAL;
+		ret = -EINVAL;
 	}
+
+	mutex_unlock(&opt->lock);
+
+	return ret;
 }
 
 static int opt3001_write_raw(struct iio_dev *iio,
-			     struct iio_chan_spec const *chan,
-			     int val, int val2, long mask)
+		struct iio_chan_spec const *chan, int val, int val2,
+		long mask)
 {
 	struct opt3001 *opt = iio_priv(iio);
+	int ret;
 
 	if (opt->mode == OPT3001_CONFIGURATION_M_CONTINUOUS)
 		return -EBUSY;
@@ -523,46 +525,47 @@ static int opt3001_write_raw(struct iio_dev *iio,
 	if (val != 0)
 		return -EINVAL;
 
-	guard(mutex)(&opt->lock);
+	mutex_lock(&opt->lock);
+	ret = opt3001_set_int_time(opt, val2);
+	mutex_unlock(&opt->lock);
 
-	return opt3001_set_int_time(opt, val2);
+	return ret;
 }
 
 static int opt3001_read_event_value(struct iio_dev *iio,
-				    const struct iio_chan_spec *chan,
-				    enum iio_event_type type,
-				    enum iio_event_direction dir,
-				    enum iio_event_info info,
-				    int *val, int *val2)
+		const struct iio_chan_spec *chan, enum iio_event_type type,
+		enum iio_event_direction dir, enum iio_event_info info,
+		int *val, int *val2)
 {
 	struct opt3001 *opt = iio_priv(iio);
+	int ret = IIO_VAL_INT_PLUS_MICRO;
 
-	guard(mutex)(&opt->lock);
+	mutex_lock(&opt->lock);
 
 	switch (dir) {
 	case IIO_EV_DIR_RISING:
 		opt3001_to_iio_ret(opt, opt->high_thresh_exp,
-				   opt->high_thresh_mantissa, val, val2);
-		return IIO_VAL_INT_PLUS_MICRO;
+				opt->high_thresh_mantissa, val, val2);
+		break;
 	case IIO_EV_DIR_FALLING:
 		opt3001_to_iio_ret(opt, opt->low_thresh_exp,
-				   opt->low_thresh_mantissa, val, val2);
-		return IIO_VAL_INT_PLUS_MICRO;
+				opt->low_thresh_mantissa, val, val2);
+		break;
 	default:
-		return -EINVAL;
+		ret = -EINVAL;
 	}
+
+	mutex_unlock(&opt->lock);
+
+	return ret;
 }
 
 static int opt3001_write_event_value(struct iio_dev *iio,
-				     const struct iio_chan_spec *chan,
-				     enum iio_event_type type,
-				     enum iio_event_direction dir,
-				     enum iio_event_info info,
-				     int val, int val2)
+		const struct iio_chan_spec *chan, enum iio_event_type type,
+		enum iio_event_direction dir, enum iio_event_info info,
+		int val, int val2)
 {
 	struct opt3001 *opt = iio_priv(iio);
-	struct i2c_client *client = opt->client;
-	struct device *dev = &client->dev;
 	int ret;
 	int whole;
 	int integer;
@@ -577,12 +580,12 @@ static int opt3001_write_event_value(struct iio_dev *iio,
 	if (val < 0)
 		return -EINVAL;
 
-	guard(mutex)(&opt->lock);
+	mutex_lock(&opt->lock);
 
 	ret = opt3001_find_scale(opt, val, val2, &exponent);
 	if (ret < 0) {
-		dev_err(dev, "can't find scale for %d.%06u\n", val, val2);
-		return ret;
+		dev_err(opt->dev, "can't find scale for %d.%06u\n", val, val2);
+		goto err;
 	}
 
 	whole = opt->chip_info->factor_whole;
@@ -605,22 +608,25 @@ static int opt3001_write_event_value(struct iio_dev *iio,
 		opt->low_thresh_exp = exponent;
 		break;
 	default:
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err;
 	}
 
-	ret = i2c_smbus_write_word_swapped(client, reg, value);
+	ret = i2c_smbus_write_word_swapped(opt->client, reg, value);
 	if (ret < 0) {
-		dev_err(dev, "failed to write register %02x\n", reg);
-		return ret;
+		dev_err(opt->dev, "failed to write register %02x\n", reg);
+		goto err;
 	}
 
-	return 0;
+err:
+	mutex_unlock(&opt->lock);
+
+	return ret;
 }
 
 static int opt3001_read_event_config(struct iio_dev *iio,
-				     const struct iio_chan_spec *chan,
-				     enum iio_event_type type,
-				     enum iio_event_direction dir)
+		const struct iio_chan_spec *chan, enum iio_event_type type,
+		enum iio_event_direction dir)
 {
 	struct opt3001 *opt = iio_priv(iio);
 
@@ -628,14 +634,10 @@ static int opt3001_read_event_config(struct iio_dev *iio,
 }
 
 static int opt3001_write_event_config(struct iio_dev *iio,
-				      const struct iio_chan_spec *chan,
-				      enum iio_event_type type,
-				      enum iio_event_direction dir,
-				      bool state)
+		const struct iio_chan_spec *chan, enum iio_event_type type,
+		enum iio_event_direction dir, bool state)
 {
 	struct opt3001 *opt = iio_priv(iio);
-	struct i2c_client *client = opt->client;
-	struct device *dev = &client->dev;
 	int ret;
 	u16 mode;
 	u16 reg;
@@ -646,29 +648,33 @@ static int opt3001_write_event_config(struct iio_dev *iio,
 	if (!state && opt->mode == OPT3001_CONFIGURATION_M_SHUTDOWN)
 		return 0;
 
-	guard(mutex)(&opt->lock);
+	mutex_lock(&opt->lock);
 
 	mode = state ? OPT3001_CONFIGURATION_M_CONTINUOUS
 		: OPT3001_CONFIGURATION_M_SHUTDOWN;
 
-	ret = i2c_smbus_read_word_swapped(client, OPT3001_CONFIGURATION);
+	ret = i2c_smbus_read_word_swapped(opt->client, OPT3001_CONFIGURATION);
 	if (ret < 0) {
-		dev_err(dev, "failed to read register %02x\n",
-			OPT3001_CONFIGURATION);
-		return ret;
+		dev_err(opt->dev, "failed to read register %02x\n",
+				OPT3001_CONFIGURATION);
+		goto err;
 	}
 
 	reg = ret;
 	opt3001_set_mode(opt, &reg, mode);
 
-	ret = i2c_smbus_write_word_swapped(client, OPT3001_CONFIGURATION, reg);
+	ret = i2c_smbus_write_word_swapped(opt->client, OPT3001_CONFIGURATION,
+			reg);
 	if (ret < 0) {
-		dev_err(dev, "failed to write register %02x\n",
-			OPT3001_CONFIGURATION);
-		return ret;
+		dev_err(opt->dev, "failed to write register %02x\n",
+				OPT3001_CONFIGURATION);
+		goto err;
 	}
 
-	return 0;
+err:
+	mutex_unlock(&opt->lock);
+
+	return ret;
 }
 
 static const struct iio_info opt3001_info = {
@@ -683,68 +689,46 @@ static const struct iio_info opt3001_info = {
 
 static int opt3001_read_id(struct opt3001 *opt)
 {
-	struct i2c_client *client = opt->client;
-	struct device *dev = &client->dev;
 	char manufacturer[2];
 	u16 device_id;
 	int ret;
 
-	ret = i2c_smbus_read_word_swapped(client, OPT3001_MANUFACTURER_ID);
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "failed to read register %02x\n",
-				     OPT3001_MANUFACTURER_ID);
+	ret = i2c_smbus_read_word_swapped(opt->client, OPT3001_MANUFACTURER_ID);
+	if (ret < 0) {
+		dev_err(opt->dev, "failed to read register %02x\n",
+				OPT3001_MANUFACTURER_ID);
+		return ret;
+	}
 
 	manufacturer[0] = ret >> 8;
 	manufacturer[1] = ret & 0xff;
 
-	ret = i2c_smbus_read_word_swapped(client, OPT3001_DEVICE_ID);
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "failed to read register %02x\n",
-				     OPT3001_DEVICE_ID);
+	ret = i2c_smbus_read_word_swapped(opt->client, OPT3001_DEVICE_ID);
+	if (ret < 0) {
+		dev_err(opt->dev, "failed to read register %02x\n",
+			OPT3001_DEVICE_ID);
+		return ret;
+	}
 
 	device_id = ret;
 
-	dev_info(dev, "Found %c%c OPT%04x\n", manufacturer[0], manufacturer[1],
-		 device_id);
+	dev_info(opt->dev, "Found %c%c OPT%04x\n", manufacturer[0],
+			manufacturer[1], device_id);
 
 	return 0;
 }
 
-static void opt3001_power_off(void *data)
-{
-	struct opt3001 *opt = data;
-	struct i2c_client *client = opt->client;
-	struct device *dev = &client->dev;
-	u16 reg_val;
-	int ret;
-
-	ret = i2c_smbus_read_word_swapped(client, OPT3001_CONFIGURATION);
-	if (ret < 0) {
-		dev_err(dev, "failed to read register %02x\n",
-			OPT3001_CONFIGURATION);
-		return;
-	}
-
-	reg_val = ret;
-	opt3001_set_mode(opt, &reg_val, OPT3001_CONFIGURATION_M_SHUTDOWN);
-
-	ret = i2c_smbus_write_word_swapped(client, OPT3001_CONFIGURATION, reg_val);
-	if (ret < 0)
-		dev_err(dev, "failed to write to register %02x\n",
-			OPT3001_CONFIGURATION);
-}
-
 static int opt3001_configure(struct opt3001 *opt)
 {
-	struct i2c_client *client = opt->client;
-	struct device *dev = &client->dev;
 	int ret;
 	u16 reg;
 
-	ret = i2c_smbus_read_word_swapped(client, OPT3001_CONFIGURATION);
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "failed to read register %02x\n",
-				     OPT3001_CONFIGURATION);
+	ret = i2c_smbus_read_word_swapped(opt->client, OPT3001_CONFIGURATION);
+	if (ret < 0) {
+		dev_err(opt->dev, "failed to read register %02x\n",
+				OPT3001_CONFIGURATION);
+		return ret;
+	}
 
 	reg = ret;
 
@@ -767,28 +751,30 @@ static int opt3001_configure(struct opt3001 *opt)
 	reg &= ~OPT3001_CONFIGURATION_ME;
 	reg &= ~OPT3001_CONFIGURATION_FC_MASK;
 
-	ret = i2c_smbus_write_word_swapped(client, OPT3001_CONFIGURATION, reg);
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "failed to write register %02x\n",
-				     OPT3001_CONFIGURATION);
+	ret = i2c_smbus_write_word_swapped(opt->client, OPT3001_CONFIGURATION,
+			reg);
+	if (ret < 0) {
+		dev_err(opt->dev, "failed to write register %02x\n",
+				OPT3001_CONFIGURATION);
+		return ret;
+	}
 
-	ret = devm_add_action_or_reset(dev, opt3001_power_off, opt);
-	if (ret)
-		return dev_err_probe(dev, ret,
-				     "failed to register power off function\n");
-
-	ret = i2c_smbus_read_word_swapped(client, OPT3001_LOW_LIMIT);
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "failed to read register %02x\n",
-				     OPT3001_LOW_LIMIT);
+	ret = i2c_smbus_read_word_swapped(opt->client, OPT3001_LOW_LIMIT);
+	if (ret < 0) {
+		dev_err(opt->dev, "failed to read register %02x\n",
+				OPT3001_LOW_LIMIT);
+		return ret;
+	}
 
 	opt->low_thresh_mantissa = OPT3001_REG_MANTISSA(ret);
 	opt->low_thresh_exp = OPT3001_REG_EXPONENT(ret);
 
-	ret = i2c_smbus_read_word_swapped(client, OPT3001_HIGH_LIMIT);
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "failed to read register %02x\n",
-				     OPT3001_HIGH_LIMIT);
+	ret = i2c_smbus_read_word_swapped(opt->client, OPT3001_HIGH_LIMIT);
+	if (ret < 0) {
+		dev_err(opt->dev, "failed to read register %02x\n",
+				OPT3001_HIGH_LIMIT);
+		return ret;
+	}
 
 	opt->high_thresh_mantissa = OPT3001_REG_MANTISSA(ret);
 	opt->high_thresh_exp = OPT3001_REG_EXPONENT(ret);
@@ -800,8 +786,6 @@ static irqreturn_t opt3001_irq(int irq, void *_iio)
 {
 	struct iio_dev *iio = _iio;
 	struct opt3001 *opt = iio_priv(iio);
-	struct i2c_client *client = opt->client;
-	struct device *dev = &client->dev;
 	int ret;
 	bool wake_result_ready_queue = false;
 	enum iio_chan_type chan_type = opt->chip_info->chan_type;
@@ -810,10 +794,10 @@ static irqreturn_t opt3001_irq(int irq, void *_iio)
 	if (!ok_to_ignore_lock)
 		mutex_lock(&opt->lock);
 
-	ret = i2c_smbus_read_word_swapped(client, OPT3001_CONFIGURATION);
+	ret = i2c_smbus_read_word_swapped(opt->client, OPT3001_CONFIGURATION);
 	if (ret < 0) {
-		dev_err(dev, "failed to read register %02x\n",
-			OPT3001_CONFIGURATION);
+		dev_err(opt->dev, "failed to read register %02x\n",
+				OPT3001_CONFIGURATION);
 		goto out;
 	}
 
@@ -821,21 +805,21 @@ static irqreturn_t opt3001_irq(int irq, void *_iio)
 			OPT3001_CONFIGURATION_M_CONTINUOUS) {
 		if (ret & OPT3001_CONFIGURATION_FH)
 			iio_push_event(iio,
-				       IIO_UNMOD_EVENT_CODE(chan_type, 0,
-							    IIO_EV_TYPE_THRESH,
-							    IIO_EV_DIR_RISING),
-				       iio_get_time_ns(iio));
+					IIO_UNMOD_EVENT_CODE(chan_type, 0,
+							IIO_EV_TYPE_THRESH,
+							IIO_EV_DIR_RISING),
+					iio_get_time_ns(iio));
 		if (ret & OPT3001_CONFIGURATION_FL)
 			iio_push_event(iio,
-				       IIO_UNMOD_EVENT_CODE(chan_type, 0,
-							    IIO_EV_TYPE_THRESH,
-							    IIO_EV_DIR_FALLING),
-				       iio_get_time_ns(iio));
+					IIO_UNMOD_EVENT_CODE(chan_type, 0,
+							IIO_EV_TYPE_THRESH,
+							IIO_EV_DIR_FALLING),
+					iio_get_time_ns(iio));
 	} else if (ret & OPT3001_CONFIGURATION_CRF) {
-		ret = i2c_smbus_read_word_swapped(client, OPT3001_RESULT);
+		ret = i2c_smbus_read_word_swapped(opt->client, OPT3001_RESULT);
 		if (ret < 0) {
-			dev_err(dev, "failed to read register %02x\n",
-				OPT3001_RESULT);
+			dev_err(opt->dev, "failed to read register %02x\n",
+					OPT3001_RESULT);
 			goto out;
 		}
 		opt->result = ret;
@@ -868,13 +852,12 @@ static int opt3001_probe(struct i2c_client *client)
 
 	opt = iio_priv(iio);
 	opt->client = client;
+	opt->dev = dev;
 	opt->chip_info = i2c_get_match_data(client);
 
-	ret = devm_mutex_init(dev, &opt->lock);
-	if (ret)
-		return ret;
-
+	mutex_init(&opt->lock);
 	init_waitqueue_head(&opt->result_ready_queue);
+	i2c_set_clientdata(client, iio);
 
 	if (opt->chip_info->has_id) {
 		ret = opt3001_read_id(opt);
@@ -892,20 +875,55 @@ static int opt3001_probe(struct i2c_client *client)
 	iio->modes = INDIO_DIRECT_MODE;
 	iio->info = &opt3001_info;
 
-	/* Make use of INT pin only if valid IRQ no. is given */
-	if (irq > 0) {
-		ret = devm_request_threaded_irq(dev, irq, NULL, opt3001_irq,
-						IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-						"opt3001", iio);
-		if (ret)
-			return ret;
-
-		opt->use_irq = true;
-	} else {
-		dev_dbg(dev, "enabling interrupt-less operation\n");
+	ret = devm_iio_device_register(dev, iio);
+	if (ret) {
+		dev_err(dev, "failed to register IIO device\n");
+		return ret;
 	}
 
-	return devm_iio_device_register(dev, iio);
+	/* Make use of INT pin only if valid IRQ no. is given */
+	if (irq > 0) {
+		ret = request_threaded_irq(irq, NULL, opt3001_irq,
+				IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+				"opt3001", iio);
+		if (ret) {
+			dev_err(dev, "failed to request IRQ #%d\n", irq);
+			return ret;
+		}
+		opt->use_irq = true;
+	} else {
+		dev_dbg(opt->dev, "enabling interrupt-less operation\n");
+	}
+
+	return 0;
+}
+
+static void opt3001_remove(struct i2c_client *client)
+{
+	struct iio_dev *iio = i2c_get_clientdata(client);
+	struct opt3001 *opt = iio_priv(iio);
+	int ret;
+	u16 reg;
+
+	if (opt->use_irq)
+		free_irq(client->irq, iio);
+
+	ret = i2c_smbus_read_word_swapped(opt->client, OPT3001_CONFIGURATION);
+	if (ret < 0) {
+		dev_err(opt->dev, "failed to read register %02x\n",
+				OPT3001_CONFIGURATION);
+		return;
+	}
+
+	reg = ret;
+	opt3001_set_mode(opt, &reg, OPT3001_CONFIGURATION_M_SHUTDOWN);
+
+	ret = i2c_smbus_write_word_swapped(opt->client, OPT3001_CONFIGURATION,
+			reg);
+	if (ret < 0) {
+		dev_err(opt->dev, "failed to write register %02x\n",
+				OPT3001_CONFIGURATION);
+	}
 }
 
 static const struct opt3001_chip_info opt3001_chip_information = {
@@ -946,6 +964,7 @@ MODULE_DEVICE_TABLE(of, opt3001_of_match);
 
 static struct i2c_driver opt3001_driver = {
 	.probe = opt3001_probe,
+	.remove = opt3001_remove,
 	.id_table = opt3001_id,
 
 	.driver = {

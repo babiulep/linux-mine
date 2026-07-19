@@ -938,18 +938,16 @@ void orderly_reboot(void)
 }
 EXPORT_SYMBOL_GPL(orderly_reboot);
 
-/* DEFAULT is NULL: a sentinel, not a real action. */
-static const char *const hw_protection_action_strs[] = {
-	[HWPROT_ACT_SHUTDOWN] = "shutdown",
-	[HWPROT_ACT_REBOOT]   = "reboot",
-};
-
 static const char *hw_protection_action_str(enum hw_protection_action action)
 {
-	if (action >= ARRAY_SIZE(hw_protection_action_strs) ||
-	    !hw_protection_action_strs[action])
+	switch (action) {
+	case HWPROT_ACT_SHUTDOWN:
+		return "shutdown";
+	case HWPROT_ACT_REBOOT:
+		return "reboot";
+	default:
 		return "undefined";
-	return hw_protection_action_strs[action];
+	}
 }
 
 static enum hw_protection_action hw_failure_emergency_action;
@@ -1057,17 +1055,14 @@ EXPORT_SYMBOL_GPL(__hw_protection_trigger);
 static bool hw_protection_action_parse(const char *str,
 				       enum hw_protection_action *action)
 {
-	unsigned int i;
+	if (sysfs_streq(str, "shutdown"))
+		*action = HWPROT_ACT_SHUTDOWN;
+	else if (sysfs_streq(str, "reboot"))
+		*action = HWPROT_ACT_REBOOT;
+	else
+		return false;
 
-	for (i = 0; i < ARRAY_SIZE(hw_protection_action_strs); i++) {
-		if (hw_protection_action_strs[i] &&
-		    sysfs_streq(str, hw_protection_action_strs[i])) {
-			*action = i;
-			return true;
-		}
-	}
-
-	return false;
+	return true;
 }
 
 static int __init hw_protection_setup(char *str)
@@ -1182,43 +1177,68 @@ __setup("reboot=", reboot_setup);
 
 #ifdef CONFIG_SYSFS
 
+#define REBOOT_COLD_STR		"cold"
+#define REBOOT_WARM_STR		"warm"
+#define REBOOT_HARD_STR		"hard"
+#define REBOOT_SOFT_STR		"soft"
+#define REBOOT_GPIO_STR		"gpio"
 #define REBOOT_UNDEFINED_STR	"undefined"
 
-static const char *const reboot_mode_strs[] = {
-	[REBOOT_COLD]	= "cold",
-	[REBOOT_WARM]	= "warm",
-	[REBOOT_HARD]	= "hard",
-	[REBOOT_SOFT]	= "soft",
-	[REBOOT_GPIO]	= "gpio",
-};
+#define BOOT_TRIPLE_STR		"triple"
+#define BOOT_KBD_STR		"kbd"
+#define BOOT_BIOS_STR		"bios"
+#define BOOT_ACPI_STR		"acpi"
+#define BOOT_EFI_STR		"efi"
+#define BOOT_PCI_STR		"pci"
 
 static ssize_t mode_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-	const char *val = REBOOT_UNDEFINED_STR;
+	const char *val;
 
-	if ((unsigned int)reboot_mode < ARRAY_SIZE(reboot_mode_strs))
-		val = reboot_mode_strs[reboot_mode];
+	switch (reboot_mode) {
+	case REBOOT_COLD:
+		val = REBOOT_COLD_STR;
+		break;
+	case REBOOT_WARM:
+		val = REBOOT_WARM_STR;
+		break;
+	case REBOOT_HARD:
+		val = REBOOT_HARD_STR;
+		break;
+	case REBOOT_SOFT:
+		val = REBOOT_SOFT_STR;
+		break;
+	case REBOOT_GPIO:
+		val = REBOOT_GPIO_STR;
+		break;
+	default:
+		val = REBOOT_UNDEFINED_STR;
+	}
 
 	return sysfs_emit(buf, "%s\n", val);
 }
 static ssize_t mode_store(struct kobject *kobj, struct kobj_attribute *attr,
 			  const char *buf, size_t count)
 {
-	unsigned int i;
-
 	if (!capable(CAP_SYS_BOOT))
 		return -EPERM;
 
-	for (i = 0; i < ARRAY_SIZE(reboot_mode_strs); i++) {
-		if (!strncmp(buf, reboot_mode_strs[i],
-			     strlen(reboot_mode_strs[i]))) {
-			reboot_mode = i;
-			reboot_default = 0;
-			return count;
-		}
-	}
+	if (!strncmp(buf, REBOOT_COLD_STR, strlen(REBOOT_COLD_STR)))
+		reboot_mode = REBOOT_COLD;
+	else if (!strncmp(buf, REBOOT_WARM_STR, strlen(REBOOT_WARM_STR)))
+		reboot_mode = REBOOT_WARM;
+	else if (!strncmp(buf, REBOOT_HARD_STR, strlen(REBOOT_HARD_STR)))
+		reboot_mode = REBOOT_HARD;
+	else if (!strncmp(buf, REBOOT_SOFT_STR, strlen(REBOOT_SOFT_STR)))
+		reboot_mode = REBOOT_SOFT;
+	else if (!strncmp(buf, REBOOT_GPIO_STR, strlen(REBOOT_GPIO_STR)))
+		reboot_mode = REBOOT_GPIO;
+	else
+		return -EINVAL;
 
-	return -EINVAL;
+	reboot_default = 0;
+
+	return count;
 }
 static struct kobj_attribute reboot_mode_attr = __ATTR_RW(mode);
 
@@ -1245,28 +1265,31 @@ static ssize_t force_store(struct kobject *kobj, struct kobj_attribute *attr,
 }
 static struct kobj_attribute reboot_force_attr = __ATTR_RW(force);
 
-static const struct {
-	enum reboot_type type;
-	const char *str;
-} reboot_type_strs[] = {
-	{ BOOT_TRIPLE,		"triple" },
-	{ BOOT_KBD,		"kbd" },
-	{ BOOT_BIOS,		"bios" },
-	{ BOOT_ACPI,		"acpi" },
-	{ BOOT_EFI,		"efi" },
-	{ BOOT_CF9_FORCE,	"pci" },
-};
-
 static ssize_t type_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-	const char *val = REBOOT_UNDEFINED_STR;
-	unsigned int i;
+	const char *val;
 
-	for (i = 0; i < ARRAY_SIZE(reboot_type_strs); i++) {
-		if (reboot_type == reboot_type_strs[i].type) {
-			val = reboot_type_strs[i].str;
-			break;
-		}
+	switch (reboot_type) {
+	case BOOT_TRIPLE:
+		val = BOOT_TRIPLE_STR;
+		break;
+	case BOOT_KBD:
+		val = BOOT_KBD_STR;
+		break;
+	case BOOT_BIOS:
+		val = BOOT_BIOS_STR;
+		break;
+	case BOOT_ACPI:
+		val = BOOT_ACPI_STR;
+		break;
+	case BOOT_EFI:
+		val = BOOT_EFI_STR;
+		break;
+	case BOOT_CF9_FORCE:
+		val = BOOT_PCI_STR;
+		break;
+	default:
+		val = REBOOT_UNDEFINED_STR;
 	}
 
 	return sysfs_emit(buf, "%s\n", val);
@@ -1274,21 +1297,27 @@ static ssize_t type_show(struct kobject *kobj, struct kobj_attribute *attr, char
 static ssize_t type_store(struct kobject *kobj, struct kobj_attribute *attr,
 			  const char *buf, size_t count)
 {
-	unsigned int i;
-
 	if (!capable(CAP_SYS_BOOT))
 		return -EPERM;
 
-	for (i = 0; i < ARRAY_SIZE(reboot_type_strs); i++) {
-		if (!strncmp(buf, reboot_type_strs[i].str,
-			     strlen(reboot_type_strs[i].str))) {
-			reboot_type = reboot_type_strs[i].type;
-			reboot_default = 0;
-			return count;
-		}
-	}
+	if (!strncmp(buf, BOOT_TRIPLE_STR, strlen(BOOT_TRIPLE_STR)))
+		reboot_type = BOOT_TRIPLE;
+	else if (!strncmp(buf, BOOT_KBD_STR, strlen(BOOT_KBD_STR)))
+		reboot_type = BOOT_KBD;
+	else if (!strncmp(buf, BOOT_BIOS_STR, strlen(BOOT_BIOS_STR)))
+		reboot_type = BOOT_BIOS;
+	else if (!strncmp(buf, BOOT_ACPI_STR, strlen(BOOT_ACPI_STR)))
+		reboot_type = BOOT_ACPI;
+	else if (!strncmp(buf, BOOT_EFI_STR, strlen(BOOT_EFI_STR)))
+		reboot_type = BOOT_EFI;
+	else if (!strncmp(buf, BOOT_PCI_STR, strlen(BOOT_PCI_STR)))
+		reboot_type = BOOT_CF9_FORCE;
+	else
+		return -EINVAL;
 
-	return -EINVAL;
+	reboot_default = 0;
+
+	return count;
 }
 static struct kobj_attribute reboot_type_attr = __ATTR_RW(type);
 #endif

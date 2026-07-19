@@ -83,7 +83,7 @@ const struct file_operations bfs_dir_operations = {
 };
 
 static int bfs_create(struct mnt_idmap *idmap, struct inode *dir,
-		      struct dentry *dentry, umode_t mode)
+		      struct dentry *dentry, umode_t mode, bool excl)
 {
 	int err;
 	struct inode *inode;

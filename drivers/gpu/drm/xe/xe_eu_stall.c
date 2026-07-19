@@ -985,10 +985,9 @@ int xe_eu_stall_stream_open(struct drm_device *dev, u64 data, struct drm_file *f
 		return -ENODEV;
 	}
 
-	ret = xe_observation_paranoid_check();
-	if (ret) {
+	if (xe_observation_paranoid && !perfmon_capable()) {
 		drm_dbg(&xe->drm,  "Insufficient privileges for EU stall monitoring\n");
-		return ret;
+		return -EACCES;
 	}
 
 	/* Initialize and set default values */

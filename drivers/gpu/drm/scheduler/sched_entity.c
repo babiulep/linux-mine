@@ -129,6 +129,7 @@ int drm_sched_entity_init(struct drm_sched_entity *entity,
 		return -ENOMEM;
 
 	INIT_LIST_HEAD(&entity->list);
+	entity->rq = NULL;
 	entity->guilty = guilty;
 	entity->priority = priority;
 	entity->last_user = current->group_leader;
@@ -279,6 +280,9 @@ void drm_sched_entity_kill(struct drm_sched_entity *entity)
 	struct drm_sched_job *job;
 	struct dma_fence *prev;
 
+	if (!entity->rq)
+		return;
+
 	spin_lock(&entity->lock);
 	entity->stopped = true;
 	drm_sched_rq_remove_entity(entity->rq, entity);
@@ -325,11 +329,14 @@ EXPORT_SYMBOL(drm_sched_entity_kill);
  */
 long drm_sched_entity_flush(struct drm_sched_entity *entity, long timeout)
 {
-	struct drm_gpu_scheduler *sched =
-		container_of(entity->rq, typeof(*sched), rq);
+	struct drm_gpu_scheduler *sched;
 	struct task_struct *last_user;
 	long ret = timeout;
 
+	if (!entity->rq)
+		return 0;
+
+	sched = container_of(entity->rq, typeof(*sched), rq);
 	/*
 	 * The client will not queue more jobs during this fini - consume
 	 * existing queued ones, or discard them on SIGKILL.

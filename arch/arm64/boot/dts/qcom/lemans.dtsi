@@ -297,7 +297,17 @@
 		idle-states {
 			entry-method = "psci";
 
-			gold_rail_cpu_sleep_0: cpu-sleep-0 {
+			gold_cpu_sleep_0: cpu-sleep-0 {
+				compatible = "arm,idle-state";
+				idle-state-name = "gold-power-collapse";
+				arm,psci-suspend-param = <0x40000003>;
+				entry-latency-us = <549>;
+				exit-latency-us = <901>;
+				min-residency-us = <1774>;
+				local-timer-stop;
+			};
+
+			gold_rail_cpu_sleep_0: cpu-sleep-1 {
 				compatible = "arm,idle-state";
 				idle-state-name = "gold-rail-power-collapse";
 				arm,psci-suspend-param = <0x40000004>;
@@ -556,49 +566,57 @@
 		cpu_pd0: power-domain-cpu0 {
 			#power-domain-cells = <0>;
 			power-domains = <&cluster_0_pd>;
-			domain-idle-states = <&gold_rail_cpu_sleep_0>;
+			domain-idle-states = <&gold_cpu_sleep_0>,
+					     <&gold_rail_cpu_sleep_0>;
 		};
 
 		cpu_pd1: power-domain-cpu1 {
 			#power-domain-cells = <0>;
 			power-domains = <&cluster_0_pd>;
-			domain-idle-states = <&gold_rail_cpu_sleep_0>;
+			domain-idle-states = <&gold_cpu_sleep_0>,
+					     <&gold_rail_cpu_sleep_0>;
 		};
 
 		cpu_pd2: power-domain-cpu2 {
 			#power-domain-cells = <0>;
 			power-domains = <&cluster_0_pd>;
-			domain-idle-states = <&gold_rail_cpu_sleep_0>;
+			domain-idle-states = <&gold_cpu_sleep_0>,
+					     <&gold_rail_cpu_sleep_0>;
 		};
 
 		cpu_pd3: power-domain-cpu3 {
 			#power-domain-cells = <0>;
 			power-domains = <&cluster_0_pd>;
-			domain-idle-states = <&gold_rail_cpu_sleep_0>;
+			domain-idle-states = <&gold_cpu_sleep_0>,
+					     <&gold_rail_cpu_sleep_0>;
 		};
 
 		cpu_pd4: power-domain-cpu4 {
 			#power-domain-cells = <0>;
 			power-domains = <&cluster_1_pd>;
-			domain-idle-states = <&gold_rail_cpu_sleep_0>;
+			domain-idle-states = <&gold_cpu_sleep_0>,
+					     <&gold_rail_cpu_sleep_0>;
 		};
 
 		cpu_pd5: power-domain-cpu5 {
 			#power-domain-cells = <0>;
 			power-domains = <&cluster_1_pd>;
-			domain-idle-states = <&gold_rail_cpu_sleep_0>;
+			domain-idle-states = <&gold_cpu_sleep_0>,
+					     <&gold_rail_cpu_sleep_0>;
 		};
 
 		cpu_pd6: power-domain-cpu6 {
 			#power-domain-cells = <0>;
 			power-domains = <&cluster_1_pd>;
-			domain-idle-states = <&gold_rail_cpu_sleep_0>;
+			domain-idle-states = <&gold_cpu_sleep_0>,
+					     <&gold_rail_cpu_sleep_0>;
 		};
 
 		cpu_pd7: power-domain-cpu7 {
 			#power-domain-cells = <0>;
 			power-domains = <&cluster_1_pd>;
-			domain-idle-states = <&gold_rail_cpu_sleep_0>;
+			domain-idle-states = <&gold_cpu_sleep_0>,
+					     <&gold_rail_cpu_sleep_0>;
 		};
 
 		cluster_0_pd: power-domain-cluster0 {
@@ -1023,7 +1041,7 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 
-			gpu_speed_bin: gpu-speed-bin@240c {
+			gpu_speed_bin: gpu_speed_bin@240c {
 				reg = <0x240c 0x1>;
 				bits = <0 8>;
 			};
@@ -2761,7 +2779,6 @@
 			status = "disabled";
 
 			pcieport0: pcie@0 {
-				compatible = "pciclass,0604";
 				device_type = "pci";
 				reg = <0x0 0x0 0x0 0x0 0x0>;
 				bus-range = <0x01 0xff>;
@@ -3180,7 +3197,6 @@
 
 			clocks = <&aoss_qmp>;
 			clock-names = "apb_pclk";
-			label = "tpdm_dcc";
 
 			qcom,cmb-element-bits = <32>;
 			qcom,cmb-msrs-num = <32>;
@@ -3240,7 +3256,6 @@
 
 			clocks = <&aoss_qmp>;
 			clock-names = "apb_pclk";
-			label = "tpdm_spdm";
 
 			qcom,cmb-element-bits = <32>;
 			qcom,cmb-msrs-num = <32>;
@@ -3709,7 +3724,6 @@
 
 			clocks = <&aoss_qmp>;
 			clock-names = "apb_pclk";
-			label = "tpdm_swao_prio_0";
 
 			qcom,cmb-element-bits = <64>;
 			qcom,cmb-msrs-num = <32>;
@@ -3730,7 +3744,6 @@
 
 			clocks = <&aoss_qmp>;
 			clock-names = "apb_pclk";
-			label = "tpdm_swao_prio_1";
 
 			qcom,cmb-element-bits = <64>;
 			qcom,cmb-msrs-num = <32>;
@@ -3751,7 +3764,6 @@
 
 			clocks = <&aoss_qmp>;
 			clock-names = "apb_pclk";
-			label = "tpdm_swao_prio_2";
 
 			qcom,cmb-element-bits = <64>;
 			qcom,cmb-msrs-num = <32>;
@@ -3772,7 +3784,6 @@
 
 			clocks = <&aoss_qmp>;
 			clock-names = "apb_pclk";
-			label = "tpdm_swao_prio_3";
 
 			qcom,cmb-element-bits = <64>;
 			qcom,cmb-msrs-num = <32>;
@@ -3793,7 +3804,6 @@
 
 			clocks = <&aoss_qmp>;
 			clock-names = "apb_pclk";
-			label = "tpdm_swao_1";
 
 			qcom,dsb-element-bits = <32>;
 			qcom,dsb-msrs-num = <32>;
@@ -3814,7 +3824,6 @@
 
 			clocks = <&aoss_qmp>;
 			clock-names = "apb_pclk";
-			label = "cti_aoss";
 		};
 
 		funnel@4b83000 {
@@ -4136,7 +4145,6 @@
 
 			clocks = <&aoss_qmp>;
 			clock-names = "apb_pclk";
-			label = "tpdm_actpm";
 
 			qcom,cmb-element-bits = <64>;
 			qcom,cmb-msrs-num = <32>;
@@ -4157,7 +4165,6 @@
 
 			clocks = <&aoss_qmp>;
 			clock-names = "apb_pclk";
-			label = "tpdm_apss";
 
 			qcom,dsb-element-bits = <32>;
 			qcom,dsb-msrs-num = <32>;
@@ -4240,7 +4247,6 @@
 
 			clocks = <&aoss_qmp>;
 			clock-names = "apb_pclk";
-			label = "tpdm_llm_silver";
 
 			qcom,cmb-element-bits = <32>;
 			qcom,cmb-msrs-num = <32>;
@@ -4261,7 +4267,6 @@
 
 			clocks = <&aoss_qmp>;
 			clock-names = "apb_pclk";
-			label = "tpdm_llm_gold";
 
 			qcom,cmb-element-bits = <32>;
 			qcom,cmb-msrs-num = <32>;
@@ -4282,7 +4287,6 @@
 
 			clocks = <&aoss_qmp>;
 			clock-names = "apb_pclk";
-			label = "tpdm_llm_ext";
 
 			qcom,dsb-element-bits = <32>;
 			qcom,dsb-msrs-num = <32>;
@@ -5869,7 +5873,7 @@
 
 		pdc: interrupt-controller@b220000 {
 			compatible = "qcom,sa8775p-pdc", "qcom,pdc";
-			reg = <0x0 0x0b220000 0x0 0x10000>,
+			reg = <0x0 0x0b220000 0x0 0x30000>,
 			      <0x0 0x17c000f0 0x0 0x64>;
 			qcom,pdc-ranges = <0 480 40>,
 					  <40 140 14>,
@@ -9175,7 +9179,6 @@
 
 	turing-llm-tpdm {
 		compatible = "qcom,coresight-static-tpdm";
-		label = "tpdm_cdsp_llm_0";
 
 		qcom,cmb-element-bits = <32>;
 

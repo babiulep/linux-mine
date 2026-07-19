@@ -155,8 +155,10 @@ static void *vcpu_worker(void *data)
 		    "Expected EFAULT on write to RO memory, got r = %d, errno = %d", r, errno);
 
 	atomic_inc(&nr_ro_faults);
-	if (atomic_read(&nr_ro_faults) == nr_vcpus)
-		WRITE_AND_SYNC_TO_GUEST(vm, all_vcpus_hit_ro_fault, true);
+	if (atomic_read(&nr_ro_faults) == nr_vcpus) {
+		WRITE_ONCE(all_vcpus_hit_ro_fault, true);
+		sync_global_to_guest(vm, all_vcpus_hit_ro_fault);
+	}
 
 #if defined(__x86_64__) || defined(__aarch64__)
 	/*
@@ -255,7 +257,11 @@ static void rendezvous_with_vcpus(struct timespec *time, const char *name)
 static void calc_default_nr_vcpus(void)
 {
 	cpu_set_t possible_mask;
-	kvm_sched_getaffinity(0, sizeof(possible_mask), &possible_mask);
+	int r;
+
+	r = sched_getaffinity(0, sizeof(possible_mask), &possible_mask);
+	TEST_ASSERT(!r, "sched_getaffinity failed, errno = %d (%s)",
+		    errno, strerror(errno));
 
 	nr_vcpus = CPU_COUNT(&possible_mask);
 	TEST_ASSERT(nr_vcpus > 0, "Uh, no CPUs?");
@@ -377,7 +383,8 @@ int main(int argc, char *argv[])
 	rendezvous_with_vcpus(&time_run2, "run 2");
 
 	mprotect(mem, slot_size, PROT_READ);
-	WRITE_AND_SYNC_TO_GUEST(vm, mprotect_ro_done, true);
+	mprotect_ro_done = true;
+	sync_global_to_guest(vm, mprotect_ro_done);
 
 	rendezvous_with_vcpus(&time_ro, "mprotect RO");
 	mprotect(mem, slot_size, PROT_READ | PROT_WRITE);

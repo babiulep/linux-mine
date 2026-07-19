@@ -20,7 +20,6 @@ TEST_GEN_FILES := \
 TEST_PROGS = \
 	csum.py \
 	devlink_port_split.py \
-	devlink_rate_cross_esw.py \
 	devlink_rate_tc_bw.py \
 	devmem.py \
 	ethtool.sh \

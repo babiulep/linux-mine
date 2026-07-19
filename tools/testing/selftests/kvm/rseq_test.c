@@ -226,7 +226,9 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	kvm_sched_getaffinity(0, sizeof(possible_mask), &possible_mask);
+	r = sched_getaffinity(0, sizeof(possible_mask), &possible_mask);
+	TEST_ASSERT(!r, "sched_getaffinity failed, errno = %d (%s)", errno,
+		    strerror(errno));
 
 	calc_min_max_cpu();
 
@@ -242,7 +244,7 @@ int main(int argc, char *argv[])
 	vm = vm_create_with_one_vcpu(&vcpu, guest_code);
 
 	pthread_create(&migration_thread, NULL, migration_worker,
-		       (void *)(unsigned long)kvm_gettid());
+		       (void *)(unsigned long)syscall(SYS_gettid));
 
 	if (latency >= 0) {
 		/*

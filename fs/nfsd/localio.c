@@ -97,15 +97,11 @@ nfsd_open_local_fh(struct net *net, struct auth_domain *dom,
 		}
 		nfsd_file_get(localio);
 	again:
-		rcu_read_lock();
 		new = unrcu_pointer(cmpxchg(pnf, NULL, RCU_INITIALIZER(localio)));
 		if (new) {
 			/* Some other thread installed an nfsd_file */
-			if (nfsd_file_get(new) == NULL) {
-				rcu_read_unlock();
+			if (nfsd_file_get(new) == NULL)
 				goto again;
-			}
-			rcu_read_unlock();
 			/*
 			 * Drop the ref we were going to install (both file and
 			 * net) and the one we were going to return (only file).
@@ -114,8 +110,6 @@ nfsd_open_local_fh(struct net *net, struct auth_domain *dom,
 			nfsd_net_put(net);
 			nfsd_file_put(localio);
 			localio = new;
-		} else {
-			rcu_read_unlock();
 		}
 	} else
 		nfsd_net_put(net);

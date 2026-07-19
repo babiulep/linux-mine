@@ -324,4 +324,3 @@ module_platform_driver(cm3605_driver);
 MODULE_AUTHOR("Linus Walleij <linus.walleij@linaro.org>");
 MODULE_DESCRIPTION("CM3605 ambient light and proximity sensor driver");
 MODULE_LICENSE("GPL");
-MODULE_IMPORT_NS("IIO_CONSUMER");

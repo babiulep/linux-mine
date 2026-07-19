@@ -302,11 +302,10 @@ static int ocfs2_check_dir_entry(struct inode *dir,
 				 unsigned long offset)
 {
 	const char *error_msg = NULL;
-	unsigned long buf_offset = (char *)de - buf;
 	unsigned long next_offset;
 	int rlen;
 
-	if (buf_offset > size || size - buf_offset < OCFS2_DIR_REC_LEN(1)) {
+	if (offset > size - OCFS2_DIR_REC_LEN(1)) {
 		/* Dirent is (maybe partially) beyond the buffer
 		 * boundaries so touching 'de' members is unsafe.
 		 */
@@ -317,7 +316,7 @@ static int ocfs2_check_dir_entry(struct inode *dir,
 	}
 
 	rlen = le16_to_cpu(de->rec_len);
-	next_offset = buf_offset + rlen;
+	next_offset = ((char *) de - buf) + rlen;
 
 	if (unlikely(rlen < OCFS2_DIR_REC_LEN(1)))
 		error_msg = "rec_len is smaller than minimal";
@@ -1867,7 +1866,6 @@ static int ocfs2_dir_foreach_blk_el(struct inode *inode,
 	struct super_block * sb = inode->i_sb;
 	unsigned int ra_sectors = 16;
 	int stored = 0;
-	int ret;
 
 	bh = NULL;
 
@@ -1875,13 +1873,9 @@ static int ocfs2_dir_foreach_blk_el(struct inode *inode,
 
 	while (ctx->pos < i_size_read(inode)) {
 		blk = ctx->pos >> sb->s_blocksize_bits;
-		ret = ocfs2_read_dir_block(inode, blk, &bh, 0);
-		if (ret) {
-			if (persist)
-				return ret;
+		if (ocfs2_read_dir_block(inode, blk, &bh, 0)) {
 			/* Skip the corrupt dirblock and keep trying */
 			ctx->pos += sb->s_blocksize - offset;
-			offset = 0;
 			continue;
 		}
 
@@ -1975,7 +1969,8 @@ static int ocfs2_dir_foreach_blk(struct inode *inode, u64 *f_version,
 int ocfs2_dir_foreach(struct inode *inode, struct dir_context *ctx)
 {
 	u64 version = inode_query_iversion(inode);
-	return ocfs2_dir_foreach_blk(inode, &version, ctx, true);
+	ocfs2_dir_foreach_blk(inode, &version, ctx, true);
+	return 0;
 }
 
 /*
@@ -2172,7 +2167,7 @@ out:
 /*
  * routine to check that the specified directory is empty (for rmdir)
  *
- * Returns 1 if dir is empty, zero if not, and a negative errno on error.
+ * Returns 1 if dir is empty, zero otherwise.
  *
  * XXX: This is a performance problem for unindexed directories.
  */
@@ -2185,10 +2180,8 @@ int ocfs2_empty_dir(struct inode *inode)
 
 	if (ocfs2_dir_indexed(inode)) {
 		ret = ocfs2_empty_dir_dx(inode, &priv);
-		if (ret) {
+		if (ret)
 			mlog_errno(ret);
-			return ret;
-		}
 		/*
 		 * We still run ocfs2_dir_foreach to get the checks
 		 * for "." and "..".
@@ -2196,10 +2189,8 @@ int ocfs2_empty_dir(struct inode *inode)
 	}
 
 	ret = ocfs2_dir_foreach(inode, &priv.ctx);
-	if (ret) {
+	if (ret)
 		mlog_errno(ret);
-		return ret;
-	}
 
 	if (!priv.seen_dot || !priv.seen_dot_dot) {
 		mlog(ML_ERROR, "bad directory (dir #%llu) - no `.' or `..'\n",

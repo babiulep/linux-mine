@@ -6,5 +6,4 @@
 !*.sh
 !.gitignore
 !config
-!config.*
 !Makefile

@@ -419,7 +419,7 @@ static void update_attrib_vcs_info(struct adapter *padapter, struct xmit_frame *
 			/* IOT action */
 			if ((pmlmeinfo->assoc_AP_vendor == HT_IOT_PEER_ATHEROS) &&
 			    pattrib->ampdu_en &&
-			    (padapter->securitypriv.dot11_privacy_algrthm == _AES_)) {
+			    (padapter->securitypriv.dot11PrivacyAlgrthm == _AES_)) {
 				pattrib->vcs_mode = CTS_TO_SELF;
 				break;
 			}
@@ -505,8 +505,9 @@ static void update_attrib_phy_info(struct adapter *padapter, struct pkt_attrib *
 	pattrib->retry_ctrl = false;
 }
 
-static int update_attrib_sec_info(struct adapter *padapter, struct pkt_attrib *pattrib, struct sta_info *psta)
+static s32 update_attrib_sec_info(struct adapter *padapter, struct pkt_attrib *pattrib, struct sta_info *psta)
 {
+	signed int res = _SUCCESS;
 	struct mlme_priv *pmlmepriv = &padapter->mlmepriv;
 	struct security_priv *psecuritypriv = &padapter->securitypriv;
 	signed int bmcast = is_multicast_ether_addr(pattrib->ra);
@@ -518,12 +519,14 @@ static int update_attrib_sec_info(struct adapter *padapter, struct pkt_attrib *p
 	if (psta->ieee8021x_blocked) {
 		pattrib->encrypt = 0;
 
-		if ((pattrib->ether_type != 0x888e) && !check_fwstate(pmlmepriv, WIFI_MP_STATE))
-			return -EINVAL;
+		if ((pattrib->ether_type != 0x888e) && !check_fwstate(pmlmepriv, WIFI_MP_STATE)) {
+			res = _FAIL;
+			goto exit;
+		}
 	} else {
 		GET_ENCRY_ALGO(psecuritypriv, psta, pattrib->encrypt, bmcast);
 
-		switch (psecuritypriv->dot11_auth_algrthm) {
+		switch (psecuritypriv->dot11AuthAlgrthm) {
 		case dot11AuthAlgrthm_Open:
 		case dot11AuthAlgrthm_Shared:
 		case dot11AuthAlgrthm_Auto:
@@ -557,8 +560,10 @@ static int update_attrib_sec_info(struct adapter *padapter, struct pkt_attrib *p
 		pattrib->iv_len = 8;
 		pattrib->icv_len = 4;
 
-		if (psecuritypriv->busetkipkey == _FAIL)
-			return -EINVAL;
+		if (psecuritypriv->busetkipkey == _FAIL) {
+			res = _FAIL;
+			goto exit;
+		}
 
 		if (bmcast)
 			TKIP_IV(pattrib->iv, psta->dot11txpn, pattrib->key_idx);
@@ -596,7 +601,9 @@ static int update_attrib_sec_info(struct adapter *padapter, struct pkt_attrib *p
 	else
 		pattrib->bswenc = false;
 
-	return 0;
+exit:
+
+	return res;
 }
 
 u8 qos_acm(u8 acm_mask, u8 priority)
@@ -654,7 +661,7 @@ static int set_qos(struct pkt_file *ppktfile, struct pkt_attrib *pattrib)
 	return 0;
 }
 
-static int update_attrib(struct adapter *padapter, struct sk_buff *pkt, struct pkt_attrib *pattrib)
+static s32 update_attrib(struct adapter *padapter, struct sk_buff *pkt, struct pkt_attrib *pattrib)
 {
 	struct pkt_file pktfile;
 	struct sta_info *psta = NULL;
@@ -664,6 +671,7 @@ static int update_attrib(struct adapter *padapter, struct sk_buff *pkt, struct p
 	struct sta_priv *pstapriv = &padapter->stapriv;
 	struct mlme_priv *pmlmepriv = &padapter->mlmepriv;
 	struct qos_priv *pqospriv = &pmlmepriv->qospriv;
+	signed int res = _SUCCESS;
 	int ret;
 
 	_rtw_open_pktfile(pkt, &pktfile);
@@ -740,25 +748,29 @@ static int update_attrib(struct adapter *padapter, struct sk_buff *pkt, struct p
 		psta = rtw_get_bcmc_stainfo(padapter);
 	} else {
 		psta = rtw_get_stainfo(pstapriv, pattrib->ra);
-		if (!psta)	/*  if we cannot get psta => drop the pkt */
-			return -EINVAL;
-		else if (check_fwstate(pmlmepriv, WIFI_AP_STATE) && !(psta->state & _FW_LINKED))
-			return -EINVAL;
+		if (!psta)	{ /*  if we cannot get psta => drop the pkt */
+			res = _FAIL;
+			goto exit;
+		} else if (check_fwstate(pmlmepriv, WIFI_AP_STATE) && !(psta->state & _FW_LINKED)) {
+			res = _FAIL;
+			goto exit;
+		}
 	}
 
 	if (!psta) {
 		/*  if we cannot get psta => drop the pkt */
-		return -EINVAL;
+		res = _FAIL;
+		goto exit;
 	}
 
 	if (!(psta->state & _FW_LINKED))
-		return -EINVAL;
+		return _FAIL;
 
 	spin_lock_bh(&psta->lock);
-	ret = update_attrib_sec_info(padapter, pattrib, psta);
-	if (ret) {
+	if (update_attrib_sec_info(padapter, pattrib, psta) == _FAIL) {
 		spin_unlock_bh(&psta->lock);
-		return ret;
+		res = _FAIL;
+		goto exit;
 	}
 
 	update_attrib_phy_info(padapter, pattrib, psta);
@@ -794,7 +806,9 @@ static int update_attrib(struct adapter *padapter, struct sk_buff *pkt, struct p
 	}
 
 	/* pattrib->priority = 5; force to used VI queue, for testing */
-	return 0;
+
+exit:
+	return res;
 }
 
 static s32 xmitframe_addmic(struct adapter *padapter, struct xmit_frame *pxmitframe)
@@ -1955,7 +1969,7 @@ s32 rtw_xmit(struct adapter *padapter, struct sk_buff **ppkt)
 	struct xmit_priv *pxmitpriv = &padapter->xmitpriv;
 	struct xmit_frame *pxmitframe = NULL;
 
-	int ret;
+	s32 res;
 
 	if (start == 0)
 		start = jiffies;
@@ -1968,8 +1982,9 @@ s32 rtw_xmit(struct adapter *padapter, struct sk_buff **ppkt)
 	if (!pxmitframe)
 		return -1;
 
-	ret = update_attrib(padapter, *ppkt, &pxmitframe->attrib);
-	if (ret) {
+	res = update_attrib(padapter, *ppkt, &pxmitframe->attrib);
+
+	if (res != _SUCCESS) {
 		rtw_free_xmitframe(pxmitpriv, pxmitframe);
 		return -1;
 	}
@@ -2068,7 +2083,7 @@ signed int xmitframe_enqueue_for_sleeping_sta(struct adapter *padapter, struct x
 			pstapriv->sta_dz_bitmap |= BIT(0);
 
 			if (update_tim)
-				update_beacon(padapter, WLAN_EID_TIM, true);
+				update_beacon(padapter, WLAN_EID_TIM, NULL, true);
 			else
 				chk_bmc_sleepq_cmd(padapter);
 
@@ -2123,7 +2138,7 @@ signed int xmitframe_enqueue_for_sleeping_sta(struct adapter *padapter, struct x
 
 				if (update_tim)
 					/* update BCN for TIM IE */
-					update_beacon(padapter, WLAN_EID_TIM, true);
+					update_beacon(padapter, WLAN_EID_TIM, NULL, true);
 			}
 
 			ret = true;
@@ -2135,9 +2150,7 @@ signed int xmitframe_enqueue_for_sleeping_sta(struct adapter *padapter, struct x
 	return ret;
 }
 
-static void dequeue_xmitframes_to_sleeping_queue(struct adapter *padapter,
-						 struct sta_info *psta,
-						 struct __queue *pframequeue)
+static void dequeue_xmitframes_to_sleeping_queue(struct adapter *padapter, struct sta_info *psta, struct __queue *pframequeue)
 {
 	signed int ret;
 	struct list_head *plist, *phead, *tmp;
@@ -2320,7 +2333,7 @@ _exit:
 	spin_unlock_bh(&pxmitpriv->lock);
 
 	if (update_mask)
-		update_beacon(padapter, WLAN_EID_TIM, true);
+		update_beacon(padapter, WLAN_EID_TIM, NULL, true);
 }
 
 void xmit_delivery_enabled_frames(struct adapter *padapter, struct sta_info *psta)
@@ -2380,7 +2393,7 @@ void xmit_delivery_enabled_frames(struct adapter *padapter, struct sta_info *pst
 		if ((psta->sleepq_ac_len == 0) && (!psta->has_legacy_ac) && (wmmps_ac)) {
 			pstapriv->tim_bitmap &= ~BIT(psta->aid);
 
-			update_beacon(padapter, WLAN_EID_TIM, true);
+			update_beacon(padapter, WLAN_EID_TIM, NULL, true);
 		}
 	}
 

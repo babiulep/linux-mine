@@ -112,8 +112,7 @@ static ssize_t pci_dev_show_local_cpu(struct device *dev, bool list,
 #else
 	mask = cpumask_of_pcibus(to_pci_dev(dev)->bus);
 #endif
-	return sysfs_emit(buf, list ? "%*pbl\n" : "%*pb\n",
-			  cpumask_pr_args(mask));
+	return cpumap_print_to_pagebuf(list, buf, mask);
 }
 
 static ssize_t local_cpus_show(struct device *dev,
@@ -138,7 +137,7 @@ static ssize_t cpuaffinity_show(struct device *dev,
 {
 	const struct cpumask *cpumask = cpumask_of_pcibus(to_pci_bus(dev));
 
-	return sysfs_emit(buf, "%*pb\n", cpumask_pr_args(cpumask));
+	return cpumap_print_to_pagebuf(false, buf, cpumask);
 }
 static DEVICE_ATTR_RO(cpuaffinity);
 
@@ -147,7 +146,7 @@ static ssize_t cpulistaffinity_show(struct device *dev,
 {
 	const struct cpumask *cpumask = cpumask_of_pcibus(to_pci_bus(dev));
 
-	return sysfs_emit(buf, "%*pbl\n", cpumask_pr_args(cpumask));
+	return cpumap_print_to_pagebuf(true, buf, cpumask);
 }
 static DEVICE_ATTR_RO(cpulistaffinity);
 
@@ -889,30 +888,12 @@ static ssize_t pci_read_legacy_io(struct file *filp, struct kobject *kobj,
 				  char *buf, loff_t off, size_t count)
 {
 	struct pci_bus *bus = to_pci_bus(kobj_to_dev(kobj));
-	u32 val = 0;
-	int ret;
 
 	/* Only support 1, 2 or 4 byte accesses */
 	if (count != 1 && count != 2 && count != 4)
 		return -EINVAL;
 
-	ret = pci_legacy_read(bus, off, &val, count);
-	if (ret < 0)
-		return ret;
-
-	switch (count) {
-	case 1:
-		buf[0] = *(u8 *)&val;
-		break;
-	case 2:
-		put_unaligned_le16(*(u16 *)&val, buf);
-		break;
-	case 4:
-		put_unaligned_le32(val, buf);
-		break;
-	}
-
-	return ret;
+	return pci_legacy_read(bus, off, (u32 *)buf, count);
 }
 
 /**
@@ -932,24 +913,12 @@ static ssize_t pci_write_legacy_io(struct file *filp, struct kobject *kobj,
 				   char *buf, loff_t off, size_t count)
 {
 	struct pci_bus *bus = to_pci_bus(kobj_to_dev(kobj));
-	u32 val;
 
-	/* Only support 1, 2 or 4 byte accesses. */
-	switch (count) {
-	case 1:
-		val = *(u8 *)buf;
-		break;
-	case 2:
-		val = get_unaligned_le16(buf);
-		break;
-	case 4:
-		val = get_unaligned_le32(buf);
-		break;
-	default:
+	/* Only support 1, 2 or 4 byte accesses */
+	if (count != 1 && count != 2 && count != 4)
 		return -EINVAL;
-	}
 
-	return pci_legacy_write(bus, off, val, count);
+	return pci_legacy_write(bus, off, *(u32 *)buf, count);
 }
 
 /**

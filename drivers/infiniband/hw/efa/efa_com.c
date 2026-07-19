@@ -724,8 +724,6 @@ void efa_com_admin_destroy(struct efa_com_dev *edev)
 
 	size = aenq->depth * sizeof(*aenq->entries);
 	dma_free_coherent(edev->dmadev, size, aenq->entries, aenq->dma_addr);
-
-	efa_ah_cache_destroy(&edev->ah_cache);
 }
 
 /**
@@ -784,12 +782,6 @@ int efa_com_admin_init(struct efa_com_dev *edev,
 		return -ENODEV;
 	}
 
-	err = efa_ah_cache_init(&edev->ah_cache);
-	if (err) {
-		ibdev_err(edev->efa_dev, "Failed to init AH cache\n");
-		return err;
-	}
-
 	aq->depth = EFA_ADMIN_QUEUE_DEPTH;
 
 	aq->dmadev = edev->dmadev;
@@ -802,7 +794,7 @@ int efa_com_admin_init(struct efa_com_dev *edev,
 
 	err = efa_com_init_comp_ctxt(aq);
 	if (err)
-		goto err_destroy_ah_cache;
+		return err;
 
 	err = efa_com_admin_init_sq(edev);
 	if (err)
@@ -840,8 +832,6 @@ err_destroy_sq:
 			  aq->sq.entries, aq->sq.dma_addr);
 err_destroy_comp_ctxt:
 	devm_kfree(edev->dmadev, aq->comp_ctx);
-err_destroy_ah_cache:
-	efa_ah_cache_destroy(&edev->ah_cache);
 
 	return err;
 }

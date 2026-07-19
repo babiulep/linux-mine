@@ -876,14 +876,8 @@ static void iommu_enable_pci_ats(struct device_domain_info *info)
 	if (!pci_ats_page_aligned(pdev))
 		return;
 
-	/*
-	 * pci_enable_ats() should not fail here because earlier checks
-	 * have already verified support and configuration.
-	 */
-	if (WARN_ON(pci_enable_ats(pdev, VTD_PAGE_SHIFT)))
-		return;
-
-	info->ats_enabled = 1;
+	if (!pci_enable_ats(pdev, VTD_PAGE_SHIFT))
+		info->ats_enabled = 1;
 }
 
 static void iommu_disable_pci_ats(struct device_domain_info *info)
@@ -3298,10 +3292,7 @@ static struct iommu_device *intel_iommu_probe_device(struct device *dev)
 
 	dev_iommu_priv_set(dev, info);
 	if (pdev && pci_ats_supported(pdev)) {
-		ret = pci_prepare_ats(pdev, VTD_PAGE_SHIFT);
-		if (ret)
-			goto free;
-
+		pci_prepare_ats(pdev, VTD_PAGE_SHIFT);
 		ret = device_rbtree_insert(iommu, info);
 		if (ret)
 			goto free;

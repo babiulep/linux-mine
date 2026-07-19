@@ -2332,6 +2332,9 @@ static int sev_gmem_post_populate(struct kvm *kvm, gfn_t gfn, kvm_pfn_t pfn,
 	int level;
 	int ret;
 
+	if (WARN_ON_ONCE(sev_populate_args->type != KVM_SEV_SNP_PAGE_TYPE_ZERO && !src_page))
+		return -EINVAL;
+
 	ret = snp_lookup_rmpentry((u64)pfn, &assigned, &level);
 	if (ret || assigned) {
 		pr_debug("%s: Failed to ensure GFN 0x%llx RMP entry is initial shared state, ret: %d assigned: %d\n",
@@ -2420,12 +2423,10 @@ static int snp_launch_update(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	     params.type != KVM_SEV_SNP_PAGE_TYPE_CPUID))
 		return -EINVAL;
 
-	if (params.type == KVM_SEV_SNP_PAGE_TYPE_ZERO)
-		src = NULL;
-	else if (!params.uaddr || !PAGE_ALIGNED(params.uaddr))
+	src = params.type == KVM_SEV_SNP_PAGE_TYPE_ZERO ? NULL : u64_to_user_ptr(params.uaddr);
+
+	if (!PAGE_ALIGNED(src))
 		return -EINVAL;
-	else
-		src = u64_to_user_ptr(params.uaddr);
 
 	npages = params.len / PAGE_SIZE;
 
@@ -3981,84 +3982,16 @@ static int snp_begin_psc(struct vcpu_svm *svm)
 	return snp_do_psc(svm);
 }
 
-static void __sev_snp_reload_vmsa(struct kvm_vcpu *vcpu, gpa_t gpa)
-{
-	struct vcpu_svm *svm = to_svm(vcpu);
-	struct kvm_memory_slot *slot;
-	struct kvm *kvm = vcpu->kvm;
-	gfn_t gfn = gpa_to_gfn(gpa);
-	unsigned long mmu_seq;
-	struct page *page;
-	kvm_pfn_t pfn;
-
-	lockdep_assert_held(&svm->sev_es.snp_vmsa_mutex);
-
-	/*
-	 * Clear use of the VMSA.  Ensure snp_guest_vmsa_gpa is written exactly
-	 * once, as it is read locklessly when responding to gfn invalidations.
-	 * Pairs with the READ_ONCE() in sev_gmem_invalidate_range().
-	 */
-	svm->vmcb->control.vmsa_pa = INVALID_PAGE;
-	WRITE_ONCE(svm->sev_es.snp_guest_vmsa_gpa, INVALID_PAGE);
-
-	/*
-	 * When replacing the VMSA during SEV-SNP AP creation,
-	 * mark the VMCB dirty so that full state is always reloaded.
-	 */
-	vmcb_mark_all_dirty(svm->vmcb);
-
-	/*
-	 * From this point forward, the VMSA will always be a guest-mapped page
-	 * rather than the initial one allocated by KVM in svm->sev_es.vmsa. In
-	 * theory, svm->sev_es.vmsa could be free'd and cleaned up here, but
-	 * that involves cleanups like flushing caches, which would ideally be
-	 * handled during teardown rather than guest boot.  Deferring that also
-	 * allows the existing logic for SEV-ES VMSAs to be re-used with
-	 * minimal SNP-specific changes.
-	 */
-	svm->sev_es.snp_has_guest_vmsa = true;
-
-	if (!VALID_PAGE(gpa))
-		return;
-
-	slot = gfn_to_memslot(vcpu->kvm, gfn);
-	if (!slot)
-		return;
-
-	mmu_seq = kvm->mmu_invalidate_seq;
-	smp_rmb();
-
-	/*
-	 * The new VMSA will be private memory guest memory, so retrieve the
-	 * PFN from the gmem backend.
-	 */
-	if (kvm_gmem_get_pfn(vcpu->kvm, slot, gfn, &pfn, &page, NULL))
-		return;
-
-	read_lock(&kvm->mmu_lock);
-	/*
-	 * Save the guest-provided GPA.  If retry is needed, then KVM will try
-	 * again with the same GPA.  If the VMSA is usable, then KVM needs to
-	 * track the GPA so that the VMSA can be reloaded if the backing page
-	 * for the GPA is invalidated.
-	 */
-	svm->sev_es.snp_guest_vmsa_gpa = gpa;
-	if (mmu_invalidate_retry_gfn(kvm, mmu_seq, gfn))
-		kvm_make_request(KVM_REQ_VMSA_PAGE_RELOAD, vcpu);
-	else
-		svm->vmcb->control.vmsa_pa = pfn_to_hpa(pfn);
-	read_unlock(&kvm->mmu_lock);
-
-	kvm_release_page_clean(page);
-}
-
 /*
  * Invoked as part of svm_vcpu_reset() processing of an init event.
  */
 static void sev_snp_init_protected_guest_state(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
-	gpa_t gpa;
+	struct kvm_memory_slot *slot;
+	struct page *page;
+	kvm_pfn_t pfn;
+	gfn_t gfn;
 
 	guard(mutex)(&svm->sev_es.snp_vmsa_mutex);
 
@@ -4071,28 +4004,55 @@ static void sev_snp_init_protected_guest_state(struct kvm_vcpu *vcpu)
 	vcpu->arch.pv.pv_unhalted = false;
 	kvm_set_mp_state(vcpu, KVM_MP_STATE_HALTED);
 
-	gpa = svm->sev_es.snp_pending_vmsa_gpa;
-	svm->sev_es.snp_pending_vmsa_gpa = INVALID_PAGE;
-
-	__sev_snp_reload_vmsa(vcpu, gpa);
+	/* Clear use of the VMSA */
+	svm->vmcb->control.vmsa_pa = INVALID_PAGE;
 
 	/*
-	 * Mark the vCPU as runnable for CREATE requests, indicated by a valid
-	 * VMSA GPA, even if installing the VMSA failed, so that KVM_RUN will
-	 * fail instead of blocking indefinitely and hanging the vCPU, e.g. if
-	 * the backing guest_memfd page is unavailable.
+	 * When replacing the VMSA during SEV-SNP AP creation,
+	 * mark the VMCB dirty so that full state is always reloaded.
 	 */
-	if (VALID_PAGE(gpa))
-		kvm_set_mp_state(vcpu, KVM_MP_STATE_RUNNABLE);
-}
+	vmcb_mark_all_dirty(svm->vmcb);
 
-void sev_snp_reload_vmsa(struct kvm_vcpu *vcpu)
-{
-	struct vcpu_sev_es_state *sev_es = &to_svm(vcpu)->sev_es;
+	if (!VALID_PAGE(svm->sev_es.snp_vmsa_gpa))
+		return;
 
-	guard(mutex)(&sev_es->snp_vmsa_mutex);
+	gfn = gpa_to_gfn(svm->sev_es.snp_vmsa_gpa);
+	svm->sev_es.snp_vmsa_gpa = INVALID_PAGE;
 
-	__sev_snp_reload_vmsa(vcpu, sev_es->snp_guest_vmsa_gpa);
+	slot = gfn_to_memslot(vcpu->kvm, gfn);
+	if (!slot)
+		return;
+
+	/*
+	 * The new VMSA will be private memory guest memory, so retrieve the
+	 * PFN from the gmem backend.
+	 */
+	if (kvm_gmem_get_pfn(vcpu->kvm, slot, gfn, &pfn, &page, NULL))
+		return;
+
+	/*
+	 * From this point forward, the VMSA will always be a guest-mapped page
+	 * rather than the initial one allocated by KVM in svm->sev_es.vmsa. In
+	 * theory, svm->sev_es.vmsa could be free'd and cleaned up here, but
+	 * that involves cleanups like flushing caches, which would ideally be
+	 * handled during teardown rather than guest boot.  Deferring that also
+	 * allows the existing logic for SEV-ES VMSAs to be re-used with
+	 * minimal SNP-specific changes.
+	 */
+	svm->sev_es.snp_has_guest_vmsa = true;
+
+	/* Use the new VMSA */
+	svm->vmcb->control.vmsa_pa = pfn_to_hpa(pfn);
+
+	/* Mark the vCPU as runnable */
+	kvm_set_mp_state(vcpu, KVM_MP_STATE_RUNNABLE);
+
+	/*
+	 * gmem pages aren't currently migratable, but if this ever changes
+	 * then care should be taken to ensure svm->sev_es.vmsa is pinned
+	 * through some other means.
+	 */
+	kvm_release_page_clean(page);
 }
 
 static int sev_snp_ap_creation(struct vcpu_svm *svm)
@@ -4148,10 +4108,10 @@ static int sev_snp_ap_creation(struct vcpu_svm *svm)
 			return -EINVAL;
 		}
 
-		target_svm->sev_es.snp_pending_vmsa_gpa = svm->vmcb->control.exit_info_2;
+		target_svm->sev_es.snp_vmsa_gpa = svm->vmcb->control.exit_info_2;
 		break;
 	case SVM_VMGEXIT_AP_DESTROY:
-		target_svm->sev_es.snp_pending_vmsa_gpa = INVALID_PAGE;
+		target_svm->sev_es.snp_vmsa_gpa = INVALID_PAGE;
 		break;
 	default:
 		vcpu_unimpl(vcpu, "vmgexit: invalid AP creation request [%#x] from guest\n",
@@ -4834,8 +4794,6 @@ int sev_vcpu_create(struct kvm_vcpu *vcpu)
 		return -ENOMEM;
 
 	svm->sev_es.vmsa = page_address(vmsa_page);
-	svm->sev_es.snp_pending_vmsa_gpa = INVALID_PAGE;
-	svm->sev_es.snp_guest_vmsa_gpa = INVALID_PAGE;
 
 	vcpu->arch.guest_tsc_protected = snp_is_secure_tsc_enabled(vcpu->kvm);
 
@@ -5221,41 +5179,6 @@ void sev_gmem_invalidate(kvm_pfn_t start, kvm_pfn_t end)
 next_pfn:
 		pfn += use_2m_update ? PTRS_PER_PMD : 1;
 		cond_resched();
-	}
-}
-
-void sev_gmem_invalidate_range(struct kvm *kvm, struct kvm_gfn_range *range)
-{
-	struct kvm_vcpu *vcpu;
-	unsigned long i;
-
-	lockdep_assert_held_write(&kvm->mmu_lock);
-
-	/*
-	 * An unstable result for "is SNP" is a-ok here, thanks to mmu_lock.
-	 * The vCPU's VMSA GPA is invalidated before the vCPU is made visible
-	 * to other tasks, and can only become valid while holding mmu_lock,
-	 * after the VM is fully committed to being an SNP VM.
-	 */
-	if (!____sev_snp_guest(kvm))
-		return;
-
-	kvm_for_each_vcpu(i, vcpu, kvm) {
-		/*
-		 * Read snp_guest_vmsa_gpa without taking the vCPU's VMSA mutex
-		 * (or its generic mutex) as mmu_lock is held, i.e. this task
-		 * can't sleep.  The VMSA is invalidated outside of mmu_lock,
-		 * but can only become valid inside of mmu_lock, i.e. the below
-		 * can get false positives, but not false negatives.  A false
-		 * positive is benign, as a spurious request simply forces the
-		 * vCPU to re-establish its VMSA.
-		 */
-		gpa_t gpa = READ_ONCE(to_svm(vcpu)->sev_es.snp_guest_vmsa_gpa);
-
-		if (VALID_PAGE(gpa) &&
-		    gpa_to_gfn(gpa) >= range->start &&
-		    gpa_to_gfn(gpa) < range->end)
-			kvm_make_request_and_kick(KVM_REQ_VMSA_PAGE_RELOAD, vcpu);
 	}
 }
 

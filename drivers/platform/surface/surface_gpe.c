@@ -317,7 +317,7 @@ static int __init surface_gpe_init(void)
 		goto err_alloc;
 	}
 
-	platform_device_set_fwnode(pdev, fwnode);
+	pdev->dev.fwnode = fwnode;
 
 	status = platform_device_add(pdev);
 	if (status)
