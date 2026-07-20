@@ -191,6 +191,29 @@ static void intel_dp_set_default_sink_rates(struct intel_dp *intel_dp)
 	intel_dp->num_sink_rates = 1;
 }
 
+static bool dprx_supports_128b132b(struct intel_dp *intel_dp)
+{
+	if (intel_dp_tunnel_bw_alloc_is_enabled(intel_dp))
+		return drm_dp_tunnel_128b132b_supported(intel_dp->tunnel);
+	else
+		return drm_dp_128b132b_supported(intel_dp->dpcd);
+}
+
+static u8 dprx_128b132b_link_rates(struct intel_dp *intel_dp, u8 no_bwa_rates)
+{
+	u8 ret;
+
+	if (!intel_dp_tunnel_bw_alloc_is_enabled(intel_dp))
+		return no_bwa_rates;
+
+	ret = drm_dp_tunnel_128b132b_dprx_rates(intel_dp->tunnel);
+	static_assert(DP_TUNNELING_10GBPS_PER_LANE_SUPPORT == DP_UHBR10 &&
+		      DP_TUNNELING_13_5GBPS_PER_LANE_SUPPORT == DP_UHBR13_5 &&
+		      DP_TUNNELING_20GBPS_PER_LANE_SUPPORT == DP_UHBR20);
+
+	return ret;
+}
+
 /* update sink rates from dpcd */
 static void intel_dp_set_dpcd_sink_rates(struct intel_dp *intel_dp)
 {
@@ -199,6 +222,7 @@ static void intel_dp_set_dpcd_sink_rates(struct intel_dp *intel_dp)
 	};
 	int i, max_rate;
 	int max_lttpr_rate;
+	u8 uhbr_rates = 0;
 
 	if (drm_dp_has_quirk(&intel_dp->desc, DP_DPCD_QUIRK_CAN_DO_MAX_LINK_RATE_3_24_GBPS)) {
 		/* Needed, e.g., for Apple MBP 2017, 15 inch eDP Retina panel */
@@ -225,16 +249,19 @@ static void intel_dp_set_dpcd_sink_rates(struct intel_dp *intel_dp)
 	}
 
 	/*
+	 * The following register must be read unconditionally for the later
+	 * DP tunnel 128b132b detection to work, see DP Standard v2.1 5.14.3 .
+	 */
+	drm_dp_dpcd_read_byte(&intel_dp->aux, DP_128B132B_SUPPORTED_LINK_RATES, &uhbr_rates);
+
+	/*
 	 * Sink rates for 128b/132b. If set, sink should support all 8b/10b
 	 * rates and 10 Gbps.
 	 */
-	if (drm_dp_128b132b_supported(intel_dp->dpcd)) {
-		u8 uhbr_rates = 0;
-
+	if (dprx_supports_128b132b(intel_dp)) {
 		BUILD_BUG_ON(ARRAY_SIZE(intel_dp->sink_rates) < ARRAY_SIZE(dp_rates) + 3);
 
-		drm_dp_dpcd_readb(&intel_dp->aux,
-				  DP_128B132B_SUPPORTED_LINK_RATES, &uhbr_rates);
+		uhbr_rates = dprx_128b132b_link_rates(intel_dp, uhbr_rates);
 
 		if (drm_dp_lttpr_count(intel_dp->lttpr_common_caps)) {
 			/* We have a repeater */
@@ -1688,6 +1715,7 @@ intel_dp_compute_link_config_wide(struct intel_dp *intel_dp,
 	struct intel_dp_link_caps *link_caps = intel_dp->link.caps;
 	struct intel_dp_link_caps_order order =
 		intel_dp_link_caps_connector_compute_order(connector);
+	int err = -EINVAL;
 	int link_avail;
 
 	for (bpp = fxp_q4_to_int(limits->link.max_bpp_x16);
@@ -1718,12 +1746,18 @@ intel_dp_compute_link_config_wide(struct intel_dp *intel_dp,
 				pipe_config->pipe_bpp = bpp;
 				pipe_config->port_clock = link_config.rate;
 
-				return 0;
+				err = 0;
+
+				break;
 			}
 		}
+		intel_dp_link_caps_iter_end(&iter);
+
+		if (!err)
+			break;
 	}
 
-	return -EINVAL;
+	return err;
 }
 
 int intel_dp_dsc_max_src_input_bpc(struct intel_display *display)
@@ -1924,6 +1958,7 @@ static int dsc_compute_link_config(struct intel_dp *intel_dp,
 		intel_dp_link_caps_connector_compute_order(connector);
 	struct intel_dp_link_config link_config;
 	struct intel_dp_link_caps_iter iter;
+	int err = -EINVAL;
 
 	intel_dp_link_caps_iter_start(&iter, link_caps, order, limits->link_config_filter);
 	for_each_dp_link_config(&iter, &link_config) {
@@ -1966,10 +2001,13 @@ static int dsc_compute_link_config(struct intel_dp *intel_dp,
 				continue;
 		}
 
-		return 0;
-	}
+		err = 0;
 
-	return -EINVAL;
+		break;
+	}
+	intel_dp_link_caps_iter_end(&iter);
+
+	return err;
 }
 
 static u16 intel_dp_dsc_max_delta_bppx16(const struct intel_connector *connector,
@@ -3618,6 +3656,8 @@ void intel_dp_reset_link_params(struct intel_dp *intel_dp)
 	 * was called.
 	 */
 	intel_dp_link_caps_reset(intel_dp->link.caps);
+	intel_dp_tunnel_uhbr_lanes_wa_apply(intel_dp);
+
 	intel_dp->link.mst_probed_lane_count = 0;
 	intel_dp->link.mst_probed_rate = 0;
 	intel_dp_link_training_reset(intel_dp->link.training);
@@ -6270,6 +6310,8 @@ intel_dp_detect(struct drm_connector *_connector,
 
 		intel_dp_tunnel_disconnect(intel_dp);
 
+		intel_dp_tunnel_uhbr_lanes_wa_reset(intel_dp);
+
 		goto out_unset_edid;
 	}
 
@@ -6333,6 +6375,9 @@ intel_dp_detect(struct drm_connector *_connector,
 	intel_dp_set_edid(intel_dp);
 	if (intel_dp_is_edp(intel_dp) || connector->detect_edid)
 		status = connector_status_connected;
+
+	if (intel_dp_tunnel_uhbr_lanes_wa_setup(intel_dp))
+		intel_dp_tunnel_uhbr_lanes_wa_apply(intel_dp);
 
 out_unset_edid:
 	if (status != connector_status_connected && !intel_dp->is_mst)

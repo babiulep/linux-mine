@@ -154,7 +154,6 @@ struct hal_com_data {
 
 	u16 CustomerID;
 	u16 BasicRateSet;
-	u16 ForcedDataRate;/*  Force Data Rate. 0: Auto, 0x02: 1M ~ 0x6C: 54M. */
 	u32 ReceiveConfig;
 
 	/* rf_ctrl */
@@ -162,14 +161,10 @@ struct hal_com_data {
 	u8 PackageType;
 
 	/*  EEPROM setting. */
-	u8 EEPROMCustomerID;
-	u8 EEPROMVersion;
 	u8 EEPROMRegulatory;
 	u8 EEPROMThermalMeter;
 	u8 EEPROMBluetoothCoexist;
-	u8 EEPROMBluetoothType;
 	u8 EEPROMBluetoothAntNum;
-	u8 bTXPowerDataReadFromEEPORM;
 	u8 bDisableSWChannelPlan; /*  flag of disable software change channel plan */
 
 	bool		EepromOrEfuse;

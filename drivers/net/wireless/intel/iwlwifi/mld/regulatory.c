@@ -84,6 +84,9 @@ void iwl_mld_get_bios_tables(struct iwl_mld *mld)
 	iwl_uefi_get_uneb_table(mld->trans, &mld->fwrt);
 
 	iwl_bios_get_phy_filters(&mld->fwrt);
+
+	iwl_uefi_get_sgom_table(mld->trans, &mld->fwrt);
+	iwl_uefi_get_puncturing(&mld->fwrt);
 }
 
 static int iwl_mld_geo_sar_init(struct iwl_mld *mld)
@@ -524,6 +527,8 @@ void iwl_mld_init_ap_type_tables(struct iwl_mld *mld)
 	if (ret)
 		IWL_ERR(mld, "failed to send MCC_ALLOWED_AP_TYPE_CMD (%d)\n",
 			ret);
+	else
+		IWL_DEBUG_RADIO(mld, "MCC_ALLOWED_AP_TYPE_CMD sent to FW\n");
 }
 
 void iwl_mld_init_tas(struct iwl_mld *mld)

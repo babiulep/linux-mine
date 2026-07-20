@@ -1458,20 +1458,14 @@ void amdgpu_userq_pre_reset(struct amdgpu_device *adev)
 	/* TODO: We probably need a new lock for the queue state */
 	xa_for_each(&adev->userq_doorbell_xa, queue_id, queue) {
 		if (queue->state == AMDGPU_USERQ_STATE_MAPPED) {
-<<<<<<< HEAD
 			trace_amdgpu_userq_state_start(queue);
-=======
->>>>>>> linux-master
 			userq_funcs = adev->userq_funcs[queue->queue_type];
 			userq_funcs->unmap(queue);
 			/* just mark all queues as hung at this point.
 			 * if unmap succeeds, we could map again
 			 * in amdgpu_userq_post_reset() if vram is not lost
 			 */
-<<<<<<< HEAD
 			trace_amdgpu_userq_state_changed(queue, AMDGPU_USERQ_STATE_HUNG);
-=======
->>>>>>> linux-master
 			queue->state = AMDGPU_USERQ_STATE_HUNG;
 		}
 		/* Force-complete any pending fence regardless of queue state so

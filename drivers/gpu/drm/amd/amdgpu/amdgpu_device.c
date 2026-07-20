@@ -1233,18 +1233,6 @@ static bool amdgpu_device_pcie_dynamic_switching_supported(struct amdgpu_device 
 	if (x86_match_cpu(amdgpu_pcie_dynamic_switching_quirks))
 		return false;
 
-<<<<<<< HEAD
-=======
-	/*
-	 * AMD Ryzen Pinnacle Ridge (Zen+, family 0x17 model 0x08) CPUs don't
-	 * support PCIe dynamic speed switching.
-	 * https://gitlab.freedesktop.org/drm/amd/-/work_items/5436
-	 */
-	if (c->x86_vendor == X86_VENDOR_AMD && c->x86 == 0x17 &&
-	    c->x86_model == 0x08)
-		return false;
-#endif
->>>>>>> linux-master
 	return true;
 }
 #else

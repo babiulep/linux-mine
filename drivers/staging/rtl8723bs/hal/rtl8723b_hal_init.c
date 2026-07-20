@@ -1182,7 +1182,6 @@ static void Hal_ReadPowerValueFromPROM_8723B(
 	bool AutoLoadFail
 )
 {
-	struct hal_com_data *pHalData = GET_HAL_DATA(Adapter);
 	u32 rfPath, eeAddr = EEPROM_TX_PWR_INX_8723B, group, TxCount = 0;
 
 	memset(pwrInfo24G, 0, sizeof(struct TxPowerInfo24G));
@@ -1213,8 +1212,6 @@ static void Hal_ReadPowerValueFromPROM_8723B(
 
 		return;
 	}
-
-	pHalData->bTXPowerDataReadFromEEPORM = true;		/* YJ, move, 120316 */
 
 	for (rfPath = 0; rfPath < MAX_RF_PATH; rfPath++) {
 		/* 2 2.4G default value */
@@ -1345,8 +1342,6 @@ void Hal_EfuseParseBTCoexistInfo_8723B(
 		else
 			pHalData->EEPROMBluetoothCoexist = false;
 
-		pHalData->EEPROMBluetoothType = BT_RTL8723B;
-
 		tempval = hwinfo[EEPROM_RF_BT_SETTING_8723B];
 		if (tempval != 0xFF) {
 			pHalData->EEPROMBluetoothAntNum = tempval & BIT(0);
@@ -1365,7 +1360,6 @@ void Hal_EfuseParseBTCoexistInfo_8723B(
 		}
 	} else {
 		pHalData->EEPROMBluetoothCoexist = false;
-		pHalData->EEPROMBluetoothType = BT_RTL8723B;
 		pHalData->EEPROMBluetoothAntNum = Ant_x1;
 		pHalData->ant_path = RF_PATH_A;
 	}
@@ -1387,18 +1381,6 @@ void Hal_EfuseParseBTCoexistInfo_8723B(
 	hal_btcoex_SetPgAntNum(padapter, pHalData->EEPROMBluetoothAntNum == Ant_x2 ? 2 : 1);
 	if (pHalData->EEPROMBluetoothAntNum == Ant_x1)
 		hal_btcoex_SetSingleAntPath(padapter, pHalData->ant_path);
-}
-
-void Hal_EfuseParseEEPROMVer_8723B(
-	struct adapter *padapter, u8 *hwinfo, bool AutoLoadFail
-)
-{
-	struct hal_com_data	*pHalData = GET_HAL_DATA(padapter);
-
-	if (!AutoLoadFail)
-		pHalData->EEPROMVersion = hwinfo[EEPROM_VERSION_8723B];
-	else
-		pHalData->EEPROMVersion = 1;
 }
 
 void Hal_EfuseParsePackageType_8723B(
@@ -1457,18 +1439,6 @@ void Hal_EfuseParseChnlPlan_8723B(
 	);
 
 	Hal_ChannelPlanToRegulation(padapter, padapter->mlmepriv.ChannelPlan);
-}
-
-void Hal_EfuseParseCustomerID_8723B(
-	struct adapter *padapter, u8 *hwinfo, bool AutoLoadFail
-)
-{
-	struct hal_com_data	*pHalData = GET_HAL_DATA(padapter);
-
-	if (!AutoLoadFail)
-		pHalData->EEPROMCustomerID = hwinfo[EEPROM_CustomID_8723B];
-	else
-		pHalData->EEPROMCustomerID = 0;
 }
 
 void Hal_EfuseParseXtal_8723B(

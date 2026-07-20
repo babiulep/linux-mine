@@ -427,11 +427,7 @@ static const struct drm_ioctl_desc xe_ioctls_admin_only[] = {
 
 static const struct drm_driver admin_only_driver = {
 	.driver_features =
-<<<<<<< HEAD
 	    DRIVER_GEM | DRIVER_RENDER,
-=======
-	    DRIVER_GEM | DRIVER_RENDER | DRIVER_GEM_GPUVA,
->>>>>>> linux-master
 	.open = xe_file_open,
 	.postclose = xe_file_close,
 	.ioctls = xe_ioctls_admin_only,

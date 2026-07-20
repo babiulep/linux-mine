@@ -565,7 +565,7 @@ static inline void update_mmu_cache_range(struct vm_fault *vmf,
 		struct vm_area_struct *vma, unsigned long address,
 		pte_t *ptep, unsigned int nr)
 {
-	unsigned long asid;
+	unsigned long asid = get_mm_asid(vma->vm_mm);
 
 	/*
 	 * Svvptc guarantees that the new valid pte will be visible within
@@ -590,11 +590,10 @@ static inline void update_mmu_cache_range(struct vm_fault *vmf,
 	 * Relying on flush_tlb_fix_spurious_fault would suffice, but
 	 * the extra traps reduce performance.  So, eagerly SFENCE.VMA.
 	 */
-	asid = get_mm_asid(vma->vm_mm);
 	while (nr--)
 		local_flush_tlb_page_asid(address + nr * PAGE_SIZE, asid);
-}
 
+}
 #define update_mmu_cache(vma, addr, ptep) \
 	update_mmu_cache_range(NULL, vma, addr, ptep, 1)
 

@@ -6240,7 +6240,6 @@ void dc_interrupt_ack(struct dc *dc, enum dc_irq_source src)
 	dal_irq_service_ack(dc->res_pool->irqs, src);
 }
 
-<<<<<<< HEAD
 /* Preserve this tg if a physical link is still lighting a present display */
 static bool should_preserve_tg(struct dc *dc, struct timing_generator *tg)
 {
@@ -6350,8 +6349,6 @@ void dc_disable_dangling_timing_generators(struct dc *dc)
 	}
 }
 
-=======
->>>>>>> linux-master
 /*
  * dc_get_flip_pending_on_otg() - Check if a GRPH_FLIP is still pending on OTG
  *
@@ -6370,11 +6367,7 @@ void dc_disable_dangling_timing_generators(struct dc *dc)
 bool dc_get_flip_pending_on_otg(struct dc *dc, int otg_inst)
 {
 	bool flip_pending = false;
-<<<<<<< HEAD
 	unsigned int i;
-=======
-	int i;
->>>>>>> linux-master
 
 	if (!dc || !dc->current_state)
 		return false;

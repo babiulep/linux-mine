@@ -1628,17 +1628,6 @@ struct pptable_funcs {
 	 * resumed before the USB controller during PM resume. @enable is true
 	 * to create the link and false to tear it down.
 	 */
-<<<<<<< HEAD
-=======
-	int (*get_ras_smu_drv)(struct smu_context *smu, const struct ras_smu_drv **ras_smu_drv);
-
-	/**
-	 * @set_power_dep: Create or destroy a power dependency link
-	 * from an integrated xHCI controller to the GPU so that the GPU is
-	 * resumed before the USB controller during PM resume. @enable is true
-	 * to create the link and false to tear it down.
-	 */
->>>>>>> linux-master
 	int (*set_power_dep)(struct smu_context *smu, bool enable);
 };
 

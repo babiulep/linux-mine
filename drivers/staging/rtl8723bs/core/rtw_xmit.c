@@ -524,12 +524,12 @@ static int update_attrib_sec_info(struct adapter *padapter, struct pkt_attrib *p
 		GET_ENCRY_ALGO(psecuritypriv, psta, pattrib->encrypt, bmcast);
 
 		switch (psecuritypriv->dot11_auth_algrthm) {
-		case dot11AuthAlgrthm_Open:
-		case dot11AuthAlgrthm_Shared:
-		case dot11AuthAlgrthm_Auto:
+		case dot11_auth_algrthm_open:
+		case dot11_auth_algrthm_shared:
+		case dot11_auth_algrthm_auto:
 			pattrib->key_idx = (u8)psecuritypriv->dot11PrivacyKeyIndex;
 			break;
-		case dot11AuthAlgrthm_8021X:
+		case dot11_auth_algrthm_8021x:
 			if (bmcast)
 				pattrib->key_idx = (u8)psecuritypriv->dot118021XGrpKeyid;
 			else
@@ -797,7 +797,7 @@ static int update_attrib(struct adapter *padapter, struct sk_buff *pkt, struct p
 	return 0;
 }
 
-static s32 xmitframe_addmic(struct adapter *padapter, struct xmit_frame *pxmitframe)
+static int xmitframe_addmic(struct adapter *padapter, struct xmit_frame *pxmitframe)
 {
 	signed int			curfragnum, length;
 	u8 *pframe, *payload, mic[8];
@@ -820,12 +820,12 @@ static s32 xmitframe_addmic(struct adapter *padapter, struct xmit_frame *pxmitfr
 
 			if (bmcst) {
 				if (!memcmp(psecuritypriv->dot118021XGrptxmickey[psecuritypriv->dot118021XGrpKeyid].skey, null_key, 16))
-					return _FAIL;
+					return -EINVAL;
 				/* start to calculate the mic code */
 				rtw_secmicsetkey(&micdata, psecuritypriv->dot118021XGrptxmickey[psecuritypriv->dot118021XGrpKeyid].skey);
 			} else {
 				if (!memcmp(&pattrib->dot11tkiptxmickey.skey[0], null_key, 16))
-					return _FAIL;
+					return -EINVAL;
 				/* start to calculate the mic code */
 				rtw_secmicsetkey(&micdata, &pattrib->dot11tkiptxmickey.skey[0]);
 			}
@@ -876,7 +876,7 @@ static s32 xmitframe_addmic(struct adapter *padapter, struct xmit_frame *pxmitfr
 			pattrib->last_txcmdsz += 8;
 			}
 	}
-	return _SUCCESS;
+	return 0;
 }
 
 static s32 xmitframe_swencrypt(struct adapter *padapter, struct xmit_frame *pxmitframe)
@@ -903,7 +903,7 @@ static s32 xmitframe_swencrypt(struct adapter *padapter, struct xmit_frame *pxmi
 	return _SUCCESS;
 }
 
-s32 rtw_make_wlanhdr(struct adapter *padapter, u8 *hdr, struct pkt_attrib *pattrib)
+int rtw_make_wlanhdr(struct adapter *padapter, u8 *hdr, struct pkt_attrib *pattrib)
 {
 	u16 *qc;
 
@@ -911,7 +911,6 @@ s32 rtw_make_wlanhdr(struct adapter *padapter, u8 *hdr, struct pkt_attrib *pattr
 	struct mlme_priv *pmlmepriv = &padapter->mlmepriv;
 	struct qos_priv *pqospriv = &pmlmepriv->qospriv;
 	u8 qos_option = false;
-	signed int res = _SUCCESS;
 	__le16 *fctrl = &pwlanhdr->frame_control;
 
 	memset(hdr, 0, WLANHDR_OFFSET);
@@ -951,8 +950,7 @@ s32 rtw_make_wlanhdr(struct adapter *padapter, u8 *hdr, struct pkt_attrib *pattr
 			if (pattrib->qos_en)
 				qos_option = true;
 		} else {
-			res = _FAIL;
-			goto exit;
+			return -EINVAL;
 		}
 
 		if (pattrib->mdata)
@@ -980,13 +978,13 @@ s32 rtw_make_wlanhdr(struct adapter *padapter, u8 *hdr, struct pkt_attrib *pattr
 
 			psta = rtw_get_stainfo(&padapter->stapriv, pattrib->ra);
 			if (pattrib->psta != psta)
-				return _FAIL;
+				return -EINVAL;
 
 			if (!psta)
-				return _FAIL;
+				return -ENOENT;
 
 			if (!(psta->state & _FW_LINKED))
-				return _FAIL;
+				return -ENOLINK;
 
 			if (psta) {
 				psta->sta_xmitpriv.txseq_tid[pattrib->priority]++;
@@ -1026,8 +1024,7 @@ s32 rtw_make_wlanhdr(struct adapter *padapter, u8 *hdr, struct pkt_attrib *pattr
 	} else {
 	}
 
-exit:
-	return res;
+	return 0;
 }
 
 s32 rtw_txframes_pending(struct adapter *padapter)
@@ -1067,7 +1064,7 @@ u32 rtw_calculate_wlan_pkt_size_by_attribue(struct pkt_attrib *pattrib)
  * 5. move frag chunk from pframe to pxmitframe->mem
  * 6. apply sw-encrypt, if necessary.
  */
-s32 rtw_xmitframe_coalesce(struct adapter *padapter, struct sk_buff *pkt, struct xmit_frame *pxmitframe)
+int rtw_xmitframe_coalesce(struct adapter *padapter, struct sk_buff *pkt, struct xmit_frame *pxmitframe)
 {
 	struct pkt_file pktfile;
 
@@ -1085,21 +1082,19 @@ s32 rtw_xmitframe_coalesce(struct adapter *padapter, struct sk_buff *pkt, struct
 	u8 *pbuf_start;
 
 	s32 bmcst = is_multicast_ether_addr(pattrib->ra);
-	s32 res = _SUCCESS;
 	int ret;
 
 	if (!pxmitframe->buf_addr)
-		return _FAIL;
+		return -EINVAL;
 
 	pbuf_start = pxmitframe->buf_addr;
 
 	hw_hdr_offset = TXDESC_OFFSET;
 	mem_start = pbuf_start +	hw_hdr_offset;
 
-	if (rtw_make_wlanhdr(padapter, mem_start, pattrib) == _FAIL) {
-		res = _FAIL;
-		goto exit;
-	}
+	ret = rtw_make_wlanhdr(padapter, mem_start, pattrib);
+	if (ret)
+		return ret;
 
 	_rtw_open_pktfile(pkt, &pktfile);
 	ret = _rtw_pktfile_read(&pktfile, NULL, pattrib->pkt_hdrlen);
@@ -1177,10 +1172,9 @@ s32 rtw_xmitframe_coalesce(struct adapter *padapter, struct sk_buff *pkt, struct
 		memcpy(mem_start, pbuf_start + hw_hdr_offset, pattrib->hdrlen);
 	}
 
-	if (xmitframe_addmic(padapter, pxmitframe) == _FAIL) {
-		res = _FAIL;
-		goto exit;
-	}
+	ret = xmitframe_addmic(padapter, pxmitframe);
+	if (ret)
+		return ret;
 
 	xmitframe_swencrypt(padapter, pxmitframe);
 
@@ -1189,8 +1183,7 @@ s32 rtw_xmitframe_coalesce(struct adapter *padapter, struct sk_buff *pkt, struct
 	else
 		pattrib->vcs_mode = NONE_VCS;
 
-exit:
-	return res;
+	return 0;
 }
 
 /* broadcast or multicast management pkt use BIP, unicast management pkt use CCMP encryption */

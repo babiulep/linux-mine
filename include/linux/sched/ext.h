@@ -265,11 +265,11 @@ struct sched_ext_entity {
 	 * to %SCHED_EXT with -%EACCES.
 	 *
 	 * Can be set from ops.init_task() while the BPF scheduler is being
-	 * loaded (!scx_init_task_args->fork). If set and the task's policy is
-	 * already %SCHED_EXT, the task's policy is rejected and forcefully
-	 * reverted to %SCHED_NORMAL. The number of such events are reported
-	 * through /sys/kernel/debug/sched_ext::nr_rejected. Setting this flag
-	 * during fork is not allowed.
+	 * loaded. If set and the task's policy is already %SCHED_EXT, the
+	 * task's policy is rejected and forcefully reverted to %SCHED_NORMAL.
+	 * The number of such events are reported through
+	 * /sys/kernel/sched_ext/nr_rejected. Setting this flag from any other
+	 * ops.init_task() invocation, such as during fork, fails the scheduler.
 	 */
 	bool			disallow;	/* reject switching into SCX */
 
@@ -298,6 +298,21 @@ static inline bool scx_rcu_cpu_stall(const struct cpumask *stalled_mask) { retur
 
 struct scx_task_group {
 #ifdef CONFIG_EXT_GROUP_SCHED
+	/*
+	 * The sched this tg is on, NULL if none. SCX_TG_INITED tracks whether
+	 * ops.cgroup_init() succeeded on it. When a child sched exits and its
+	 * tgs move to the parent, a failed init leaves the tg on the parent
+	 * with INITED clear (see scx_cgroup_return_subtree()).
+	 *
+	 * This is tracked separately from cgrp->scx_sched because the tg
+	 * hierarchy can diverge from the cgroup2 hierarchy in both lifetime and
+	 * shape. A tg stays online past its cgroup's removal while the
+	 * cgrp->scx_sched rewrites visit only live cgroups, leaving a removed
+	 * cgroup's pointer stale. The cpu controller can also be mounted on
+	 * cgroup1.
+	 */
+	struct scx_sched	*sched;
+
 	u32			flags;		/* SCX_TG_* */
 	u32			weight;
 	u64			bw_period_us;

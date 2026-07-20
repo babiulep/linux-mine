@@ -1701,7 +1701,6 @@ static void guc_exec_queue_fini(struct xe_exec_queue *q)
 	struct xe_guc_exec_queue *ge = q->guc;
 	struct xe_guc *guc = exec_queue_to_guc(q);
 	struct drm_device *drm = &guc_to_xe(guc)->drm;
-<<<<<<< HEAD
 
 	/*
 	 * A secondary can leave the group while still preempt suspended (e.g.
@@ -1724,8 +1723,6 @@ static void guc_exec_queue_fini(struct xe_exec_queue *q)
 			guc_exec_queue_suspend_wait_blocking(q);
 		guc_exec_queue_multi_queue_drop_suspend(q);
 	}
-=======
->>>>>>> linux-master
 
 	if (xe_exec_queue_is_multi_queue_secondary(q)) {
 		struct xe_exec_queue_group *group = q->multi_queue.group;
