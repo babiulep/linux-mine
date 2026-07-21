@@ -13,15 +13,22 @@
 #include "futex_thread.h"
 #include "kselftest_harness.h"
 
-#define FUTEX_WAIT_TIMEOUT_SECS			2
+struct waiter_args {
+	struct __test_metadata	*_metadata;
+	unsigned int		n_threads;
+};
 
 volatile futex_t *f1;
 
 static int waiterfn(void *arg)
 {
-	struct __test_metadata *_metadata = (struct __test_metadata *)arg;
-	struct timespec to = { .tv_sec = FUTEX_WAIT_TIMEOUT_SECS };
+	struct __test_metadata *_metadata;
+	struct waiter_args *wargs = arg;
+	struct timespec to = { };
 	int res;
+
+	_metadata = wargs->_metadata;
+	to.tv_sec = (wargs->n_threads + 1) * WAIT_FOR_THREAD_SECS;
 
 	res = futex_wait(f1, *f1, &to, 0);
 	if (res) {
@@ -34,6 +41,7 @@ static int waiterfn(void *arg)
 
 TEST(requeue_single)
 {
+	struct waiter_args wargs = { ._metadata = _metadata, .n_threads = 1 };
 	struct futex_thread waiter;
 	volatile futex_t _f1 = 0;
 	volatile futex_t f2 = 0;
@@ -43,7 +51,7 @@ TEST(requeue_single)
 	/*
 	 * Requeue a waiter from f1 to f2, and wake f2.
 	 */
-	ASSERT_EQ(futex_thread_create(&waiter, waiterfn, _metadata), 0)
+	ASSERT_EQ(futex_thread_create(&waiter, waiterfn, &wargs), 0)
 		TH_LOG("pthread_create failed");
 
 	ASSERT_EQ(futex_wait_for_thread(&waiter, _metadata), 0)
@@ -57,6 +65,7 @@ TEST(requeue_single)
 
 TEST(requeue_multiple)
 {
+	struct waiter_args wargs = { ._metadata = _metadata, .n_threads = 10 };
 	struct futex_thread waiter[10];
 	volatile futex_t _f1 = 0;
 	volatile futex_t f2 = 0;
@@ -68,7 +77,7 @@ TEST(requeue_multiple)
 	 * At futex_wake, wake INT_MAX (should be exactly 7).
 	 */
 	for (int i = 0; i < 10; i++) {
-		ASSERT_EQ(futex_thread_create(&waiter[i], waiterfn, _metadata), 0)
+		ASSERT_EQ(futex_thread_create(&waiter[i], waiterfn, &wargs), 0)
 			TH_LOG("pthread_create failed for waiter %d", i);
 	}
 
