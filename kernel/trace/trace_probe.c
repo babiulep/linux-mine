@@ -356,61 +356,10 @@ parse_probe_arg(char *arg, const struct fetch_type *type,
 		struct fetch_insn **pcode, struct fetch_insn *end,
 		struct traceprobe_parse_context *ctx);
 
-/* handle dereference nested call */
-static inline int handle_dereference(char *arg, struct fetch_insn **pcode,
-	struct fetch_insn *end, struct traceprobe_parse_context *ctx,
-	int deref, long offset)
+static int parse_this_cpu(char *arg, struct traceprobe_parse_context *ctx)
 {
-	const struct fetch_type *type = find_fetch_type(NULL, ctx->flags);
-	struct fetch_insn *code = *pcode;
-	int cur_offs = ctx->offset;
+	bool is_read = false;
 	char *tmp;
-	int ret;
-
-	tmp = strrchr(arg, ')');
-	if (!tmp) {
-		trace_probe_log_err(ctx->offset + strlen(arg),
-					DEREF_OPEN_BRACE);
-		return -EINVAL;
-	}
-
-	*tmp = '\0';
-	ret = parse_probe_arg(arg, type, &code, end, ctx);
-	if (ret)
-		return ret;
-	ctx->offset = cur_offs;
-	if (code->op == FETCH_OP_COMM || code->op == FETCH_OP_IMMSTR) {
-		trace_probe_log_err(ctx->offset, COMM_CANT_DEREF);
-		return -EINVAL;
-	}
-
-	/*
-	 * this_cpu_ptr(@SYM) does not use SYM value, but use SYM address.
-	 * So we overwrite the last FETCH_OP_DEREF with FETCH_OP_CPU_PTR.
-	 */
-	if (!(deref == FETCH_OP_CPU_PTR && *arg == '@')) {
-		code++;
-		if (code == end) {
-			trace_probe_log_err(ctx->offset, TOO_MANY_OPS);
-			return -EINVAL;
-		}
-	}
-	*pcode = code;
-
-	code->op = deref;
-	code->offset = offset;
-	/* Reset the last type if used */
-	ctx->last_type = NULL;
-	return 0;
-}
-
-static int parse_this_cpu(char *arg, struct fetch_insn **pcode,
-			  struct fetch_insn *end,
-			  struct traceprobe_parse_context *ctx)
-{
-	struct fetch_insn *code;
-	bool is_ptr = false;
-	int ret;
 
 	/*
 	 * This is only for kernel probes, excluding eprobe, because per-cpu
@@ -424,27 +373,29 @@ static int parse_this_cpu(char *arg, struct fetch_insn **pcode,
 	if (str_has_prefix(arg, THIS_CPU_PTR_PREFIX)) {
 		arg += THIS_CPU_PTR_LEN;
 		ctx->offset += THIS_CPU_PTR_LEN;
-		is_ptr = true;
 	} else if (str_has_prefix(arg, THIS_CPU_READ_PREFIX)) {
 		arg += THIS_CPU_READ_LEN;
 		ctx->offset += THIS_CPU_READ_LEN;
-	} else
-		return -EINVAL;
-
-	ret = handle_dereference(arg, pcode, end, ctx, FETCH_OP_CPU_PTR, 0);
-	if (ret || is_ptr)
-		return ret;
-
-	/* this_cpu_read(VAR) -> +0(this_cpu_ptr(VAR)) */
-	code = *pcode;
-	code++;
-	if (code == end) {
-		trace_probe_log_err(ctx->offset, TOO_MANY_OPS);
+		is_read = true;
+	} else {
+		trace_probe_log_err(ctx->offset, BAD_FETCH_ARG);
 		return -EINVAL;
 	}
-	code->op = FETCH_OP_DEREF;
-	code->offset = 0;
-	*pcode = code;
+
+	tmp = strrchr(arg, ')');
+	if (!tmp) {
+		trace_probe_log_err(ctx->offset + strlen(arg),
+					DEREF_OPEN_BRACE);
+		return -EINVAL;
+	}
+	*tmp = '\0';
+
+	ctx->stack[ctx->depth].type = STATE_DEREF;
+	ctx->stack[ctx->depth].deref.deref = FETCH_OP_CPU_PTR;
+	ctx->stack[ctx->depth].deref.offset = 0;
+	ctx->stack[ctx->depth].deref.cur_offs = ctx->offset;
+	ctx->stack[ctx->depth].deref.inner_arg = arg;
+	ctx->stack[ctx->depth].deref.is_cpu_read = is_read;
 	return 0;
 }
 
@@ -1007,14 +958,12 @@ static char *find_matched_close_paren(char *s)
 	return NULL;
 }
 
-static int handle_typecast(char *arg, struct fetch_insn **pcode,
-			   struct fetch_insn *end,
-			   struct traceprobe_parse_context *ctx)
+static int handle_typecast(char *arg, struct traceprobe_parse_context *ctx)
 {
 	int orig_offset = ctx->offset;
 	char *close;
 	char *tmp;
-	int ret;
+	char *fieldname;
 
 	if (!(tparg_is_event_probe(ctx->flags) ||
 	      tparg_is_function_entry(ctx->flags) ||
@@ -1028,12 +977,6 @@ static int handle_typecast(char *arg, struct fetch_insn **pcode,
 	 * For example: (STRUCT)VAR->FIELD and (STRUCT)(VAR)->FIELD are same.
 	 * VAR is solved in the nested call.
 	 */
-	ctx->nested_level++;
-	if (ctx->nested_level > TRACEPROBE_MAX_NESTED_LEVEL) {
-		trace_probe_log_err(ctx->offset, TOO_MANY_NESTED);
-		return -E2BIG;
-	}
-
 	tmp = strchr(arg, ')');
 	if (!tmp) {
 		trace_probe_log_err(ctx->offset + strlen(arg),
@@ -1103,30 +1046,19 @@ static int handle_typecast(char *arg, struct fetch_insn **pcode,
 	}
 	*close = '\0';
 
-	/* We need to parse the nested one */
-	ret = parse_probe_arg(tmp, find_fetch_type(NULL, ctx->flags),
-			      pcode, end, ctx);
-	if (ret < 0)
-		return ret;
-	ctx->nested_level--;
-	clear_struct_btf(ctx);
-
-	/* Let tmp point the field name. */
+	/* Let fieldname point the field name. */
 	if (close[1] == '-')
-		tmp = close + 3; /* Skip "->" after closing parenthesis */
+		fieldname = close + 3; /* Skip "->" after closing parenthesis */
 	else
-		tmp = close + 2; /* Skip ">" after inner variable name */
+		fieldname = close + 2; /* Skip ">" after inner variable name */
 
-	/* resolve the typecast struct name */
-	ctx->offset = orig_offset + 1; /* for the '(' */
-	ret = parse_btf_casttype(arg + 1, ctx);
-	if (ret < 0)
-		return ret;
-
-	ctx->offset = orig_offset + tmp - arg;
-	ret = parse_btf_field(tmp, ctx->last_struct, pcode, end, ctx);
-	ctx->prefix_byteoffs = 0;
-	return ret;
+	ctx->stack[ctx->depth].type = STATE_TYPECAST;
+	ctx->stack[ctx->depth].typecast.casttype = arg + 1;
+	ctx->stack[ctx->depth].typecast.fieldname = fieldname;
+	ctx->stack[ctx->depth].typecast.orig_offset = orig_offset;
+	ctx->stack[ctx->depth].typecast.field_offset_diff = fieldname - arg;
+	ctx->stack[ctx->depth].typecast.inner_arg = tmp;
+	return 0;
 }
 
 #else /* !CONFIG_PROBE_EVENTS_BTF_ARGS */
@@ -1171,9 +1103,20 @@ static int check_prepare_btf_string_fetch(char *typename,
 	return 0;
 }
 
-static int handle_typecast(char *arg, struct fetch_insn **pcode,
-			   struct fetch_insn *end,
+static int parse_btf_casttype(char *casttype,
+			      struct traceprobe_parse_context *ctx)
+{
+	return -EOPNOTSUPP;
+}
+
+static int parse_btf_field(char *fieldname, const struct btf_type *type,
+			   struct fetch_insn **pcode, struct fetch_insn *end,
 			   struct traceprobe_parse_context *ctx)
+{
+	return -EOPNOTSUPP;
+}
+
+static int handle_typecast(char *arg, struct traceprobe_parse_context *ctx)
 {
 	trace_probe_log_err(ctx->offset, NOSUP_BTFARG);
 	return -EOPNOTSUPP;
@@ -1319,6 +1262,133 @@ NOKPROBE_SYMBOL(store_trace_entry_data)
 
 #define PARAM_MAX_STACK (THREAD_SIZE / sizeof(unsigned long))
 
+static int parse_probe_var_retval(char *orig_arg, char *arg,
+				  struct fetch_insn **pcode,
+				  struct fetch_insn *end,
+				  struct traceprobe_parse_context *ctx)
+{
+	struct fetch_insn *code = *pcode;
+
+	if (!(ctx->flags & TPARG_FL_RETURN)) {
+		trace_probe_log_err(ctx->offset, RETVAL_ON_PROBE);
+		return -EINVAL;
+	}
+	if (!(ctx->flags & TPARG_FL_KERNEL) ||
+	    !IS_ENABLED(CONFIG_PROBE_EVENTS_BTF_ARGS)) {
+		code->op = FETCH_OP_RETVAL;
+		return 0;
+	}
+	return parse_btf_arg(orig_arg, pcode, end, ctx);
+}
+
+static int parse_probe_var_stack(char *arg, int len, struct fetch_insn *code,
+				 struct traceprobe_parse_context *ctx)
+{
+	unsigned long param;
+	int ret;
+
+	if (arg[len] == '\0') {
+		code->op = FETCH_OP_STACKP;
+		return 0;
+	}
+
+	if (isdigit(arg[len])) {
+		ret = kstrtoul(arg + len, 10, &param);
+		if (ret) {
+			trace_probe_log_err(ctx->offset, BAD_VAR);
+			return ret;
+		}
+
+		if ((ctx->flags & TPARG_FL_KERNEL) &&
+		    param > PARAM_MAX_STACK) {
+			trace_probe_log_err(ctx->offset, BAD_STACK_NUM);
+			return -EINVAL;
+		}
+		code->op = FETCH_OP_STACK;
+		code->param = (unsigned int)param;
+		return 0;
+	}
+
+	trace_probe_log_err(ctx->offset, BAD_VAR);
+	return -EINVAL;
+}
+
+static int parse_probe_var_current(char *orig_arg, char *arg,
+				   struct fetch_insn **pcode,
+				   struct fetch_insn *end,
+				   struct traceprobe_parse_context *ctx)
+{
+	struct fetch_insn *code = *pcode;
+
+	/* $current is only supported by kernel probe. */
+	if (!(ctx->flags & TPARG_FL_KERNEL)) {
+		trace_probe_log_err(ctx->offset, BAD_VAR);
+		return -EINVAL;
+	}
+	arg += strlen("current");
+	if (*arg == '-' && IS_ENABLED(CONFIG_PROBE_EVENTS_BTF_ARGS))
+		return parse_btf_arg(orig_arg, pcode, end, ctx);
+
+	if (*arg != '\0') {
+		trace_probe_log_err(ctx->offset, BAD_VAR);
+		return -EINVAL;
+	}
+
+	code->op = FETCH_OP_CURRENT;
+	return 0;
+}
+
+#ifdef CONFIG_HAVE_FUNCTION_ARG_ACCESS_API
+static int parse_probe_var_arg(char *arg, int len, struct fetch_insn *code,
+			       struct traceprobe_parse_context *ctx)
+{
+	unsigned long param;
+	int ret;
+
+	ret = kstrtoul(arg + len, 10, &param);
+	if (ret) {
+		trace_probe_log_err(ctx->offset, BAD_VAR);
+		return ret;
+	}
+
+	if (!param || param > PARAM_MAX_STACK) {
+		trace_probe_log_err(ctx->offset, BAD_ARG_NUM);
+		return -EINVAL;
+	}
+	param--; /* argN starts from 1, but internal arg[N] starts from 0 */
+
+	if (tparg_is_function_entry(ctx->flags)) {
+		code->op = FETCH_OP_ARG;
+		code->param = (unsigned int)param;
+		/*
+		 * The tracepoint probe will probe a stub function, and the
+		 * first parameter of the stub is a dummy and should be ignored.
+		 */
+		if (ctx->flags & TPARG_FL_TPOINT)
+			code->param++;
+	} else if (tparg_is_function_return(ctx->flags)) {
+		/* function entry argument access from return probe */
+		ret = __store_entry_arg(ctx->tp, param);
+		if (ret < 0)	/* This error should be an internal error */
+			return ret;
+
+		code->op = FETCH_OP_EDATA;
+		code->offset = ret;
+	} else {
+		trace_probe_log_err(ctx->offset, NOFENTRY_ARGS);
+		return -EINVAL;
+	}
+	return 0;
+}
+#else
+static int parse_probe_var_arg(char *arg, int len, struct fetch_insn *code,
+			       struct traceprobe_parse_context *ctx)
+{
+	trace_probe_log_err(ctx->offset, BAD_VAR);
+	return -EINVAL;
+}
+#endif
+
 /* Parse $vars. @orig_arg points '$', which syncs to @ctx->offset */
 static int parse_probe_vars(char *orig_arg, const struct fetch_type *t,
 			    struct fetch_insn **pcode,
@@ -1326,60 +1396,13 @@ static int parse_probe_vars(char *orig_arg, const struct fetch_type *t,
 			    struct traceprobe_parse_context *ctx)
 {
 	struct fetch_insn *code = *pcode;
-	int err = TP_ERR_BAD_VAR;
 	char *arg = orig_arg + 1;
-	unsigned long param;
-	int ret = 0;
-	int len;
+	int len, ret;
 
 	if (ctx->flags & TPARG_FL_TEVENT) {
-		if (parse_trace_event(arg, code, ctx) < 0) {
-			/* 'comm' should be checked after field parsing. */
-			if (strcmp(arg, "comm") == 0 || strcmp(arg, "COMM") == 0) {
-				code->op = FETCH_OP_COMM;
-				return 0;
-			}
-			goto inval;
-		}
-		return 0;
-	}
-
-	if (str_has_prefix(arg, "retval")) {
-		if (!(ctx->flags & TPARG_FL_RETURN)) {
-			err = TP_ERR_RETVAL_ON_PROBE;
-			goto inval;
-		}
-		if (!(ctx->flags & TPARG_FL_KERNEL) ||
-		    !IS_ENABLED(CONFIG_PROBE_EVENTS_BTF_ARGS)) {
-			code->op = FETCH_OP_RETVAL;
+		ret = parse_trace_event(arg, code, ctx);
+		if (!ret)
 			return 0;
-		}
-		return parse_btf_arg(orig_arg, pcode, end, ctx);
-	}
-
-	len = str_has_prefix(arg, "stack");
-	if (len) {
-
-		if (arg[len] == '\0') {
-			code->op = FETCH_OP_STACKP;
-			return 0;
-		}
-
-		if (isdigit(arg[len])) {
-			ret = kstrtoul(arg + len, 10, &param);
-			if (ret)
-				goto inval;
-
-			if ((ctx->flags & TPARG_FL_KERNEL) &&
-			    param > PARAM_MAX_STACK) {
-				err = TP_ERR_BAD_STACK_NUM;
-				goto inval;
-			}
-			code->op = FETCH_OP_STACK;
-			code->param = (unsigned int)param;
-			return 0;
-		}
-		goto inval;
 	}
 
 	if (strcmp(arg, "comm") == 0 || strcmp(arg, "COMM") == 0) {
@@ -1387,64 +1410,27 @@ static int parse_probe_vars(char *orig_arg, const struct fetch_type *t,
 		return 0;
 	}
 
+	/* eprobe only support event fields or '$comm'. */
+	if (ctx->flags & TPARG_FL_TEVENT)
+		goto inval;
+
+	if (str_has_prefix(arg, "retval"))
+		return parse_probe_var_retval(orig_arg, arg, pcode, end, ctx);
+
+	len = str_has_prefix(arg, "stack");
+	if (len)
+		return parse_probe_var_stack(arg, len, code, ctx);
+
 	/* $current returns the address of the current task_struct. */
-	if (str_has_prefix(arg, "current")) {
-		/* $current is only supported by kernel probe. */
-		if (!(ctx->flags & TPARG_FL_KERNEL)) {
-			err = TP_ERR_BAD_VAR;
-			goto inval;
-		}
-		arg += strlen("current");
-		if (*arg == '-' && IS_ENABLED(CONFIG_PROBE_EVENTS_BTF_ARGS))
-			return parse_btf_arg(orig_arg, pcode, end, ctx);
+	if (str_has_prefix(arg, "current"))
+		return parse_probe_var_current(orig_arg, arg, pcode, end, ctx);
 
-		if (*arg != '\0')
-			goto inval;
-
-		code->op = FETCH_OP_CURRENT;
-		return 0;
-	}
-
-#ifdef CONFIG_HAVE_FUNCTION_ARG_ACCESS_API
 	len = str_has_prefix(arg, "arg");
-	if (len) {
-		ret = kstrtoul(arg + len, 10, &param);
-		if (ret)
-			goto inval;
-
-		if (!param || param > PARAM_MAX_STACK) {
-			err = TP_ERR_BAD_ARG_NUM;
-			goto inval;
-		}
-		param--; /* argN starts from 1, but internal arg[N] starts from 0 */
-
-		if (tparg_is_function_entry(ctx->flags)) {
-			code->op = FETCH_OP_ARG;
-			code->param = (unsigned int)param;
-			/*
-			 * The tracepoint probe will probe a stub function, and the
-			 * first parameter of the stub is a dummy and should be ignored.
-			 */
-			if (ctx->flags & TPARG_FL_TPOINT)
-				code->param++;
-		} else if (tparg_is_function_return(ctx->flags)) {
-			/* function entry argument access from return probe */
-			ret = __store_entry_arg(ctx->tp, param);
-			if (ret < 0)	/* This error should be an internal error */
-				return ret;
-
-			code->op = FETCH_OP_EDATA;
-			code->offset = ret;
-		} else {
-			err = TP_ERR_NOFENTRY_ARGS;
-			goto inval;
-		}
-		return 0;
-	}
-#endif
+	if (len)
+		return parse_probe_var_arg(arg, len, code, ctx);
 
 inval:
-	__trace_probe_log_err(ctx->offset, err);
+	trace_probe_log_err(ctx->offset, BAD_VAR);
 	return -EINVAL;
 }
 
@@ -1473,166 +1459,353 @@ static int __parse_imm_string(char *str, char **pbuf, int offs)
 	return 0;
 }
 
-/* Recursive argument parser */
-static int
-parse_probe_arg(char *arg, const struct fetch_type *type,
-		struct fetch_insn **pcode, struct fetch_insn *end,
-		struct traceprobe_parse_context *ctx)
+static int parse_probe_arg_register(char *arg, struct fetch_insn *code,
+				    struct traceprobe_parse_context *ctx)
+{
+	int ret;
+
+	if (ctx->flags & (TPARG_FL_TEVENT | TPARG_FL_FPROBE)) {
+		/* eprobe and fprobe do not handle registers */
+		trace_probe_log_err(ctx->offset, BAD_VAR);
+		return -EINVAL;
+	}
+	ret = regs_query_register_offset(arg + 1);
+	if (ret >= 0) {
+		code->op = FETCH_OP_REG;
+		code->param = (unsigned int)ret;
+		return 0;
+	}
+	trace_probe_log_err(ctx->offset, BAD_REG_NAME);
+	return -EINVAL;
+}
+
+static int parse_probe_arg_mem_symbol(char *arg, struct fetch_insn **pcode,
+				      struct fetch_insn *end,
+				      struct traceprobe_parse_context *ctx)
 {
 	struct fetch_insn *code = *pcode;
 	unsigned long param;
+	long offset = 0;
+	int ret;
+
+	if (isdigit(arg[1])) {
+		ret = kstrtoul(arg + 1, 0, &param);
+		if (ret) {
+			trace_probe_log_err(ctx->offset, BAD_MEM_ADDR);
+			return ret;
+		}
+		/* load address */
+		code->op = FETCH_OP_IMM;
+		code->immediate = param;
+	} else if (arg[1] == '+') {
+		/* Kernel probes do not support file offsets */
+		if (ctx->flags & TPARG_FL_KERNEL) {
+			trace_probe_log_err(ctx->offset, FILE_ON_KPROBE);
+			return -EINVAL;
+		}
+		ret = kstrtol(arg + 2, 0, &offset);
+		if (ret) {
+			trace_probe_log_err(ctx->offset, BAD_FILE_OFFS);
+			return ret;
+		}
+
+		code->op = FETCH_OP_FOFFS;
+		code->immediate = (unsigned long)offset;
+		offset = 0;
+	} else {
+		/* uprobes don't support symbols */
+		if (!(ctx->flags & TPARG_FL_KERNEL)) {
+			trace_probe_log_err(ctx->offset, SYM_ON_UPROBE);
+			return -EINVAL;
+		}
+		/* Preserve symbol for updating */
+		code->op = FETCH_NOP_SYMBOL;
+		code->data = kstrdup(arg + 1, GFP_KERNEL);
+		if (!code->data)
+			return -ENOMEM;
+		if (++code == end) {
+			trace_probe_log_err(ctx->offset, TOO_MANY_OPS);
+			return -EINVAL;
+		}
+		code->op = FETCH_OP_IMM;
+		code->immediate = 0;
+	}
+	/* These are fetching from memory */
+	if (++code == end) {
+		trace_probe_log_err(ctx->offset, TOO_MANY_OPS);
+		return -EINVAL;
+	}
+	*pcode = code;
+	code->op = FETCH_OP_DEREF;
+	code->offset = offset;
+	return 0;
+}
+
+static int parse_probe_arg_deref(char *arg, struct traceprobe_parse_context *ctx)
+{
 	int deref = FETCH_OP_DEREF;
 	long offset = 0;
 	char *tmp;
-	int ret = 0;
+	int ret;
+
+	if (arg[1] == 'u') {
+		deref = FETCH_OP_UDEREF;
+		arg[1] = arg[0];
+		arg++;
+	}
+	if (arg[0] == '+')
+		arg++;	/* Skip '+', because kstrtol() rejects it. */
+	tmp = strchr(arg, '(');
+	if (!tmp) {
+		trace_probe_log_err(ctx->offset, DEREF_NEED_BRACE);
+		return -EINVAL;
+	}
+	*tmp = '\0';
+	ret = kstrtol(arg, 0, &offset);
+	if (ret) {
+		trace_probe_log_err(ctx->offset, BAD_DEREF_OFFS);
+		return ret;
+	}
+	ctx->offset += (tmp + 1 - arg) + (arg[0] != '-' ? 1 : 0);
+	arg = tmp + 1;
+
+	tmp = strrchr(arg, ')');
+	if (!tmp) {
+		trace_probe_log_err(ctx->offset + strlen(arg),
+					DEREF_OPEN_BRACE);
+		return -EINVAL;
+	}
+	*tmp = '\0';
+
+	ctx->stack[ctx->depth].type = STATE_DEREF;
+	ctx->stack[ctx->depth].deref.deref = deref;
+	ctx->stack[ctx->depth].deref.offset = offset;
+	ctx->stack[ctx->depth].deref.cur_offs = ctx->offset;
+	ctx->stack[ctx->depth].deref.inner_arg = arg;
+	ctx->stack[ctx->depth].deref.is_cpu_read = false;
+	return 0;
+}
+
+static int parse_probe_arg_imm(char *arg, struct fetch_insn *code,
+			       struct traceprobe_parse_context *ctx)
+{
+	char *tmp;
+	int ret;
+
+	if (arg[1] == '"') {	/* Immediate string */
+		ret = __parse_imm_string(arg + 2, &tmp, ctx->offset + 2);
+		if (ret)
+			return ret;
+		code->op = FETCH_OP_IMMSTR;
+		code->data = tmp;
+	} else {
+		ret = str_to_immediate(arg + 1, &code->immediate);
+		if (ret) {
+			trace_probe_log_err(ctx->offset + 1, BAD_IMM);
+			return ret;
+		}
+		code->op = FETCH_OP_IMM;
+	}
+	return 0;
+}
+
+static int parse_probe_arg_default(char *arg, struct fetch_insn **pcode,
+				   struct fetch_insn *end,
+				   struct traceprobe_parse_context *ctx)
+{
+	int ret;
+
+	if (isalpha(arg[0]) || arg[0] == '_') {
+		/* BTF variable or event field */
+		if (ctx->flags & TPARG_FL_TEVENT) {
+			ret = parse_trace_event(arg, *pcode, ctx);
+			if (ret < 0) {
+				trace_probe_log_err(ctx->offset, NO_EVENT_FIELD);
+				return -EINVAL;
+			}
+			return 0;
+		}
+		if (!tparg_is_function_entry(ctx->flags) &&
+		    !tparg_is_function_return(ctx->flags)) {
+			trace_probe_log_err(ctx->offset, NOSUP_BTFARG);
+			return -EINVAL;
+		}
+		return parse_btf_arg(arg, pcode, end, ctx);
+	}
+
+	return 0;
+}
+
+static int parse_probe_arg_nested(char **parg, struct traceprobe_parse_context *ctx)
+{
+	char *arg = *parg;
+	int ret;
+
+	while (true) {
+		/* Determine if this is a nested argument */
+		if (arg[0] != '+' && arg[0] != '-' && arg[0] != '(' &&
+		    !str_has_prefix(arg, THIS_CPU_PTR_PREFIX) &&
+		    !str_has_prefix(arg, THIS_CPU_READ_PREFIX))
+			break;
+
+		/* If nested, check the maximum depth limit */
+		if (ctx->depth >= TRACEPROBE_MAX_NESTED_LEVEL) {
+			trace_probe_log_err(ctx->offset, TOO_MANY_NESTED);
+			return -E2BIG;
+		}
+
+		/* Perform the actual parsing subroutine calls */
+		switch (arg[0]) {
+		case '+':
+		case '-':
+			ret = parse_probe_arg_deref(arg, ctx);
+			if (ret)
+				return ret;
+			arg = ctx->stack[ctx->depth].deref.inner_arg;
+			break;
+		case '(':
+			ret = handle_typecast(arg, ctx);
+			if (ret)
+				return ret;
+			arg = ctx->stack[ctx->depth].typecast.inner_arg;
+			break;
+		default:
+			ret = parse_this_cpu(arg, ctx);
+			if (ret)
+				return ret;
+			arg = ctx->stack[ctx->depth].deref.inner_arg;
+			break;
+		}
+		ctx->depth++;
+	}
+
+	*parg = arg;
+	return 0;
+}
+
+static int parse_probe_arg_leaf(char *arg, const struct fetch_type *type,
+				struct fetch_insn **pcode, struct fetch_insn *end,
+				struct traceprobe_parse_context *ctx)
+{
+	struct fetch_insn *code = *pcode;
+	int ret;
 
 	switch (arg[0]) {
 	case '$':
 		ret = parse_probe_vars(arg, type, pcode, end, ctx);
 		break;
-
 	case '%':	/* named register */
-		if (ctx->flags & (TPARG_FL_TEVENT | TPARG_FL_FPROBE)) {
-			/* eprobe and fprobe do not handle registers */
-			trace_probe_log_err(ctx->offset, BAD_VAR);
-			break;
-		}
-		ret = regs_query_register_offset(arg + 1);
-		if (ret >= 0) {
-			code->op = FETCH_OP_REG;
-			code->param = (unsigned int)ret;
-			ret = 0;
-		} else
-			trace_probe_log_err(ctx->offset, BAD_REG_NAME);
+		ret = parse_probe_arg_register(arg, code, ctx);
 		break;
-
 	case '@':	/* memory, file-offset or symbol */
-		if (isdigit(arg[1])) {
-			ret = kstrtoul(arg + 1, 0, &param);
-			if (ret) {
-				trace_probe_log_err(ctx->offset, BAD_MEM_ADDR);
-				break;
-			}
-			/* load address */
-			code->op = FETCH_OP_IMM;
-			code->immediate = param;
-		} else if (arg[1] == '+') {
-			/* Kernel probes do not support file offsets */
-			if (ctx->flags & TPARG_FL_KERNEL) {
-				trace_probe_log_err(ctx->offset, FILE_ON_KPROBE);
-				return -EINVAL;
-			}
-			ret = kstrtol(arg + 2, 0, &offset);
-			if (ret) {
-				trace_probe_log_err(ctx->offset, BAD_FILE_OFFS);
-				break;
-			}
-
-			code->op = FETCH_OP_FOFFS;
-			code->immediate = (unsigned long)offset;  // imm64?
-			offset = 0;
-		} else {
-			/* uprobes don't support symbols */
-			if (!(ctx->flags & TPARG_FL_KERNEL)) {
-				trace_probe_log_err(ctx->offset, SYM_ON_UPROBE);
-				return -EINVAL;
-			}
-			/* Preserve symbol for updating */
-			code->op = FETCH_NOP_SYMBOL;
-			code->data = kstrdup(arg + 1, GFP_KERNEL);
-			if (!code->data)
-				return -ENOMEM;
-			if (++code == end) {
-				trace_probe_log_err(ctx->offset, TOO_MANY_OPS);
-				return -EINVAL;
-			}
-			code->op = FETCH_OP_IMM;
-			code->immediate = 0;
-		}
-		/* These are fetching from memory */
-		if (++code == end) {
-			trace_probe_log_err(ctx->offset, TOO_MANY_OPS);
-			return -EINVAL;
-		}
-		*pcode = code;
-		code->op = FETCH_OP_DEREF;
-		code->offset = offset;
-		break;
-
-	case '+':	/* deref memory */
-	case '-':
-		if (arg[1] == 'u') {
-			deref = FETCH_OP_UDEREF;
-			arg[1] = arg[0];
-			arg++;
-		}
-		if (arg[0] == '+')
-			arg++;	/* Skip '+', because kstrtol() rejects it. */
-		tmp = strchr(arg, '(');
-		if (!tmp) {
-			trace_probe_log_err(ctx->offset, DEREF_NEED_BRACE);
-			return -EINVAL;
-		}
-		*tmp = '\0';
-		ret = kstrtol(arg, 0, &offset);
-		if (ret) {
-			trace_probe_log_err(ctx->offset, BAD_DEREF_OFFS);
-			break;
-		}
-		ctx->offset += (tmp + 1 - arg) + (arg[0] != '-' ? 1 : 0);
-		arg = tmp + 1;
-		ret = handle_dereference(arg, pcode, end, ctx, deref, offset);
-		if (ret < 0)
-			return ret;
+		ret = parse_probe_arg_mem_symbol(arg, pcode, end, ctx);
 		break;
 	case '\\':	/* Immediate value */
-		if (arg[1] == '"') {	/* Immediate string */
-			ret = __parse_imm_string(arg + 2, &tmp, ctx->offset + 2);
-			if (ret)
-				break;
-			code->op = FETCH_OP_IMMSTR;
-			code->data = tmp;
-		} else {
-			ret = str_to_immediate(arg + 1, &code->immediate);
-			if (ret)
-				trace_probe_log_err(ctx->offset + 1, BAD_IMM);
-			else
-				code->op = FETCH_OP_IMM;
-		}
-		break;
-	case '(':
-		ret = handle_typecast(arg, pcode, end, ctx);
+		ret = parse_probe_arg_imm(arg, code, ctx);
 		break;
 	default:
-		if (str_has_prefix(arg, THIS_CPU_PTR_PREFIX) ||
-		    str_has_prefix(arg, THIS_CPU_READ_PREFIX)) {
-			ret = parse_this_cpu(arg, pcode, end, ctx);
-		} else if (isalpha(arg[0]) || arg[0] == '_') {
-			/* BTF variable or event field*/
-			if (ctx->flags & TPARG_FL_TEVENT) {
-				ret = parse_trace_event(arg, *pcode, ctx);
-				if (ret < 0) {
-					trace_probe_log_err(ctx->offset,
-							    NO_EVENT_FIELD);
-					return -EINVAL;
-				}
-				break;
-			}
-			if (!tparg_is_function_entry(ctx->flags) &&
-			    !tparg_is_function_return(ctx->flags)) {
-				trace_probe_log_err(ctx->offset, NOSUP_BTFARG);
-				return -EINVAL;
-			}
-			ret = parse_btf_arg(arg, pcode, end, ctx);
-		}
+		ret = parse_probe_arg_default(arg, pcode, end, ctx);
 		break;
 	}
-	if (!ret && code->op == FETCH_OP_NOP) {
+
+	if (ret)
+		return ret;
+
+	if (code->op == FETCH_OP_NOP) {
 		/* Parsed, but do not find fetch method */
 		trace_probe_log_err(ctx->offset, BAD_FETCH_ARG);
-		ret = -EINVAL;
+		return -EINVAL;
 	}
-	return ret;
+
+	return 0;
+}
+
+static int unwind_parse_states(struct fetch_insn **pcode, struct fetch_insn *end,
+			       struct traceprobe_parse_context *ctx)
+{
+	struct parse_state *state;
+	struct fetch_insn *code;
+	int ret;
+
+	while (ctx->depth > 0) {
+		ctx->depth--;
+		state = &ctx->stack[ctx->depth];
+
+		if (state->type == STATE_DEREF) {
+			code = *pcode;
+			ctx->offset = state->deref.cur_offs;
+			if (code->op == FETCH_OP_COMM || code->op == FETCH_OP_IMMSTR) {
+				trace_probe_log_err(ctx->offset, COMM_CANT_DEREF);
+				return -EINVAL;
+			}
+
+			if (!(state->deref.deref == FETCH_OP_CPU_PTR &&
+			      *state->deref.inner_arg == '@')) {
+				code++;
+				if (code == end) {
+					trace_probe_log_err(ctx->offset, TOO_MANY_OPS);
+					return -EINVAL;
+				}
+			}
+			*pcode = code;
+
+			code->op = state->deref.deref;
+			code->offset = state->deref.offset;
+			ctx->last_type = NULL;
+
+			if (state->deref.is_cpu_read) {
+				code = *pcode;
+				code++;
+				if (code == end) {
+					trace_probe_log_err(ctx->offset, TOO_MANY_OPS);
+					return -EINVAL;
+				}
+				code->op = FETCH_OP_DEREF;
+				code->offset = 0;
+				*pcode = code;
+			}
+		} else if (state->type == STATE_TYPECAST) {
+			clear_struct_btf(ctx);
+
+			/* resolve the typecast struct name */
+			ctx->offset = state->typecast.orig_offset + 1; /* for the '(' */
+			ret = parse_btf_casttype(state->typecast.casttype, ctx);
+			if (ret < 0)
+				return ret;
+
+			ctx->offset = state->typecast.orig_offset +
+				      state->typecast.field_offset_diff;
+			ret = parse_btf_field(state->typecast.fieldname,
+					      ctx->last_struct, pcode,
+					      end, ctx);
+			ctx->prefix_byteoffs = 0;
+			if (ret < 0)
+				return ret;
+		}
+	}
+
+	return 0;
+}
+
+/* Loop-based (non-recursive) argument parser */
+static int
+parse_probe_arg(char *arg, const struct fetch_type *type,
+		struct fetch_insn **pcode, struct fetch_insn *end,
+		struct traceprobe_parse_context *ctx)
+{
+	int ret;
+
+	ctx->depth = 0;
+
+	ret = parse_probe_arg_nested(&arg, ctx);
+	if (ret)
+		return ret;
+
+	ret = parse_probe_arg_leaf(arg, type, pcode, end, ctx);
+	if (ret)
+		return ret;
+
+	return unwind_parse_states(pcode, end, ctx);
 }
 
 /* Bitfield type needs to be parsed into a fetch function */
@@ -1893,12 +2066,6 @@ static int traceprobe_parse_probe_arg_body(const char *argv, ssize_t *size,
 			      ctx);
 	if (ret < 0)
 		goto fail;
-	/* nested_level must be 0 here, otherwise there is a bug. */
-	if (WARN_ON_ONCE(ctx->nested_level)) {
-		ret = -EINVAL;
-		goto fail;
-	}
-
 	/* Update storing type if BTF is available */
 	if (IS_ENABLED(CONFIG_PROBE_EVENTS_BTF_ARGS) &&
 	    ctx->last_type) {

@@ -168,6 +168,15 @@ static void dw_edma_device_caps(struct dma_chan *dchan,
 	}
 }
 
+static enum dw_edma_ch_irq_mode
+dw_edma_get_default_irq_mode(struct dw_edma_chan *chan)
+{
+	struct dw_edma_chip *chip = chan->dw->chip;
+
+	return chip->flags & DW_EDMA_CHIP_LOCAL ? DW_EDMA_CH_IRQ_LOCAL :
+						  DW_EDMA_CH_IRQ_REMOTE;
+}
+
 static int dw_edma_device_config(struct dma_chan *dchan,
 				 struct dma_slave_config *config)
 {
@@ -736,6 +745,9 @@ static int dw_edma_emul_irq_alloc(struct dw_edma *dw)
 	chip->db_irq = 0;
 	chip->db_offset = ~0;
 
+	if (chip->flags & DW_EDMA_CHIP_PARTIAL)
+		return 0;
+
 	/*
 	 * Only meaningful when the core provides the deassert sequence
 	 * for interrupt emulation.
@@ -919,6 +931,7 @@ static int dw_edma_channel_setup(struct dw_edma *dw, u32 wr_alloc, u32 rd_alloc)
 		chan = &dw->chan[i];
 
 		chan->dw = dw;
+		chan->func_no = chip->func_no;
 
 		if (i < dw->wr_ch_cnt) {
 			chan->id = i;
@@ -931,6 +944,7 @@ static int dw_edma_channel_setup(struct dw_edma *dw, u32 wr_alloc, u32 rd_alloc)
 		chan->configured = false;
 		chan->request = EDMA_REQ_NONE;
 		chan->status = EDMA_ST_IDLE;
+		chan->irq_mode = dw_edma_get_default_irq_mode(chan);
 		INIT_WORK(&chan->irq_work, dw_edma_irq_work);
 		atomic_set(&chan->irq_pending, 0);
 
@@ -959,7 +973,6 @@ static int dw_edma_channel_setup(struct dw_edma *dw, u32 wr_alloc, u32 rd_alloc)
 		else
 			bitmap_set(irq->rd_mask, chan->id, 1);
 
-		irq->dw = dw;
 		memcpy(&chan->msi, &irq->msi, sizeof(chan->msi));
 
 		dev_vdbg(dev, "MSI:\t\tChannel %s[%u] addr=0x%.8x%.8x, data=0x%.8x\n",
@@ -1041,6 +1054,7 @@ static int dw_edma_irq_request(struct dw_edma *dw,
 	if (chip->nr_irqs == 1) {
 		/* Common IRQ shared among all channels */
 		irq = chip->ops->irq_vector(dev, 0);
+		dw->irq[0].dw = dw;
 		err = request_irq(irq, dw_edma_interrupt_common,
 				  IRQF_SHARED, dw->name, &dw->irq[0]);
 		if (err) {
@@ -1063,6 +1077,7 @@ static int dw_edma_irq_request(struct dw_edma *dw,
 
 		for (i = 0; i < (*wr_alloc + *rd_alloc); i++) {
 			irq = chip->ops->irq_vector(dev, i);
+			dw->irq[i].dw = dw;
 			err = request_irq(irq,
 					  i < *wr_alloc ?
 						dw_edma_interrupt_write :
@@ -1093,10 +1108,33 @@ err_irq_free:
 	return err;
 }
 
+static int dw_edma_check_partial(struct dw_edma_chip *chip,
+				 u16 hw_wr_ch_cnt, u16 hw_rd_ch_cnt)
+{
+	if (!(chip->flags & DW_EDMA_CHIP_PARTIAL))
+		return 0;
+
+	if (chip->mf != EDMA_MF_EDMA_UNROLL &&
+	    chip->mf != EDMA_MF_HDMA_COMPAT)
+		return 0;
+
+	/*
+	 * Direction-wide registers are shared by all channels in that
+	 * direction, so a direction must have a single owner.
+	 */
+	if ((chip->ll_wr_cnt && chip->ll_wr_cnt != hw_wr_ch_cnt) ||
+	    (chip->ll_rd_cnt && chip->ll_rd_cnt != hw_rd_ch_cnt))
+		return -EOPNOTSUPP;
+
+	return 0;
+}
+
 int dw_edma_probe(struct dw_edma_chip *chip)
 {
 	struct device *dev;
 	struct dw_edma *dw;
+	u16 hw_wr_ch_cnt;
+	u16 hw_rd_ch_cnt;
 	u32 wr_alloc = 0;
 	u32 rd_alloc = 0;
 	u16 max_wr_cnt;
@@ -1109,6 +1147,17 @@ int dw_edma_probe(struct dw_edma_chip *chip)
 	dev = chip->dev;
 	if (!dev || !chip->ops)
 		return -EINVAL;
+
+	if (chip->flags & DW_EDMA_CHIP_PARTIAL) {
+		switch (chip->mf) {
+		case EDMA_MF_EDMA_UNROLL:
+		case EDMA_MF_HDMA_COMPAT:
+		case EDMA_MF_HDMA_NATIVE:
+			break;
+		default:
+			return -EOPNOTSUPP;
+		}
+	}
 
 	dw = devm_kzalloc(dev, sizeof(*dw), GFP_KERNEL);
 	if (!dw)
@@ -1128,13 +1177,21 @@ int dw_edma_probe(struct dw_edma_chip *chip)
 
 	raw_spin_lock_init(&dw->lock);
 
-	dw->wr_ch_cnt = min_t(u16, chip->ll_wr_cnt,
-			      dw_edma_core_ch_count(dw, EDMA_DIR_WRITE));
-	dw->wr_ch_cnt = min_t(u16, dw->wr_ch_cnt, max_wr_cnt);
+	/*
+	 * chip->ll_*_cnt describes the channels exposed by this instance. Keep
+	 * the usable hardware counts separate for partial ownership checks.
+	 */
+	hw_wr_ch_cnt = min(dw_edma_core_ch_count(dw, EDMA_DIR_WRITE),
+			   max_wr_cnt);
+	hw_rd_ch_cnt = min(dw_edma_core_ch_count(dw, EDMA_DIR_READ),
+			   max_rd_cnt);
 
-	dw->rd_ch_cnt = min_t(u16, chip->ll_rd_cnt,
-			      dw_edma_core_ch_count(dw, EDMA_DIR_READ));
-	dw->rd_ch_cnt = min_t(u16, dw->rd_ch_cnt, max_rd_cnt);
+	err = dw_edma_check_partial(chip, hw_wr_ch_cnt, hw_rd_ch_cnt);
+	if (err)
+		return err;
+
+	dw->wr_ch_cnt = min(chip->ll_wr_cnt, hw_wr_ch_cnt);
+	dw->rd_ch_cnt = min(chip->ll_rd_cnt, hw_rd_ch_cnt);
 
 	if (!dw->wr_ch_cnt && !dw->rd_ch_cnt)
 		return -EINVAL;
@@ -1151,8 +1208,18 @@ int dw_edma_probe(struct dw_edma_chip *chip)
 	snprintf(dw->name, sizeof(dw->name), "dw-edma-core:%s",
 		 dev_name(chip->dev));
 
-	/* Disable eDMA, only to establish the ideal initial conditions */
-	dw_edma_core_off(dw);
+	if (chip->flags & DW_EDMA_CHIP_PARTIAL) {
+		/*
+		 * Do not reset the shared controller, but drain stale state
+		 * from resources represented by this instance.
+		 */
+		err = dw_edma_core_quiesce(dw);
+		if (err)
+			return err;
+	} else {
+		/* Disable eDMA only when this instance owns the controller. */
+		dw_edma_core_off(dw);
+	}
 
 	/*
 	 * Deferred IRQ works are queued from the hard IRQ handlers, so the
@@ -1202,14 +1269,16 @@ int dw_edma_remove(struct dw_edma_chip *chip)
 	struct dw_edma_chan *chan, *_chan;
 	struct device *dev = chip->dev;
 	struct dw_edma *dw = chip->dw;
-	int i;
+	int i, err = 0;
 
 	/* Skip removal if no private data found */
 	if (!dw)
 		return -ENODEV;
 
-	/* Disable eDMA */
-	dw_edma_core_off(dw);
+	if (chip->flags & DW_EDMA_CHIP_PARTIAL)
+		err = dw_edma_core_quiesce(dw);
+	else
+		dw_edma_core_off(dw);
 
 	/* Free irqs */
 	for (i = (dw->nr_irqs - 1); i >= 0; i--)
@@ -1229,7 +1298,7 @@ int dw_edma_remove(struct dw_edma_chip *chip)
 		list_del(&chan->vc.chan.device_node);
 	}
 
-	return 0;
+	return err;
 }
 EXPORT_SYMBOL_GPL(dw_edma_remove);
 

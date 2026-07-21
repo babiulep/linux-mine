@@ -442,6 +442,11 @@ static int bpf_fs_kfuncs_filter(const struct bpf_prog *prog, u32 kfunc_id)
 		return 0;
 	if (prog->type == BPF_PROG_TYPE_LSM)
 		return 0;
+	if (prog->type != BPF_PROG_TYPE_STRUCT_OPS)
+		return -EACCES;
+	/* ->st_ops is unset during the cfg pass; enforced once it is set. */
+	if (!prog->aux->st_ops)
+		return 0;
 	if (bpf_prog_is_binfmt_misc_ops(prog) &&
 	    !btf_id_set_contains(&bpf_fs_kfunc_lsm_only_ids, kfunc_id))
 		return 0;

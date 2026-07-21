@@ -259,9 +259,10 @@ static const char *entry_select_interpreter(const struct binfmt_misc_entry *e,
 	if (!test_bit(MISC_FMT_BPF_BIT, &e->flags))
 		return e->interpreter;
 
-	/* Drop any interpreter a previous chain level staged. */
+	/* Drop any interpreter or flags a previous chain level staged. */
 	kfree(bprm->bpf_interp);
 	bprm->bpf_interp = NULL;
+	bprm->bpf_flags = 0;
 
 	retval = e->bpf_ops->load(bprm);
 	if (retval) {
@@ -296,7 +297,7 @@ static int load_misc_binary(struct linux_binprm *bprm)
 	const char *interpreter;
 	struct file *interp_file;
 	struct binfmt_misc *misc;
-	bool preserve_argv0;
+	bool preserve_argv0, want_execfd, want_creds;
 	int retval;
 
 	misc = current_binfmt_misc();
@@ -327,16 +328,12 @@ static int load_misc_binary(struct linux_binprm *bprm)
 		bprm->bpf_flags = 0;
 
 		preserve_argv0 = f & BPF_BINPRM_PRESERVE_ARGV0;
-		if (f & BPF_BINPRM_CREDENTIALS)
-			bprm->execfd_creds = 1;
-		if (f & (BPF_BINPRM_CREDENTIALS | BPF_BINPRM_EXECFD))
-			bprm->have_execfd = 1;
+		want_creds = f & BPF_BINPRM_CREDENTIALS;
+		want_execfd = f & (BPF_BINPRM_CREDENTIALS | BPF_BINPRM_EXECFD);
 	} else {
 		preserve_argv0 = fmt->flags & MISC_FMT_PRESERVE_ARGV0;
-		if (fmt->flags & MISC_FMT_CREDENTIALS)
-			bprm->execfd_creds = 1;
-		if (fmt->flags & MISC_FMT_OPEN_BINARY)
-			bprm->have_execfd = 1;
+		want_creds = fmt->flags & MISC_FMT_CREDENTIALS;
+		want_execfd = fmt->flags & MISC_FMT_OPEN_BINARY;
 	}
 
 	/* The entry's own choice - not one accumulated from an earlier level. */
@@ -396,6 +393,10 @@ static int load_misc_binary(struct linux_binprm *bprm)
 		return PTR_ERR(interp_file);
 
 	bprm->interpreter = interp_file;
+	if (want_execfd)
+		bprm->have_execfd = 1;
+	if (want_creds)
+		bprm->execfd_creds = 1;
 	return 0;
 }
 

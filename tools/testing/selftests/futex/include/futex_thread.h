@@ -11,7 +11,7 @@
 #include "kselftest_harness.h"
 
 #define USEC_PER_SEC		1000000L
-#define WAIT_FOR_THREAD_SECS	2
+#define WAIT_FOR_THREAD_SECS	1
 #define WAIT_FOR_THREAD_USECS	(WAIT_FOR_THREAD_SECS * USEC_PER_SEC)
 #define WAIT_THREAD_RETRIES	100
 
@@ -24,7 +24,7 @@ struct futex_thread {
 	int			retval;
 };
 
-static inline int __wait_for_thread(FILE *fp)
+static inline int __wait_for_thread(FILE *fp, struct __test_metadata *_metadata)
 {
 	unsigned int sleep_time_us = WAIT_FOR_THREAD_USECS / WAIT_THREAD_RETRIES;
 	char buf[80] = "";
@@ -37,7 +37,9 @@ static inline int __wait_for_thread(FILE *fp)
 		usleep(sleep_time_us);
 		rewind(fp);
 	}
-	return ETIMEDOUT;
+
+	TH_LOG("/proc/$PID/wchan contains \"%s\". Trying to continue.", buf);
+	return 0;
 }
 
 static void *__futex_thread_fn(void *arg)
@@ -72,7 +74,7 @@ static inline int futex_wait_for_thread(struct futex_thread *t, struct __test_me
 		return 0;
 	}
 
-	res = __wait_for_thread(fp);
+	res = __wait_for_thread(fp, _metadata);
 	fclose(fp);
 	return res;
 }

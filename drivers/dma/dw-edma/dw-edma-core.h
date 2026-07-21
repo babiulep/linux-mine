@@ -70,11 +70,14 @@ struct dw_edma_chan {
 	struct dw_edma			*dw;
 	int				id;
 	enum dw_edma_dir		dir;
+	u8				func_no;
 
 	u32				ll_max;
 	struct dw_edma_region		ll_region;	/* Linked list */
 
 	struct msi_msg			msi;
+
+	enum dw_edma_ch_irq_mode	irq_mode;
 
 	enum dw_edma_request		request;
 	enum dw_edma_status		status;
@@ -125,6 +128,8 @@ typedef void (*dw_edma_handler_t)(struct dw_edma_chan *);
 
 struct dw_edma_core_ops {
 	void (*off)(struct dw_edma *dw);
+	int (*quiesce)(struct dw_edma *dw);
+	int (*ch_quiesce)(struct dw_edma_chan *chan);
 	u16 (*ch_count)(struct dw_edma *dw, enum dw_edma_dir dir);
 	enum dma_status (*ch_status)(struct dw_edma_chan *chan);
 	irqreturn_t (*handle_int)(struct dw_edma_irq *dw_irq, enum dw_edma_dir dir,
@@ -188,6 +193,18 @@ static inline
 void dw_edma_core_off(struct dw_edma *dw)
 {
 	dw->core->off(dw);
+}
+
+static inline
+int dw_edma_core_quiesce(struct dw_edma *dw)
+{
+	return dw->core->quiesce(dw);
+}
+
+static inline
+int dw_edma_core_ch_quiesce(struct dw_edma_chan *chan)
+{
+	return chan->dw->core->ch_quiesce(chan);
 }
 
 static inline
@@ -257,6 +274,17 @@ static inline resource_size_t
 dw_edma_core_db_offset(struct dw_edma *dw)
 {
 	return dw->core->db_offset(dw);
+}
+
+static inline bool
+dw_edma_core_ch_ignore_irq(struct dw_edma_chan *chan)
+{
+	struct dw_edma *dw = chan->dw;
+
+	if (dw->chip->flags & DW_EDMA_CHIP_LOCAL)
+		return chan->irq_mode == DW_EDMA_CH_IRQ_REMOTE;
+	else
+		return chan->irq_mode == DW_EDMA_CH_IRQ_LOCAL;
 }
 
 #endif /* _DW_EDMA_CORE_H */
