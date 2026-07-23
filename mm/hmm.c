@@ -790,22 +790,14 @@ int hmm_range_fault_unlocked_timeout(struct hmm_range *range,
 	int ret;
 
 	do {
-		if (fatal_signal_pending(current))
-			return -EINTR;
-
-		if (timeout) {
-			/*
-			 * If the previous fault dropped mmap_lock, then the fault
-			 * handler made progress. Restart the retry timeout in that
-			 * case, but keep the existing deadline for ordinary -EBUSY
-			 * retries.
-			 */
-			if (!locked)
-				deadline = jiffies + timeout;
-
-			if (time_after(jiffies, deadline))
-				return -EBUSY;
-		}
+		/*
+		 * If the previous fault dropped mmap_lock, then the fault
+		 * handler made progress. Restart the retry timeout in that
+		 * case, but keep the existing deadline for ordinary -EBUSY
+		 * retries.
+		 */
+		if (timeout && !locked)
+			deadline = jiffies + timeout;
 
 		range->notifier_seq =
 			mmu_interval_read_begin(range->notifier);
@@ -813,6 +805,11 @@ int hmm_range_fault_unlocked_timeout(struct hmm_range *range,
 		ret = mmap_read_lock_killable(mm);
 		if (ret)
 			return ret;
+
+		if (timeout && time_after(jiffies, deadline)) {
+			mmap_read_unlock(mm);
+			return -EBUSY;
+		}
 
 		locked = true;
 		ret = hmm_range_fault_locked(range, &locked);

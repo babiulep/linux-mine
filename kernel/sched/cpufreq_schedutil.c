@@ -592,7 +592,7 @@ static ssize_t rate_limit_us_show(struct gov_attr_set *attr_set, char *buf)
 {
 	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
 
-	return sprintf(buf, "%u\n", tunables->rate_limit_us);
+	return sysfs_emit(buf, "%u\n", tunables->rate_limit_us);
 }
 
 static ssize_t
@@ -872,8 +872,19 @@ static int sugov_start(struct cpufreq_policy *policy)
 		memset(sg_cpu, 0, sizeof(*sg_cpu));
 		sg_cpu->cpu = cpu;
 		sg_cpu->sg_policy = sg_policy;
+	}
+
+	/*
+	 * Publish the hooks only after all per-CPU data is initialized, so a
+	 * shared policy's sugov_update_shared() never reads an uninitialized
+	 * sibling sugov_cpu.
+	 */
+	for_each_cpu(cpu, policy->cpus) {
+		struct sugov_cpu *sg_cpu = &per_cpu(sugov_cpu, cpu);
+
 		cpufreq_add_update_util_hook(cpu, &sg_cpu->update_util, uu);
 	}
+
 	return 0;
 }
 

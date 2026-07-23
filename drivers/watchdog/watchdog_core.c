@@ -280,7 +280,7 @@ static int ___watchdog_register_device(struct watchdog_device *wdd)
 			if (!np || id < 0)
 				break;
 
-			snprintf(alias, sizeof(alias), "watchdog%d", id);
+			scnprintf(alias, sizeof(alias), "watchdog%d", id);
 			if (!of_get_property(np, alias, NULL))
 				break;
 			ida_free(&watchdog_ida, id);

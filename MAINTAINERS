@@ -4958,6 +4958,7 @@ R:	Song Liu <song@kernel.org>
 R:	Yonghong Song <yonghong.song@linux.dev>
 R:	Jiri Olsa <jolsa@kernel.org>
 R:	Emil Tsalapatis <emil@etsalapatis.com>
+R:	Ihor Solodrai <ihor.solodrai@linux.dev>
 L:	bpf@vger.kernel.org
 S:	Supported
 W:	https://bpf.io/
@@ -5018,6 +5019,7 @@ F:	net/unix/unix_bpf.c
 BPF [LIBRARY] (libbpf)
 M:	Andrii Nakryiko <andrii@kernel.org>
 M:	Eduard Zingerman <eddyz87@gmail.com>
+R:	Ihor Solodrai <ihor.solodrai@linux.dev>
 L:	bpf@vger.kernel.org
 S:	Maintained
 F:	tools/lib/bpf/
@@ -5083,6 +5085,7 @@ F:	security/bpf/
 BPF [SELFTESTS] (Test Runners & Infrastructure)
 M:	Andrii Nakryiko <andrii@kernel.org>
 M:	Eduard Zingerman <eddyz87@gmail.com>
+R:	Ihor Solodrai <ihor.solodrai@linux.dev>
 L:	bpf@vger.kernel.org
 S:	Maintained
 F:	tools/testing/selftests/bpf/
@@ -5097,6 +5100,7 @@ F:	tools/bpf/bpftool/
 BPF [TRACING]
 M:	Song Liu <song@kernel.org>
 R:	Jiri Olsa <jolsa@kernel.org>
+R:	Ihor Solodrai <ihor.solodrai@linux.dev>
 L:	bpf@vger.kernel.org
 S:	Maintained
 F:	kernel/bpf/stackmap.c
@@ -6521,7 +6525,7 @@ L:	linux-cifs@vger.kernel.org
 L:	samba-technical@lists.samba.org (moderated for non-subscribers)
 S:	Supported
 W:	https://wiki.samba.org/index.php/LinuxCIFS
-T:	git https://git.samba.org/sfrench/cifs-2.6.git
+T:	git https://git.samba.org/sfrench/cifs-2.6.git for-next
 F:	Documentation/admin-guide/cifs/
 F:	fs/smb/client/
 F:	fs/smb/common/
@@ -6680,7 +6684,7 @@ F:	tools/testing/selftests/cgroup/test_cpuset_v1_base.sh
 CONTROL GROUP - DEVICE MEMORY CONTROLLER (DMEM)
 M:	Maarten Lankhorst <dev@lankhorst.se>
 M:	Maxime Ripard <mripard@kernel.org>
-M:	Natalie Vock <natalie.vock@gmx.de>
+M:	Natalie Vock <nat@pixelcluster.dev>
 L:	cgroups@vger.kernel.org
 L:	dri-devel@lists.freedesktop.org
 S:	Maintained
@@ -9664,7 +9668,7 @@ M:	Chao Yu <chao@kernel.org>
 R:	Yue Hu <zbestahu@gmail.com>
 R:	Jeffle Xu <jefflexu@linux.alibaba.com>
 R:	Sandeep Dhavale <dhavale@google.com>
-R:	Hongbo Li <lihongbo22@huawei.com>
+R:	Hongbo Li <hongbohbli@tencent.com>
 R:	Chunhai Guo <guochunhai@vivo.com>
 L:	linux-erofs@lists.ozlabs.org
 S:	Maintained
@@ -10344,6 +10348,12 @@ L:	linux-mmc@vger.kernel.org
 S:	Maintained
 F:	drivers/mmc/host/sdhci-esdhc-mcf.c
 F:	include/linux/platform_data/mmc-esdhc-mcf.h
+
+FREESCALE COLDFIRE M5441X RCM POWER-ON REASON DRIVER
+M:	Jean-Michel Hautbois <jeanmichel.hautbois@yoseli.org>
+L:	linux-m68k@lists.linux-m68k.org
+S:	Maintained
+F:	drivers/power/reset/mcf-rcm-reset.c
 
 FREESCALE DIU FRAMEBUFFER DRIVER
 M:	Timur Tabi <timur@kernel.org>
@@ -13781,6 +13791,7 @@ F:	sound/soc/codecs/sma*
 
 IRQ DOMAINS (IRQ NUMBER MAPPING LIBRARY)
 M:	Thomas Gleixner <tglx@kernel.org>
+R:	Radu Rendec <radu@rendec.net>
 S:	Maintained
 P:	Documentation/process/maintainer-tip.rst
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git irq/core
@@ -13792,6 +13803,7 @@ F:	kernel/irq/msi.c
 
 IRQ SUBSYSTEM
 M:	Thomas Gleixner <tglx@kernel.org>
+R:	Radu Rendec <radu@rendec.net>
 L:	linux-kernel@vger.kernel.org
 S:	Maintained
 P:	Documentation/process/maintainer-tip.rst
@@ -13806,6 +13818,7 @@ F:	lib/group_cpus.c
 
 IRQCHIP DRIVERS
 M:	Thomas Gleixner <tglx@kernel.org>
+R:	Radu Rendec <radu@rendec.net>
 L:	linux-kernel@vger.kernel.org
 S:	Maintained
 P:	Documentation/process/maintainer-tip.rst
@@ -14210,7 +14223,7 @@ R:	Sergey Senozhatsky <senozhatsky@chromium.org>
 R:	Tom Talpey <tom@talpey.com>
 L:	linux-cifs@vger.kernel.org
 S:	Maintained
-T:	git https://git.samba.org/ksmbd.git
+T:	git https://git.samba.org/ksmbd.git ksmbd-for-next
 F:	Documentation/filesystems/smb/ksmbd.rst
 F:	fs/smb/common/
 F:	fs/smb/server/
@@ -17331,7 +17344,7 @@ M:	Lorenzo Stoakes <ljs@kernel.org>
 R:	Zi Yan <ziy@nvidia.com>
 R:	Baolin Wang <baolin.wang@linux.alibaba.com>
 R:	Liam R. Howlett <liam@infradead.org>
-R:	Nico Pache <npache@redhat.com>
+R:	Nico Pache <nico.pache@linux.dev>
 R:	Ryan Roberts <ryan.roberts@arm.com>
 R:	Dev Jain <dev.jain@arm.com>
 R:	Barry Song <baohua@kernel.org>
@@ -18290,6 +18303,14 @@ F:	drivers/regulator/mpq7920.c
 F:	drivers/regulator/mpq7920.h
 F:	include/linux/mfd/mp2629.h
 
+MORSE MICRO MM81X WIRELESS DRIVER
+M:	Lachlan Hodges <lachlan.hodges@morsemicro.com>
+M:	Dan Callaghan <dan.callaghan@morsemicro.com>
+R:	Arien Judge <arien.judge@morsemicro.com>
+L:	linux-wireless@vger.kernel.org
+S:	Supported
+F:	drivers/net/wireless/morsemicro/
+
 MOST(R) TECHNOLOGY DRIVER
 M:	Parthiban Veerasooran <parthiban.veerasooran@microchip.com>
 M:	Christian Gromm <christian.gromm@microchip.com>
@@ -19197,6 +19218,7 @@ F:	drivers/nfc/
 F:	include/net/nfc/
 F:	include/uapi/linux/nfc.h
 F:	net/nfc/
+F:	tools/testing/selftests/nci/
 
 NFC VIRTUAL NCI DEVICE DRIVER
 M:	Bongsu Jeon <bongsu.jeon@samsung.com>
@@ -19632,6 +19654,13 @@ L:	netdev@vger.kernel.org
 S:	Maintained
 F:	Documentation/devicetree/bindings/ptp/nxp,ptp-netc.yaml
 F:	drivers/ptp/ptp_netc.c
+
+NXP NXPWIFI WIRELESS DRIVER
+M:	Jeff Chen <jeff.chen_1@nxp.com>
+R:	Francesco Dolcini <francesco@dolcini.it>
+L:	linux-wireless@vger.kernel.org
+S:	Maintained
+F:	drivers/net/wireless/nxp/
 
 NXP PF5300/PF5301/PF5302 PMIC REGULATOR DEVICE DRIVER
 M:	Woodrow Douglass <wdouglass@carnegierobotics.com>
@@ -28082,7 +28111,7 @@ M:	Rengarajan Sundararajan <Rengarajan.S@microchip.com>
 M:	UNGLinuxDriver@microchip.com
 L:	netdev@vger.kernel.org
 S:	Maintained
-F:	Documentation/devicetree/bindings/net/microchip,lan78xx.txt
+F:	Documentation/devicetree/bindings/net/microchip,lan7800.yaml
 F:	drivers/net/usb/lan78xx.*
 F:	include/dt-bindings/net/microchip-lan78xx.h
 
@@ -29548,7 +29577,7 @@ F:	net/xdp/
 F:	tools/testing/selftests/bpf/*xsk*
 
 XEN BLOCK SUBSYSTEM
-M:	Roger Pau Monné <roger.pau@citrix.com>
+M:	Roger Pau Monné <roger@xenproject.org>
 L:	xen-devel@lists.xenproject.org (moderated for non-subscribers)
 S:	Supported
 F:	drivers/block/xen*
@@ -29808,6 +29837,7 @@ F:	drivers/edac/zynqmp_edac.c
 
 XILINX ZYNQMP PSGTR PHY DRIVER
 M:	Tomi Valkeinen <tomi.valkeinen@ideasonboard.com>
+M:	Radhey Shyam Pandey <radhey.shyam.pandey@amd.com>
 L:	linux-kernel@vger.kernel.org
 S:	Supported
 T:	git https://github.com/Xilinx/linux-xlnx.git

@@ -1263,8 +1263,6 @@ patternProperties:
     description: OpenWrt
   "^option,.*":
     description: Option NV
-  "^optologic,.*":
-    description: Opto Logic S.A.
   "^oranth,.*":
     description: Shenzhen Oranth Technology Co., Ltd.
   "^ORCL,.*":

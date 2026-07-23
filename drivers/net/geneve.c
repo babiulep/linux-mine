@@ -43,8 +43,17 @@ MODULE_PARM_DESC(log_ecn_error, "Log packets received with corrupted ECN");
 #define GENEVE_OPT_GRO_HINT_LEN		1
 
 struct geneve_opt_gro_hint {
+#if defined(__LITTLE_ENDIAN_BITFIELD)
 	u8	inner_proto_id:2,
-		nested_is_v6:1;
+		nested_is_v6:1,
+		rsvd:5;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+	u8	rsvd:5,
+		nested_is_v6:1,
+		inner_proto_id:2;
+#else
+#error "Please fix <asm/byteorder.h>"
+#endif
 	u8	nested_nh_offset;
 	u8	nested_tp_offset;
 	u8	nested_hdr_len;
@@ -576,6 +585,7 @@ static int geneve_post_decap_hint(const struct sock *sk, struct sk_buff *skb,
 	struct iphdr *iph;
 	struct udphdr *uh;
 	__be16 p;
+	int err;
 
 	hint_off = geneve_sk_gro_hint_off(sk, *geneveh, &p, &len);
 	if (!hint_off)
@@ -600,11 +610,19 @@ static int geneve_post_decap_hint(const struct sock *sk, struct sk_buff *skb,
 		     !geneve_opt_gro_hint_validate(skb->data, gro_hint)))
 		return -EINVAL;
 
-	ipv6h = (void *)skb->data + gro_hint->nested_nh_offset;
-	iph = (struct iphdr *)ipv6h;
 	total_len = skb->len - gro_hint->nested_nh_offset;
 	if (total_len >= GRO_LEGACY_MAX_SIZE)
 		return -E2BIG;
+
+	err = skb_ensure_writable(skb, gro_hint->nested_tp_offset + sizeof(*uh));
+	if (unlikely(err))
+		return err;
+
+	*geneveh = geneve_hdr(skb);
+	gro_hint = geneve_opt_gro_hint(*geneveh, hint_off);
+
+	ipv6h = (void *)skb->data + gro_hint->nested_nh_offset;
+	iph = (struct iphdr *)ipv6h;
 
 	/*
 	 * After stripping the outer encap, the packet still carries a
@@ -630,7 +648,7 @@ static int geneve_post_decap_hint(const struct sock *sk, struct sk_buff *skb,
 
 	/* Adjust the nested UDP header len and checksum. */
 	uh = udp_hdr(skb);
-	uh->len = htons(skb->len - gro_hint->nested_tp_offset);
+	udp_set_len_short(uh, skb->len - gro_hint->nested_tp_offset);
 	if (uh->check) {
 		len = skb->len - gro_hint->nested_tp_offset;
 		skb_shinfo(skb)->gso_type |= SKB_GSO_UDP_TUNNEL_CSUM;
@@ -1808,6 +1826,8 @@ static void geneve_setup(struct net_device *dev)
 	dev->max_mtu = IP_MAX_MTU - GENEVE_BASE_HLEN - dev->hard_header_len;
 
 	netif_keep_dst(dev);
+	netif_set_tso_max_size(dev, GSO_MAX_SIZE);
+
 	dev->priv_flags &= ~IFF_TX_SKB_SHARING;
 	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE | IFF_NO_QUEUE;
 	dev->lltx = true;
@@ -2043,8 +2063,10 @@ static int geneve_configure(struct net *net, struct net_device *dev,
 	}
 
 	err = register_netdevice(dev);
-	if (err)
+	if (err) {
+		geneve_free_dev(dev);
 		return err;
+	}
 
 	list_add(&geneve->next, &gn->geneve_list);
 	return 0;

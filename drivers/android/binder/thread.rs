@@ -1313,6 +1313,7 @@ impl Thread {
                         info.data_size,
                         info.offsets_size
                     );
+                }
             }
         }
 

@@ -1645,7 +1645,7 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags, struct xe_file *xef)
 
 	if (xef)
 		vm->xef = xe_file_get(xef);
-	/**
+	/*
 	 * GSC VMs are kernel-owned, only used for PXP ops and can sometimes be
 	 * manipulated under the PXP mutex. However, the PXP mutex can be taken
 	 * under a user-VM lock when the PXP session is started at exec_queue
@@ -1765,10 +1765,8 @@ struct xe_vm *xe_vm_create(struct xe_device *xe, u32 flags, struct xe_file *xef)
 			vm->batch_invalidate_tlb = true;
 		}
 
-		if (vm->flags & XE_VM_FLAG_LR_MODE) {
-			INIT_WORK(&vm->preempt.rebind_work, preempt_rebind_work_func);
+		if (vm->flags & XE_VM_FLAG_LR_MODE)
 			vm->batch_invalidate_tlb = false;
-		}
 
 		/* Fill pt_root after allocating scratch tables */
 		for_each_tile(tile, xe, id) {
@@ -1825,10 +1823,10 @@ err_close:
 	return ERR_PTR(err);
 
 err_svm_fini:
-	if (flags & XE_VM_FLAG_FAULT_MODE) {
-		vm->size = 0; /* close the vm */
-		xe_svm_fini(vm);
-	}
+	vm->size = 0; /* close the vm */
+	if (flags & XE_VM_FLAG_FAULT_MODE)
+		xe_svm_close(vm);
+	xe_svm_fini(vm);
 err_no_resv:
 	mutex_destroy(&vm->snap_mutex);
 	for_each_tile(tile, xe, id)

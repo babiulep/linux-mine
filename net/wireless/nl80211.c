@@ -441,7 +441,7 @@ static int validate_uhr_operation(const struct nlattr *attr,
 	const u8 *data = nla_data(attr);
 	unsigned int len = nla_len(attr);
 
-	if (!ieee80211_uhr_oper_size_ok(data, len, false))
+	if (!ieee80211_uhr_oper_size_ok(data, len))
 		return -EINVAL;
 	return 0;
 }
@@ -4629,6 +4629,10 @@ int nl80211_send_chandef(struct sk_buff *msg, const struct cfg80211_chan_def *ch
 		return -ENOBUFS;
 	if (nla_put_u32(msg, NL80211_ATTR_CENTER_FREQ1, chandef->center_freq1))
 		return -ENOBUFS;
+	if (chandef->freq1_offset &&
+	    nla_put_u32(msg, NL80211_ATTR_CENTER_FREQ1_OFFSET,
+			chandef->freq1_offset))
+		return -ENOBUFS;
 	if (chandef->center_freq2 &&
 	    nla_put_u32(msg, NL80211_ATTR_CENTER_FREQ2, chandef->center_freq2))
 		return -ENOBUFS;
@@ -5411,7 +5415,7 @@ static int nl80211_get_key(struct sk_buff *skb, struct genl_info *info)
 	if (!rdev->ops->get_key)
 		return -EOPNOTSUPP;
 
-	if (!pairwise && mac_addr && !(rdev->wiphy.flags & WIPHY_FLAG_IBSS_RSN))
+	if (!cfg80211_valid_key_idx(wdev, key_idx, pairwise, mac_addr))
 		return -ENOENT;
 
 	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
@@ -5665,18 +5669,15 @@ static int nl80211_del_key(struct sk_buff *skb, struct genl_info *info)
 	    key.type != NL80211_KEYTYPE_GROUP)
 		return -EINVAL;
 
-	if (!cfg80211_valid_key_idx(rdev, key.idx,
-				    key.type == NL80211_KEYTYPE_PAIRWISE))
+	if (!cfg80211_valid_key_idx(wdev, key.idx,
+				    key.type == NL80211_KEYTYPE_PAIRWISE,
+				    mac_addr))
 		return -EINVAL;
 
 	if (!rdev->ops->del_key)
 		return -EOPNOTSUPP;
 
 	err = nl80211_key_allowed(wdev);
-
-	if (key.type == NL80211_KEYTYPE_GROUP && mac_addr &&
-	    !(rdev->wiphy.flags & WIPHY_FLAG_IBSS_RSN))
-		err = -ENOENT;
 
 	if (!err)
 		err = nl80211_validate_key_link_id(info, wdev, link_id,
@@ -12901,9 +12902,11 @@ static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 			return -EINVAL;
 	}
 
-	req.bss = cfg80211_get_bss(&rdev->wiphy, chan, bssid, ssid, ssid_len,
-				   IEEE80211_BSS_TYPE_ESS,
-				   IEEE80211_PRIVACY_ANY);
+	req.bss = __cfg80211_get_bss(&rdev->wiphy, chan, bssid, ssid, ssid_len,
+				     IEEE80211_BSS_TYPE_ESS,
+				     IEEE80211_PRIVACY_ANY,
+				     NL80211_BSS_USE_FOR_NORMAL,
+				     info->extack);
 	if (!req.bss)
 		return -ENOENT;
 
@@ -13048,6 +13051,7 @@ static int nl80211_crypto_settings(struct cfg80211_registered_device *rdev,
 }
 
 static struct cfg80211_bss *nl80211_assoc_bss(struct cfg80211_registered_device *rdev,
+					      struct genl_info *info,
 					      const u8 *ssid, int ssid_len,
 					      struct nlattr **attrs,
 					      int assoc_link_id, int link_id)
@@ -13057,8 +13061,10 @@ static struct cfg80211_bss *nl80211_assoc_bss(struct cfg80211_registered_device 
 	const u8 *bssid;
 	u32 freq, use_for = 0;
 
-	if (!attrs[NL80211_ATTR_MAC] || !attrs[NL80211_ATTR_WIPHY_FREQ])
+	if (!attrs[NL80211_ATTR_MAC] || !attrs[NL80211_ATTR_WIPHY_FREQ]) {
+		GENL_SET_ERR_MSG(info, "BSSID or frequency missing");
 		return ERR_PTR(-EINVAL);
+	}
 
 	bssid = nla_data(attrs[NL80211_ATTR_MAC]);
 
@@ -13067,8 +13073,10 @@ static struct cfg80211_bss *nl80211_assoc_bss(struct cfg80211_registered_device 
 		freq += nla_get_u32(attrs[NL80211_ATTR_WIPHY_FREQ_OFFSET]);
 
 	chan = nl80211_get_valid_chan(&rdev->wiphy, freq);
-	if (!chan)
+	if (!chan) {
+		GENL_SET_ERR_MSG(info, "invalid or disabled channel");
 		return ERR_PTR(-EINVAL);
+	}
 
 	if (assoc_link_id >= 0)
 		use_for = NL80211_BSS_USE_FOR_MLD_LINK;
@@ -13079,7 +13087,7 @@ static struct cfg80211_bss *nl80211_assoc_bss(struct cfg80211_registered_device 
 				 ssid, ssid_len,
 				 IEEE80211_BSS_TYPE_ESS,
 				 IEEE80211_PRIVACY_ANY,
-				 use_for);
+				 use_for, info->extack);
 	if (!bss)
 		return ERR_PTR(-ENOENT);
 
@@ -13118,13 +13126,13 @@ static int nl80211_process_links(struct cfg80211_registered_device *rdev,
 			return -EINVAL;
 		}
 		links[link_id].bss =
-			nl80211_assoc_bss(rdev, ssid, ssid_len, attrs,
+			nl80211_assoc_bss(rdev, info, ssid, ssid_len, attrs,
 					  assoc_link_id, link_id);
 		if (IS_ERR(links[link_id].bss)) {
 			err = PTR_ERR(links[link_id].bss);
 			links[link_id].bss = NULL;
-			NL_SET_ERR_MSG_ATTR(info->extack, link,
-					    "Error fetching BSS for link");
+			/* the BSS lookup set the specific message already */
+			NL_SET_BAD_ATTR(info->extack, link);
 			return err;
 		}
 
@@ -13340,7 +13348,7 @@ static int nl80211_associate(struct sk_buff *skb, struct genl_info *info)
 		if (req.link_id >= 0)
 			return -EINVAL;
 
-		req.bss = nl80211_assoc_bss(rdev, ssid, ssid_len, info->attrs,
+		req.bss = nl80211_assoc_bss(rdev, info, ssid, ssid_len, info->attrs,
 					    -1, -1);
 		if (IS_ERR(req.bss))
 			return PTR_ERR(req.bss);
