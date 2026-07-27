@@ -2814,8 +2814,8 @@ drop:
 static int amt_rcv(struct sock *sk, struct sk_buff *skb)
 {
 	struct amt_dev *amt;
-	__be32 saddr;
 	__be32 remote_ip;
+	__be32 saddr;
 	int type;
 	bool err;
 

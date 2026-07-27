@@ -656,18 +656,10 @@ int exfat_file_fsync(struct file *filp, loff_t start, loff_t end, int datasync)
 }
 
 /*
- * exfat_zero_new_range - fill a page-cache gap without clobbering live data
+ * exfat_zero_new_range - zero [start, end) without overwriting uptodate blocks
  *
- * Used to zero the gap [start, end) below a freshly extended valid_size, both
- * from the buffered write path (exfat_extend_valid_size()) and from a mmap
- * write fault (exfat_page_mkwrite()).
- *
- * iomap_zero_range() zeroes every block of every folio it touches.  That would
- * clobber data a racing writer has stored through a shared mapping into a block
- * past the byte-granular valid_size but below the block-aligned zeroed_size.
- * So zero with block granularity instead.  Leave uptodate blocks (which hold
- * the live data, or zeroes for a never-written gap page) intact and only zero
- * the not-uptodate blocks, which are stale on disk.
+ * Uptodate blocks may contain data written through a shared mapping beyond
+ * valid_size.
  */
 static int exfat_zero_new_range(struct inode *inode, loff_t start, loff_t end)
 {
@@ -703,12 +695,8 @@ static int exfat_zero_new_range(struct inode *inode, loff_t start, loff_t end)
 		}
 
 		/*
-		 * Partially uptodate: walk the gap block by block under the
-		 * folio lock and zero only maximal runs of not-uptodate blocks.
-		 * iomap_zero_range() needs the folio unlocked, so drop the lock
-		 * around each run and re-check ->mapping in case the folio was
-		 * reclaimed in between (in which case zero the remainder from
-		 * the on-disk view).
+		 * Zero not-uptodate block runs. iomap_zero_range() requires an
+		 * unlocked folio, so recheck ->mapping after each call.
 		 */
 		folio_lock(folio);
 		bpos = pos;
@@ -752,14 +740,8 @@ static int exfat_zero_new_range(struct inode *inode, loff_t start, loff_t end)
 		}
 
 		/*
-		 * Dirty the folio only if every block is now uptodate. The
-		 * zeroed gap blocks and any preserved (mmap-written) blocks are
-		 * uptodate; if other blocks of this boundary folio - below
-		 * gap_start, holding valid on-disk data that is not cached - are
-		 * still not uptodate, a whole-folio dirty would make writeback
-		 * clobber that on-disk data with uninitialised page content. A
-		 * preserved marker block is already dirty from the store, so it
-		 * is written back regardless.
+		 * Dirty only a fully uptodate folio. Dirtying a partial folio could
+		 * write uninitialised cache contents over valid on-disk blocks.
 		 */
 		if (folio->mapping == mapping && folio_test_uptodate(folio))
 			folio_mark_dirty(folio);
@@ -778,22 +760,14 @@ static int exfat_extend_valid_size(struct inode *inode, loff_t new_valid_size)
 	int ret = 0;
 
 	if (old_valid_size < new_valid_size) {
-		/*
-		 * Skip the part of [old_valid_size, new_valid_size) that has
-		 * already been zeroed, tracked block-granularly by zeroed_size.
-		 * Re-zeroing it could clobber a marker that an mmap store wrote
-		 * into a block past the byte-granular valid_size but below the
-		 * block-aligned zeroed_size.
-		 */
+		/* Do not re-zero blocks already covered by zeroed_size. */
 		loff_t gap_start = max(old_valid_size, ei->zeroed_size);
 
 		if (i_size_read(inode) < new_valid_size) {
 			/*
-			 * The write extends the file past i_size. Allocate the
-			 * clusters up to new_valid_size before zeroing the gap;
-			 * otherwise the gap fill can be skipped where zeroed_size
-			 * already covers the range, leaving i_size beyond the last
-			 * allocated cluster and a later mapping hitting EOF.
+			 * Allocate clusters before increasing i_size. The gap
+			 * may already be zeroed, so the subsequent zeroing
+			 * can be skipped.
 			 */
 			ret = exfat_cont_expand(inode, new_valid_size);
 			if (ret)
@@ -801,16 +775,9 @@ static int exfat_extend_valid_size(struct inode *inode, loff_t new_valid_size)
 		}
 
 		/*
-		 * Serialize the gap fill against concurrent mmap stores. A
-		 * shared writable mapping can hold a writable PTE for a gap page
-		 * and store into it with no fault (and so no valid_size advance);
-		 * such a store could land in the range we are about to zero and
-		 * be lost. Hold the invalidate lock (which exfat_page_mkwrite()
-		 * takes shared) and revoke the gap's PTEs, so any further store
-		 * re-faults through exfat_page_mkwrite(). As we hold the inode
-		 * lock, that fault blocks until the gap is zeroed and valid_size
-		 * covers it; the re-faulted store then lands in an already-valid
-		 * page and is preserved instead of re-zeroed.
+		 * Revoke writable PTEs while zeroing the gap. A racing mmap
+		 * store re-faults through exfat_page_mkwrite() after valid_size
+		 * is updated.
 		 */
 		filemap_invalidate_lock(inode->i_mapping);
 		if (gap_start < new_valid_size)
@@ -994,18 +961,9 @@ static vm_fault_t exfat_page_mkwrite(struct vm_fault *vmf)
 			int err;
 
 			/*
-			 * Only physically zero the gap pages *below* the
-			 * faulting page. zeroed_size tracks the largest
-			 * page-aligned offset that has already been zeroed.
-			 *
-			 * The faulting folio itself is not zeroed here: it is
-			 * already populated by the read fault (real data below
-			 * valid_size, zeroes above it) and is dirtied by
-			 * iomap_page_mkwrite() below, so writeback persists it
-			 * correctly. Zeroing it here would instead risk
-			 * clobbering data that userspace is about to write
-			 * through the mapping, which is what corrupts the tail
-			 * page when the mmap_prepare-time extend is dropped.
+			 * Zero only the gap below the faulting page. The read
+			 * fault populated its folio and iomap_page_mkwrite()
+			 * will dirty it.
 			 */
 			err = exfat_zero_new_range(inode, ei->zeroed_size,
 					fault_page_start);
@@ -1016,13 +974,9 @@ static vm_fault_t exfat_page_mkwrite(struct vm_fault *vmf)
 		}
 
 		/*
-		 * Advance zeroed_size to the block boundary of new_valid_size,
-		 * which is clamped to i_size. The block that straddles i_size is
-		 * written back in full with its tail zeroed, so recording it as
-		 * zeroed is safe. Rounding up to the page boundary instead would
-		 * cover blocks entirely beyond i_size that writeback never
-		 * persists (writeback stops at i_size), letting a later
-		 * valid_size extension skip them and expose stale on-disk data.
+		 * Track zeroed_size by block, not page, because writeback stops
+		 * at i_size recording blocks wholly beyond it could skip a
+		 * later required zeroing.
 		 */
 		if (ei->zeroed_size < round_up(new_valid_size, i_blocksize(inode)))
 			ei->zeroed_size = round_up(new_valid_size, i_blocksize(inode));

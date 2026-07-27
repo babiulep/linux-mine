@@ -744,30 +744,29 @@ static void scx_idle_notify(struct rq *rq, bool idle, bool do_notify, bool root_
 {
 	s32 cpu = cpu_of(rq);
 	s32 cid = scx_cpu_arg(cpu);
+	struct scx_sched *root = scx_root_protected_live();
 	struct scx_sched *pos;
 
 	lockdep_assert_rq_held(rq);
 
 	/* with no sub-sched, only the root can be owed a notification */
 	if (!scx_has_subs()) {
-		struct scx_sched *sch = scx_root;
-
 		if ((do_notify || root_renotify) &&
-		    SCX_HAS_OP(sch, update_idle) && !scx_bypassing(sch, cpu))
-			SCX_CALL_OP(sch, update_idle, rq, cid, idle);
+		    SCX_HAS_OP(root, update_idle) && !scx_bypassing(root, cpu))
+			SCX_CALL_OP(root, update_idle, rq, cid, idle);
 		return;
 	}
 
-	pos = scx_next_descendant_pre(NULL, scx_root);
+	pos = scx_next_descendant_pre(NULL, root);
 	while (pos) {
 		bool forced = false;
 
 		if (unlikely(scx_missing_caps(pos, cpu, SCX_CAP_BASE))) {
-			pos = scx_skip_subtree_pre(pos, scx_root);
+			pos = scx_skip_subtree_pre(pos, root);
 			continue;
 		}
 
-		if (pos == scx_root) {
+		if (!pos->level) {
 			forced = root_renotify;
 		}
 #ifdef CONFIG_EXT_SUB_SCHED
@@ -779,7 +778,7 @@ static void scx_idle_notify(struct rq *rq, bool idle, bool do_notify, bool root_
 		if ((do_notify || forced) && SCX_HAS_OP(pos, update_idle) &&
 		    !scx_bypassing(pos, cpu))
 			SCX_CALL_OP(pos, update_idle, rq, cid, idle);
-		pos = scx_next_descendant_pre(pos, scx_root);
+		pos = scx_next_descendant_pre(pos, root);
 	}
 }
 
@@ -1364,7 +1363,7 @@ __bpf_kfunc s32 scx_bpf_pick_idle_cpu_node(const struct cpumask *cpus_allowed,
 /**
  * scx_bpf_pick_idle_cpu - Pick and claim an idle cpu
  * @cpus_allowed: Allowed cpumask
- * @flags: %SCX_PICK_IDLE_CPU_* flags
+ * @flags: %SCX_PICK_IDLE_* flags
  * @aux: implicit BPF argument to access bpf_prog_aux hidden from BPF progs
  *
  * Pick and claim an idle cpu in @cpus_allowed. Returns the picked idle cpu
@@ -1411,7 +1410,7 @@ __bpf_kfunc s32 scx_bpf_pick_idle_cpu(const struct cpumask *cpus_allowed,
  *			       or pick any CPU from @node
  * @cpus_allowed: Allowed cpumask
  * @node: target NUMA node
- * @flags: %SCX_PICK_IDLE_CPU_* flags
+ * @flags: %SCX_PICK_IDLE_* flags
  * @aux: implicit BPF argument to access bpf_prog_aux hidden from BPF progs
  *
  * Pick and claim an idle cpu in @cpus_allowed. If none is available, pick any
@@ -1462,7 +1461,7 @@ __bpf_kfunc s32 scx_bpf_pick_any_cpu_node(const struct cpumask *cpus_allowed,
 /**
  * scx_bpf_pick_any_cpu - Pick and claim an idle cpu if available or pick any CPU
  * @cpus_allowed: Allowed cpumask
- * @flags: %SCX_PICK_IDLE_CPU_* flags
+ * @flags: %SCX_PICK_IDLE_* flags
  * @aux: implicit BPF argument to access bpf_prog_aux hidden from BPF progs
  *
  * Pick and claim an idle cpu in @cpus_allowed. If none is available, pick any

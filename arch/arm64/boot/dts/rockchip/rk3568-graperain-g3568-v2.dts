@@ -476,7 +476,6 @@
 
 				regulator-state-mem {
 					regulator-on-in-suspend;
-					regulator-suspend-microvolt = <900000>;
 				};
 			};
 
@@ -510,7 +509,6 @@
 
 				regulator-state-mem {
 					regulator-on-in-suspend;
-					regulator-suspend-microvolt = <3300000>;
 				};
 			};
 
@@ -535,7 +533,6 @@
 
 				regulator-state-mem {
 					regulator-on-in-suspend;
-					regulator-suspend-microvolt = <1800000>;
 				};
 			};
 

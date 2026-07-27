@@ -242,7 +242,7 @@ int __init parse_acpi_topology(void)
 	}
 
 	for_each_possible_cpu(cpu) {
-		for (int i = 0; i < acpi_nr_packages; i++)
+		for (i = 0; i < acpi_nr_packages; i++)
 			if (cpu_data[cpu].package == acpi_package_ids[i]) {
 				cpu_data[cpu].package = i; /* Canonicalize */
 				break;

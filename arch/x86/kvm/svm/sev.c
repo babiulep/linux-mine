@@ -1281,7 +1281,26 @@ static void *sev_dbg_crypt_slow_alloc(struct page *page, unsigned long __va,
 	if (WARN_ON_ONCE((*pa & PAGE_MASK) != ((*pa + *nr_bytes - 1) & PAGE_MASK)))
 		return NULL;
 
+	/*
+	 * If SNP is enabled, i.e. the RMP is active, allocate a full page to
+	 * prevent concurrent accesses to the page.  As required by firmware,
+	 * the PSP driver updates the RMP to temporarily transfer ownership of
+	 * the page to Firmware while the {DE,EN}CRYPT operation is in-progress,
+	 * and so concurrent software accesses to the page will encounter
+	 * seemingly spurious RMP #PF violations
+	 */
+	if (cc_platform_has(CC_ATTR_HOST_SEV_SNP))
+		return (void *)__get_free_page(GFP_KERNEL);
+
 	return kmalloc(*nr_bytes, GFP_KERNEL);
+}
+
+static void sev_dbg_crypt_slow_free(void *buf)
+{
+	if (cc_platform_has(CC_ATTR_HOST_SEV_SNP))
+		free_page((unsigned long)buf);
+	else
+		kfree(buf);
 }
 
 static int sev_dbg_decrypt_slow(struct kvm *kvm, unsigned long src,
@@ -1305,7 +1324,7 @@ static int sev_dbg_decrypt_slow(struct kvm *kvm, unsigned long src,
 	if (copy_to_user((void __user *)dst, buf + (src & 15), len))
 		r = -EFAULT;
 out:
-	kfree(buf);
+	sev_dbg_crypt_slow_free(buf);
 	return r;
 }
 
@@ -1338,7 +1357,7 @@ static int sev_dbg_encrypt_slow(struct kvm *kvm, unsigned long src,
 		r = sev_issue_dbg_cmd(kvm, __sme_set(__pa(buf)), dst_pa,
 				      nr_bytes, KVM_SEV_DBG_ENCRYPT, err);
 out:
-	kfree(buf);
+	sev_dbg_crypt_slow_free(buf);
 	return r;
 }
 
@@ -2751,8 +2770,12 @@ int sev_mem_enc_register_region(struct kvm *kvm,
 	if (!region)
 		return -ENOMEM;
 
+	/*
+	 * Do NOT specify FOLL_WRITE, as KVM isn't using the pinned pages to
+	 * write memory, and FOLL_LONGTERM itself triggers CoW unshare.
+	 */
 	region->pages = sev_pin_memory(kvm, range->addr, range->size, &region->npages,
-				       FOLL_WRITE | FOLL_LONGTERM);
+				       FOLL_LONGTERM);
 	if (IS_ERR(region->pages)) {
 		ret = PTR_ERR(region->pages);
 		goto e_free;
@@ -5090,15 +5113,7 @@ static bool is_pfn_range_shared(kvm_pfn_t start, kvm_pfn_t end)
 	return true;
 }
 
-static u8 max_level_for_order(int order)
-{
-	if (order >= KVM_HPAGE_GFN_SHIFT(PG_LEVEL_2M))
-		return PG_LEVEL_2M;
-
-	return PG_LEVEL_4K;
-}
-
-static bool is_large_rmp_possible(struct kvm *kvm, kvm_pfn_t pfn, int order)
+static bool is_large_rmp_possible(kvm_pfn_t pfn, kvm_pfn_t nr_pages)
 {
 	kvm_pfn_t pfn_aligned = ALIGN_DOWN(pfn, PTRS_PER_PMD);
 
@@ -5107,14 +5122,14 @@ static bool is_large_rmp_possible(struct kvm *kvm, kvm_pfn_t pfn, int order)
 	 * PFN is currently shared, then the entire 2M-aligned range can be
 	 * set to private via a single 2M RMP entry.
 	 */
-	if (max_level_for_order(order) > PG_LEVEL_4K &&
+	if (nr_pages >= KVM_PAGES_PER_HPAGE(PG_LEVEL_2M) &&
 	    is_pfn_range_shared(pfn_aligned, pfn_aligned + PTRS_PER_PMD))
 		return true;
 
 	return false;
 }
 
-int sev_gmem_prepare(struct kvm *kvm, kvm_pfn_t pfn, gfn_t gfn, int max_order)
+int sev_gmem_make_private(struct kvm *kvm, gfn_t gfn, kvm_pfn_t pfn, kvm_pfn_t nr_pages)
 {
 	struct kvm_sev_info *sev = to_kvm_sev_info(kvm);
 	kvm_pfn_t pfn_aligned;
@@ -5125,6 +5140,9 @@ int sev_gmem_prepare(struct kvm *kvm, kvm_pfn_t pfn, gfn_t gfn, int max_order)
 	if (!sev_snp_guest(kvm))
 		return 0;
 
+	if (WARN_ON_ONCE(nr_pages != 1))
+		return -EIO;
+
 	rc = snp_lookup_rmpentry(pfn, &assigned, &level);
 	if (rc) {
 		pr_err_ratelimited("SEV: Failed to look up RMP entry: GFN %llx PFN %llx error %d\n",
@@ -5133,12 +5151,12 @@ int sev_gmem_prepare(struct kvm *kvm, kvm_pfn_t pfn, gfn_t gfn, int max_order)
 	}
 
 	if (assigned) {
-		pr_debug("%s: already assigned: gfn %llx pfn %llx max_order %d level %d\n",
-			 __func__, gfn, pfn, max_order, level);
+		pr_debug("%s: already assigned: gfn %llx pfn %llx nr_pages %llx level %d\n",
+			 __func__, gfn, pfn, nr_pages, level);
 		return 0;
 	}
 
-	if (is_large_rmp_possible(kvm, pfn, max_order)) {
+	if (is_large_rmp_possible(pfn, nr_pages)) {
 		level = PG_LEVEL_2M;
 		pfn_aligned = ALIGN_DOWN(pfn, PTRS_PER_PMD);
 		gfn_aligned = ALIGN_DOWN(gfn, PTRS_PER_PMD);
@@ -5155,22 +5173,22 @@ int sev_gmem_prepare(struct kvm *kvm, kvm_pfn_t pfn, gfn_t gfn, int max_order)
 		return -EINVAL;
 	}
 
-	pr_debug("%s: updated: gfn %llx pfn %llx pfn_aligned %llx max_order %d level %d\n",
-		 __func__, gfn, pfn, pfn_aligned, max_order, level);
+	pr_debug("%s: updated: gfn %llx pfn %llx pfn_aligned %llx nr_pages %llx level %d\n",
+		 __func__, gfn, pfn, pfn_aligned, nr_pages, level);
 
 	return 0;
 }
 
-void sev_gmem_invalidate(kvm_pfn_t start, kvm_pfn_t end)
+void sev_gmem_make_shared(kvm_pfn_t pfn, kvm_pfn_t nr_pages)
 {
-	kvm_pfn_t pfn;
+	kvm_pfn_t end = pfn + nr_pages;
 
 	if (!cc_platform_has(CC_ATTR_HOST_SEV_SNP))
 		return;
 
-	pr_debug("%s: PFN start 0x%llx PFN end 0x%llx\n", __func__, start, end);
+	pr_debug("%s: PFN start 0x%llx PFN end 0x%llx\n", __func__, pfn, end);
 
-	for (pfn = start; pfn < end;) {
+	while (pfn < end) {
 		bool use_2m_update = false;
 		int rc, rmp_level;
 		bool assigned;

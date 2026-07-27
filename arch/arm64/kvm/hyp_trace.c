@@ -154,6 +154,7 @@ static int hyp_trace_buffer_alloc_bpages_backing(struct hyp_trace_buffer *trace_
 	int nr_bpages = (PAGE_ALIGN(size) / PAGE_SIZE) + 1;
 	size_t backing_size;
 	void *start;
+	int ret;
 
 	backing_size = PAGE_ALIGN(sizeof(struct simple_buffer_page) * nr_bpages *
 				  num_possible_cpus());
@@ -162,10 +163,16 @@ static int hyp_trace_buffer_alloc_bpages_backing(struct hyp_trace_buffer *trace_
 	if (!start)
 		return -ENOMEM;
 
+	ret = __map_hyp(start, backing_size);
+	if (ret) {
+		free_pages_exact(start, backing_size);
+		return ret;
+	}
+
 	trace_buffer->desc->bpages_backing_start = (unsigned long)start;
 	trace_buffer->desc->bpages_backing_size = backing_size;
 
-	return __map_hyp(start, backing_size);
+	return ret;
 }
 
 static void hyp_trace_buffer_free_bpages_backing(struct hyp_trace_buffer *trace_buffer)
@@ -222,18 +229,22 @@ static int hyp_trace_buffer_share_hyp(struct hyp_trace_buffer *trace_buffer)
 static struct trace_buffer_desc *hyp_trace_load(unsigned long size, void *priv)
 {
 	struct hyp_trace_buffer *trace_buffer = priv;
+	size_t desc_size, tb_desc_size;
 	struct hyp_trace_desc *desc;
-	size_t desc_size;
 	int ret;
 
 	if (WARN_ON(trace_buffer->desc))
 		return ERR_PTR(-EINVAL);
 
-	desc_size = trace_buffer_desc_size(size, num_possible_cpus());
+	tb_desc_size = trace_buffer_desc_size(size, num_possible_cpus());
+	desc_size = size_add(tb_desc_size, offsetof(struct hyp_trace_desc, trace_buffer_desc));
 	if (desc_size == SIZE_MAX)
 		return ERR_PTR(-E2BIG);
 
 	desc_size = PAGE_ALIGN(desc_size);
+	if (!desc_size)
+		return ERR_PTR(-E2BIG);
+
 	desc = (struct hyp_trace_desc *)alloc_pages_exact(desc_size, GFP_KERNEL);
 	if (!desc)
 		return ERR_PTR(-ENOMEM);
@@ -249,7 +260,7 @@ static struct trace_buffer_desc *hyp_trace_load(unsigned long size, void *priv)
 	if (ret)
 		goto err_free_desc;
 
-	ret = trace_remote_alloc_buffer(&desc->trace_buffer_desc, desc_size, size,
+	ret = trace_remote_alloc_buffer(&desc->trace_buffer_desc, tb_desc_size, size,
 					cpu_possible_mask);
 	if (ret)
 		goto err_free_backing;
@@ -398,6 +409,7 @@ static const char *__hyp_enter_exit_reason_str(u8 reason)
 	static const char strs[][12] = {
 		"smc",
 		"hvc",
+		"sys",
 		"psci",
 		"host_abort",
 		"guest_exit",

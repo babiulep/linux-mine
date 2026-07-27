@@ -69,10 +69,8 @@ bool erofs_ishare_fill_inode(struct inode *inode)
 		}
 	}
 	sd = d_obtain_alias(si); /* disconnected denties for sharedinodes */
-	if (IS_ERR(sd)) {
-		iput(si);
+	if (IS_ERR(sd))
 		return false;
-	}
 	vi->sharedentry = sd;
 	INIT_LIST_HEAD(&vi->ishare_list);
 	spin_lock(&EROFS_I(si)->ishare_lock);
@@ -106,7 +104,7 @@ static int erofs_ishare_file_open(struct inode *inode, struct file *file)
 	if (file->f_flags & O_DIRECT)
 		return -EINVAL;
 
-	rf = backing_file_open(file, file->f_flags | O_NOATIME | FMODE_NONOTIFY,
+	rf = backing_file_open(file, file->f_flags | O_NOATIME,
 			       &sharedpath, current_cred());
 	if (IS_ERR(rf))
 		return PTR_ERR(rf);

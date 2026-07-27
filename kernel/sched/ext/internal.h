@@ -56,6 +56,7 @@ enum scx_exit_kind {
 	SCX_EXIT_ERROR = 1024,	/* runtime error, error msg contains details */
 	SCX_EXIT_ERROR_BPF,	/* ERROR but triggered through scx_bpf_error() */
 	SCX_EXIT_ERROR_STALL,	/* watchdog detected stalled runnable tasks */
+	SCX_EXIT_ERROR_REENQ,	/* task hit reenqueue limit without running */
 };
 
 /*
@@ -1119,15 +1120,13 @@ struct scx_event_stats {
 	s64		SCX_EV_REENQ_IMMED;
 
 	/*
-	 * The number of times a reenq of local DSQ caused another reenq of
-	 * local DSQ. This can happen when %SCX_ENQ_IMMED races against a higher
-	 * priority class task even if the BPF scheduler always satisfies the
-	 * prerequisites for %SCX_ENQ_IMMED at the time of enqueue. However,
-	 * that scenario is very unlikely and this count going up regularly
-	 * indicates that the BPF scheduler is handling %SCX_ENQ_REENQ
-	 * incorrectly causing recursive reenqueues.
+	 * The number of times a reenqueue (%SCX_ENQ_REENQ) led to another
+	 * reenqueue without the task running in between. This count climbing
+	 * rapidly indicates that the BPF scheduler keeps re-deciding placements
+	 * it can't honor. A single task reenqueued more than
+	 * %SCX_REENQ_MAX_REPEAT times gets its owning scheduler ejected.
 	 */
-	s64		SCX_EV_REENQ_LOCAL_REPEAT;
+	s64		SCX_EV_REENQ_REPEAT;
 
 	/*
 	 * Total number of times a task's time slice was refilled with the
@@ -1193,6 +1192,25 @@ struct scx_event_stats {
 	 * kick degrades to a plain reschedule.
 	 */
 	s64		SCX_EV_SUB_PREEMPT_DENIED;
+
+	/*
+	 * The number of times a kick was skipped because the sub-sched lacked
+	 * baseline access on the target cid. The preempt-part degradation of a
+	 * delivered kick is counted in SCX_EV_SUB_PREEMPT_DENIED instead.
+	 */
+	s64		SCX_EV_SUB_KICK_DENIED;
+
+	/*
+	 * The number of times a local DSQ reenq was dropped because the
+	 * sub-sched lacked baseline access on the target cid.
+	 */
+	s64		SCX_EV_SUB_REENQ_DENIED;
+
+	/*
+	 * The number of times scx_bpf_cidperf_set() was denied because the
+	 * sub-sched lacked SCX_CAP_PERF on the target cid.
+	 */
+	s64		SCX_EV_SUB_CIDPERF_DENIED;
 };
 
 #define SCX_EVENTS_LIST(SCX_EVENT)					\
@@ -1202,7 +1220,7 @@ struct scx_event_stats {
 	SCX_EVENT(SCX_EV_ENQ_SKIP_EXITING);				\
 	SCX_EVENT(SCX_EV_ENQ_SKIP_MIGRATION_DISABLED);			\
 	SCX_EVENT(SCX_EV_REENQ_IMMED);					\
-	SCX_EVENT(SCX_EV_REENQ_LOCAL_REPEAT);				\
+	SCX_EVENT(SCX_EV_REENQ_REPEAT);					\
 	SCX_EVENT(SCX_EV_REFILL_SLICE_DFL);				\
 	SCX_EVENT(SCX_EV_SLICE_CLAMPED);				\
 	SCX_EVENT(SCX_EV_SLICE_DENIED);					\
@@ -1212,7 +1230,10 @@ struct scx_event_stats {
 	SCX_EVENT(SCX_EV_INSERT_NOT_OWNED);				\
 	SCX_EVENT(SCX_EV_SUB_BYPASS_DISPATCH);				\
 	SCX_EVENT(SCX_EV_SUB_FORCED_ADMIT);				\
-	SCX_EVENT(SCX_EV_SUB_PREEMPT_DENIED)
+	SCX_EVENT(SCX_EV_SUB_PREEMPT_DENIED);				\
+	SCX_EVENT(SCX_EV_SUB_KICK_DENIED);				\
+	SCX_EVENT(SCX_EV_SUB_REENQ_DENIED);				\
+	SCX_EVENT(SCX_EV_SUB_CIDPERF_DENIED)
 
 struct scx_sched;
 
@@ -1238,8 +1259,6 @@ struct scx_dsp_ctx {
 struct scx_deferred_reenq_local {
 	struct list_head	node;
 	u64			flags;
-	u64			seq;
-	u32			cnt;
 };
 
 struct scx_sched_pcpu {
@@ -1338,6 +1357,11 @@ struct scx_sched_pnode {
  *            - SCX_ENQ_PREEMPT inserts
  *            - SCX_KICK_PREEMPT kicks
  *
+ * PERF       control the cid's cpu power/perf management state, currently the
+ *            cpufreq target set through scx_bpf_cidperf_set(). Hardware
+ *            control is a separate axis from queue access: PERF neither
+ *            implies nor is implied by the caps above.
+ *
  * Implied caps apply to the holder's own use of a cid, not to delegation.
  * scx_bpf_sub_grant() delegates literally-held caps, so a cap held only through
  * implication is usable but cannot be re-delegated to a child. When granting a
@@ -1348,6 +1372,7 @@ enum scx_cap_flags {
 	__SCX_CAP_ENQ_IMMED		= 0,
 	__SCX_CAP_ENQ			= 1,
 	__SCX_CAP_PREEMPT		= 2,
+	__SCX_CAP_PERF			= 3,
 
 	__SCX_NR_CAPS,
 	__SCX_CAP_ALL			= BIT_U64(__SCX_NR_CAPS) - 1,
@@ -1355,6 +1380,7 @@ enum scx_cap_flags {
 	SCX_CAP_ENQ_IMMED		= BIT_U64(__SCX_CAP_ENQ_IMMED),
 	SCX_CAP_ENQ			= BIT_U64(__SCX_CAP_ENQ),
 	SCX_CAP_PREEMPT			= BIT_U64(__SCX_CAP_PREEMPT),
+	SCX_CAP_PERF			= BIT_U64(__SCX_CAP_PERF),
 
 	/* alias for minimal cap to make any use of a cpu */
 	SCX_CAP_BASE			= SCX_CAP_ENQ_IMMED,
@@ -1995,6 +2021,33 @@ extern struct scx_sched *scx_enabling_sub_sched;
 	__scx_exit(sch, kind, exit_code, raw_smp_processor_id(), fmt, ##args)
 #define scx_error(sch, fmt, args...)						\
 	scx_exit((sch), SCX_EXIT_ERROR, 0, fmt, ##args)
+
+/**
+ * scx_root_protected_live - Root sched for paths that only run while live
+ *
+ * scx_root is published before the scheduler goes live and cleared only after
+ * it is fully drained, so a path that only executes while the scheduler is live
+ * can never race an update. Return the root sched with a plain load, never
+ * %NULL.
+ */
+static inline struct scx_sched *scx_root_protected_live(void)
+{
+	return rcu_dereference_protected(scx_root, true);
+}
+
+/**
+ * scx_root_protected - Root sched for contexts that exclude its updates
+ *
+ * Both scx_root updates run under the locks checked below, so holding one
+ * excludes them. Return the root sched with a plain load, %NULL if no scheduler
+ * is loaded.
+ */
+static inline struct scx_sched *scx_root_protected(void)
+{
+	return rcu_dereference_protected(scx_root,
+					 lockdep_is_cpus_held() ||
+					 lockdep_is_held(&scx_enable_mutex));
+}
 
 static inline struct scx_dispatch_q *scx_bypass_dsq(struct scx_sched *sch, s32 cpu)
 {

@@ -255,6 +255,7 @@
 #define FAN_CURVE_LENGTH		5
 
 #define EC_ADDR_KBD_STATUS		0x078C
+/* Unreliable on some models, use the device descriptor instead. */
 #define KBD_WHITE_ONLY			BIT(0)
 #define KBD_POWER_OFF			BIT(1)
 #define KBD_TURBO_LEVEL_MASK		GENMASK(3, 2)
@@ -400,7 +401,7 @@ struct uniwill_data {
 	u8 lightbar_max_brightness;
 	struct led_classdev_mc led_mc_cdev;
 	struct mc_subled led_mc_subled_info[LED_CHANNELS];
-	bool single_color_kbd;
+	bool kbd_led_single_color;
 	u8 kbd_led_max_brightness;
 	unsigned int last_kbd_status;
 	union {
@@ -426,6 +427,7 @@ struct uniwill_battery_entry {
 
 struct uniwill_device_descriptor {
 	unsigned int features;
+	bool kbd_led_single_color;
 	u8 kbd_led_max_brightness;
 	u8 lightbar_max_brightness;
 	/* Executed during driver probing */
@@ -1629,7 +1631,7 @@ static int uniwill_notify_kbd_led(struct uniwill_data *data, int brightness)
 	struct led_classdev *led_cdev;
 	int ret;
 
-	if (data->single_color_kbd)
+	if (data->kbd_led_single_color)
 		led_cdev = &data->kbd_led_cdev;
 	else
 		led_cdev = &data->kbd_led_mc_cdev.led_cdev;
@@ -1733,7 +1735,24 @@ static enum led_brightness uniwill_kbd_led_mc_brightness_get(struct led_classdev
 	return uniwill_kbd_led_read_brightness(data);
 }
 
-static int uniwill_kbd_led_init(struct uniwill_data *data)
+static int uniwill_white_kbd_led_init(struct uniwill_data *data)
+{
+	struct led_init_data init_data = {
+		.default_label = "white:" LED_FUNCTION_KBD_BACKLIGHT,
+		.devicename = DRIVER_NAME,
+		.devname_mandatory = true,
+	};
+
+	data->kbd_led_cdev.max_brightness = data->kbd_led_max_brightness;
+	data->kbd_led_cdev.color = LED_COLOR_ID_WHITE;
+	data->kbd_led_cdev.flags = LED_BRIGHT_HW_CHANGED | LED_REJECT_NAME_CONFLICT;
+	data->kbd_led_cdev.brightness_set_blocking = uniwill_kbd_led_brightness_set;
+	data->kbd_led_cdev.brightness_get = uniwill_kbd_led_brightness_get;
+
+	return devm_led_classdev_register_ext(data->dev, &data->kbd_led_cdev, &init_data);
+}
+
+static int uniwill_rgb_kbd_led_init(struct uniwill_data *data)
 {
 	unsigned int color_indices[KBD_LED_CHANNELS] = {
 		LED_COLOR_ID_RED,
@@ -1741,6 +1760,7 @@ static int uniwill_kbd_led_init(struct uniwill_data *data)
 		LED_COLOR_ID_BLUE,
 	};
 	struct led_init_data init_data = {
+		.default_label = "multicolor:" LED_FUNCTION_KBD_BACKLIGHT,
 		.devicename = DRIVER_NAME,
 		.devname_mandatory = true,
 	};
@@ -1748,57 +1768,6 @@ static int uniwill_kbd_led_init(struct uniwill_data *data)
 	bool needs_trigger = false;
 	unsigned int regval;
 	int ret;
-
-	if (!uniwill_device_supports(data, UNIWILL_FEATURE_KEYBOARD_BACKLIGHT))
-		return 0;
-
-	ret = regmap_read(data->regmap, EC_ADDR_SUPPORT_2, &regval);
-	if (ret < 0)
-		return ret;
-
-	if (!(regval & CHINA_MODE)) {
-		ret = regmap_set_bits(data->regmap, EC_ADDR_BIOS_OEM_2, ENABLE_CHINA_MODE);
-		if (ret < 0)
-			return ret;
-	}
-
-	ret = regmap_read(data->regmap, EC_ADDR_KBD_STATUS, &regval);
-	if (ret < 0)
-		return ret;
-
-	regval |= KBD_APPLY;
-	regval &= ~KBD_POWER_OFF;
-	ret = regmap_write(data->regmap, EC_ADDR_KBD_STATUS, regval);
-	if (ret < 0)
-		return ret;
-
-	switch (data->project_id) {
-	case PROJECT_ID_PF:
-	case PROJECT_ID_PF4MU_PF4MN_PF5MU:
-	case PROJECT_ID_PH4TRX1:
-	case PROJECT_ID_PH4TUX1:
-	case PROJECT_ID_PH4TQX1:
-	case PROJECT_ID_PH6TRX1:
-	case PROJECT_ID_PH6TQXX:
-	case PROJECT_ID_PHXAXXX:
-	case PROJECT_ID_PHXPXXX:
-		data->single_color_kbd = true;
-		break;
-	default:
-		data->single_color_kbd = regval & KBD_WHITE_ONLY;
-		break;
-	}
-
-	if (data->single_color_kbd) {
-		init_data.default_label = "white:" LED_FUNCTION_KBD_BACKLIGHT;
-		data->kbd_led_cdev.max_brightness = data->kbd_led_max_brightness;
-		data->kbd_led_cdev.color = LED_COLOR_ID_WHITE;
-		data->kbd_led_cdev.flags = LED_BRIGHT_HW_CHANGED | LED_REJECT_NAME_CONFLICT;
-		data->kbd_led_cdev.brightness_set_blocking = uniwill_kbd_led_brightness_set;
-		data->kbd_led_cdev.brightness_get = uniwill_kbd_led_brightness_get;
-
-		return devm_led_classdev_register_ext(data->dev, &data->kbd_led_cdev, &init_data);
-	}
 
 	for (int i = 0; i < KBD_LED_CHANNELS; i++) {
 		data->kbd_led_mc_subled_info[i].color_index = color_indices[i];
@@ -1851,7 +1820,6 @@ static int uniwill_kbd_led_init(struct uniwill_data *data)
 	if (ret < 0)
 		return ret;
 
-	init_data.default_label = "multicolor:" LED_FUNCTION_KBD_BACKLIGHT;
 	data->kbd_led_mc_cdev.led_cdev.max_brightness = data->kbd_led_max_brightness;
 	data->kbd_led_mc_cdev.led_cdev.color = LED_COLOR_ID_MULTI;
 	data->kbd_led_mc_cdev.led_cdev.flags = LED_BRIGHT_HW_CHANGED | LED_REJECT_NAME_CONFLICT;
@@ -1862,6 +1830,40 @@ static int uniwill_kbd_led_init(struct uniwill_data *data)
 
 	return devm_led_classdev_multicolor_register_ext(data->dev, &data->kbd_led_mc_cdev,
 							 &init_data);
+}
+
+static int uniwill_kbd_led_init(struct uniwill_data *data)
+{
+	unsigned int regval;
+	int ret;
+
+	if (!uniwill_device_supports(data, UNIWILL_FEATURE_KEYBOARD_BACKLIGHT))
+		return 0;
+
+	ret = regmap_read(data->regmap, EC_ADDR_SUPPORT_2, &regval);
+	if (ret < 0)
+		return ret;
+
+	if (!(regval & CHINA_MODE)) {
+		ret = regmap_set_bits(data->regmap, EC_ADDR_BIOS_OEM_2, ENABLE_CHINA_MODE);
+		if (ret < 0)
+			return ret;
+	}
+
+	ret = regmap_read(data->regmap, EC_ADDR_KBD_STATUS, &regval);
+	if (ret < 0)
+		return ret;
+
+	regval |= KBD_APPLY;
+	regval &= ~KBD_POWER_OFF;
+	ret = regmap_write(data->regmap, EC_ADDR_KBD_STATUS, regval);
+	if (ret < 0)
+		return ret;
+
+	if (data->kbd_led_single_color)
+		return uniwill_white_kbd_led_init(data);
+
+	return uniwill_rgb_kbd_led_init(data);
 }
 
 static unsigned int uniwill_sanitize_battery_threshold(unsigned int value)
@@ -2334,6 +2336,7 @@ static int uniwill_probe(struct platform_device *pdev)
 		return ret;
 
 	data->features = device_descriptor.features;
+	data->kbd_led_single_color = device_descriptor.kbd_led_single_color;
 	data->kbd_led_max_brightness = device_descriptor.kbd_led_max_brightness;
 	data->lightbar_max_brightness = device_descriptor.lightbar_max_brightness;
 
@@ -2563,7 +2566,7 @@ static int uniwill_resume_kbd_led(struct uniwill_data *data)
 	if (ret < 0)
 		return ret;
 
-	if (data->single_color_kbd)
+	if (data->kbd_led_single_color)
 		return 0;
 
 	return regmap_write_bits(data->regmap, EC_ADDR_TRIGGER, RGB_APPLY_COLOR, RGB_APPLY_COLOR);
@@ -2670,6 +2673,7 @@ static struct uniwill_device_descriptor machenike_l16p_descriptor __initdata = {
 		    UNIWILL_FEATURE_KEYBOARD_BACKLIGHT |
 		    UNIWILL_FEATURE_AC_AUTO_BOOT |
 		    UNIWILL_FEATURE_USB_POWERSHARE,
+	.kbd_led_single_color = false,
 	.kbd_led_max_brightness = 4,
 };
 
@@ -2748,15 +2752,6 @@ static struct uniwill_device_descriptor tux_featureset_2_nvidia_descriptor __ini
 		    UNIWILL_FEATURE_USB_C_POWER_PRIORITY,
 };
 
-static struct uniwill_device_descriptor tux_featureset_3_descriptor __initdata = {
-	.features = UNIWILL_FEATURE_FN_LOCK |
-		    UNIWILL_FEATURE_SUPER_KEY |
-		    UNIWILL_FEATURE_BATTERY_CHARGE_MODES |
-		    UNIWILL_FEATURE_CPU_TEMP |
-		    UNIWILL_FEATURE_PRIMARY_FAN |
-		    UNIWILL_FEATURE_SECONDARY_FAN,
-};
-
 static struct uniwill_device_descriptor tux_featureset_3_nvidia_descriptor __initdata = {
 	.features = UNIWILL_FEATURE_FN_LOCK |
 		    UNIWILL_FEATURE_SUPER_KEY |
@@ -2766,6 +2761,30 @@ static struct uniwill_device_descriptor tux_featureset_3_nvidia_descriptor __ini
 		    UNIWILL_FEATURE_PRIMARY_FAN |
 		    UNIWILL_FEATURE_SECONDARY_FAN |
 		    UNIWILL_FEATURE_NVIDIA_CTGP_CONTROL,
+};
+
+static struct uniwill_device_descriptor tux_featureset_4_descriptor __initdata = {
+	.features = UNIWILL_FEATURE_FN_LOCK |
+		    UNIWILL_FEATURE_SUPER_KEY |
+		    UNIWILL_FEATURE_BATTERY_CHARGE_MODES |
+		    UNIWILL_FEATURE_CPU_TEMP |
+		    UNIWILL_FEATURE_PRIMARY_FAN |
+		    UNIWILL_FEATURE_SECONDARY_FAN |
+		    UNIWILL_FEATURE_AC_AUTO_BOOT |
+		    UNIWILL_FEATURE_USB_POWERSHARE,
+};
+
+static struct uniwill_device_descriptor tux_featureset_4_nvidia_descriptor __initdata = {
+	.features = UNIWILL_FEATURE_FN_LOCK |
+		    UNIWILL_FEATURE_SUPER_KEY |
+		    UNIWILL_FEATURE_BATTERY_CHARGE_MODES |
+		    UNIWILL_FEATURE_CPU_TEMP |
+		    UNIWILL_FEATURE_GPU_TEMP |
+		    UNIWILL_FEATURE_PRIMARY_FAN |
+		    UNIWILL_FEATURE_SECONDARY_FAN |
+		    UNIWILL_FEATURE_NVIDIA_CTGP_CONTROL |
+		    UNIWILL_FEATURE_AC_AUTO_BOOT |
+		    UNIWILL_FEATURE_USB_POWERSHARE,
 };
 
 static int phxtxx1_probe(struct uniwill_data *data)
@@ -2837,6 +2856,7 @@ static struct uniwill_device_descriptor x4sp4nal_descriptor __initdata = {
 		    UNIWILL_FEATURE_KEYBOARD_BACKLIGHT |
 		    UNIWILL_FEATURE_AC_AUTO_BOOT |
 		    UNIWILL_FEATURE_USB_POWERSHARE,
+	.kbd_led_single_color = true,
 	.kbd_led_max_brightness = 2,
 };
 
@@ -2886,6 +2906,13 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "LAPQC71B"),
+		},
+		.driver_data = &lapqc71a_lapqc71b_descriptor,
+	},
+	{
+		.ident = "Avell A60 MUV",
+		.matches = {
+			DMI_MATCH(DMI_PRODUCT_NAME, "A60 MUV"),
 		},
 		.driver_data = &lapqc71a_lapqc71b_descriptor,
 	},
@@ -2967,7 +2994,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "GXxHRXx"),
 		},
-		.driver_data = &tux_featureset_3_descriptor,
+		.driver_data = &tux_featureset_4_descriptor,
 	},
 	{
 		.ident = "TUXEDO InfinityBook Pro 14/15 Gen9 Intel/Commodore Omnia-Book 15 Gen9",
@@ -2975,7 +3002,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "GXxMRXx"),
 		},
-		.driver_data = &tux_featureset_3_descriptor,
+		.driver_data = &tux_featureset_4_descriptor,
 	},
 	{
 		.ident = "TUXEDO InfinityBook Pro 14/15 Gen10 AMD",
@@ -2983,7 +3010,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "XxHP4NAx"),
 		},
-		.driver_data = &tux_featureset_3_descriptor,
+		.driver_data = &tux_featureset_4_descriptor,
 	},
 	{
 		.ident = "TUXEDO InfinityBook Pro 14/15 Gen10 AMD",
@@ -2991,7 +3018,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "XxKK4NAx_XxSP4NAx"),
 		},
-		.driver_data = &tux_featureset_3_descriptor,
+		.driver_data = &tux_featureset_4_descriptor,
 	},
 	{
 		.ident = "TUXEDO InfinityBook Pro 15 Gen10 Intel",
@@ -2999,7 +3026,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "XxAR4NAx"),
 		},
-		.driver_data = &tux_featureset_3_descriptor,
+		.driver_data = &tux_featureset_4_descriptor,
 	},
 	{
 		.ident = "TUXEDO InfinityBook Max 15 Gen10 AMD",
@@ -3007,7 +3034,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "X5KK45xS_X5SP45xS"),
 		},
-		.driver_data = &tux_featureset_3_nvidia_descriptor,
+		.driver_data = &tux_featureset_4_nvidia_descriptor,
 	},
 	{
 		.ident = "TUXEDO InfinityBook Max 16 Gen10 AMD",
@@ -3015,7 +3042,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "X6HP45xU"),
 		},
-		.driver_data = &tux_featureset_3_nvidia_descriptor,
+		.driver_data = &tux_featureset_4_nvidia_descriptor,
 	},
 	{
 		.ident = "TUXEDO InfinityBook Max 16 Gen10 AMD",
@@ -3023,7 +3050,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "X6KK45xU_X6SP45xU"),
 		},
-		.driver_data = &tux_featureset_3_nvidia_descriptor,
+		.driver_data = &tux_featureset_4_nvidia_descriptor,
 	},
 	{
 		.ident = "TUXEDO InfinityBook Max 15 Gen10 Intel",
@@ -3031,7 +3058,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "X5AR45xS"),
 		},
-		.driver_data = &tux_featureset_3_nvidia_descriptor,
+		.driver_data = &tux_featureset_4_nvidia_descriptor,
 	},
 	{
 		.ident = "TUXEDO InfinityBook Max 16 Gen10 Intel",
@@ -3039,7 +3066,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "X6AR55xU"),
 		},
-		.driver_data = &tux_featureset_3_nvidia_descriptor,
+		.driver_data = &tux_featureset_4_nvidia_descriptor,
 	},
 	{
 		.ident = "TUXEDO Polaris 15 Gen1 AMD",
@@ -3199,7 +3226,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "GMxHGxx"),
 		},
-		.driver_data = &tux_featureset_3_nvidia_descriptor,
+		.driver_data = &tux_featureset_4_nvidia_descriptor,
 	},
 	{
 		.ident = "TUXEDO Stellaris Slim 15 Gen6 Intel/Commodore ORION Slim 15 Gen6",
@@ -3207,7 +3234,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "GM5IXxA"),
 		},
-		.driver_data = &tux_featureset_3_nvidia_descriptor,
+		.driver_data = &tux_featureset_4_nvidia_descriptor,
 	},
 	{
 		.ident = "TUXEDO Stellaris 16 Gen6 Intel/Commodore ORION 16 Gen6",
@@ -3215,7 +3242,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "GM6IXxB_MB1"),
 		},
-		.driver_data = &tux_featureset_3_nvidia_descriptor,
+		.driver_data = &tux_featureset_4_nvidia_descriptor,
 	},
 	{
 		.ident = "TUXEDO Stellaris 16 Gen6 Intel/Commodore ORION 16 Gen6",
@@ -3223,7 +3250,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "GM6IXxB_MB2"),
 		},
-		.driver_data = &tux_featureset_3_nvidia_descriptor,
+		.driver_data = &tux_featureset_4_nvidia_descriptor,
 	},
 	{
 		.ident = "TUXEDO Stellaris 17 Gen6 Intel/Commodore ORION 17 Gen6",
@@ -3231,7 +3258,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "GM7IXxN"),
 		},
-		.driver_data = &tux_featureset_3_nvidia_descriptor,
+		.driver_data = &tux_featureset_4_nvidia_descriptor,
 	},
 	{
 		.ident = "TUXEDO Stellaris 16 Gen7 AMD",
@@ -3239,7 +3266,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "X6FR5xxY"),
 		},
-		.driver_data = &tux_featureset_3_nvidia_descriptor,
+		.driver_data = &tux_featureset_4_nvidia_descriptor,
 	},
 	{
 		.ident = "TUXEDO Stellaris 16 Gen7 Intel",
@@ -3247,7 +3274,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "X6AR5xxY"),
 		},
-		.driver_data = &tux_featureset_3_nvidia_descriptor,
+		.driver_data = &tux_featureset_4_nvidia_descriptor,
 	},
 	{
 		.ident = "TUXEDO Stellaris 16 Gen7 Intel",
@@ -3255,7 +3282,7 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_SYS_VENDOR, "TUXEDO"),
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "X6AR5xxY_mLED"),
 		},
-		.driver_data = &tux_featureset_3_nvidia_descriptor,
+		.driver_data = &tux_featureset_4_nvidia_descriptor,
 	},
 	{
 		.ident = "TUXEDO Book BA15 Gen10 AMD",
@@ -3324,6 +3351,8 @@ static int __init uniwill_init(void)
 	if (force) {
 		/* Assume that the device supports all features except the charge limit */
 		device_descriptor.features = UINT_MAX & ~UNIWILL_FEATURE_BATTERY_CHARGE_LIMIT;
+		/* Some models only have a (white) single color keyboard backlight */
+		device_descriptor.kbd_led_single_color = false;
 		/* Some models only support 3 brightness levels */
 		device_descriptor.kbd_led_max_brightness = 4;
 		/* Some models only support 36 brightness levels per color component */

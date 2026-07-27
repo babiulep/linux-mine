@@ -1071,6 +1071,18 @@ void schedule_dsq_reenq(struct scx_sched *sch, struct scx_dispatch_q *dsq,
 	if (dsq->id == SCX_DSQ_LOCAL) {
 		rq = container_of(dsq, struct rq, scx.local_dsq);
 
+		/*
+		 * A sub-sched lacking baseline access on the target cid has no
+		 * business triggering IPIs. The lockless test is fine: slipping
+		 * through right after a revoke is harmless and a wrong denial
+		 * can't happen - if the caller has seen its ownership, so does
+		 * this test.
+		 */
+		if (unlikely(scx_missing_caps(sch, cpu_of(rq), SCX_CAP_BASE))) {
+			__scx_add_event(sch, SCX_EV_SUB_REENQ_DENIED, 1);
+			return;
+		}
+
 		struct scx_sched_pcpu *sch_pcpu = per_cpu_ptr(sch->pcpu, cpu_of(rq));
 		struct scx_deferred_reenq_local *drl = &sch_pcpu->deferred_reenq_local;
 
@@ -1642,7 +1654,7 @@ static void task_unlink_from_dsq(struct task_struct *p,
 	list_del_init(&p->scx.dsq_list.node);
 	dsq_dec_nr(dsq, p);
 
-	if (!(dsq->id & SCX_DSQ_FLAG_BUILTIN) && dsq->first_task == p) {
+	if (!(dsq->id & SCX_DSQ_FLAG_BUILTIN) && rcu_access_pointer(dsq->first_task) == p) {
 		struct task_struct *first_task;
 
 		first_task = nldsq_next_task(dsq, NULL, false);
@@ -1892,6 +1904,24 @@ void scx_do_enqueue_task(struct rq *rq, struct task_struct *p, u64 enq_flags,
 	p->scx.flags &= ~SCX_TASK_IMMED;
 
 	/*
+	 * A task reenqueued too many times without running means the scheduler
+	 * keeps re-deciding a placement it can't honor, e.g. re-inserting to a
+	 * cid it lacks caps on. Eject the owning scheduler and strand the task
+	 * to be picked up during sched exit.
+	 */
+	if (enq_flags & SCX_ENQ_REENQ) {
+		if (++p->scx.reenq_cnt > 1)
+			__scx_add_event(sch, SCX_EV_REENQ_REPEAT, 1);
+
+		if (unlikely(p->scx.reenq_cnt > SCX_REENQ_MAX_REPEAT)) {
+			__scx_exit(sch, SCX_EXIT_ERROR_REENQ, 0, cpu_of(rq),
+				   "%s[%d] reenqueued %u times without running",
+				   p->comm, p->pid, p->scx.reenq_cnt);
+			return;
+		}
+	}
+
+	/*
 	 * If !scx_rq_online(), we already told the BPF scheduler that the CPU
 	 * is offline and are just running the hotplug path. Don't bother the
 	 * BPF scheduler.
@@ -2013,8 +2043,10 @@ static void clr_task_runnable(struct task_struct *p, bool reset_runnable_at)
 {
 	list_del_init(&p->scx.runnable_node);
 	WRITE_ONCE(p->scx.runnable_cpu, -1);
-	if (reset_runnable_at)
+	if (reset_runnable_at) {
 		p->scx.flags |= SCX_TASK_RESET_RUNNABLE_AT;
+		p->scx.reenq_cnt = 0;
+	}
 }
 
 static void enqueue_task_scx(struct rq *rq, struct task_struct *p, int core_enq_flags)
@@ -2669,6 +2701,7 @@ static void dispatch_to_local_dsq(struct scx_sched *sch, struct rq *rq,
 
 /**
  * finish_dispatch - Asynchronously finish dispatching a task
+ * @sch: the scheduler
  * @rq: current rq which is locked
  * @p: task to finish dispatching
  * @qseq_at_dispatch: qseq when @p started getting dispatched
@@ -2785,7 +2818,7 @@ static inline void maybe_queue_balance_callback(struct rq *rq)
 
 static int balance_one(struct rq *rq, struct task_struct *prev)
 {
-	struct scx_sched *sch = scx_root;
+	struct scx_sched *sch = scx_root_protected_live();
 	s32 cpu = cpu_of(rq);
 
 	lockdep_assert_rq_held(rq);
@@ -2941,7 +2974,7 @@ preempt_reason_from_class(const struct sched_class *class)
 
 static void switch_class(struct rq *rq, struct task_struct *next)
 {
-	struct scx_sched *sch = scx_root;
+	struct scx_sched *sch = scx_root_protected_live();
 	const struct sched_class *next_class = next->sched_class;
 
 	if (!(sch->ops.flags & SCX_OPS_HAS_CPU_PREEMPT))
@@ -3332,7 +3365,7 @@ static void set_cpus_allowed_scx(struct task_struct *p,
 
 static void handle_hotplug(struct rq *rq, bool online)
 {
-	struct scx_sched *sch = scx_root;
+	struct scx_sched *sch = scx_root_protected();
 	s32 cpu = cpu_of(rq);
 	s32 cpu_or_cid = cpu;
 
@@ -3656,6 +3689,7 @@ static void scx_disable_task(struct scx_sched *sch, struct task_struct *p)
 	 */
 	p->scx.dsq_vtime = 0;
 	set_task_slice(p, 0);
+	p->scx.reenq_cnt = 0;
 
 	/*
 	 * Verify the task is not in BPF scheduler's custody. If flag
@@ -3794,9 +3828,9 @@ int scx_fork(struct task_struct *p, struct kernel_clone_args *kargs)
 
 	if (scx_init_task_enabled) {
 #ifdef CONFIG_EXT_SUB_SCHED
-		struct scx_sched *sch = kargs->cset->dfl_cgrp->scx_sched;
+		struct scx_sched *sch = scx_cgroup_sched(kargs->cset->dfl_cgrp);
 #else
-		struct scx_sched *sch = scx_root;
+		struct scx_sched *sch = scx_root_protected_live();
 #endif
 		scx_set_task_state(p, SCX_TASK_INIT_BEGIN);
 		ret = __scx_init_task(sch, p, NULL, true);
@@ -4053,8 +4087,8 @@ static void process_ddsp_deferred_locals(struct rq *rq)
  * Reenqueued tasks go through ops.enqueue() with %SCX_ENQ_REENQ |
  * %SCX_TASK_REENQ_IMMED. If the BPF scheduler dispatches back to the same local
  * DSQ with %SCX_ENQ_IMMED while the CPU is still unavailable, this triggers
- * another reenq cycle. Repetitions are bounded by %SCX_REENQ_LOCAL_MAX_REPEAT
- * in process_deferred_reenq_locals().
+ * another reenq cycle. Repetitions are bounded by %SCX_REENQ_MAX_REPEAT in
+ * scx_do_enqueue_task(), which ejects the task's owning scheduler.
  */
 static bool local_task_should_reenq(struct rq *rq, struct task_struct *p,
 				    u64 *reenq_flags, u32 *reason)
@@ -4162,14 +4196,16 @@ static u32 reenq_local(struct scx_sched *sch, struct rq *rq, u64 reenq_flags)
 
 static void process_deferred_reenq_locals(struct rq *rq)
 {
-	u64 seq = ++rq->scx.deferred_reenq_locals_seq;
-
 	lockdep_assert_rq_held(rq);
 
+	/*
+	 * A task can be re-queued within this loop when a reenqueued task
+	 * bounces straight back to the local DSQ. That recursion is bounded by
+	 * the per-task reenqueue cap in scx_do_enqueue_task().
+	 */
 	while (true) {
 		struct scx_sched *sch;
 		u64 reenq_flags;
-		bool skip = false;
 
 		scoped_guard (raw_spinlock, &rq->scx.deferred_reenq_lock) {
 			struct scx_deferred_reenq_local *drl =
@@ -4188,27 +4224,12 @@ static void process_deferred_reenq_locals(struct rq *rq)
 			reenq_flags = drl->flags;
 			WRITE_ONCE(drl->flags, 0);
 			list_del_init(&drl->node);
-
-			if (likely(drl->seq != seq)) {
-				drl->seq = seq;
-				drl->cnt = 0;
-			} else {
-				if (unlikely(++drl->cnt > SCX_REENQ_LOCAL_MAX_REPEAT)) {
-					scx_error(sch, "SCX_ENQ_REENQ on SCX_DSQ_LOCAL repeated %u times",
-						  drl->cnt);
-					skip = true;
-				}
-
-				__scx_add_event(sch, SCX_EV_REENQ_LOCAL_REPEAT, 1);
-			}
 		}
 
-		if (!skip) {
-			/* see schedule_dsq_reenq() */
-			smp_mb();
+		/* see schedule_dsq_reenq() */
+		smp_mb();
 
-			reenq_local(sch, rq, reenq_flags);
-		}
+		reenq_local(sch, rq, reenq_flags);
 	}
 }
 
@@ -4448,7 +4469,7 @@ int scx_tg_online(struct task_group *tg)
 		 * always belongs to the root sched.
 		 */
 		if (cgroup_on_dfl(tg->css.cgroup))
-			sch = tg->css.cgroup->scx_sched;
+			sch = scx_cgroup_sched(tg->css.cgroup);
 		else
 			sch = scx_tg_sched(&root_task_group);
 
@@ -4529,7 +4550,7 @@ int scx_cgroup_can_attach(struct cgroup_taskset *tset)
 		 * cgroup's sched and is reported through the
 		 * exit_task/init_task pair that the re-homing generates.
 		 */
-		if (!sch || sch != task_css_set(p)->mg_dst_cset->dfl_cgrp->scx_sched)
+		if (!sch || sch != scx_cgroup_sched(task_css_set(p)->mg_dst_cset->dfl_cgrp))
 			continue;
 
 		if (SCX_HAS_OP(sch, cgroup_prep_move)) {
@@ -5131,6 +5152,7 @@ static const char *scx_cap_names[__SCX_NR_CAPS] = {
 	[__SCX_CAP_ENQ_IMMED]	= "enq_immed",
 	[__SCX_CAP_ENQ]		= "enq",
 	[__SCX_CAP_PREEMPT]	= "preempt",
+	[__SCX_CAP_PERF]	= "perf",
 };
 
 static ssize_t scx_attr_caps_show(struct kobject *kobj,
@@ -5296,6 +5318,7 @@ static __printf(2, 3) bool handle_lockup(int exit_cpu, const char *fmt, ...)
 
 /**
  * scx_rcu_cpu_stall - sched_ext RCU CPU stall handler
+ * @stalled_mask: bit mask of stalled CPUs
  *
  * While there are various reasons why RCU CPU stalls can occur on a system
  * that may not be caused by the current BPF scheduler, try kicking out the
@@ -5390,6 +5413,7 @@ static DEFINE_IRQ_WORK(scx_hardlockup_irq_work, scx_hardlockup_irq_workfn);
 
 /**
  * scx_hardlockup - sched_ext hardlockup handler
+ * @cpu: the target CPU
  *
  * A poorly behaving BPF scheduler can trigger hard lockup by e.g. putting
  * numerous affinitized tasks in a single queue and directing all CPUs at it.
@@ -5725,7 +5749,7 @@ void scx_disable_bypass_dsp(struct scx_sched *sch)
 static void unbypass_renotify_idle(struct rq *rq, struct scx_sched *pos,
 				   struct scx_sched_pcpu *pcpu)
 {
-	if (pos == scx_root) {
+	if (!pos->level) {
 		rq->scx.flags |= SCX_RQ_ROOT_IDLE_RENOTIFY;
 		return;
 	}
@@ -5925,6 +5949,8 @@ static const char *scx_exit_reason(enum scx_exit_kind kind)
 		return "scx_bpf_error";
 	case SCX_EXIT_ERROR_STALL:
 		return "runnable task stall";
+	case SCX_EXIT_ERROR_REENQ:
+		return "reenqueue limit";
 	default:
 		return "<UNKNOWN>";
 	}
@@ -7093,7 +7119,7 @@ int scx_validate_ops(struct scx_sched *sch, const struct sched_ext_ops *ops)
 	 * enabled it.
 	 */
 	if ((ops->flags & SCX_OPS_TID_TO_TASK) && scx_parent(sch) &&
-	    !(scx_root->ops.flags & SCX_OPS_TID_TO_TASK)) {
+	    !(sch->ancestors[0]->ops.flags & SCX_OPS_TID_TO_TASK)) {
 		scx_error(sch, "SCX_OPS_TID_TO_TASK requires root scheduler to enable it");
 		return -EINVAL;
 	}
@@ -8103,6 +8129,7 @@ static bool kick_one_cpu(s32 cpu, struct scx_sched_pcpu *pcpu, struct rq *this_r
 	struct scx_rq *this_scx = &this_rq->scx;
 	const struct sched_class *cur_class;
 	bool should_wait = false;
+	bool kickable;
 	unsigned long flags;
 
 	raw_spin_rq_lock_irqsave(rq, flags);
@@ -8116,9 +8143,10 @@ static bool kick_one_cpu(s32 cpu, struct scx_sched_pcpu *pcpu, struct rq *this_r
 	 * business forcing a reschedule there - skip. This is the authoritative
 	 * cap check: ecaps is read here under @rq's lock.
 	 */
-	if ((cpu_online(cpu) || cpu == cpu_of(this_rq)) &&
-	    !sched_class_above(cur_class, &ext_sched_class) &&
-	    !scx_missing_caps(pcpu->sch, cpu, SCX_CAP_BASE)) {
+	kickable = (cpu_online(cpu) || cpu == cpu_of(this_rq)) &&
+		   !sched_class_above(cur_class, &ext_sched_class);
+
+	if (kickable && !scx_missing_caps(pcpu->sch, cpu, SCX_CAP_BASE)) {
 		if (cpumask_test_cpu(cpu, pcpu->cpus_to_preempt)) {
 			if (cur_class == &ext_sched_class) {
 				if (likely(!scx_missing_caps(pcpu->sch, cpu,
@@ -8142,6 +8170,9 @@ static bool kick_one_cpu(s32 cpu, struct scx_sched_pcpu *pcpu, struct rq *this_r
 
 		resched_curr(rq);
 	} else {
+		/* a kickable cpu was skipped solely for the missing caps */
+		if (kickable)
+			__scx_add_event(pcpu->sch, SCX_EV_SUB_KICK_DENIED, 1);
 		cpumask_clear_cpu(cpu, pcpu->cpus_to_preempt);
 		cpumask_clear_cpu(cpu, pcpu->cpus_to_wait);
 	}
@@ -8161,9 +8192,12 @@ static void kick_one_cpu_if_idle(s32 cpu, struct scx_sched_pcpu *pcpu,
 
 	/* idle kicks need baseline access too, see kick_one_cpu() */
 	if (!can_skip_idle_kick(rq) &&
-	    (cpu_online(cpu) || cpu == cpu_of(this_rq)) &&
-	    !scx_missing_caps(pcpu->sch, cpu, SCX_CAP_BASE))
-		resched_curr(rq);
+	    (cpu_online(cpu) || cpu == cpu_of(this_rq))) {
+		if (likely(!scx_missing_caps(pcpu->sch, cpu, SCX_CAP_BASE)))
+			resched_curr(rq);
+		else
+			__scx_add_event(pcpu->sch, SCX_EV_SUB_KICK_DENIED, 1);
+	}
 
 	raw_spin_rq_unlock_irqrestore(rq, flags);
 }
@@ -8426,7 +8460,7 @@ static void scx_dsq_insert_commit(struct scx_sched *sch, struct task_struct *p,
 __bpf_kfunc_start_defs();
 
 /**
- * scx_bpf_dsq_insert - Insert a task into the FIFO queue of a DSQ
+ * scx_bpf_dsq_insert___v2 - Insert a task into the FIFO queue of a DSQ
  * @p: task_struct to insert
  * @dsq_id: DSQ to insert into
  * @slice: duration @p can run for in nsecs, 0 to keep the current value
@@ -8756,7 +8790,7 @@ __bpf_kfunc void scx_bpf_dispatch_cancel(const struct bpf_prog_aux *aux)
 }
 
 /**
- * scx_bpf_dsq_move_to_local - move a task from a DSQ to the current CPU's local DSQ
+ * scx_bpf_dsq_move_to_local___v2 - move a task from a DSQ to the current CPU's local DSQ
  * @dsq_id: DSQ to move task from. Must be a user-created DSQ
  * @aux: implicit BPF argument to access bpf_prog_aux hidden from BPF progs
  * @enq_flags: %SCX_ENQ_*
@@ -9485,7 +9519,7 @@ __bpf_kfunc void scx_bpf_dsq_reenq(u64 dsq_id, u64 reenq_flags,
 }
 
 /**
- * scx_bpf_reenqueue_local - Re-enqueue tasks on a local DSQ
+ * scx_bpf_reenqueue_local___v2 - Re-enqueue tasks on a local DSQ
  * @aux: implicit BPF argument to access bpf_prog_aux hidden from BPF progs
  *
  * Iterate over all of the tasks currently enqueued on the local DSQ of the
@@ -9758,6 +9792,62 @@ __bpf_kfunc u32 scx_bpf_cidperf_cur(s32 cid, const struct bpf_prog_aux *aux)
 	return arch_scale_freq_capacity(cpu);
 }
 
+/* validate and apply a cpuperf target, see scx_bpf_cpuperf_set() */
+static s32 scx_cpuperf_set(struct scx_sched *sch, s32 cpu, u32 perf)
+{
+	struct rq *rq, *locked_rq;
+	struct rq_flags rf;
+	s32 ret;
+
+	if (unlikely(perf > SCX_CPUPERF_ONE)) {
+		scx_error(sch, "Invalid cpuperf target %u for CPU %d", perf, cpu);
+		return -EINVAL;
+	}
+
+	if (!scx_cpu_valid(sch, cpu, NULL))
+		return -EINVAL;
+
+	rq = cpu_rq(cpu);
+	locked_rq = scx_locked_rq();
+
+	/*
+	 * When called with an rq lock held, restrict the operation to the
+	 * corresponding CPU to prevent ABBA deadlocks.
+	 */
+	if (locked_rq && rq != locked_rq) {
+		scx_error(sch, "Invalid target CPU %d", cpu);
+		return -EINVAL;
+	}
+
+	/*
+	 * If no rq lock is held, allow to operate on any CPU by acquiring
+	 * the corresponding rq lock.
+	 */
+	if (!locked_rq) {
+		rq_lock_irqsave(rq, &rf);
+		update_rq_clock(rq);
+	}
+
+	/*
+	 * ecaps updates are folded under the rq lock, making this test
+	 * authoritative: a write can never land after a revoke has taken
+	 * effect on @cpu.
+	 */
+	if (likely(!scx_missing_caps(sch, cpu, SCX_CAP_PERF))) {
+		rq->scx.cpuperf_target = perf;
+		cpufreq_update_util(rq, 0);
+		ret = 0;
+	} else {
+		__scx_add_event(sch, SCX_EV_SUB_CIDPERF_DENIED, 1);
+		ret = -EACCES;
+	}
+
+	if (!locked_rq)
+		rq_unlock_irqrestore(rq, &rf);
+
+	return ret;
+}
+
 /**
  * scx_bpf_cpuperf_set - Set the relative performance target of a CPU
  * @cpu: CPU of interest
@@ -9783,39 +9873,7 @@ __bpf_kfunc void scx_bpf_cpuperf_set(s32 cpu, u32 perf, const struct bpf_prog_au
 	if (unlikely(!sch))
 		return;
 
-	if (unlikely(perf > SCX_CPUPERF_ONE)) {
-		scx_error(sch, "Invalid cpuperf target %u for CPU %d", perf, cpu);
-		return;
-	}
-
-	if (scx_cpu_valid(sch, cpu, NULL)) {
-		struct rq *rq = cpu_rq(cpu), *locked_rq = scx_locked_rq();
-		struct rq_flags rf;
-
-		/*
-		 * When called with an rq lock held, restrict the operation
-		 * to the corresponding CPU to prevent ABBA deadlocks.
-		 */
-		if (locked_rq && rq != locked_rq) {
-			scx_error(sch, "Invalid target CPU %d", cpu);
-			return;
-		}
-
-		/*
-		 * If no rq lock is held, allow to operate on any CPU by
-		 * acquiring the corresponding rq lock.
-		 */
-		if (!locked_rq) {
-			rq_lock_irqsave(rq, &rf);
-			update_rq_clock(rq);
-		}
-
-		rq->scx.cpuperf_target = perf;
-		cpufreq_update_util(rq, 0);
-
-		if (!locked_rq)
-			rq_unlock_irqrestore(rq, &rf);
-	}
+	scx_cpuperf_set(sch, cpu, perf);
 }
 
 /**
@@ -9824,10 +9882,13 @@ __bpf_kfunc void scx_bpf_cpuperf_set(s32 cpu, u32 perf, const struct bpf_prog_au
  * @perf: target performance level [0, %SCX_CPUPERF_ONE]
  * @aux: implicit BPF argument to access bpf_prog_aux hidden from BPF progs
  *
- * cid-addressed equivalent of scx_bpf_cpuperf_set().
+ * cid-addressed equivalent of scx_bpf_cpuperf_set(). A sub-sched needs
+ * SCX_CAP_PERF on @cid. Returns 0 if the target was applied, -%EACCES if
+ * the write was denied for missing caps, other -errnos if @cid didn't
+ * resolve.
  */
-__bpf_kfunc void scx_bpf_cidperf_set(s32 cid, u32 perf,
-				     const struct bpf_prog_aux *aux)
+__bpf_kfunc s32 scx_bpf_cidperf_set(s32 cid, u32 perf,
+				    const struct bpf_prog_aux *aux)
 {
 	struct scx_sched *sch;
 	s32 cpu;
@@ -9836,11 +9897,12 @@ __bpf_kfunc void scx_bpf_cidperf_set(s32 cid, u32 perf,
 
 	sch = scx_prog_sched(aux);
 	if (unlikely(!sch))
-		return;
+		return -ENODEV;
 	cpu = scx_cid_to_cpu(sch, cid);
 	if (cpu < 0)
-		return;
-	scx_bpf_cpuperf_set(cpu, perf, aux);
+		return cpu;
+
+	return scx_cpuperf_set(sch, cpu, perf);
 }
 
 /**

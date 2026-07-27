@@ -100,7 +100,7 @@ static const struct npcm_wdt_status_map npcm750_status_map[] = {
 	{ NPCM_SWR4RST, WDIOF_POWEROVER },
 };
 
-static const struct npcm_wdt_data npcm750_data = {
+static const struct npcm_wdt_data __maybe_unused npcm750_data = {
 	.rst_map = npcm750_rst_map,
 	.rst_map_size = ARRAY_SIZE(npcm750_rst_map),
 	.status_map = npcm750_status_map,
@@ -122,7 +122,7 @@ static const struct npcm_wdt_status_map npcm845_status_map[] = {
 	{ NPCM8XX_TIP_RESET, WDIOF_POWEROVER },
 };
 
-static const struct npcm_wdt_data npcm845_data = {
+static const struct npcm_wdt_data __maybe_unused npcm845_data = {
 	.rst_map = npcm845_rst_map,
 	.rst_map_size = ARRAY_SIZE(npcm845_rst_map),
 	.status_map = npcm845_status_map,

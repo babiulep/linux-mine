@@ -287,6 +287,8 @@ static inline int amdgpu_dm_crtc_set_vblank(struct drm_crtc *crtc, bool enable)
 	 * is enabled. On DCE, vupdate is only needed in VRR mode.
 	 */
 	if (amdgpu_ip_version(adev, DCE_HWIP, 0) != 0) {
+		rc = amdgpu_dm_crtc_set_vupdate_irq(crtc, enable);
+	} else if (dc_supports_vrr(dm->dc->ctx->dce_version)) {
 		if (enable) {
 			rc = amdgpu_irq_get(adev, &adev->vupdate_irq, irq_type);
 			drm_dbg_vbl(crtc->dev, "Get vupdate_irq ret=%d\n", rc);

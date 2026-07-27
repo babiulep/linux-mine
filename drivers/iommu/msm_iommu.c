@@ -781,25 +781,30 @@ static int msm_iommu_probe(struct platform_device *pdev)
 		return ret;
 	}
 
+	list_add(&iommu->dev_node, &qcom_iommu_devices);
+
 	ret = iommu_device_sysfs_add(&iommu->iommu, iommu->dev, NULL,
 				     "msm-smmu.%pa", &ioaddr);
 	if (ret) {
 		pr_err("Could not add msm-smmu at %pa to sysfs\n", &ioaddr);
-		return ret;
+		goto err_remove_list;
 	}
 
 	ret = iommu_device_register(&iommu->iommu, &msm_iommu_ops, &pdev->dev);
 	if (ret) {
 		pr_err("Could not register msm-smmu at %pa\n", &ioaddr);
-		iommu_device_sysfs_remove(&iommu->iommu);
-		return ret;
+		goto err_remove_sysfs;
 	}
-
-	list_add(&iommu->dev_node, &qcom_iommu_devices);
 
 	pr_info("device mapped at %p, irq %d with %d ctx banks\n",
 		iommu->base, iommu->irq, iommu->ncb);
 
+	return ret;
+
+err_remove_sysfs:
+	iommu_device_sysfs_remove(&iommu->iommu);
+err_remove_list:
+	list_del(&iommu->dev_node);
 	return ret;
 }
 

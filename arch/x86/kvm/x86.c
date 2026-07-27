@@ -6913,14 +6913,26 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_setup_xss_caps);
 
 static void kvm_setup_efer_caps(void)
 {
+	/* Enable syscall by default because its emulated by KVM */
+	kvm_caps.supported_efer_bits = (u64)EFER_SCE;
+
+	if (kvm_cpu_cap_has(X86_FEATURE_LM))
+		kvm_caps.supported_efer_bits |= (EFER_LME | EFER_LMA);
+
 	if (kvm_cpu_cap_has(X86_FEATURE_NX))
-		kvm_enable_efer_bits(EFER_NX);
+		kvm_caps.supported_efer_bits |= EFER_NX;
 
 	if (kvm_cpu_cap_has(X86_FEATURE_FXSR_OPT))
-		kvm_enable_efer_bits(EFER_FFXSR);
+		kvm_caps.supported_efer_bits |= EFER_FFXSR;
 
 	if (kvm_cpu_cap_has(X86_FEATURE_AUTOIBRS))
-		kvm_enable_efer_bits(EFER_AUTOIBRS);
+		kvm_caps.supported_efer_bits |= EFER_AUTOIBRS;
+
+	if (kvm_cpu_cap_has(X86_FEATURE_SVM)) {
+		kvm_caps.supported_efer_bits |= EFER_SVME;
+		if (!boot_cpu_has(X86_FEATURE_EFER_LMSLE_MBZ))
+			kvm_caps.supported_efer_bits |= EFER_LMSLE;
+	}
 }
 
 static void kvm_nested_ops_update(const struct kvm_x86_nested_ops *nested_ops)
@@ -7724,10 +7736,12 @@ static int kvm_check_and_inject_events(struct kvm_vcpu *vcpu,
 		if (r) {
 			int irq = kvm_cpu_get_interrupt(vcpu);
 
-			if (!WARN_ON_ONCE(irq == -1)) {
+			if (likely(irq != -1)) {
 				kvm_queue_interrupt(vcpu, irq, false);
 				kvm_x86_call(inject_irq)(vcpu, false);
 				WARN_ON(kvm_x86_call(interrupt_allowed)(vcpu, true) < 0);
+			} else {
+				kvm_warn_on_lost_irq(vcpu);
 			}
 		}
 		if (kvm_cpu_has_injectable_intr(vcpu))
@@ -10619,18 +10633,22 @@ bool kvm_arch_supports_gmem_init_shared(struct kvm *kvm)
 	return !kvm_arch_has_private_mem(kvm);
 }
 
-#ifdef CONFIG_HAVE_KVM_ARCH_GMEM_PREPARE
-int kvm_arch_gmem_prepare(struct kvm *kvm, gfn_t gfn, kvm_pfn_t pfn, int max_order)
+#ifdef CONFIG_HAVE_KVM_ARCH_GMEM_CONVERT
+int kvm_arch_gmem_make_private(struct kvm *kvm, gfn_t gfn, kvm_pfn_t pfn,
+			       kvm_pfn_t nr_pages)
 {
-	return kvm_x86_call(gmem_prepare)(kvm, pfn, gfn, max_order);
+	return kvm_x86_call(gmem_make_private)(kvm, gfn, pfn, nr_pages);
+}
+#endif
+
+#ifdef CONFIG_HAVE_KVM_ARCH_GMEM_RECLAIM
+void kvm_arch_gmem_reclaim(kvm_pfn_t pfn, kvm_pfn_t nr_pages)
+{
+	kvm_x86_call(gmem_make_shared)(pfn, nr_pages);
 }
 #endif
 
 #ifdef CONFIG_HAVE_KVM_ARCH_GMEM_INVALIDATE
-void kvm_arch_gmem_invalidate(kvm_pfn_t start, kvm_pfn_t end)
-{
-	kvm_x86_call(gmem_invalidate)(start, end);
-}
 void kvm_arch_gmem_invalidate_range(struct kvm *kvm, struct kvm_gfn_range *range)
 {
 	kvm_x86_call(gmem_invalidate_range)(kvm, range);
