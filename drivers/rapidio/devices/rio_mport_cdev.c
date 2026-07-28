@@ -568,10 +568,9 @@ static void dma_req_free(struct kref *ref)
 		struct mport_dev *md = map->md;
 
 		mutex_lock(&md->buf_mutex);
+		req->map = NULL;
 		kref_put(&map->ref, mport_release_mapping);
 		mutex_unlock(&md->buf_mutex);
-
-		req->map = NULL;
 	}
 
 	kref_put(&priv->dma_ref, mport_release_dma);

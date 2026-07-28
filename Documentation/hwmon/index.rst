@@ -112,6 +112,7 @@ Hardware Monitoring Kernel Drivers
    jc42
    k10temp
    k8temp
+   kb9002
    kbatt
    kfan
    lan966x
@@ -281,6 +282,7 @@ Hardware Monitoring Kernel Drivers
    vexpress
    via686a
    vt1211
+   vt7505
    w83627ehf
    w83627hf
    w83773g

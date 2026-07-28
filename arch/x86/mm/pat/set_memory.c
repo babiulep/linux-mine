@@ -1260,13 +1260,15 @@ static int split_large_page(struct cpa_data *cpa, pte_t *kpte,
 {
 	pte_t *pte;
 
-	spin_unlock(&cpa_lock);
+	if (!debug_pagealloc_enabled())
+		spin_unlock(&cpa_lock);
 	if (cpa->init_mm_read_locked)
 		mmap_read_unlock(&init_mm);
 	pte = pte_alloc_one_kernel(&init_mm);
 	if (cpa->init_mm_read_locked)
 		mmap_read_lock(&init_mm);
-	spin_lock(&cpa_lock);
+	if (!debug_pagealloc_enabled())
+		spin_lock(&cpa_lock);
 	if (!pte)
 		return -ENOMEM;
 

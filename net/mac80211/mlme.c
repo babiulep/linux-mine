@@ -7276,7 +7276,7 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	else if (!assoc_data->s1g)
 		aid = le16_to_cpu(mgmt->u.assoc_resp.aid);
 	else if (status_code == WLAN_STATUS_SUCCESS)
-		goto notify_driver;
+		goto destroy_assoc_data;
 
 	/*
 	 * The 5 MSB of the AID field are reserved for a non-S1G STA. For
@@ -8027,7 +8027,7 @@ ieee80211_mgd_check_cross_link_csa(struct ieee80211_sub_if_data *sdata,
 		prof = (void *)sta_profiles[link_id];
 		prof_elems = ieee802_11_parse_elems(prof->variable +
 						    (prof->sta_info_len - 1),
-						    len -
+						    len - sizeof(*prof) -
 						    (prof->sta_info_len - 1),
 						    IEEE80211_FTYPE_MGMT |
 						    IEEE80211_STYPE_BEACON,

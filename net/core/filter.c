@@ -2582,7 +2582,7 @@ BPF_CALL_2(bpf_redirect_peer, u32, ifindex, u64, flags)
 {
 	struct bpf_redirect_info *ri;
 
-	if (unlikely(!bpf_net_ctx_get() || flags & ~BPF_F_EGRESS))
+	if (unlikely(!bpf_net_ctx_get() || (flags & ~BPF_F_EGRESS)))
 		return TC_ACT_SHOT;
 
 	ri = bpf_net_ctx_get_ri();

@@ -34,7 +34,7 @@ do {										\
 	new.reg |= bit;								\
 										\
 	rc = _vcpu_sregs_set(vcpu, &new);					\
-	TEST_ASSERT(rc, "KVM allowed invalid " #reg " bit (0x%llx)", (u64)bit); \
+	TEST_ASSERT(rc, "KVM allowed invalid " #reg " bit (0x%lx)", (u64)bit);	\
 										\
 	/* Sanity check that KVM didn't change anything. */			\
 	vcpu_sregs_get(vcpu, &new);						\
