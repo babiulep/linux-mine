@@ -1488,6 +1488,7 @@ static bool amdgpu_ttm_bo_eviction_valuable(struct ttm_buffer_object *bo,
 					    const struct ttm_place *place)
 {
 	struct dma_resv_iter resv_cursor;
+	struct amdgpu_bo *abo;
 	struct dma_fence *f;
 
 	if (!amdgpu_bo_is_amdgpu_bo(bo))
@@ -1496,6 +1497,21 @@ static bool amdgpu_ttm_bo_eviction_valuable(struct ttm_buffer_object *bo,
 	/* Swapout? */
 	if (bo->resource->mem_type == TTM_PL_SYSTEM)
 		return true;
+
+	abo = ttm_to_amdgpu_bo(bo);
+	if (abo->flags & AMDGPU_GEM_CREATE_DISCARDABLE) {
+		/*
+		 * SVM BOs are migrated to system memory synchronously in this
+		 * TTM eviction context. The migration needs the owning
+		 * process's mmap lock, but the normal lock order is
+		 * mmap_lock -> BO reservation and the BO is already reserved
+		 * here. svm_range_evict_svm_bo() only trylocks the mmap lock;
+		 * if the eviction fails for any reason, we return false so TTM
+		 * skips this BO instead of risking a deadlock.
+		 */
+		if (amdgpu_amdkfd_evict_svm_bo(abo) < 0)
+			return false;
+	}
 
 	if (bo->type == ttm_bo_type_kernel &&
 	    !amdgpu_vm_evictable(ttm_to_amdgpu_bo(bo)))
@@ -2174,6 +2190,18 @@ int amdgpu_ttm_init(struct amdgpu_device *adev)
 		gtt_size = configured_size;
 	}
 
+	/* Cap GTT so that it does not exceed total physical RAM. */
+	if (adev->flags & AMD_IS_APU) {
+		u64 phys_ram = (u64)totalram_pages() << PAGE_SHIFT;
+
+		if (gtt_size > phys_ram) {
+			gtt_size = phys_ram;
+			dev_info(adev->dev,
+				 "Capping GTT to %uM to not exceed available system memory\n",
+				 (unsigned int)(gtt_size / (1024 * 1024)));
+		}
+	}
+
 	/* Initialize GTT memory pool */
 	r = amdgpu_gtt_mgr_init(adev, gtt_size);
 	if (r) {
@@ -2461,6 +2489,27 @@ static int amdgpu_ttm_prepare_job(struct amdgpu_device *adev,
 						   DMA_RESV_USAGE_BOOKKEEP);
 }
 
+static int amdgpu_calc_bytes_per_packet(u32 max_bytes_per_packet,
+					u32 byte_count)
+{
+	/* Byte count is dword-aligned and fits a single packet */
+	if (!(byte_count & 0x3) && byte_count <= max_bytes_per_packet)
+		return max_bytes_per_packet;
+
+	/*
+	 * Align down maximum byte count to 256 bytes so that
+	 * the copy optimally uses all memory channels and
+	 * also to ensure that SDMA can use its dword mode, which
+	 * is faster.
+	 *
+	 * This assumes that the starting addresses of BOs are always
+	 * dword aligned, which should be the case for every copy
+	 * operation in the kernel, because the kernel always copies
+	 * pages.
+	 */
+	return ALIGN_DOWN(max_bytes_per_packet, SZ_256);
+}
+
 int amdgpu_copy_buffer(struct amdgpu_device *adev,
 		       struct amdgpu_ttm_buffer_entity *entity,
 		       uint64_t src_offset,
@@ -2484,7 +2533,8 @@ int amdgpu_copy_buffer(struct amdgpu_device *adev,
 		return -EINVAL;
 	}
 
-	max_bytes = adev->mman.buffer_funcs->copy_max_bytes;
+	max_bytes = amdgpu_calc_bytes_per_packet(adev->mman.buffer_funcs->copy_max_bytes,
+						 byte_count);
 	num_loops = DIV_ROUND_UP(byte_count, max_bytes);
 	num_dw = ALIGN(num_loops * adev->mman.buffer_funcs->copy_num_dw, 8);
 	r = amdgpu_ttm_prepare_job(adev, entity, num_dw,
@@ -2528,7 +2578,8 @@ static int amdgpu_ttm_fill_mem(struct amdgpu_device *adev,
 	unsigned int i;
 	int r;
 
-	max_bytes = adev->mman.buffer_funcs->fill_max_bytes;
+	max_bytes = amdgpu_calc_bytes_per_packet(adev->mman.buffer_funcs->fill_max_bytes,
+						 byte_count);
 	num_loops = DIV_ROUND_UP_ULL(byte_count, max_bytes);
 	num_dw = ALIGN(num_loops * adev->mman.buffer_funcs->fill_num_dw, 8);
 	r = amdgpu_ttm_prepare_job(adev, entity, num_dw, resv,
