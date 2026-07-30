@@ -2168,11 +2168,8 @@ Kernel parameters
 	hugetlb_cma=	[HW,CMA,EARLY] The size of a CMA area used for allocation
 			of gigantic hugepages. Or using node format, the size
 			of a CMA area per node can be specified.
-			The size can be an absolute value (e.g., 2G) or a
-			percentage of the total memory or node memory (e.g., 20%).
-			Format: nn[KMGTPE] or nn% or (node format)
-				<node>:nn[KMGTPE][,<node>:nn[KMGTPE]] or
-				<node>:nn%[,<node>:nn%]
+			Format: nn[KMGTPE] or (node format)
+				<node>:nn[KMGTPE][,<node>:nn[KMGTPE]]
 
 			The size must be a multiple of the gigantic page size.
 			When using node format, this applies to each per-node size.
@@ -4922,6 +4919,12 @@ Kernel parameters
 			Adjust the minimal page reporting order. The page
 			reporting is disabled when it exceeds MAX_PAGE_ORDER.
 
+	page_reporting.page_reporting_delay_ms=
+			[KNL] Free page reporting delay in milliseconds
+			Format: <unsigned integer>
+			Adjust the delay in milliseconds between free page
+			reporting intervals. Default is 2000 (2 seconds).
+
 	panic=		[KNL] Kernel behaviour on panic: delay <timeout>
 			timeout > 0: seconds before rebooting
 			timeout = 0: wait forever
@@ -6235,6 +6238,11 @@ Kernel parameters
 			the number of CPUs.  For example, -2 selects N
 			(the number of CPUs), -3 selects N+1, and so on.
 
+	rcutorture.nwriters= [KNL]
+			Set number of RCU writers, which must be either
+			zero or one.  For additional writers, use instead
+			the rcutorture.nfakewriters parameter.
+
 	rcutorture.object_debug= [KNL]
 			Enable debug-object double-call_rcu() testing.
 
@@ -6323,6 +6331,15 @@ Kernel parameters
 			warnings, zero to disable.  If both stall_cpu
 			and stall_gp_kthread are specified, the
 			kthread is starved first, then the CPU.
+
+	rcutorture.stall_only= [KNL]
+			Shut off all rcutorture kthreads other than the
+			RCU CPU stall-warning test kthreads.  The purpose
+			of this is to test production applictions'
+			reactions to CPU stalls, and with minimal
+			additional overhead.  Or you can omit the
+			stall-warning tests as well and get a heavy
+			no-op, your choice!
 
 	rcutorture.stat_interval= [KNL]
 			Time (s) between statistics printk()s.

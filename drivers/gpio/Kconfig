@@ -661,6 +661,8 @@ config GPIO_RTD1625
 	depends on ARCH_REALTEK || COMPILE_TEST
 	default ARCH_REALTEK
 	select GPIOLIB_IRQCHIP
+	select GPIO_REGMAP
+	select REGMAP_MMIO
 	help
 	  This option enables support for the GPIO controller on Realtek
 	  DHC (Digital Home Center) RTD1625 SoC.
