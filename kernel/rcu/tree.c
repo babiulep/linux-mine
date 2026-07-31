@@ -2544,7 +2544,7 @@ rcu_check_quiescent_state(struct rcu_data *rdp)
 	 * Was there a quiescent state since the beginning of the grace
 	 * period? If no, then exit and wait for the next call.
 	 */
-	if (rdp->cpu_no_qs.b.norm)
+	if (READ_ONCE(rdp->cpu_no_qs.b.norm))
 		return;
 
 	/*
@@ -2911,7 +2911,7 @@ static __latent_entropy void rcu_core(void)
 			rcu_accelerate_cbs_unlocked(rnp, rdp);
 	}
 
-	rcu_check_gp_start_stall(rnp, rdp, rcu_jiffies_till_stall_check());
+	rcu_check_gp_start_stall(rnp, rcu_jiffies_till_stall_check());
 
 	/* If there are callbacks ready, invoke them. */
 	if (!rcu_rdp_is_offloaded(rdp) && rcu_segcblist_ready_cbs(&rdp->cblist) &&

@@ -1981,7 +1981,7 @@ static inline unsigned int folio_unmap_pte_batch(struct folio *folio,
 				     FPB_RESPECT_WRITE | FPB_RESPECT_SOFT_DIRTY);
 }
 
-static bool try_to_unmap_hugetlb_one(struct folio *folio,
+static bool try_to_unmap_poisoned_hugetlb_one(struct folio *folio,
 		struct vm_area_struct *vma, unsigned long address, void *arg)
 {
 	DEFINE_FOLIO_VMA_WALK(pvmw, folio, vma, address, 0);
@@ -1996,7 +1996,7 @@ static bool try_to_unmap_hugetlb_one(struct folio *folio,
 	 * The try_to_unmap() is only passed a hugetlb folio in the case
 	 * where the hugetlb folio is poisoned.
 	 */
-	VM_WARN_ON_FOLIO(!folio_test_hwpoison(folio), folio);
+	VM_WARN_ON_ONCE_FOLIO(!folio_test_hwpoison(folio), folio);
 	VM_WARN_ON_ONCE(!(flags & TTU_HWPOISON));
 
 	range.end = vma_address_end(&pvmw);
@@ -2034,7 +2034,7 @@ static bool try_to_unmap_hugetlb_one(struct folio *folio,
 	if (!folio_test_anon(folio)) {
 		struct mmu_gather tlb;
 
-		VM_WARN_ON(!(flags & TTU_RMAP_LOCKED));
+		VM_WARN_ON_ONCE(!(flags & TTU_RMAP_LOCKED));
 		if (!hugetlb_vma_trylock_write(vma)) {
 			ret = false;
 			goto walk_done;
@@ -2354,7 +2354,7 @@ static bool try_to_unmap_one(struct folio *folio, struct vm_area_struct *vma,
 		/* Update high watermark before we lower rss */
 		update_hiwater_rss(mm);
 
-		/* With TTU_HWPOISON, we only expect small folios here. */
+		/* unmap_poisoned_folio() only refs order-0 folios */
 		if (folio_test_hwpoison(folio) && (flags & TTU_HWPOISON)) {
 			pteval = swp_entry_to_pte(make_hwpoison_entry(page));
 			dec_mm_counter(mm, mm_counter(folio));
@@ -2444,7 +2444,7 @@ void try_to_unmap(struct folio *folio, enum ttu_flags flags)
 {
 	struct rmap_walk_control rwc = {
 		.rmap_one = folio_test_hugetlb(folio) ?
-				try_to_unmap_hugetlb_one : try_to_unmap_one,
+				try_to_unmap_poisoned_hugetlb_one : try_to_unmap_one,
 		.arg = (void *)flags,
 		.done = folio_not_mapped,
 		.anon_lock = folio_lock_anon_vma_read,

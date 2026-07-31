@@ -152,6 +152,7 @@ struct geni_se {
 #define DMA_IF_EN_RO			0xe20
 #define SE_HW_PARAM_0			0xe24
 #define SE_HW_PARAM_1			0xe28
+#define SE_HW_PARAM_2			0xe2c
 #define DMA_GENERAL_CFG			0xe30
 #define SE_DMA_QSB_TRANS_CFG		0xe38
 #define SE_DMA_DEBUG_REG0		0xe40
@@ -328,6 +329,9 @@ struct geni_se {
 #define RX_FIFO_DEPTH_MSK_256_BYTES	GENMASK(23, 16)
 #define RX_FIFO_DEPTH_MSK		GENMASK(21, 16)
 #define RX_FIFO_DEPTH_SHFT		16
+
+/* SE_HW_PARAM_2 fields */
+#define PROG_RAM_DEPTH_MSK		GENMASK(10, 0)
 
 #define HW_VER_MAJOR_MASK		GENMASK(31, 28)
 #define HW_VER_MAJOR_SHFT		28

@@ -188,7 +188,7 @@ EXPORT_SYMBOL(par_io_of_config);
 
 static int __init par_io_populate(void)
 {
-	struct device_node *np = of_find_node_by_name(NULL, "par_io");
+	struct device_node *np = of_find_node_by_type(NULL, "par_io");
 
 	if (!np)
 		return 0;

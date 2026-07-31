@@ -469,12 +469,14 @@ rcu_read_delay(struct torture_random_state *rrsp, struct rt_read_seg *rtrsp)
 	unsigned long longdelay_ms = 300;
 	unsigned long long ts;
 
-	/* We want a short delay sometimes to make a reader delay the grace
-	 * period, and we want a long delay occasionally to trigger
-	 * force_quiescent_state. */
+	// If there is a forward-progress test in flight, don't delay.
+	if (atomic_read(&rcu_fwd_cb_nodelay))
+		return;
 
-	if (!atomic_read(&rcu_fwd_cb_nodelay) &&
-	    !(torture_random(rrsp) % (nrealreaders * 2000 * longdelay_ms))) {
+	// We want a short delay sometimes to make a reader delay the grace
+	// period, and we want a long delay occasionally to trigger
+	// force_quiescent_state.
+	if (!(torture_random(rrsp) % (nrealreaders * 2000 * longdelay_ms))) {
 		started = cur_ops->get_gp_seq();
 		ts = rcu_trace_clock_local();
 		if ((preempt_count() & HARDIRQ_MASK) || softirq_count())
@@ -765,6 +767,10 @@ srcu_read_delay(struct torture_random_state *rrsp, struct rt_read_seg *rtrsp)
 	long delay;
 	const long uspertick = 1000000 / HZ;
 	const long longdelay = 10;
+
+	// If there is a forward-progress test in flight, don't delay.
+	if (atomic_read(&rcu_fwd_cb_nodelay))
+		return;
 
 	// We want there to be long-running readers, but not all the time.
 	// The !rcu_preempt_depth() is for RCU Tasks Trace.
@@ -3623,13 +3629,17 @@ static void rcu_torture_fwd_prog_cr(struct rcu_fwd *rfp)
 	unsigned long stopat;
 	unsigned long stoppedat;
 
-	pr_alert("%s: Starting forward-progress test %d\n", __func__, rfp->rcu_fwd_id);
-	if (READ_ONCE(rcu_fwd_emergency_stop))
+	if (READ_ONCE(rcu_fwd_emergency_stop)) {
+		pr_alert("%s: Emergency stop, so no forward-progress test %d\n", __func__, rfp->rcu_fwd_id);
 		return; /* Get out of the way quickly, no GP wait! */
-	if (!cur_ops->call)
+	}
+	if (!cur_ops->call) {
+		pr_alert("%s: No ->call(), so no forward-progress test %d\n", __func__, rfp->rcu_fwd_id);
 		return; /* Can't do call_rcu() fwd prog without ->call. */
+	}
 
 	/* Loop continuously posting RCU callbacks. */
+	pr_alert("%s: Starting forward-progress test %d\n", __func__, rfp->rcu_fwd_id);
 	atomic_inc(&rcu_fwd_cb_nodelay);
 	cur_ops->sync(); /* Later readers see above write. */
 	WRITE_ONCE(rfp->rcu_fwd_startat, jiffies);

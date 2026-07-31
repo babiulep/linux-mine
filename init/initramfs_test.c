@@ -117,41 +117,38 @@ static void __init initramfs_test_extract(struct kunit *test)
 			      GFP_KERNEL);
 	len = fill_cpio(c, ARRAY_SIZE(c), false, cpio_srcbuf);
 
-	/* Tests run in a nullfs kthread; borrow the init fs for path resolution. */
-	scoped_with_init_fs() {
-		ktime_get_real_ts64(&ts_before);
-		err = unpack_to_rootfs(cpio_srcbuf, len);
-		ktime_get_real_ts64(&ts_after);
-		if (err) {
-			KUNIT_FAIL(test, "unpack failed %s", err);
-			goto out;
-		}
-
-		KUNIT_EXPECT_EQ(test, init_stat(c[0].fname, &st, 0), 0);
-		KUNIT_EXPECT_TRUE(test, S_ISREG(st.mode));
-		KUNIT_EXPECT_TRUE(test, uid_eq(st.uid, KUIDT_INIT(c[0].uid)));
-		KUNIT_EXPECT_TRUE(test, gid_eq(st.gid, KGIDT_INIT(c[0].gid)));
-		KUNIT_EXPECT_EQ(test, st.nlink, 1);
-		if (IS_ENABLED(CONFIG_INITRAMFS_PRESERVE_MTIME)) {
-			KUNIT_EXPECT_EQ(test, st.mtime.tv_sec, c[0].mtime);
-		} else {
-			KUNIT_EXPECT_GE(test, st.mtime.tv_sec, ts_before.tv_sec);
-			KUNIT_EXPECT_LE(test, st.mtime.tv_sec, ts_after.tv_sec);
-		}
-		KUNIT_EXPECT_EQ(test, st.blocks, c[0].filesize);
-
-		KUNIT_EXPECT_EQ(test, init_stat(c[1].fname, &st, 0), 0);
-		KUNIT_EXPECT_TRUE(test, S_ISDIR(st.mode));
-		if (IS_ENABLED(CONFIG_INITRAMFS_PRESERVE_MTIME)) {
-			KUNIT_EXPECT_EQ(test, st.mtime.tv_sec, c[1].mtime);
-		} else {
-			KUNIT_EXPECT_GE(test, st.mtime.tv_sec, ts_before.tv_sec);
-			KUNIT_EXPECT_LE(test, st.mtime.tv_sec, ts_after.tv_sec);
-		}
-
-		KUNIT_EXPECT_EQ(test, init_unlink(c[0].fname), 0);
-		KUNIT_EXPECT_EQ(test, init_rmdir(c[1].fname), 0);
+	ktime_get_real_ts64(&ts_before);
+	err = unpack_to_rootfs(cpio_srcbuf, len);
+	ktime_get_real_ts64(&ts_after);
+	if (err) {
+		KUNIT_FAIL(test, "unpack failed %s", err);
+		goto out;
 	}
+
+	KUNIT_EXPECT_EQ(test, init_stat(c[0].fname, &st, 0), 0);
+	KUNIT_EXPECT_TRUE(test, S_ISREG(st.mode));
+	KUNIT_EXPECT_TRUE(test, uid_eq(st.uid, KUIDT_INIT(c[0].uid)));
+	KUNIT_EXPECT_TRUE(test, gid_eq(st.gid, KGIDT_INIT(c[0].gid)));
+	KUNIT_EXPECT_EQ(test, st.nlink, 1);
+	if (IS_ENABLED(CONFIG_INITRAMFS_PRESERVE_MTIME)) {
+		KUNIT_EXPECT_EQ(test, st.mtime.tv_sec, c[0].mtime);
+	} else {
+		KUNIT_EXPECT_GE(test, st.mtime.tv_sec, ts_before.tv_sec);
+		KUNIT_EXPECT_LE(test, st.mtime.tv_sec, ts_after.tv_sec);
+	}
+	KUNIT_EXPECT_EQ(test, st.blocks, c[0].filesize);
+
+	KUNIT_EXPECT_EQ(test, init_stat(c[1].fname, &st, 0), 0);
+	KUNIT_EXPECT_TRUE(test, S_ISDIR(st.mode));
+	if (IS_ENABLED(CONFIG_INITRAMFS_PRESERVE_MTIME)) {
+		KUNIT_EXPECT_EQ(test, st.mtime.tv_sec, c[1].mtime);
+	} else {
+		KUNIT_EXPECT_GE(test, st.mtime.tv_sec, ts_before.tv_sec);
+		KUNIT_EXPECT_LE(test, st.mtime.tv_sec, ts_after.tv_sec);
+	}
+
+	KUNIT_EXPECT_EQ(test, init_unlink(c[0].fname), 0);
+	KUNIT_EXPECT_EQ(test, init_rmdir(c[1].fname), 0);
 out:
 	kfree(cpio_srcbuf);
 }
@@ -201,11 +198,8 @@ static void __init initramfs_test_fname_overrun(struct kunit *test)
 		suffix_off--;
 	}
 
-	/* Tests run in a nullfs kthread; borrow the init fs for path resolution. */
-	scoped_with_init_fs() {
-		err = unpack_to_rootfs(cpio_srcbuf, len);
-		KUNIT_EXPECT_NOT_NULL(test, err);
-	}
+	err = unpack_to_rootfs(cpio_srcbuf, len);
+	KUNIT_EXPECT_NOT_NULL(test, err);
 
 	kfree(cpio_srcbuf);
 }
@@ -240,25 +234,22 @@ static void __init initramfs_test_data(struct kunit *test)
 
 	len = fill_cpio(c, ARRAY_SIZE(c), false, cpio_srcbuf);
 
-	/* Tests run in a nullfs kthread; borrow the init fs for path resolution. */
-	scoped_with_init_fs() {
-		err = unpack_to_rootfs(cpio_srcbuf, len);
-		KUNIT_EXPECT_NULL(test, err);
+	err = unpack_to_rootfs(cpio_srcbuf, len);
+	KUNIT_EXPECT_NULL(test, err);
 
-		file = filp_open(c[0].fname, O_RDONLY, 0);
-		if (IS_ERR(file)) {
-			KUNIT_FAIL(test, "open failed");
-			goto out;
-		}
-
-		/* read back file contents into @cpio_srcbuf and confirm match */
-		len = kernel_read(file, cpio_srcbuf, c[0].filesize, NULL);
-		KUNIT_EXPECT_EQ(test, len, c[0].filesize);
-		KUNIT_EXPECT_MEMEQ(test, cpio_srcbuf, c[0].data, len);
-
-		fput(file);
-		KUNIT_EXPECT_EQ(test, init_unlink(c[0].fname), 0);
+	file = filp_open(c[0].fname, O_RDONLY, 0);
+	if (IS_ERR(file)) {
+		KUNIT_FAIL(test, "open failed");
+		goto out;
 	}
+
+	/* read back file contents into @cpio_srcbuf and confirm match */
+	len = kernel_read(file, cpio_srcbuf, c[0].filesize, NULL);
+	KUNIT_EXPECT_EQ(test, len, c[0].filesize);
+	KUNIT_EXPECT_MEMEQ(test, cpio_srcbuf, c[0].data, len);
+
+	fput(file);
+	KUNIT_EXPECT_EQ(test, init_unlink(c[0].fname), 0);
 out:
 	kfree(cpio_srcbuf);
 }
@@ -298,28 +289,25 @@ static void __init initramfs_test_csum(struct kunit *test)
 
 	len = fill_cpio(c, ARRAY_SIZE(c), false, cpio_srcbuf);
 
-	/* Tests run in a nullfs kthread; borrow the init fs for path resolution. */
-	scoped_with_init_fs() {
-		err = unpack_to_rootfs(cpio_srcbuf, len);
-		KUNIT_EXPECT_NULL(test, err);
+	err = unpack_to_rootfs(cpio_srcbuf, len);
+	KUNIT_EXPECT_NULL(test, err);
 
-		KUNIT_EXPECT_EQ(test, init_unlink(c[0].fname), 0);
-		KUNIT_EXPECT_EQ(test, init_unlink(c[1].fname), 0);
+	KUNIT_EXPECT_EQ(test, init_unlink(c[0].fname), 0);
+	KUNIT_EXPECT_EQ(test, init_unlink(c[1].fname), 0);
 
-		/* mess up the csum and confirm that unpack fails */
-		c[0].csum--;
-		len = fill_cpio(c, ARRAY_SIZE(c), false, cpio_srcbuf);
+	/* mess up the csum and confirm that unpack fails */
+	c[0].csum--;
+	len = fill_cpio(c, ARRAY_SIZE(c), false, cpio_srcbuf);
 
-		err = unpack_to_rootfs(cpio_srcbuf, len);
-		KUNIT_EXPECT_NOT_NULL(test, err);
+	err = unpack_to_rootfs(cpio_srcbuf, len);
+	KUNIT_EXPECT_NOT_NULL(test, err);
 
-		/*
-		 * file (with content) is still retained in case of bad-csum abort.
-		 * Perhaps we should change this.
-		 */
-		KUNIT_EXPECT_EQ(test, init_unlink(c[0].fname), 0);
-		KUNIT_EXPECT_EQ(test, init_unlink(c[1].fname), -ENOENT);
-	}
+	/*
+	 * file (with content) is still retained in case of bad-csum abort.
+	 * Perhaps we should change this.
+	 */
+	KUNIT_EXPECT_EQ(test, init_unlink(c[0].fname), 0);
+	KUNIT_EXPECT_EQ(test, init_unlink(c[1].fname), -ENOENT);
 	kfree(cpio_srcbuf);
 }
 
@@ -357,20 +345,17 @@ static void __init initramfs_test_hardlink(struct kunit *test)
 
 	len = fill_cpio(c, ARRAY_SIZE(c), false, cpio_srcbuf);
 
-	/* Tests run in a nullfs kthread; borrow the init fs for path resolution. */
-	scoped_with_init_fs() {
-		err = unpack_to_rootfs(cpio_srcbuf, len);
-		KUNIT_EXPECT_NULL(test, err);
+	err = unpack_to_rootfs(cpio_srcbuf, len);
+	KUNIT_EXPECT_NULL(test, err);
 
-		KUNIT_EXPECT_EQ(test, init_stat(c[0].fname, &st0, 0), 0);
-		KUNIT_EXPECT_EQ(test, init_stat(c[1].fname, &st1, 0), 0);
-		KUNIT_EXPECT_EQ(test, st0.ino, st1.ino);
-		KUNIT_EXPECT_EQ(test, st0.nlink, 2);
-		KUNIT_EXPECT_EQ(test, st1.nlink, 2);
+	KUNIT_EXPECT_EQ(test, init_stat(c[0].fname, &st0, 0), 0);
+	KUNIT_EXPECT_EQ(test, init_stat(c[1].fname, &st1, 0), 0);
+	KUNIT_EXPECT_EQ(test, st0.ino, st1.ino);
+	KUNIT_EXPECT_EQ(test, st0.nlink, 2);
+	KUNIT_EXPECT_EQ(test, st1.nlink, 2);
 
-		KUNIT_EXPECT_EQ(test, init_unlink(c[0].fname), 0);
-		KUNIT_EXPECT_EQ(test, init_unlink(c[1].fname), 0);
-	}
+	KUNIT_EXPECT_EQ(test, init_unlink(c[0].fname), 0);
+	KUNIT_EXPECT_EQ(test, init_unlink(c[1].fname), 0);
 
 	kfree(cpio_srcbuf);
 }
@@ -403,15 +388,12 @@ static void __init initramfs_test_many(struct kunit *test)
 	}
 
 	len = p - cpio_srcbuf;
-	/* Tests run in a nullfs kthread; borrow the init fs for path resolution. */
-	scoped_with_init_fs() {
-		err = unpack_to_rootfs(cpio_srcbuf, len);
-		KUNIT_EXPECT_NULL(test, err);
+	err = unpack_to_rootfs(cpio_srcbuf, len);
+	KUNIT_EXPECT_NULL(test, err);
 
-		for (i = 0; i < INITRAMFS_TEST_MANY_LIMIT; i++) {
-			sprintf(thispath, "initramfs_test_many-%d", i);
-			KUNIT_EXPECT_EQ(test, init_unlink(thispath), 0);
-		}
+	for (i = 0; i < INITRAMFS_TEST_MANY_LIMIT; i++) {
+		sprintf(thispath, "initramfs_test_many-%d", i);
+		KUNIT_EXPECT_EQ(test, init_unlink(thispath), 0);
 	}
 
 	kfree(cpio_srcbuf);
@@ -458,25 +440,22 @@ static void __init initramfs_test_fname_pad(struct kunit *test)
 	memcpy(tbufs->padded_fname, "padded_fname", sizeof("padded_fname"));
 	len = fill_cpio(c, ARRAY_SIZE(c), false, tbufs->cpio_srcbuf);
 
-	/* Tests run in a nullfs kthread; borrow the init fs for path resolution. */
-	scoped_with_init_fs() {
-		err = unpack_to_rootfs(tbufs->cpio_srcbuf, len);
-		KUNIT_EXPECT_NULL(test, err);
+	err = unpack_to_rootfs(tbufs->cpio_srcbuf, len);
+	KUNIT_EXPECT_NULL(test, err);
 
-		file = filp_open(c[0].fname, O_RDONLY, 0);
-		if (IS_ERR(file)) {
-			KUNIT_FAIL(test, "open failed");
-			goto out;
-		}
-
-		/* read back file contents into @cpio_srcbuf and confirm match */
-		len = kernel_read(file, tbufs->cpio_srcbuf, c[0].filesize, NULL);
-		KUNIT_EXPECT_EQ(test, len, c[0].filesize);
-		KUNIT_EXPECT_MEMEQ(test, tbufs->cpio_srcbuf, c[0].data, len);
-
-		fput(file);
-		KUNIT_EXPECT_EQ(test, init_unlink(c[0].fname), 0);
+	file = filp_open(c[0].fname, O_RDONLY, 0);
+	if (IS_ERR(file)) {
+		KUNIT_FAIL(test, "open failed");
+		goto out;
 	}
+
+	/* read back file contents into @cpio_srcbuf and confirm match */
+	len = kernel_read(file, tbufs->cpio_srcbuf, c[0].filesize, NULL);
+	KUNIT_EXPECT_EQ(test, len, c[0].filesize);
+	KUNIT_EXPECT_MEMEQ(test, tbufs->cpio_srcbuf, c[0].data, len);
+
+	fput(file);
+	KUNIT_EXPECT_EQ(test, init_unlink(c[0].fname), 0);
 out:
 	kfree(tbufs);
 }
@@ -517,16 +496,13 @@ static void __init initramfs_test_fname_path_max(struct kunit *test)
 	memcpy(tbufs->fname_ok, "fname_ok", sizeof("fname_ok") - 1);
 	len = fill_cpio(c, ARRAY_SIZE(c), false, tbufs->cpio_src);
 
-	/* Tests run in a nullfs kthread; borrow the init fs for path resolution. */
-	scoped_with_init_fs() {
-		/* unpack skips over fname_oversize instead of returning an error */
-		err = unpack_to_rootfs(tbufs->cpio_src, len);
-		KUNIT_EXPECT_NULL(test, err);
+	/* unpack skips over fname_oversize instead of returning an error */
+	err = unpack_to_rootfs(tbufs->cpio_src, len);
+	KUNIT_EXPECT_NULL(test, err);
 
-		KUNIT_EXPECT_EQ(test, init_stat("fname_oversize", &st0, 0), -ENOENT);
-		KUNIT_EXPECT_EQ(test, init_stat("fname_ok", &st1, 0), 0);
-		KUNIT_EXPECT_EQ(test, init_rmdir("fname_ok"), 0);
-	}
+	KUNIT_EXPECT_EQ(test, init_stat("fname_oversize", &st0, 0), -ENOENT);
+	KUNIT_EXPECT_EQ(test, init_stat("fname_ok", &st1, 0), 0);
+	KUNIT_EXPECT_EQ(test, init_rmdir("fname_ok"), 0);
 
 	kfree(tbufs);
 }
@@ -564,11 +540,8 @@ static void __init initramfs_test_hdr_hex(struct kunit *test)
 	/* inject_ox=true to add "0x" cpio field prefixes */
 	len = fill_cpio(c, ARRAY_SIZE(c), true, tbufs->cpio_src);
 
-	/* Tests run in a nullfs kthread; borrow the init fs for path resolution. */
-	scoped_with_init_fs() {
-		err = unpack_to_rootfs(tbufs->cpio_src, len);
-		KUNIT_EXPECT_NOT_NULL(test, err);
-	}
+	err = unpack_to_rootfs(tbufs->cpio_src, len);
+	KUNIT_EXPECT_NOT_NULL(test, err);
 
 	kfree(tbufs);
 }
@@ -590,7 +563,7 @@ static struct kunit_case __refdata initramfs_test_cases[] = {
 	{},
 };
 
-static int __init initramfs_test_init(struct kunit_suite *suite)
+static int __init initramfs_suite_init(struct kunit_suite *suite)
 {
 	/*
 	 * unpack_to_rootfs() uses module-static state (victim, byte_count,
@@ -602,9 +575,23 @@ static int __init initramfs_test_init(struct kunit_suite *suite)
 	return 0;
 }
 
+/* Tests run in a nullfs kthread; always use the init fs for path resolution. */
+static int __init initramfs_test_init(struct kunit *test)
+{
+	test->priv = __override_init_fs();
+	return 0;
+}
+
+static void __init initramfs_test_exit(struct kunit *test)
+{
+	__revert_init_fs(test->priv);
+}
+
 static struct kunit_suite __refdata initramfs_test_suite = {
 	.name = "initramfs",
-	.suite_init = initramfs_test_init,
+	.suite_init = initramfs_suite_init,
+	.init = initramfs_test_init,
+	.exit = initramfs_test_exit,
 	.test_cases = initramfs_test_cases,
 };
 kunit_test_init_section_suites(&initramfs_test_suite);
