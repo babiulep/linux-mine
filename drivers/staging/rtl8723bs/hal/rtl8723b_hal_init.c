@@ -189,7 +189,8 @@ static s32 polling_fwdl_chksum(
 	do {
 		cnt++;
 		value32 = rtw_read32(adapter, REG_MCUFWDL);
-		if (value32 & FWDL_ChkSum_rpt || adapter->bSurpriseRemoved || adapter->bDriverStopped)
+		if (value32 & FWDL_ChkSum_rpt || adapter->bSurpriseRemoved ||
+		    adapter->driver_stopped)
 			break;
 		yield();
 	} while (jiffies_to_msecs(jiffies-start) < timeout_ms || cnt < min_cnt);
@@ -229,7 +230,7 @@ static s32 _FWFreeToGo(struct adapter *adapter, u32 min_cnt, u32 timeout_ms)
 	do {
 		cnt++;
 		value32 = rtw_read32(adapter, REG_MCUFWDL);
-		if (value32 & WINTINI_RDY || adapter->bSurpriseRemoved || adapter->bDriverStopped)
+		if (value32 & WINTINI_RDY || adapter->bSurpriseRemoved || adapter->driver_stopped)
 			break;
 		yield();
 	} while (jiffies_to_msecs(jiffies - start) < timeout_ms || cnt < min_cnt);
@@ -384,7 +385,7 @@ s32 rtl8723b_FirmwareDownload(struct adapter *padapter, bool  bUsedWoWLANFw)
 	_FWDownloadEnable(padapter, true);
 	fwdl_start_time = jiffies;
 	while (
-		!padapter->bDriverStopped &&
+		!padapter->driver_stopped &&
 		!padapter->bSurpriseRemoved &&
 		(write_fw++ < 3 || jiffies_to_msecs(jiffies - fwdl_start_time) < 500)
 	) {
@@ -818,7 +819,7 @@ void Hal_ReadEFuse(
 		hal_ReadEFuse_BT(padapter, _offset, _size_byte, pbuf);
 }
 
-static void ReadChipVersion8723B(struct adapter *padapter)
+void rtl8723b_read_chip_version(struct adapter *padapter)
 {
 	u32 value32;
 	struct hal_com_data *pHalData;
@@ -828,11 +829,6 @@ static void ReadChipVersion8723B(struct adapter *padapter)
 
 	value32 = rtw_read32(padapter, REG_SYS_CFG);
 	pHalData->chip_normal = ((value32 & RTL_ID) ? false : true);
-}
-
-void rtl8723b_read_chip_version(struct adapter *padapter)
-{
-	ReadChipVersion8723B(padapter);
 }
 
 void rtl8723b_InitBeaconParameters(struct adapter *padapter)
@@ -859,11 +855,8 @@ void rtl8723b_InitBeaconParameters(struct adapter *padapter)
 	/*  because test chip does not contension before sending beacon. by tynli. 2009.11.03 */
 	rtw_write16(padapter, REG_BCNTCFG, BCNTCFG_8723B);
 
-	pHalData->RegBcnCtrlVal = rtw_read8(padapter, REG_BCN_CTRL);
-	pHalData->RegTxPause = rtw_read8(padapter, REG_TXPAUSE);
 	pHalData->RegFwHwTxQCtrl = rtw_read8(padapter, REG_FWHW_TXQ_CTRL+2);
 	pHalData->RegReg542 = rtw_read8(padapter, REG_TBTT_PROHIBIT+2);
-	pHalData->RegCR_1 = rtw_read8(padapter, REG_CR+1);
 }
 
 void _InitBurstPktLen_8723BS(struct adapter *Adapter)
@@ -1047,11 +1040,8 @@ void rtl8723b_init_default_value(struct adapter *padapter)
 
 	/*  init default value */
 	pHalData->fw_ractrl = false;
-	pHalData->bIQKInitialized = false;
 	if (!adapter_to_pwrctl(padapter)->bkeepfwalive)
 		pHalData->LastHMEBoxNum = 0;
-
-	pHalData->bIQKInitialized = false;
 
 	/*  init dm default value */
 	pdmpriv->TM_Trigger = 0;/* for IQK */
@@ -1311,7 +1301,6 @@ void Hal_EfuseParseTxPowerInfo_8723B(
 		}
 
 		for (TxCount = 0; TxCount < MAX_TX_COUNT; TxCount++) {
-			pHalData->CCK_24G_Diff[rfPath][TxCount] = pwrInfo24G.CCK_Diff[rfPath][TxCount];
 			pHalData->OFDM_24G_Diff[rfPath][TxCount] = pwrInfo24G.OFDM_Diff[rfPath][TxCount];
 			pHalData->BW20_24G_Diff[rfPath][TxCount] = pwrInfo24G.BW20_Diff[rfPath][TxCount];
 			pHalData->BW40_24G_Diff[rfPath][TxCount] = pwrInfo24G.BW40_Diff[rfPath][TxCount];
@@ -2638,10 +2627,6 @@ void SetHwReg8723B(struct adapter *padapter, u8 variable, u8 *val)
 			val8 &= ~BIT(4);
 			rtw_write8(padapter, REG_DWBCN1_CTRL_8723B+2, val8);
 		}
-		break;
-
-	case HW_VAR_DO_IQK:
-		pHalData->bNeedIQK = true;
 		break;
 
 	case HW_VAR_DL_RSVD_PAGE:

@@ -33,7 +33,6 @@
 
 #define MAX_TRACE_ARGS		128
 #define MAX_ARGSTR_LEN		255
-#define MAX_COMMON_HEAD_LEN	63
 #define MAX_ARRAY_LEN		64
 #define MAX_ARG_NAME_LEN	32
 #define MAX_BTF_ARGS_LEN	128
@@ -220,7 +219,6 @@ DECLARE_BASIC_PRINT_TYPE_FUNC(symbol);
 	_ASSIGN_FETCH_TYPE(#ptype, ptype, ftype, sizeof(ftype), sign, atype)
 
 #define ASSIGN_FETCH_TYPE_END {}
-#define MAX_ARRAY_LEN	64
 
 #ifdef CONFIG_KPROBE_EVENTS
 bool trace_kprobe_on_func_entry(struct trace_event_call *call);
@@ -361,7 +359,7 @@ static inline int trace_probe_unregister_event_call(struct trace_probe *tp)
 
 static inline bool trace_probe_has_single_file(struct trace_probe *tp)
 {
-	return !!list_is_singular(&tp->event->files);
+	return list_is_singular(&tp->event->files);
 }
 
 int trace_probe_init(struct trace_probe *tp, const char *event,

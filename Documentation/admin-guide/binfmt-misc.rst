@@ -292,10 +292,11 @@ the interpreters it binds already pre-open what ``F`` would. The
 registration directive ``D`` is the exception: it decides how the entry
 starts out, not how the interpreter is invoked.
 
-Handlers are looked up in the user namespace the struct_ops map was
-registered in, falling back to ancestor namespaces, mirroring how
-binfmt_misc instances themselves are looked up. The entry keeps the handler
-alive; deleting the struct_ops map only prevents new activations.
+A handler is looked up only in the user namespace the struct_ops map was
+registered in. Handlers are not inherited, so an entry can only reference a
+handler registered in the same user namespace as its binfmt_misc instance.
+The entry keeps the handler alive; deleting the struct_ops map only prevents
+new activations.
 
 
 Transparent interpreters

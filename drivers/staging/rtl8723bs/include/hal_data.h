@@ -157,7 +157,6 @@ struct hal_com_data {
 	u32 ReceiveConfig;
 
 	/* rf_ctrl */
-	u8 rf_chip;
 	u8 PackageType;
 
 	/*  EEPROM setting. */
@@ -176,7 +175,6 @@ struct hal_com_data {
 	u8 Index24G_CCK_Base[MAX_RF_PATH][CHANNEL_MAX_NUMBER];
 	u8 Index24G_BW40_Base[MAX_RF_PATH][CHANNEL_MAX_NUMBER];
 	/* If only one tx, only BW20 and OFDM are used. */
-	s8	CCK_24G_Diff[MAX_RF_PATH][MAX_TX_COUNT];
 	s8	OFDM_24G_Diff[MAX_RF_PATH][MAX_TX_COUNT];
 	s8	BW20_24G_Diff[MAX_RF_PATH][MAX_TX_COUNT];
 	s8	BW40_24G_Diff[MAX_RF_PATH][MAX_TX_COUNT];
@@ -199,10 +197,6 @@ struct hal_com_data {
 	/*  Store the original power by rate value of the base of each rate section of rf path A & B */
 	u8 TxPwrByRateBase2_4G[MAX_RF_PATH_NUM][MAX_RATE_SECTION_NUM];
 
-	/*  Read/write are allow for following hardware information variables */
-	u8 pwrGroupCnt;
-	u32 MCSTxPowerLevelOriginalOffset[MAX_PG_GROUP][16];
-
 	u8 CrystalCap;
 
 	u8 TypeGLNA;
@@ -211,12 +205,10 @@ struct hal_com_data {
 	u8 TypeAPA;
 	u8 RFEType;
 	u8 BoardType;
-	u8 bIQKInitialized;
 	bool		bLCKInProgress;
 
 	bool		bSwChnl;
 	bool		bSetChnlBW;
-	bool		bNeedIQK;
 
 	u8 TxPowerTrackControl; /* for mp mode, turn off txpwrtracking as default */
 
@@ -230,12 +222,9 @@ struct hal_com_data {
 	u8 LastHMEBoxNum;
 
 	u8 fw_ractrl;
-	u8 RegTxPause;
 	/*  Beacon function related global variable. */
-	u8 RegBcnCtrlVal;
 	u8 RegFwHwTxQCtrl;
 	u8 RegReg542;
-	u8 RegCR_1;
 	u16 RegRRSR;
 
 	u8 CurAntenna;
@@ -245,17 +234,11 @@ struct hal_com_data {
 
 	u8 u1ForcedIgiLb;			/*  forced IGI lower bound */
 
-	u8 bDumpRxPkt;/* for debug */
-	u8 bDumpTxPkt;/* for debug */
-
 	/*  2010/08/09 MH Add CU power down mode. */
 	bool		pwrdown;
 
 	u8 OutEpQueueSel;
 	u8 OutEpNumber;
-
-	/*  2010/12/10 MH Add for USB aggregation mode dynamic scheme. */
-	bool		UsbRxHighSpeedMode;
 
 	/*  Auto FSM to Turn On, include clock, isolation, power control for MAC only */
 	u8 bMacPwrCtrlOn;
@@ -268,7 +251,6 @@ struct hal_com_data {
 	/*  SDIO Tx FIFO related. */
 	/*  HIQ, MID, LOW, PUB free pages; padapter->xmitpriv.free_txpg */
 	u8 	SdioTxFIFOFreePage[SDIO_TX_FREE_PG_QUEUE];
-	spinlock_t		SdioTxFIFOFreePageLock;
 	u8 	SdioTxOQTMaxFreeSpace;
 	u8 	SdioTxOQTFreeSpace;
 

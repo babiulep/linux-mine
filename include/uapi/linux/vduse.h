@@ -39,7 +39,6 @@
  * @vq_align: the allocation alignment of virtqueue's metadata
  * @ngroups: number of vq groups that VDUSE device declares
  * @nas: number of address spaces that VDUSE device declares
- * @vduse_features: VDUSE features
  * @reserved: for future use, needs to be initialized to zero
  * @config_size: the size of the configuration space
  * @config: the buffer of the configuration space
@@ -56,8 +55,7 @@ struct vduse_dev_config {
 	__u32 vq_align;
 	__u32 ngroups; /* if VDUSE_API_VERSION >= 1 */
 	__u32 nas; /* if VDUSE_API_VERSION >= 1 */
-	__u64 vduse_features; /* if VDUSE_GET_FEATURES is not EINVAL */
-	__u32 reserved[9];
+	__u32 reserved[11];
 	__u32 config_size;
 	__u8 config[];
 };
@@ -73,6 +71,9 @@ struct vduse_dev_config {
 
 /* Get the VDUSE supported features */
 #define VDUSE_GET_FEATURES	_IOR(VDUSE_BASE, 0x04, __u64)
+
+/* Set the VDUSE features */
+#define VDUSE_SET_FEATURES	_IOW(VDUSE_BASE, 0x05, __u64)
 
 /* The ioctls for VDUSE device (/dev/vduse/$NAME) */
 

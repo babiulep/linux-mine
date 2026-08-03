@@ -372,6 +372,10 @@ static bool tdfxfb_get_bios_cfg(struct pci_dev *pdev,
 	u8 *image;
 	u32 khz;
 
+	/* This only works for the Voodoo 3 for now */
+	if (pdev->device != PCI_DEVICE_ID_3DFX_VOODOO3)
+		return false;
+
 	rom = pci_map_rom(pdev, &romsize);
 	if (!rom || !romsize)
 		return false;
@@ -412,9 +416,9 @@ out:
 }
 
 /*
- * Try to work out if the card was booted or not, just checks
- * if the register reported memory amount matches what the BIOS
- * reports for now.
+ * Try to work out if the card was booted or not, just checks if
+ * one of the dram config registers matches what is in the config
+ * table if there is one.
  *
  * If we have a BIOS config table attempt to manually boot the
  * card if needed.
@@ -422,34 +426,39 @@ out:
 static int tdfxfb_hw_init(struct fb_info *info, struct pci_dev *pdev)
 {
 	u32 mempll, gfxpll, draminit0, draminit1, miscinit1, dram_mode;
+	struct tdfx_par *par = info->par;
 	struct tdfx_bios_cfg cfg;
 	bool have_cfg = tdfxfb_get_bios_cfg(pdev, &cfg);
-	struct tdfx_par *par = info->par;
 
-	if (have_cfg && tdfx_inl(par, DRAMINIT0) == le32_to_cpu(cfg.draminit0))
+	/*
+	 * Can't tell if the card is booted or not,
+	 * also cannot boot it. Card might not function.
+	 */
+	if (!have_cfg)
 		return 0;
 
-	if (have_cfg) {
-		dev_info(&pdev->dev,
-			 "Manually booting card using config table\n");
-		mempll = le32_to_cpu(cfg.pllctrl1);
-		gfxpll = le32_to_cpu(cfg.pllctrl2);
-		draminit0 = le32_to_cpu(cfg.draminit0);
-		draminit1 = le32_to_cpu(cfg.draminit1);
-		miscinit1 = le32_to_cpu(cfg.miscinit1);
-		dram_mode = le32_to_cpu(cfg.sgrammode);
-		tdfx_outl(par, PCIINIT0, le32_to_cpu(cfg.pciinit0));
-		tdfx_outl(par, AGPINIT, le32_to_cpu(cfg.agpinit0));
-	} else {
-		dev_err(&pdev->dev,
-			"Card hasn't booted and is unusable\n");
-		return -ENODEV;
-	}
+	/* Card is, probably, already configured. */
+	if (tdfx_inl(par, DRAMINIT0) == le32_to_cpu(cfg.draminit0))
+		return 0;
+
+	dev_info(&pdev->dev,
+		 "Manually booting card using config table\n");
+
+	mempll = le32_to_cpu(cfg.pllctrl1);
+	gfxpll = le32_to_cpu(cfg.pllctrl2);
+	draminit0 = le32_to_cpu(cfg.draminit0);
+	draminit1 = le32_to_cpu(cfg.draminit1);
+	miscinit1 = le32_to_cpu(cfg.miscinit1);
+	dram_mode = le32_to_cpu(cfg.sgrammode);
+	tdfx_outl(par, PCIINIT0, le32_to_cpu(cfg.pciinit0));
+	tdfx_outl(par, AGPINIT, le32_to_cpu(cfg.agpinit0));
 
 	/* memory clock, and the graphics clock if the card wants one */
 	tdfx_outl(par, PLLCTRL1, mempll);
 	if (gfxpll)
 		tdfx_outl(par, PLLCTRL2, gfxpll);
+	/* flush posted writes */
+	tdfx_inl(par, PLLCTRL1);
 	/* PLL lock */
 	udelay(100);
 
@@ -457,18 +466,12 @@ static int tdfxfb_hw_init(struct fb_info *info, struct pci_dev *pdev)
 	tdfx_outl(par, DRAMINIT0, draminit0);
 	tdfx_outl(par, DRAMINIT1, draminit1);
 
-	/* Make sure the DRAM config is applied before continuing */
-	wmb();
-
 	/* SDRAM/SGRAM wake up: load the mode register */
 	tdfx_outl(par, DRAMDATA, dram_mode);
 	tdfx_outl(par, DRAMCOMMAND, 0x10d);
 
 	tdfx_outl(par, LFBMEMORYCONFIG, 0x00001fff);
-	tdfx_outl(par, MISCINIT0, 0);
-
-	/* Make sure the remaining config is applied */
-	wmb();
+	tdfx_outl(par, MISCINIT0, le32_to_cpu(cfg.miscinit0));
 
 	return 0;
 }
@@ -1683,6 +1686,14 @@ static int tdfxfb_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_err_iobase;
 	}
 
+	/*
+	 * Program a video mode and clear the framebuffer now, this
+	 * ensures the display comes up even if fbcon doesn't bind
+	 * when the framebuffer is registered.
+	 */
+	tdfxfb_set_par(info);
+	memset_io(info->screen_base, 0, info->fix.smem_len);
+
 	if (register_framebuffer(info) < 0) {
 		printk(KERN_ERR "tdfxfb: can't register framebuffer\n");
 		fb_dealloc_cmap(&info->cmap);
@@ -1692,13 +1703,6 @@ static int tdfxfb_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	 * Our driver data
 	 */
 	pci_set_drvdata(pdev, info);
-
-	/* Program a video mode so the display detects a signal */
-	tdfxfb_set_par(info);
-
-	/* Don't scare the user with random garbage on their display */
-	memset_io(info->screen_base, 0, info->fix.smem_len);
-
 	return 0;
 
 out_err_iobase:

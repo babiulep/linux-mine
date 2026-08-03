@@ -238,13 +238,10 @@ static bool trace_fprobe_is_busy(struct dyn_event *ev)
 static bool trace_fprobe_match_command_head(struct trace_fprobe *tf,
 					    int argc, const char **argv)
 {
-	char buf[MAX_COMMON_HEAD_LEN + 1];
-
 	if (!argc)
 		return true;
 
-	snprintf(buf, sizeof(buf), "%s", trace_fprobe_symbol(tf));
-	if (strcmp(buf, argv[0]))
+	if (strcmp(trace_fprobe_symbol(tf), argv[0]))
 		return false;
 	argc--; argv++;
 
@@ -474,7 +471,6 @@ static int fentry_perf_func(struct trace_fprobe *tf, unsigned long entry_ip,
 	regs = ftrace_fill_perf_regs(fregs, regs);
 
 	entry->ip = entry_ip;
-	memset(&entry[1], 0, dsize);
 	store_trace_args(&entry[1], &tf->tp, fregs, NULL, sizeof(*entry), dsize);
 	perf_trace_buf_submit(entry, size, rctx, call->event.type, 1, regs,
 			      head, NULL);

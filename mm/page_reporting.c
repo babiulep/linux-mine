@@ -61,6 +61,13 @@ enum {
 	PAGE_REPORTING_ACTIVE
 };
 
+/* schedule work for page reporting */
+static void page_reporting_schedule_work(struct page_reporting_dev_info *prdev)
+{
+	queue_delayed_work(system_freezable_wq, &prdev->work,
+			      msecs_to_jiffies(page_reporting_delay_ms));
+}
+
 /* request page reporting */
 static void
 __page_reporting_request(struct page_reporting_dev_info *prdev)
@@ -84,8 +91,7 @@ __page_reporting_request(struct page_reporting_dev_info *prdev)
 	 * Delay the start of work to allow a sizable queue to build.
 	 * We limit this based on page_reporting_delay_ms.
 	 */
-	queue_delayed_work(system_freezable_wq, &prdev->work,
-			   msecs_to_jiffies(page_reporting_delay_ms));
+	page_reporting_schedule_work(prdev);
 }
 
 /* notify prdev of free page reporting request */
@@ -345,8 +351,7 @@ err_out:
 	 */
 	state = atomic_cmpxchg(&prdev->state, state, PAGE_REPORTING_IDLE);
 	if (state == PAGE_REPORTING_REQUESTED)
-		queue_delayed_work(system_freezable_wq, &prdev->work,
-				   msecs_to_jiffies(page_reporting_delay_ms));
+		page_reporting_schedule_work(prdev);
 }
 
 static DEFINE_MUTEX(page_reporting_mutex);

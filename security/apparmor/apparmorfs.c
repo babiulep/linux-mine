@@ -484,7 +484,8 @@ static struct aa_loaddata *aa_simple_write_to_buffer(const char __user *userbuf,
 	return data;
 }
 
-#ifdef CONFIG_SECURITY_APPARMOR_COMPRESSED_POLICY
+#if defined(CONFIG_SECURITY_APPARMOR_COMPRESSED_POLICY) || \
+    defined(CONFIG_SECURITY_APPARMOR_EXPORT_BINARY)
 static int decompress_zstd(char *src, size_t slen, char *dst, size_t dlen)
 {
 	if (slen < dlen) {
@@ -519,7 +520,10 @@ cleanup:
 	memcpy(dst, src, slen);
 	return 0;
 }
+#endif
 
+
+#ifdef CONFIG_SECURITY_APPARMOR_COMPRESSED_POLICY
 /**
  * aa_get_data_from_compressed - common routine for getting compressed policy
  * from user and get both compressed and uncompressed version.
@@ -531,7 +535,6 @@ cleanup:
  * Returns: kernel buffer containing copy of user buffer data or an
  *          ERR_PTR on failure.
  */
-
 static struct aa_loaddata *aa_get_data_from_compressed(const char __user *userbuf,
 						  size_t buffer_size,
 						  loff_t *pos,
@@ -591,6 +594,7 @@ static struct aa_loaddata *aa_get_data_from_compressed(const char __user *userbu
 	return ERR_PTR(-EINVAL);
 }
 #endif /* CONFIG_SECURITY_APPARMOR_COMPRESSED_POLICY */
+
 struct aa_user_hdr {
 	uint8_t version;
 	uint8_t compress_level;
@@ -1450,6 +1454,12 @@ static int seq_ns_name_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
+SEQ_NS_FOPS(stacked);
+SEQ_NS_FOPS(nsstacked);
+SEQ_NS_FOPS(level);
+SEQ_NS_FOPS(name);
+
+#ifdef CONFIG_SECURITY_APPARMOR_EXPORT_BINARY
 static int seq_ns_compress_min_show(struct seq_file *seq, void *v)
 {
 	seq_printf(seq, "%d\n", AA_MIN_CLEVEL);
@@ -1462,16 +1472,11 @@ static int seq_ns_compress_max_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-SEQ_NS_FOPS(stacked);
-SEQ_NS_FOPS(nsstacked);
-SEQ_NS_FOPS(level);
-SEQ_NS_FOPS(name);
 SEQ_NS_FOPS(compress_min);
 SEQ_NS_FOPS(compress_max);
 
 
 /* policy/raw_data/ * file ops */
-#ifdef CONFIG_SECURITY_APPARMOR_EXPORT_BINARY
 #define SEQ_RAWDATA_FOPS(NAME)						      \
 static int seq_rawdata_ ##NAME ##_open(struct inode *inode, struct file *file)\
 {									      \
@@ -2681,7 +2686,7 @@ static struct aa_sfs_entry aa_sfs_entry_apparmor[] = {
 	AA_SFS_FILE_FOPS(".ns_level", 0444, &seq_ns_level_fops),
 	AA_SFS_FILE_FOPS(".ns_name", 0444, &seq_ns_name_fops),
 	AA_SFS_FILE_FOPS("profiles", 0444, &aa_sfs_profiles_fops),
-#ifdef CONFIG_SECURITY_APPARMOR_COMPRESSED_POLICY
+#ifdef CONFIG_SECURITY_APPARMOR_EXPORT_BINARY
 	AA_SFS_FILE_FOPS("raw_data_compression_level_min", 0444, &seq_ns_compress_min_fops),
 	AA_SFS_FILE_FOPS("raw_data_compression_level_max", 0444, &seq_ns_compress_max_fops),
 #endif

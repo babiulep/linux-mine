@@ -97,7 +97,6 @@ enum {
 	HW_VAR_WIRELESS_MODE,
 	HW_VAR_USB_MODE,
 	HW_VAR_PORT_SWITCH,
-	HW_VAR_DO_IQK,
 	HW_VAR_DM_IN_LPS,
 	HW_VAR_SET_REQ_FW_PS,
 	HW_VAR_FW_PS_STATE,
@@ -151,11 +150,6 @@ enum hal_odm_variable {
 	HAL_ODM_P2P_STATE,
 	HAL_ODM_WIFI_DISPLAY_STATE,
 	HAL_ODM_NOISE_MONITOR,
-};
-
-enum hal_intf_ps_func {
-	HAL_USB_SELECT_SUSPEND,
-	HAL_MAX_ID,
 };
 
 typedef s32 (*c2h_id_filter)(u8 *c2h_evt);

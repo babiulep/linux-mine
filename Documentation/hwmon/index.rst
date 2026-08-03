@@ -203,6 +203,7 @@ Hardware Monitoring Kernel Drivers
    mp9941
    mp9945
    mpq82d00
+   mpq8646
    mpq8785
    nct6683
    nct6775
@@ -253,6 +254,7 @@ Hardware Monitoring Kernel Drivers
    smsc47b397
    smsc47m192
    smsc47m1
+   socfpga-hwmon
    sparx5-temp
    spd5118
    sq24860

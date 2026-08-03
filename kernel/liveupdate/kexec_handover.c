@@ -633,24 +633,26 @@ static int __init kho_preserved_memory_reserve(unsigned long key, void *data)
 	return 0;
 }
 
-/* Returns virtual address of the preserved memory map from FDT */
-static __init void *kho_get_mem_map(const void *fdt)
+/* Returns physical address of the preserved memory map from FDT */
+static phys_addr_t __init kho_get_mem_map_phys(const void *fdt)
 {
 	const void *mem_ptr;
-	phys_addr_t mem_map_phys;
 	int len;
 
 	mem_ptr = fdt_getprop(fdt, 0, KHO_FDT_MEMORY_MAP_PROP_NAME, &len);
 	if (!mem_ptr || len != sizeof(u64)) {
 		pr_err("failed to get preserved memory map\n");
-		return NULL;
+		return 0;
 	}
 
-	mem_map_phys = get_unaligned((const u64 *)mem_ptr);
-	if (!mem_map_phys)
-		return NULL;
+	return get_unaligned((const u64 *)mem_ptr);
+}
 
-	return phys_to_virt(mem_map_phys);
+static void __init *kho_get_mem_map(const void *fdt)
+{
+	phys_addr_t phys = kho_get_mem_map_phys(fdt);
+
+	return phys ? phys_to_virt(phys) : NULL;
 }
 
 /*
@@ -910,8 +912,8 @@ err_disable_kho:
  * on smaller systems. The algorithm itself doesn't depend on the actual value,
  * so it can be changed to a different heuristic later if needed.
  */
-#define KHO_SCRATCH_EXT_BLKSIZE		SZ_1G
-#define KHO_SCRATCH_EXT_BLKSHIFT	const_ilog2(KHO_SCRATCH_EXT_BLKSIZE)
+#define KHO_EXT_BLKSIZE		SZ_1G
+#define KHO_EXT_BLKSHIFT	const_ilog2(KHO_EXT_BLKSIZE)
 
 /* Called for the KHO preserved memory radix tree. */
 static int __init kho_ext_walk_leaf(unsigned long key, void *data)
@@ -930,11 +932,11 @@ static int __init kho_ext_walk_leaf(unsigned long key, void *data)
 	end = start + (1UL << (order + PAGE_SHIFT));
 
 	while (start < end) {
-		err = kho_radix_add_key(tree, start >> KHO_SCRATCH_EXT_BLKSHIFT);
+		err = kho_radix_add_key(tree, start >> KHO_EXT_BLKSHIFT);
 		if (err)
 			return err;
 
-		start += (1UL << KHO_SCRATCH_EXT_BLKSHIFT);
+		start += (1UL << KHO_EXT_BLKSHIFT);
 	}
 
 	return 0;
@@ -946,14 +948,14 @@ static int __init kho_ext_walk_node(phys_addr_t phys, void *data)
 	/* Radix tree tracking free blocks. */
 	struct kho_radix_tree *tree = data;
 
-	return kho_radix_add_key(tree, phys >> KHO_SCRATCH_EXT_BLKSHIFT);
+	return kho_radix_add_key(tree, phys >> KHO_EXT_BLKSHIFT);
 }
 
 /* Called for the free block radix tree. */
 static int __init kho_ext_mark_scratch(unsigned long key, void *data)
 {
 	phys_addr_t *prev_end = data;
-	phys_addr_t start = key << KHO_SCRATCH_EXT_BLKSHIFT;
+	phys_addr_t start = key << KHO_EXT_BLKSHIFT;
 	int err;
 
 	if (start > *prev_end) {
@@ -962,7 +964,7 @@ static int __init kho_ext_mark_scratch(unsigned long key, void *data)
 			return err;
 	}
 
-	*prev_end = start + (1UL << KHO_SCRATCH_EXT_BLKSHIFT);
+	*prev_end = start + (1UL << KHO_EXT_BLKSHIFT);
 	return 0;
 }
 
@@ -972,8 +974,8 @@ static int __init kho_ext_mark_scratch(unsigned long key, void *data)
  * The KHO preserved memory radix tree mixes both physical address and order
  * into a single key. This makes it hard to look for free ranges directly. This
  * function first walks the radix tree and digests it down into another radix
- * tree, whose keys identify blocks of size KHO_SCRATCH_EXT_BLKSIZE which
- * contain preserved memory.
+ * tree, whose keys identify blocks of size KHO_EXT_BLKSIZE which contain
+ * preserved memory.
  *
  * Then it walks the digested radix tree and marks everything that doesn't have
  * preserved memory as scratch.
@@ -1684,8 +1686,8 @@ static void __init kho_mem_retrieve(void)
 
 err:
 	/*
-	 * Failed to initialize preserved memory. Clear FDT and radix so KHO
-	 * users don't treat it as a KHO boot.
+	 * Failed to initialize preserved memory. Clear FDT and radix
+	 * so KHO users don't treat it as a KHO boot.
 	 */
 	kho_in.fdt_phys = 0;
 	kho_in.radix_tree.root = NULL;
@@ -1890,9 +1892,19 @@ fs_initcall(kho_init);
 void __init kho_memory_init_early(void)
 {
 	const void *fdt = kho_get_fdt();
+	void *mem_map;
 
 	if (!is_kho_boot())
 		return;
+
+	/*
+	 * kho_get_mem_map() should always succeed. If it fails, kho_populate()
+	 * catches that and never sets kho_in.scratch_phys, which stops memory
+	 * retrieval.
+	 */
+	mem_map = kho_get_mem_map(fdt);
+	if (WARN_ON(!mem_map))
+		goto err;
 
 	/*
 	 * kho_scratch_overlap() needs kho_scratch to be initialized. It
@@ -1901,21 +1913,20 @@ void __init kho_memory_init_early(void)
 	 */
 	kho_scratch = phys_to_virt(kho_in.scratch_phys);
 
-	/*
-	 * kho_get_mem_map() should always succeed. If it fails, kho_populate()
-	 * catches that and never sets kho_in.fdt_phys.
-	 */
-	if (kho_radix_init_tree(&kho_in.radix_tree, kho_get_mem_map(fdt))) {
-		/*
-		 * Failed to initialize preserved memory radix tree. Clear FDT
-		 * and scratch so KHO users don't treat it as a KHO boot.
-		 */
-		kho_in.fdt_phys = 0;
-		kho_in.scratch_phys = 0;
-		return;
-	}
+	if (kho_radix_init_tree(&kho_in.radix_tree, mem_map))
+		goto err;
 
 	kho_extend_scratch();
+
+	return;
+
+err:
+	/*
+	 * Failed to initialize preserved memory radix tree. Clear FDT
+	 * and scratch so KHO users don't treat it as a KHO boot.
+	 */
+	kho_in.fdt_phys = 0;
+	kho_in.scratch_phys = 0;
 }
 
 void __init kho_memory_init(void)
@@ -1931,8 +1942,9 @@ void __init kho_populate(phys_addr_t fdt_phys, u64 fdt_len,
 {
 	unsigned int scratch_cnt = scratch_len / sizeof(*kho_scratch);
 	struct kho_scratch *scratch = NULL;
-	bool populated = false;
+	phys_addr_t mem_map_phys;
 	void *fdt = NULL;
+	bool populated = false;
 	int err;
 
 	/* Validate the input FDT */
@@ -1954,13 +1966,8 @@ void __init kho_populate(phys_addr_t fdt_phys, u64 fdt_len,
 		goto unmap_fdt;
 	}
 
-	/*
-	 * At this point phys_to_virt() doesn't work properly and so
-	 * kho_get_mem_map() can return a pre-KASLR virtual address. But here we
-	 * only want to make sure the mem_map is valid so the actual value
-	 * doesn't matter as long as it isn't NULL.
-	 */
-	if (!kho_get_mem_map(fdt))
+	mem_map_phys = kho_get_mem_map_phys(fdt);
+	if (!mem_map_phys)
 		goto unmap_fdt;
 
 	scratch = early_memremap(scratch_phys, scratch_len);

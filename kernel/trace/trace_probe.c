@@ -495,10 +495,7 @@ static const char *fetch_type_from_btf_type(struct btf *btf,
 		return "s64";
 	case BTF_KIND_PTR:
 		/* pointer will be converted to "x??" */
-		if (IS_ENABLED(CONFIG_64BIT))
-			return "x64";
-		else
-			return "x32";
+		return IS_ENABLED(CONFIG_64BIT) ? "x64" : "x32";
 	case BTF_KIND_INT:
 		intdata = btf_type_int(type);
 		if (BTF_INT_ENCODING(intdata) & BTF_INT_SIGNED) {
@@ -1246,7 +1243,7 @@ void store_trace_entry_data(void *edata, struct trace_probe *tp, struct pt_regs 
 			val = regs_get_kernel_argument(regs, code->param);
 			break;
 		case FETCH_OP_ST_EDATA:
-			*(unsigned long *)((unsigned long)edata + code->offset) = val;
+			*(unsigned long *)((u8 *)edata + code->offset) = val;
 			break;
 		case FETCH_OP_END:
 			goto end;
@@ -1262,7 +1259,7 @@ NOKPROBE_SYMBOL(store_trace_entry_data)
 
 #define PARAM_MAX_STACK (THREAD_SIZE / sizeof(unsigned long))
 
-static int parse_probe_var_retval(char *orig_arg, char *arg,
+static int parse_probe_var_retval(char *orig_arg,
 				  struct fetch_insn **pcode,
 				  struct fetch_insn *end,
 				  struct traceprobe_parse_context *ctx)
@@ -1415,7 +1412,7 @@ static int parse_probe_vars(char *orig_arg, const struct fetch_type *t,
 		goto inval;
 
 	if (str_has_prefix(arg, "retval"))
-		return parse_probe_var_retval(orig_arg, arg, pcode, end, ctx);
+		return parse_probe_var_retval(orig_arg, pcode, end, ctx);
 
 	len = str_has_prefix(arg, "stack");
 	if (len)
@@ -2774,10 +2771,9 @@ int trace_probe_compare_arg_type(struct trace_probe *a, struct trace_probe *b)
 		return b->nr_args + 1;
 
 	for (i = 0; i < a->nr_args; i++) {
-		if ((b->nr_args <= i) ||
-		    ((a->args[i].type != b->args[i].type) ||
-		     (a->args[i].count != b->args[i].count) ||
-		     strcmp(a->args[i].name, b->args[i].name)))
+		if ((a->args[i].type != b->args[i].type) ||
+		    (a->args[i].count != b->args[i].count) ||
+		    strcmp(a->args[i].name, b->args[i].name))
 			return i + 1;
 	}
 

@@ -1793,6 +1793,14 @@ retry:
 	/* Try all nodes if allowed. */
 	if (numa_valid_node(nid) && !exact_nid) {
 		nid = NUMA_NO_NODE;
+		/*
+		 * If a previous candidate overlapped with KHO scratch, it would
+		 * update start or end. Now that the search is opening to all
+		 * nodes, reset them.
+		 */
+		start = 0;
+		end = MEMBLOCK_ALLOC_ACCESSIBLE;
+
 		goto retry;
 	}
 
@@ -1811,7 +1819,7 @@ found:
 		if (memblock_bottom_up())
 			start = addr + size;
 		else
-			start = addr - size;
+			end = addr;
 
 		goto retry;
 	}

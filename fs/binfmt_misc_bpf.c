@@ -65,30 +65,27 @@ static struct bm_bpf_ops_reg *bm_bpf_ops_find(const struct user_namespace *user_
  * @user_ns: user namespace of the binfmt_misc instance
  * @name: name the handler was registered under
  *
- * Search @user_ns and its ancestors for a handler named @name, mirroring
- * the instance lookup in current_binfmt_misc(). The returned handler stays
- * callable until binfmt_misc_put_ops() even if the backing struct_ops map
- * is detached or deleted in the meantime.
+ * Look for a handler named @name registered in @user_ns. A handler is not
+ * inherited from ancestor user namespaces: an entry can only name a handler
+ * registered in the same user namespace as its instance. The returned handler
+ * stays callable until binfmt_misc_put_ops() even if the backing struct_ops
+ * map is detached or deleted in the meantime.
  *
  * Return: the handler on success, NULL on failure
  */
 const struct binfmt_misc_ops *binfmt_misc_get_ops(struct user_namespace *user_ns,
 						  const char *name)
 {
-	const struct user_namespace *ns;
 	struct bm_bpf_ops_reg *reg;
 
 	guard(spinlock)(&bm_bpf_ops_lock);
 
-	for (ns = user_ns; ns; ns = ns->parent) {
-		reg = bm_bpf_ops_find(ns, name);
-		if (!reg)
-			continue;
-		if (!bpf_struct_ops_get(reg->ops))
-			return NULL;
-		return reg->ops;
-	}
-	return NULL;
+	reg = bm_bpf_ops_find(user_ns, name);
+	if (!reg)
+		return NULL;
+	if (!bpf_struct_ops_get(reg->ops))
+		return NULL;
+	return reg->ops;
 }
 
 void binfmt_misc_put_ops(const struct binfmt_misc_ops *ops)

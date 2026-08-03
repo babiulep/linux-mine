@@ -154,8 +154,7 @@ static int qmc6308_take_measurement(struct iio_dev *indio_dev, int index,
 	 * The timeout is 50ms of headroom over the slowest ODR (10Hz).
 	 */
 	ret = regmap_read_poll_timeout(data->regmap, QMC6308_REG_STATUS,
-				       status,
-				       (status & QMC6308_STATUS_DRDY),
+				       status, (status & QMC6308_STATUS_DRDY),
 				       2 * USEC_PER_MSEC,
 				       150 * USEC_PER_MSEC);
 	if (ret)
@@ -259,8 +258,7 @@ static int qmc6308_write_raw(struct iio_dev *indio_dev,
 				  &status);
 		if (ret)
 			dev_warn(regmap_get_device(data->regmap),
-				 "Failed to discard stale sample (%d)\n",
-				 ret);
+				 "Failed to discard stale sample (%d)\n", ret);
 
 		return 0;
 	}
@@ -531,6 +529,7 @@ static int qmc6308_probe(struct i2c_client *client)
 
 	pm_runtime_use_autosuspend(dev);
 	pm_runtime_set_autosuspend_delay(dev, QMC6308_AUTOSUSPEND_DELAY_MS);
+
 	ret = devm_pm_runtime_enable(dev);
 	if (ret)
 		return ret;
