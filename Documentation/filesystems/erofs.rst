@@ -137,6 +137,8 @@ fsoffset=%llu          Specify block-aligned filesystem offset for the primary d
 inode_share            Enable inode page sharing for this filesystem.  Inodes with
                        identical content within the same domain ID can share the
                        page cache.
+source=%s              (For file-backed mounts) Specify the backing image as a path
+                       or as an already-opened file descriptor.
 ===================    =========================================================
 
 File-backed mounts

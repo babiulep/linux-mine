@@ -262,7 +262,9 @@ struct kvfree_rcu_head {
 	struct kvfree_rcu_head *next;
 };
 #else
-#define kvfree_rcu_head rcu_head
+struct kvfree_rcu_head {
+	struct rcu_head head;
+};
 #endif
 
 typedef void (*rcu_callback_t)(struct rcu_head *head);

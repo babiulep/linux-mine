@@ -11,15 +11,19 @@
 /**
  * DOC: Kexec Handover Radix Tree
  *
- * This is a radix tree implementation for tracking physical memory pages
- * across kexec transitions. It was developed for the KHO mechanism but is
- * designed for broader use by any subsystem that needs to preserve pages.
+ * This is a radix tree implementation for tracking numeric keys across kexec
+ * transitions. It was developed for the KHO preserved memory map but is
+ * designed for broader use by any subsystem that needs to track keys.
+ * Conceptually speaking, the data structure is similar to a set. It tracks the
+ * presence or absence of numeric keys.
  *
  * The radix tree is a multi-level tree where leaf nodes are bitmaps
- * representing individual pages. To allow pages of different sizes (orders)
+ * representing individual keys.
+ *
+ * For the KHO preserved memory map, to allow pages of different sizes (orders)
  * to be stored efficiently in a single tree, it uses a unique key encoding
- * scheme. Each key is an unsigned long that combines a page's physical
- * address and its order.
+ * scheme. Each key is an unsigned long that combines a page's physical address
+ * and its order.
  *
  * Client code is responsible for allocating the root node of the tree,
  * initializing the mutex lock, and managing its lifecycle. It must use the

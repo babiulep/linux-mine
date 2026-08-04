@@ -10,11 +10,15 @@
 
 #include <linux/bitfield.h>
 #include <linux/cleanup.h>
+#include <linux/crc8.h>
 #include <linux/delay.h>
 #include <linux/dev_printk.h>
 #include <linux/device/devres.h>
 #include <linux/i2c.h>
+#include <linux/iio/buffer.h>
 #include <linux/iio/iio.h>
+#include <linux/iio/trigger_consumer.h>
+#include <linux/iio/triggered_buffer.h>
 #include <linux/math64.h>
 #include <linux/minmax.h>
 #include <linux/module.h>
@@ -27,6 +31,9 @@
 #include <linux/types.h>
 #include <linux/unaligned.h>
 #include <linux/units.h>
+
+/* Arbitrary limit since channels are dynamic. */
+#define ADS112C14_MAX_MEASUREMENT_CHANNELS 16
 
 /* Datasheet t_d(RST) - time to wait after reset before next I2C use. */
 #define ADS112C14_DELAY_RESET_US 500
@@ -156,6 +163,9 @@ static const u32 ads112c14_pga_gains_x10[] = {
 	200, 320, 500, 640, 1000, 1280, 2000, 2560,	/* 8 - 15 */
 };
 
+#define ADS112C14_I2C_CRC8_POLYNOMIAL 0x07
+DECLARE_CRC8_TABLE(ads112c14_crc8_table);
+
 struct ads112c14_chip_info {
 	const char *name;
 	u8 device_id;
@@ -241,6 +251,7 @@ struct ads112c14_data {
 	struct regmap *regmap;
 	/* Synchronizes access to register value fields. */
 	struct mutex lock;
+	bool i2c_crc_enabled;
 	u32 avdd_uV;
 	u32 ext_ref_uV;
 	bool refp_is_avdd;
@@ -250,6 +261,8 @@ struct ads112c14_data {
 	u32 num_measurements;
 	u8 sys_mon_chan_short_gain_val;
 	int sys_mon_chan_short_scale_available[ARRAY_SIZE(ads112c14_pga_gains_x10)][2];
+	IIO_DECLARE_BUFFER_WITH_TS(__be32, scan, ADS112C14_MAX_MEASUREMENT_CHANNELS +
+						 ARRAY_SIZE(ads112c14_sys_mon_channels));
 };
 
 static bool ads112c14_writeable_reg(struct device *dev, unsigned int reg)
@@ -287,6 +300,120 @@ static const struct reg_default ads112c14_reg_defaults[] = {
 	{ ADS112C14_REG_GPIO_DATA_OUTPUT, 0 },
 	{ ADS112C14_REG_IDAC_MAG_CFG, 0 },
 	{ ADS112C14_REG_IDAC_MUX_CFG, FIELD_PREP_CONST(ADS112C14_IDAC_MUX_CFG_I2MUX, 1) },
+};
+
+/**
+ * ads112c14_i2c_read_bytes() - Read bytes from the device over I2C
+ * @client: I2C client for the device
+ * @cmd: Command to send to the device before reading
+ * @buf: Buffer to store the read bytes
+ * @len: Number of bytes to read
+ * @use_crc: Whether to use CRC8 for data integrity check
+ *
+ * If I2C_CRC is enabled, @use_crc may be set to true to perform a CRC8 check
+ * on the received data.
+ */
+static int ads112c14_i2c_read_bytes(struct i2c_client *client, u8 cmd,
+				    u8 *buf, u8 len, bool use_crc)
+{
+	u8 rx_buf[4]; /* Up to 3 data bytes + 1 CRC byte. */
+	u8 rx_len;
+	int ret;
+
+	rx_len = len + (use_crc ? 1 : 0);
+
+	if (rx_len > sizeof(rx_buf))
+		return -EINVAL;
+
+	ret = i2c_smbus_read_i2c_block_data(client, cmd, rx_len, rx_buf);
+	if (ret < 0)
+		return ret;
+
+	if (use_crc) {
+		u8 crc = crc8(ads112c14_crc8_table, rx_buf, len, CRC8_INIT_VALUE);
+
+		if (crc != rx_buf[len])
+			return -EBADMSG;
+	}
+
+	memcpy(buf, rx_buf, len);
+
+	return 0;
+}
+
+/**
+ * ads112c14_regmap_bus_read() - Read a register from the device
+ * @context: Pointer to the device context
+ * @reg_buf: Register address to read
+ * @reg_size: Size of the register address (should be 1)
+ * @val_buf: Buffer to store the read value
+ * @val_size: Size of the value to read
+ *
+ * Custom regmap read function that also does CRC check when enabled.
+ */
+static int ads112c14_regmap_bus_read(void *context, const void *reg_buf,
+				     size_t reg_size, void *val_buf,
+				     size_t val_size)
+{
+	struct ads112c14_data *data = context;
+	struct device *dev = regmap_get_device(data->regmap);
+	struct i2c_client *client = to_i2c_client(dev);
+	const u8 *cmd = reg_buf;
+
+	if (reg_size != 1)
+		return -EINVAL;
+
+	return ads112c14_i2c_read_bytes(client, cmd[0], val_buf, val_size,
+					data->i2c_crc_enabled);
+}
+
+/**
+ * ads112c14_regmap_bus_write() - Write a register to the device
+ * @context: Pointer to the device context
+ * @data_buf: Buffer containing the register address and value to write
+ * @count: Number of bytes to write
+ *
+ * Custom regmap write function that also does readback with CRC check of
+ * nonvolatile registers when CRC is enabled.
+ */
+static int ads112c14_regmap_bus_write(void *context, const void *data_buf,
+				      size_t count)
+{
+	struct ads112c14_data *data = context;
+	struct device *dev = regmap_get_device(data->regmap);
+	struct i2c_client *client = to_i2c_client(dev);
+	const u8 *tx = data_buf;
+	u8 reg, readback;
+	int ret;
+
+	if (count != 2)
+		return -EINVAL;
+
+	ret = i2c_smbus_write_byte_data(client, tx[0], tx[1]);
+	if (ret)
+		return ret;
+
+	reg = tx[0] & ~ADS112C14_CMD_WREG;
+
+	if (!data->i2c_crc_enabled || ads112c14_volatile_reg(dev, reg))
+		return 0;
+
+	ret = ads112c14_i2c_read_bytes(client, reg | ADS112C14_CMD_RREG,
+				       &readback, sizeof(readback), true);
+	if (ret)
+		return ret;
+
+	if (readback != tx[1])
+		return -EIO;
+
+	return 0;
+}
+
+static const struct regmap_bus ads112c14_regmap_bus = {
+	.read = ads112c14_regmap_bus_read,
+	.write = ads112c14_regmap_bus_write,
+	.reg_format_endian_default = REGMAP_ENDIAN_BIG,
+	.val_format_endian_default = REGMAP_ENDIAN_BIG,
 };
 
 static const struct regmap_config ads112c14_regmap_config = {
@@ -456,7 +583,7 @@ static int ads112c14_prepare_sys_mon_channel(struct ads112c14_data *data,
 
 static int ads112c14_single_conversion(struct ads112c14_data *data,
 				       const struct iio_chan_spec *chan,
-				       u8 *buf)
+				       u8 *buf, bool for_scan)
 {
 	struct i2c_client *client = to_i2c_client(regmap_get_device(data->regmap));
 	u32 reg_val;
@@ -486,13 +613,27 @@ static int ads112c14_single_conversion(struct ads112c14_data *data,
 	if (ret)
 		return ret;
 
-	ret = i2c_smbus_read_i2c_block_data(client, ADS112C14_CMD_RDATA,
-					    BITS_TO_BYTES(data->chip_info->resolution_bits),
-					    buf);
-	if (ret < 0)
-		return ret;
+	/*
+	 * When doing buffered read, we don't check the CRC, but rather pass it
+	 * along with the raw data. This way, we don't silently drop samples
+	 * with CRC errors, but rather leave it to userspace to decide what to
+	 * do.
+	 */
+	if (for_scan) {
+		u8 len = BITS_TO_BYTES(data->chip_info->resolution_bits) +
+			 (data->i2c_crc_enabled ? 1 : 0);
 
-	return 0;
+		ret = i2c_smbus_read_i2c_block_data(client, ADS112C14_CMD_RDATA,
+						    len, buf);
+		if (ret < 0)
+			return ret;
+
+		return 0;
+	}
+
+	return ads112c14_i2c_read_bytes(client, ADS112C14_CMD_RDATA, buf,
+					BITS_TO_BYTES(data->chip_info->resolution_bits),
+					data->i2c_crc_enabled);
 }
 
 static int ads112c14_read_raw(struct iio_dev *indio_dev,
@@ -524,7 +665,7 @@ static int ads112c14_read_raw(struct iio_dev *indio_dev,
 		if (IIO_DEV_ACQUIRE_FAILED(claim))
 			return -EBUSY;
 
-		ret = ads112c14_single_conversion(data, chan, buf);
+		ret = ads112c14_single_conversion(data, chan, buf, false);
 		if (ret)
 			return ret;
 
@@ -650,6 +791,10 @@ static int ads112c14_write_raw(struct iio_dev *indio_dev,
 	const int (*scale_avail)[2];
 	u8 *gain_val;
 
+	IIO_DEV_ACQUIRE_DIRECT_MODE(indio_dev, claim);
+	if (IIO_DEV_ACQUIRE_FAILED(claim))
+		return -EBUSY;
+
 	switch (mask) {
 	case IIO_CHAN_INFO_SCALE: {
 		guard(mutex)(&data->lock);
@@ -748,6 +893,37 @@ static int ads112c14_read_label(struct iio_dev *indio_dev,
 	return sysfs_emit(label, "%s\n", label_source);
 }
 
+static irqreturn_t ads112c14_trigger_handler(int irq, void *private)
+{
+	struct iio_poll_func *pf = private;
+	struct iio_dev *indio_dev = pf->indio_dev;
+	struct ads112c14_data *data = iio_priv(indio_dev);
+	u32 offset = 0;
+	u32 i;
+	int ret;
+
+	iio_for_each_active_channel(indio_dev, i) {
+		const struct iio_chan_spec *chan = &indio_dev->channels[i];
+
+		ret = ads112c14_single_conversion(data, chan,
+						  (u8 *)&data->scan[offset++],
+						  true);
+		if (ret) {
+			dev_err_once(indio_dev->dev.parent,
+				     "failed to read channel %d: %pe; additional errors will be suppressed\n",
+				     chan->channel, ERR_PTR(ret));
+			goto out;
+		}
+	}
+
+	iio_push_to_buffers_with_ts(indio_dev, data->scan,
+				    sizeof(data->scan), pf->timestamp);
+out:
+	iio_trigger_notify_done(indio_dev->trig);
+
+	return IRQ_HANDLED;
+}
+
 static const struct iio_info ads112c14_info = {
 	.read_raw = ads112c14_read_raw,
 	.read_avail = ads112c14_read_avail,
@@ -793,7 +969,7 @@ static int ads112c14_parse_channels(struct iio_dev *indio_dev,
 		return -ENOMEM;
 
 	channels = devm_kcalloc(dev, num_child_nodes +
-				ARRAY_SIZE(ads112c14_sys_mon_channels),
+				ARRAY_SIZE(ads112c14_sys_mon_channels) + 1,
 				sizeof(*channels), GFP_KERNEL);
 	if (!channels)
 		return -ENOMEM;
@@ -954,14 +1130,47 @@ static int ads112c14_parse_channels(struct iio_dev *indio_dev,
 		if (spec->type == IIO_RESISTANCE)
 			spec->differential = 0;
 
+		spec->scan_type = (struct iio_scan_type){
+			.format = measurement->bipolar ?
+				  IIO_SCAN_FORMAT_SIGNED_INT :
+				  IIO_SCAN_FORMAT_UNSIGNED_INT,
+			.realbits = data->chip_info->resolution_bits,
+			.storagebits = 32,
+			.shift = 32 - data->chip_info->resolution_bits,
+			.endianness = IIO_BE,
+		};
+
 		i++;
 	}
 
 	data->num_measurements = i;
+	if (data->num_measurements > ADS112C14_MAX_MEASUREMENT_CHANNELS)
+		return dev_err_probe(dev, -EINVAL,
+				     "too many measurement channels defined\n");
+
 	memcpy(channels + i, ads112c14_sys_mon_channels, sizeof(ads112c14_sys_mon_channels));
 
+	for (u32 j = 0; j < ARRAY_SIZE(ads112c14_sys_mon_channels); j++) {
+		struct iio_chan_spec *spec = &channels[i];
+
+		/* Update the template that was already copied with dynamic values. */
+		spec->scan_index = i;
+		spec->scan_type = (struct iio_scan_type){
+			.format = IIO_SCAN_FORMAT_SIGNED_INT,
+			.realbits = data->chip_info->resolution_bits,
+			.storagebits = 32,
+			.shift = 32 - data->chip_info->resolution_bits,
+			.endianness = IIO_BE,
+		};
+
+		i++;
+	}
+
+	channels[i] = IIO_CHAN_SOFT_TIMESTAMP(i);
+	i++;
+
 	indio_dev->channels = channels;
-	indio_dev->num_channels = i + ARRAY_SIZE(ads112c14_sys_mon_channels);
+	indio_dev->num_channels = i;
 
 	return 0;
 }
@@ -1121,7 +1330,8 @@ static int ads112c14_probe(struct i2c_client *client)
 	/* It takes some time for the internal reference to stabilize. */
 	fsleep(10 * USEC_PER_MSEC);
 
-	data->regmap = devm_regmap_init_i2c(client, &ads112c14_regmap_config);
+	data->regmap = devm_regmap_init(dev, &ads112c14_regmap_bus, data,
+					&ads112c14_regmap_config);
 	if (IS_ERR(data->regmap))
 		return dev_err_probe(dev, PTR_ERR(data->regmap),
 				     "failed to init regmap\n");
@@ -1158,6 +1368,13 @@ static int ads112c14_probe(struct i2c_client *client)
 	if (ret)
 		return ret;
 
+	ret = regmap_set_bits(data->regmap, ADS112C14_REG_DIGITAL_CFG,
+			      ADS112C14_DIGITAL_CFG_I2C_CRC_EN);
+	if (ret)
+		return ret;
+
+	data->i2c_crc_enabled = true;
+
 	ret = regmap_read(data->regmap, ADS112C14_REG_DEVICE_ID, &reg_val);
 	if (ret)
 		return ret;
@@ -1179,6 +1396,12 @@ static int ads112c14_probe(struct i2c_client *client)
 	indio_dev->name = info->name;
 	indio_dev->modes = INDIO_DIRECT_MODE;
 	indio_dev->info = &ads112c14_info;
+
+	ret = devm_iio_triggered_buffer_setup(dev, indio_dev,
+					      iio_pollfunc_store_time,
+					      ads112c14_trigger_handler, NULL);
+	if (ret)
+		return ret;
 
 	return devm_iio_device_register(dev, indio_dev);
 }
@@ -1209,6 +1432,13 @@ static const struct i2c_device_id ads112c14_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, ads112c14_id);
 
+static int ads112c14_i2c_add_driver(struct i2c_driver *driver)
+{
+	crc8_populate_msb(ads112c14_crc8_table, ADS112C14_I2C_CRC8_POLYNOMIAL);
+
+	return i2c_add_driver(driver);
+}
+
 static struct i2c_driver ads112c14_driver = {
 	.driver = {
 		.name = "ads112c14",
@@ -1217,7 +1447,7 @@ static struct i2c_driver ads112c14_driver = {
 	.probe = ads112c14_probe,
 	.id_table = ads112c14_id,
 };
-module_i2c_driver(ads112c14_driver);
+module_driver(ads112c14_driver, ads112c14_i2c_add_driver, i2c_del_driver);
 
 MODULE_AUTHOR("David Lechner (TI) <dlechner@baylibre.com>");
 MODULE_DESCRIPTION("TI ADS112C14 I2C ADC driver");

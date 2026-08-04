@@ -36,9 +36,12 @@
 #define _NFSD4_STATE_H
 
 #include <crypto/md5.h>
+
+#include <linux/filelock.h>
 #include <linux/idr.h>
 #include <linux/refcount.h>
 #include <linux/sunrpc/svc_xprt.h>
+
 #include "nfsfh.h"
 #include "nfsd.h"
 
@@ -59,7 +62,6 @@ typedef struct {
 
 typedef struct {
 	stateid_t		cs_stid;
-#define NFS4_COPY_STID 1
 #define NFS4_COPYNOTIFY_STID 2
 	unsigned char		cs_type;
 	refcount_t		cs_count;
@@ -121,6 +123,7 @@ struct nfs4_stid {
 #define SC_TYPE_LOCK		BIT(1)
 #define SC_TYPE_DELEG		BIT(2)
 #define SC_TYPE_LAYOUT		BIT(3)
+#define SC_TYPE_COPY		BIT(4)
 	unsigned short		sc_type;
 
 /* nn->deleg_lock protects sc_status for delegation stateids.
@@ -872,6 +875,7 @@ struct nfsd4_blocked_lock {
 struct nfsd4_compound_state;
 struct nfsd_net;
 struct nfsd4_copy;
+struct nfsd4_async_copy;
 
 extern __be32 nfs4_preprocess_stateid_op(struct svc_rqst *rqstp,
 		struct nfsd4_compound_state *cstate, struct svc_fh *fhp,
@@ -883,8 +887,7 @@ __be32 nfsd4_lookup_stateid(struct nfsd4_compound_state *cstate,
 			    struct nfs4_stid **s, struct nfsd_net *nn);
 struct nfs4_stid *nfs4_alloc_stid(struct nfs4_client *cl, struct kmem_cache *slab,
 				  void (*sc_free)(struct nfs4_stid *));
-int nfs4_init_copy_state(struct nfsd_net *nn, struct nfsd4_copy *copy);
-void nfs4_free_copy_state(struct nfsd4_copy *copy);
+struct nfsd4_async_copy *nfs4_alloc_copy_stid(struct nfs4_client *clp);
 struct nfs4_cpntf_state *nfs4_alloc_init_cpntf_state(struct nfsd_net *nn,
 			struct nfs4_stid *p_stid);
 void nfs4_put_stid(struct nfs4_stid *s);

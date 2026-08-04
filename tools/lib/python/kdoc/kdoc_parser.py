@@ -601,7 +601,8 @@ class KernelDoc:
         if not suggestions:
             return ""
 
-        return f"(did you mean one of: '{"', '".join(suggestions)}')"
+        joined_suggestions = "', '".join(suggestions)
+        return f"(did you mean one of: '{joined_suggestions}')"
 
     def check_sections(self, ln, decl_name, decl_type):
         """
@@ -838,7 +839,7 @@ class KernelDoc:
 
         if self.entry.identifier != declaration_name:
             self.emit_msg(ln, f"expecting prototype for {decl_type} {self.entry.identifier}. "
-                          f"Prototype was for {decl_type} {declaration_name} instead\n")
+                          f"Prototype was for {decl_type} {declaration_name} instead")
             return
         #
         # Go through the list of members applying all of our transformations.
@@ -1155,7 +1156,7 @@ class KernelDoc:
 
             if self.entry.identifier != declaration_name:
                 self.emit_msg(ln,
-                              f"expecting prototype for typedef {self.entry.identifier}. Prototype was for typedef {declaration_name} instead\n")
+                              f"expecting prototype for typedef {self.entry.identifier}. Prototype was for typedef {declaration_name} instead")
                 return
 
             self.create_parameter_list(ln, 'function', args, ',', declaration_name)
@@ -1175,7 +1176,7 @@ class KernelDoc:
 
             if self.entry.identifier != declaration_name:
                 self.emit_msg(ln,
-                              f"expecting prototype for typedef {self.entry.identifier}. Prototype was for typedef {declaration_name} instead\n")
+                              f"expecting prototype for typedef {self.entry.identifier}. Prototype was for typedef {declaration_name} instead")
                 return
 
             self.output_declaration('typedef', declaration_name,

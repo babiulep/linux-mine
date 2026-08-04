@@ -150,10 +150,13 @@ module_param(dump_invalid_vmcs, bool, 0644);
 #define KVM_VMX_TSC_MULTIPLIER_MAX     0xffffffffffffffffULL
 
 /* Guest_tsc -> host_tsc conversion requires 64-bit division.  */
+#ifdef CONFIG_X86_64
 static int __read_mostly cpu_preemption_timer_multi;
 static bool __read_mostly enable_preemption_timer = 1;
-#ifdef CONFIG_X86_64
+static u64 __ro_after_init preemption_timer_max_value;
 module_param_named(preemption_timer, enable_preemption_timer, bool, S_IRUGO);
+#else
+#define enable_preemption_timer false
 #endif
 
 extern bool __read_mostly allow_smaller_maxphyaddr;
@@ -6037,7 +6040,7 @@ static int handle_nmi_window(struct kvm_vcpu *vcpu)
  * with unsrestricted guest mode disabled) and KVM can't faithfully emulate the
  * current vCPU state.
  */
-static bool vmx_unhandleable_emulation_required(struct kvm_vcpu *vcpu)
+bool vmx_unhandleable_emulation_required(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 
@@ -6107,16 +6110,6 @@ static int handle_invalid_guest_state(struct kvm_vcpu *vcpu)
 		 */
 		if (__xfer_to_guest_mode_work_pending())
 			return 1;
-	}
-
-	return 1;
-}
-
-int vmx_vcpu_pre_run(struct kvm_vcpu *vcpu)
-{
-	if (vmx_unhandleable_emulation_required(vcpu)) {
-		kvm_prepare_emulation_failure_exit(vcpu);
-		return 0;
 	}
 
 	return 1;
@@ -7410,32 +7403,6 @@ static void vmx_refresh_guest_perf_global_control(struct kvm_vcpu *vcpu)
 	pmu->global_ctrl = vmcs_read64(GUEST_IA32_PERF_GLOBAL_CTRL);
 }
 
-static void vmx_update_hv_timer(struct kvm_vcpu *vcpu, bool force_immediate_exit)
-{
-	struct vcpu_vmx *vmx = to_vmx(vcpu);
-	u64 tscl;
-	u32 delta_tsc;
-
-	if (force_immediate_exit) {
-		vmcs_write32(VMX_PREEMPTION_TIMER_VALUE, 0);
-		vmx->loaded_vmcs->hv_timer_soft_disabled = false;
-	} else if (vmx->hv_deadline_tsc != -1) {
-		tscl = rdtsc();
-		if (vmx->hv_deadline_tsc > tscl)
-			/* set_hv_timer ensures the delta fits in 32-bits */
-			delta_tsc = (u32)((vmx->hv_deadline_tsc - tscl) >>
-				cpu_preemption_timer_multi);
-		else
-			delta_tsc = 0;
-
-		vmcs_write32(VMX_PREEMPTION_TIMER_VALUE, delta_tsc);
-		vmx->loaded_vmcs->hv_timer_soft_disabled = false;
-	} else if (!vmx->loaded_vmcs->hv_timer_soft_disabled) {
-		vmcs_write32(VMX_PREEMPTION_TIMER_VALUE, -1);
-		vmx->loaded_vmcs->hv_timer_soft_disabled = true;
-	}
-}
-
 void noinstr vmx_update_host_rsp(struct vcpu_vmx *vmx, unsigned long host_rsp)
 {
 	if (unlikely(host_rsp != vmx->loaded_vmcs->host_state.rsp)) {
@@ -7520,6 +7487,8 @@ static noinstr void vmx_vcpu_enter_exit(struct kvm_vcpu *vcpu,
 out:
 	guest_state_exit_irqoff();
 }
+
+static void vmx_update_hv_timer(struct kvm_vcpu *vcpu, bool force_immediate_exit);
 
 fastpath_t vmx_vcpu_run(struct kvm_vcpu *vcpu, u64 run_flags)
 {
@@ -7684,6 +7653,9 @@ void vmx_vcpu_free(struct kvm_vcpu *vcpu)
 	nested_vmx_free_vcpu(vcpu);
 	free_loaded_vmcs(vmx->loaded_vmcs);
 	free_page((unsigned long)vmx->ve_info);
+
+	if (vmx_can_use_ipiv(vcpu))
+		WRITE_ONCE(to_kvm_vmx(vcpu->kvm)->pid_table[vcpu->vcpu_id], 0);
 }
 
 int vmx_vcpu_create(struct kvm_vcpu *vcpu)
@@ -8330,6 +8302,65 @@ static inline int u64_shl_div_u64(u64 a, unsigned int shift,
 	return 0;
 }
 
+/*
+ * Workaround for a widespread Intel erratum (e.g. EMR158) where the
+ * VMX-preemption timer may expire earlier than expected when programmed
+ * with large values. The workaround is to cap the timer value to strictly
+ * less than 2^25 * CPUID.15H:EBX / CPUID.15H:EAX.
+ */
+static __init u64 calc_preemption_timer_max_value(void)
+{
+	const u64 ARCHITECTURAL_MAX_VALUE = UINT_MAX;
+	u32 eax, ebx, ecx, edx;
+
+	if (cpu_feature_enabled(X86_FEATURE_HYPERVISOR))
+		return ARCHITECTURAL_MAX_VALUE;
+
+	if (cpuid_eax(0) < 0x15)
+		return ARCHITECTURAL_MAX_VALUE;
+
+	cpuid(0x15, &eax, &ebx, &ecx, &edx);
+	if (!eax || !ebx)
+		return ARCHITECTURAL_MAX_VALUE;
+
+	if (WARN_ON_ONCE(!(((u64)ebx << 25) / eax)))
+		return ARCHITECTURAL_MAX_VALUE;
+
+	return min((((u64)ebx << 25) / eax) - 1, ARCHITECTURAL_MAX_VALUE);
+}
+
+static __init void vmx_setup_preemption_timer(void)
+{
+	if (!cpu_has_vmx_preemption_timer())
+		enable_preemption_timer = false;
+
+	if (enable_preemption_timer) {
+		u64 use_timer_freq = 5000ULL * 1000 * 1000;
+
+		cpu_preemption_timer_multi =
+			vmx_misc_preemption_timer_rate(vmcs_config.misc);
+
+		preemption_timer_max_value = calc_preemption_timer_max_value();
+
+		if (tsc_khz)
+			use_timer_freq = (u64)tsc_khz * 1000;
+		use_timer_freq >>= cpu_preemption_timer_multi;
+
+		/*
+		 * KVM "disables" the preemption timer by setting it to its max
+		 * value.  Don't use the timer if it might cause spurious exits
+		 * at a rate faster than 0.1 Hz (of uninterrupted guest time).
+		 */
+		if (use_timer_freq > preemption_timer_max_value / 10)
+			enable_preemption_timer = false;
+	}
+
+	if (!enable_preemption_timer) {
+		vt_x86_ops.set_hv_timer = NULL;
+		vt_x86_ops.cancel_hv_timer = NULL;
+	}
+}
+
 int vmx_set_hv_timer(struct kvm_vcpu *vcpu, u64 guest_deadline_tsc,
 		     bool *expired)
 {
@@ -8357,12 +8388,12 @@ int vmx_set_hv_timer(struct kvm_vcpu *vcpu, u64 guest_deadline_tsc,
 		return -ERANGE;
 
 	/*
-	 * If the delta tsc can't fit in the 32 bit after the multi shift,
-	 * we can't use the preemption timer.
+	 * If the delta tsc exceeds the preemption timer limit after the
+	 * multi shift, we can't use the preemption timer.
 	 * It's possible that it fits on later vmentries, but checking
 	 * on every vmentry is costly so we just use an hrtimer.
 	 */
-	if (delta_tsc >> (cpu_preemption_timer_multi + 32))
+	if ((delta_tsc >> cpu_preemption_timer_multi) > preemption_timer_max_value)
 		return -ERANGE;
 
 	vmx->hv_deadline_tsc = tscl + delta_tsc;
@@ -8373,6 +8404,39 @@ int vmx_set_hv_timer(struct kvm_vcpu *vcpu, u64 guest_deadline_tsc,
 void vmx_cancel_hv_timer(struct kvm_vcpu *vcpu)
 {
 	to_vmx(vcpu)->hv_deadline_tsc = -1;
+}
+
+static void vmx_update_hv_timer(struct kvm_vcpu *vcpu, bool force_immediate_exit)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	u64 tscl;
+	u32 delta_tsc;
+
+	if (force_immediate_exit) {
+		vmcs_write32(VMX_PREEMPTION_TIMER_VALUE, 0);
+		vmx->loaded_vmcs->hv_timer_soft_disabled = false;
+	} else if (vmx->hv_deadline_tsc != -1) {
+		tscl = rdtsc();
+		if (vmx->hv_deadline_tsc > tscl)
+			/* set_hv_timer ensures the delta fits in 32-bits */
+			delta_tsc = (u32)((vmx->hv_deadline_tsc - tscl) >>
+				cpu_preemption_timer_multi);
+		else
+			delta_tsc = 0;
+
+		vmcs_write32(VMX_PREEMPTION_TIMER_VALUE, delta_tsc);
+		vmx->loaded_vmcs->hv_timer_soft_disabled = false;
+	} else if (!vmx->loaded_vmcs->hv_timer_soft_disabled) {
+		vmcs_write32(VMX_PREEMPTION_TIMER_VALUE, preemption_timer_max_value);
+		vmx->loaded_vmcs->hv_timer_soft_disabled = true;
+	}
+}
+#else
+static __init void vmx_setup_preemption_timer(void) { }
+
+static void vmx_update_hv_timer(struct kvm_vcpu *vcpu, bool force_immediate_exit)
+{
+	BUILD_BUG_ON(1);
 }
 #endif
 
@@ -8736,32 +8800,7 @@ __init int vmx_hardware_setup(void)
 	if (!enable_ept || !enable_ept_ad_bits || !cpu_has_vmx_pml())
 		enable_pml = 0;
 
-	if (!cpu_has_vmx_preemption_timer())
-		enable_preemption_timer = false;
-
-	if (enable_preemption_timer) {
-		u64 use_timer_freq = 5000ULL * 1000 * 1000;
-
-		cpu_preemption_timer_multi =
-			vmx_misc_preemption_timer_rate(vmcs_config.misc);
-
-		if (tsc_khz)
-			use_timer_freq = (u64)tsc_khz * 1000;
-		use_timer_freq >>= cpu_preemption_timer_multi;
-
-		/*
-		 * KVM "disables" the preemption timer by setting it to its max
-		 * value.  Don't use the timer if it might cause spurious exits
-		 * at a rate faster than 0.1 Hz (of uninterrupted guest time).
-		 */
-		if (use_timer_freq > 0xffffffffu / 10)
-			enable_preemption_timer = false;
-	}
-
-	if (!enable_preemption_timer) {
-		vt_x86_ops.set_hv_timer = NULL;
-		vt_x86_ops.cancel_hv_timer = NULL;
-	}
+	vmx_setup_preemption_timer();
 
 	kvm_caps.supported_mce_cap |= MCG_LMCE_P;
 	kvm_caps.supported_mce_cap |= MCG_CMCI_P;

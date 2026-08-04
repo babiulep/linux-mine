@@ -5,7 +5,7 @@
 #include <linux/err.h>
 #include <linux/errno.h>
 #include <linux/types.h>
-#include <linux/mmzone.h>
+#include <linux/mm.h>
 #include <asm-generic/kexec_handover.h>
 
 struct kho_vmalloc;

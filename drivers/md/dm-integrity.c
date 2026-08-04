@@ -3870,6 +3870,8 @@ static void dm_integrity_resume(struct dm_target *ti)
 	ic->wrote_to_journal = false;
 
 	flags = ic->sb->flags & cpu_to_le32(SB_FLAG_RECALCULATING);
+	if (ic->discard_keyed)
+		flags |= cpu_to_le32(SB_FLAG_DISCARD_KEYED);
 	r = sync_rw_sb(ic, REQ_OP_READ);
 	if (r)
 		dm_integrity_io_error(ic, "reading superblock", r);
@@ -5215,9 +5217,9 @@ static int dm_integrity_ctr(struct dm_target *ti, unsigned int argc, char **argv
 			goto bad;
 		}
 	}
-	if (!!(ic->sb->flags & cpu_to_le32(SB_FLAG_DISCARD_KEYED)) != ic->discard_keyed) {
+	if (!ic->discard_keyed && (ic->sb->flags & cpu_to_le32(SB_FLAG_DISCARD_KEYED))) {
 		r = -EINVAL;
-		ti->error = "Mismatch in the discard_keyed flag";
+		ti->error = "Keyed discard cannot be disabled once enabled";
 		goto bad;
 	}
 	if (!!(ic->sb->flags & cpu_to_le32(SB_FLAG_HAVE_JOURNAL_MAC)) != !!ic->journal_mac_alg.alg_string) {

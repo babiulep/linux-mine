@@ -946,6 +946,25 @@ config LTC2309
 	  This driver can also be built as a module. If so, the module will
 	  be called ltc2309.
 
+config LTC2378
+	tristate "Analog Devices LTC2378 ADC driver"
+	depends on SPI
+	depends on REGULATOR || COMPILE_TEST
+	depends on GPIOLIB
+	depends on PWM
+	select IIO_BUFFER
+	select IIO_BUFFER_DMA
+	select IIO_BUFFER_DMAENGINE
+	select IIO_TRIGGERED_BUFFER
+	select SPI_OFFLOAD
+	select SPI_OFFLOAD_TRIGGER_PWM
+	help
+	  Say yes here to build support for Analog Devices LTC2378-20 and
+	  similar analog to digital converters.
+
+	  This driver can also be built as a module. If so, the module will
+	  be called ltc2378.
+
 config LTC2471
 	tristate "Linear Technology LTC2471 and LTC2473 ADC driver"
 	depends on I2C
@@ -1806,8 +1825,8 @@ config TI_ADS1119
 config TI_ADS112C14
 	tristate "Texas Instruments ADS112C14/ADS122C14"
 	depends on I2C
+	select CRC8
 	select REGMAP
-	select REGMAP_I2C
 	help
 	  If you say yes here you get support for Texas Instruments ADS112C14,
 	  ADS122C14 ADC chips.

@@ -691,7 +691,7 @@ static void run_test(enum vm_guest_mode mode, void *arg)
 
 	TEST_ASSERT_EQ(vcpu_stop, false);
 
-	pthread_create(&vcpu_thread, NULL, vcpu_worker, vcpu);
+	kvm_pthread_create(&vcpu_thread, NULL, vcpu_worker, vcpu);
 
 	for (iteration = 1; iteration <= p->iterations; iteration++) {
 		unsigned long i, reap_i;
@@ -805,7 +805,7 @@ static void run_test(enum vm_guest_mode mode, void *arg)
 	WRITE_ONCE(host_quit, true);
 	sem_post(&sem_vcpu_cont);
 
-	pthread_join(vcpu_thread, NULL);
+	kvm_pthread_join(vcpu_thread, NULL);
 
 	pr_info("Total bits checked: dirty (%lu), clear (%lu)\n",
 		host_dirty_count, host_clear_count);

@@ -1325,11 +1325,11 @@ EXPORT_SYMBOL_GPL(kfree_call_rcu_nolock);
 
 #ifndef CONFIG_KVFREE_RCU_BATCHED
 
-void kvfree_call_rcu(struct rcu_head *head, void *ptr)
+void kvfree_call_rcu(struct kvfree_rcu_head *head, void *ptr)
 {
 	if (head) {
 		kasan_record_aux_stack(ptr);
-		call_rcu(head, kvfree_rcu_cb);
+		call_rcu(&head->head, kvfree_rcu_cb);
 		return;
 	}
 

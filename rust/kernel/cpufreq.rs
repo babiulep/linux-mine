@@ -1368,7 +1368,9 @@ impl<T: Driver> Registration<T> {
             let mut policy = PolicyCpu::from_cpu(cpu_id)?;
             let val = T::bios_limit(&mut policy)?;
             // SAFETY: `limit` is guaranteed by the C code to be valid.
-            unsafe { *limit = val; }
+            unsafe {
+                *limit = val;
+            }
             Ok(0)
         })
     }

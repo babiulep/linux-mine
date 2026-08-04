@@ -912,14 +912,13 @@ err_disable_kho:
  * on smaller systems. The algorithm itself doesn't depend on the actual value,
  * so it can be changed to a different heuristic later if needed.
  */
-#define KHO_EXT_BLKSIZE		SZ_1G
-#define KHO_EXT_BLKSHIFT	const_ilog2(KHO_EXT_BLKSIZE)
+#define KHO_SCRATCH_EXT_BLKSIZE		SZ_1G
+#define KHO_SCRATCH_EXT_BLKSHIFT	const_ilog2(KHO_SCRATCH_EXT_BLKSIZE)
 
 /* Called for the KHO preserved memory radix tree. */
 static int __init kho_ext_walk_leaf(unsigned long key, void *data)
 {
-	/* Radix tree tracking free blocks. */
-	struct kho_radix_tree *tree = data;
+	struct kho_radix_tree *busy_blocks = data;
 	phys_addr_t start, end;
 	unsigned int order;
 	int err;
@@ -932,11 +931,11 @@ static int __init kho_ext_walk_leaf(unsigned long key, void *data)
 	end = start + (1UL << (order + PAGE_SHIFT));
 
 	while (start < end) {
-		err = kho_radix_add_key(tree, start >> KHO_EXT_BLKSHIFT);
+		err = kho_radix_add_key(busy_blocks, start >> KHO_SCRATCH_EXT_BLKSHIFT);
 		if (err)
 			return err;
 
-		start += (1UL << KHO_EXT_BLKSHIFT);
+		start += (1UL << KHO_SCRATCH_EXT_BLKSHIFT);
 	}
 
 	return 0;
@@ -945,17 +944,16 @@ static int __init kho_ext_walk_leaf(unsigned long key, void *data)
 /* Called for the KHO preserved memory radix tree. */
 static int __init kho_ext_walk_node(phys_addr_t phys, void *data)
 {
-	/* Radix tree tracking free blocks. */
-	struct kho_radix_tree *tree = data;
+	struct kho_radix_tree *busy_blocks = data;
 
-	return kho_radix_add_key(tree, phys >> KHO_EXT_BLKSHIFT);
+	return kho_radix_add_key(busy_blocks, phys >> KHO_SCRATCH_EXT_BLKSHIFT);
 }
 
-/* Called for the free block radix tree. */
+/* Called for the busy block radix tree. */
 static int __init kho_ext_mark_scratch(unsigned long key, void *data)
 {
 	phys_addr_t *prev_end = data;
-	phys_addr_t start = key << KHO_EXT_BLKSHIFT;
+	phys_addr_t start = key << KHO_SCRATCH_EXT_BLKSHIFT;
 	int err;
 
 	if (start > *prev_end) {
@@ -964,7 +962,7 @@ static int __init kho_ext_mark_scratch(unsigned long key, void *data)
 			return err;
 	}
 
-	*prev_end = start + (1UL << KHO_EXT_BLKSHIFT);
+	*prev_end = start + (1UL << KHO_SCRATCH_EXT_BLKSHIFT);
 	return 0;
 }
 
@@ -974,8 +972,8 @@ static int __init kho_ext_mark_scratch(unsigned long key, void *data)
  * The KHO preserved memory radix tree mixes both physical address and order
  * into a single key. This makes it hard to look for free ranges directly. This
  * function first walks the radix tree and digests it down into another radix
- * tree, whose keys identify blocks of size KHO_EXT_BLKSIZE which contain
- * preserved memory.
+ * tree, whose keys identify blocks of size KHO_SCRATCH_EXT_BLKSIZE which
+ * contain preserved memory.
  *
  * Then it walks the digested radix tree and marks everything that doesn't have
  * preserved memory as scratch.
@@ -1002,21 +1000,31 @@ static void __init kho_extend_scratch(void)
 	const struct kho_radix_walk_cb ext_cb = {
 		.leaf = kho_ext_mark_scratch,
 	};
-	struct kho_radix_tree radix;
+	static struct lock_class_key busy_radix_class;
+	struct kho_radix_tree busy_blocks;
 	phys_addr_t prev_end = 0;
 	int err = 0;
 
-	err = kho_radix_init_tree(&radix, NULL);
+	err = kho_radix_init_tree(&busy_blocks, NULL);
 	if (err)
 		goto print;
 
+	/*
+	 * The walk of kho_in.radix_tree adds keys to busy_blocks. The walk
+	 * takes the kho_in radix tree lock and adding the key takes busy_blocks
+	 * lock. Since both are struct kho_radix_tree and share the same lock
+	 * class, lockdep gets confused. Set a different class for
+	 * busy_blocks.lock to make lockdep happy.
+	 */
+	lockdep_set_class(&busy_blocks.lock, &busy_radix_class);
+
 	/* Walk the KHO radix tree to find busy blocks. */
-	err = kho_radix_walk_tree(&kho_in.radix_tree, &kho_cb, &radix);
+	err = kho_radix_walk_tree(&kho_in.radix_tree, &kho_cb, &busy_blocks);
 	if (err)
 		goto out;
 
-	/* Walk the blocks and mark everything between keys as scratch. */
-	err = kho_radix_walk_tree(&radix, &ext_cb, &prev_end);
+	/* Walk the busy blocks and mark everything between keys as scratch. */
+	err = kho_radix_walk_tree(&busy_blocks, &ext_cb, &prev_end);
 	if (err)
 		goto out;
 
@@ -1026,7 +1034,7 @@ static void __init kho_extend_scratch(void)
 
 	/* fallthrough */
 out:
-	kho_radix_destroy_tree(&radix);
+	kho_radix_destroy_tree(&busy_blocks);
 print:
 	if (err)
 		pr_err("Failed to extend scratch: %pe\n", ERR_PTR(err));
@@ -1686,8 +1694,8 @@ static void __init kho_mem_retrieve(void)
 
 err:
 	/*
-	 * Failed to initialize preserved memory. Clear FDT and radix
-	 * so KHO users don't treat it as a KHO boot.
+	 * Failed to initialize preserved memory. Clear FDT and radix so KHO
+	 * users don't treat it as a KHO boot.
 	 */
 	kho_in.fdt_phys = 0;
 	kho_in.radix_tree.root = NULL;
