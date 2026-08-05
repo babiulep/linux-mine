@@ -5,15 +5,15 @@ Name		Url
 origin		https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git#master
 ext4-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/tytso/ext4.git#fixes
 vfs-brauner-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/vfs/vfs.git#vfs.fixes
-fscrypt-current	https://git.kernel.org/pub/scm/fs/fscrypt/linux.git#for-current
-fsverity-current	https://git.kernel.org/pub/scm/fs/fsverity/linux.git#for-current
+fscrypt-current	ssh://git@gitolite.kernel.org/pub/scm/fs/fscrypt/linux.git#for-current
+fsverity-current	ssh://git@gitolite.kernel.org/pub/scm/fs/fsverity/linux.git#for-current
 btrfs-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/kdave/linux.git#next-fixes
 vfs-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/viro/vfs.git#fixes
 erofs-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs.git#fixes
 nfsd-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/cel/linux#nfsd-fixes
 v9fs-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/ericvh/v9fs.git#fixes/next
 overlayfs-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/overlayfs/vfs.git#ovl-fixes
-fscrypt		https://git.kernel.org/pub/scm/fs/fscrypt/linux.git#for-next
+fscrypt		ssh://git@gitolite.kernel.org/pub/scm/fs/fscrypt/linux.git#for-next
 btrfs		https://git.kernel.org/pub/scm/linux/kernel/git/kdave/linux.git#for-next
 ceph		https://github.com/ceph/ceph-client.git#master
 cifs		git://git.samba.org/sfrench/cifs-2.6.git#for-next
@@ -25,7 +25,7 @@ exfat		https://git.kernel.org/pub/scm/linux/kernel/git/linkinjeon/exfat.git#dev
 ext3		https://git.kernel.org/pub/scm/linux/kernel/git/jack/linux-fs.git#for_next
 ext4		https://git.kernel.org/pub/scm/linux/kernel/git/tytso/ext4.git#dev
 f2fs		https://git.kernel.org/pub/scm/linux/kernel/git/jaegeuk/f2fs.git#dev
-fsverity	https://git.kernel.org/pub/scm/fs/fsverity/linux.git#for-next
+fsverity	ssh://git@gitolite.kernel.org/pub/scm/fs/fsverity/linux.git#for-next
 fuse		https://git.kernel.org/pub/scm/linux/kernel/git/mszeredi/fuse.git#for-next
 gfs2		https://git.kernel.org/pub/scm/linux/kernel/git/gfs2/linux-gfs2.git#for-next
 jfs		https://github.com/kleikamp/linux-shaggy.git#jfs-next
@@ -40,7 +40,7 @@ overlayfs	https://git.kernel.org/pub/scm/linux/kernel/git/overlayfs/vfs.git#over
 ubifs		https://git.kernel.org/pub/scm/linux/kernel/git/rw/ubifs.git#next
 v9fs		https://github.com/martinetd/linux#9p-next
 v9fs-ericvh	https://git.kernel.org/pub/scm/linux/kernel/git/ericvh/v9fs.git#ericvh/for-next
-xfs		https://git.kernel.org/pub/scm/fs/xfs/xfs-linux.git#for-next
+xfs		ssh://git@gitolite.kernel.org/pub/scm/fs/xfs/xfs-linux.git#for-next
 zonefs		https://git.kernel.org/pub/scm/linux/kernel/git/dlemoal/zonefs.git#for-next
 vfs-brauner	https://git.kernel.org/pub/scm/linux/kernel/git/vfs/vfs.git#vfs.all
 vfs		https://git.kernel.org/pub/scm/linux/kernel/git/viro/vfs.git#for-next

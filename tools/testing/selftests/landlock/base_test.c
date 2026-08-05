@@ -284,6 +284,41 @@ TEST(restrict_self_checks_ordering)
 	ASSERT_EQ(0, close(ruleset_fd));
 }
 
+TEST(restrict_self_max_layers)
+{
+	const struct landlock_ruleset_attr ruleset_attr = {
+		.handled_access_fs = LANDLOCK_ACCESS_FS_EXECUTE,
+	};
+	struct landlock_path_beneath_attr path_beneath_attr = {
+		.allowed_access = LANDLOCK_ACCESS_FS_EXECUTE,
+		.parent_fd = -1,
+	};
+	const int ruleset_fd =
+		landlock_create_ruleset(&ruleset_attr, sizeof(ruleset_attr), 0);
+	ASSERT_LE(0, ruleset_fd);
+
+	path_beneath_attr.parent_fd =
+		open("/tmp", O_PATH | O_NOFOLLOW | O_DIRECTORY | O_CLOEXEC);
+	ASSERT_LE(0, path_beneath_attr.parent_fd);
+	ASSERT_EQ(0, landlock_add_rule(ruleset_fd, LANDLOCK_RULE_PATH_BENEATH,
+				       &path_beneath_attr, 0));
+	ASSERT_EQ(0, close(path_beneath_attr.parent_fd));
+
+	/* Enforces the maximum number of allowed layers. */
+	for (int i = 0; i < LANDLOCK_MAX_NUM_LAYERS; i++)
+		ASSERT_EQ(0, landlock_restrict_self(ruleset_fd, 0));
+
+	/* Enforces one too many rulesets. */
+	drop_caps(_metadata);
+	ASSERT_EQ(-1, landlock_restrict_self(
+			      ruleset_fd, LANDLOCK_RESTRICT_SELF_NO_NEW_PRIVS));
+	ASSERT_EQ(E2BIG, errno);
+
+	/* Checks that the failed call did not set no_new_privs. */
+	ASSERT_EQ(0, prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0));
+	ASSERT_EQ(0, close(ruleset_fd));
+}
+
 TEST(restrict_self_fd)
 {
 	int fd;

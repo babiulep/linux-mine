@@ -526,9 +526,9 @@ unsigned long lruvec_page_state(struct lruvec *lruvec, enum node_stat_item idx)
  * Do NOT use for non-monotonic page-count reads where a transient negative
  * reading from per-CPU delta skew must present as zero.
  *
- * XXX: This helper (and its node/global peers) exists because we place
- * monotonically-incremented event counters (NR_VMSCAN_WRITE and PGROTATE_*)
- * into enum node_stat_item.
+ * XXX: This helper (and its node/global peers) exists because some
+ * monotonically-incremented event counters are stored in
+ * enum node_stat_item.
  */
 unsigned long lruvec_page_state_monotonic(struct lruvec *lruvec,
 					  enum node_stat_item idx)

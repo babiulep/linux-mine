@@ -3285,22 +3285,24 @@ static void aw88399_fixup_i2c_two(struct hda_codec *cdc, const struct hda_fixup 
 static void alc287_fixup_legion_16iax10h_aw88399(struct hda_codec *codec,
 						 const struct hda_fixup *fix, int action)
 {
-	static const struct hda_pintbl pincfgs[] = {
-		{ 0x1d, 0x411111f0 }, /* unused bogus pin */
-		{ }
-	};
-
 	/*
 	 * Force DAC 0x02 for the bass speaker 0x17, as the default 0x06 lacks volume controls.
 	 */
 	static const hda_nid_t conn[] = { 0x02 };
+	struct alc_spec *spec = codec->spec;
 
 	alc269_fixup_limit_int_mic_boost(codec, fix, action);
+	alc_fixup_headset_mode_no_hp_mic(codec, fix, action);
+	alc_fixup_headset_jack(codec, fix, action);
 
 	switch (action) {
 	case HDA_FIXUP_ACT_PRE_PROBE:
-		snd_hda_apply_pincfgs(codec, pincfgs);
+		spec->gen.suppress_auto_mic = 1;
 		snd_hda_override_conn_list(codec, 0x17, ARRAY_SIZE(conn), conn);
+		break;
+	case HDA_FIXUP_ACT_BUILD:
+		spec->gen.multiout.max_channels = 2;
+		spec->gen.pcm_rec[0]->stream[SNDRV_PCM_STREAM_PLAYBACK].channels_max = 2;
 		break;
 	}
 }
@@ -3568,6 +3570,16 @@ static void alc287_fixup_yoga9_14iap7_bass_spk_pin(struct hda_codec *codec,
 		spec->gen.preferred_dacs = preferred_pairs;
 		break;
 	}
+}
+
+static void alc_fixup_yoga_pro7_audio(struct hda_codec *codec,
+				      const struct hda_fixup *fix, int action)
+{
+	/* Reuse the DAC routing selected for ThinkPad X1 Gen7 */
+	alc285_fixup_thinkpad_x1_gen7(codec, fix, action);
+
+	/* Limit the internal mic boost to 0 or 1 to avoid noise */
+	alc269_fixup_limit_int_mic_boost(codec, fix, action);
 }
 
 static void alc295_fixup_dell_inspiron_top_speakers(struct hda_codec *codec,
@@ -6273,8 +6285,7 @@ static const struct hda_fixup alc269_fixups[] = {
 	},
 	[ALC287_FIXUP_LENOVO_YOGA_PRO7] = {
 		.type = HDA_FIXUP_FUNC,
-		/* Reuse the DAC routing selected for ThinkPad X1 Gen7 */
-		.v.func = alc285_fixup_thinkpad_x1_gen7,
+		.v.func = alc_fixup_yoga_pro7_audio,
 		.chained = true,
 		.chain_id = ALC269_FIXUP_LENOVO_XPAD_ACPI,
 	},

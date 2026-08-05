@@ -31,7 +31,7 @@ use crate::{
         fsp::Fsp as FspEngine,
         Falcon, //
     },
-    fb::FbLayout,
+    fb::FbSizes,
     firmware::{
         fsp::{
             FmcSignatures,
@@ -251,31 +251,43 @@ struct FspCotMessage {
 }
 
 impl FspCotMessage {
+    /// Computes the FRTS vidmem offset for the Chain-of-Trust message. It is measured backwards
+    /// from the end of the framebuffer.
+    fn frts_vidmem_offset(hal: &dyn hal::FspHal, fb_info: &FbSizes) -> Result<u64> {
+        let mut offset = hal.fb_end_reserved_size();
+
+        // As per OpenRM's `kfspPrepareBootCommands_GH100`.
+        if fb_info.pmu_reserved_size != 0 {
+            offset = (offset + u64::from(fb_info.pmu_reserved_size))
+                // The 2 MiB alignment is r570-specific.
+                .align_up(Alignment::new::<SZ_2M>())
+                .ok_or(EINVAL)?;
+        }
+
+        Ok(offset)
+    }
+
     /// Returns an in-place initializer for [`FspCotMessage`].
     fn new<'a>(
-        fb_layout: &FbLayout,
+        fb_info: &FbSizes,
         fsp_fw: &'a FspFirmware,
         args: &'a FmcBootArgs<'_>,
     ) -> Result<impl Init<Self> + 'a> {
-        // frts_vidmem_offset is measured from the end of FB, so FRTS sits at
-        // (end of FB) - frts_vidmem_offset.
-        let frts_vidmem_offset = if !args.resume {
-            let frts_reserved_size = fb_layout.heap.len() + u64::from(fb_layout.pmu_reserved_size);
+        let hal = hal::fsp_hal(args.chipset).ok_or(ENOTSUPP)?;
 
-            frts_reserved_size
-                .align_up(Alignment::new::<SZ_2M>())
-                .ok_or(EINVAL)?
+        let frts_vidmem_offset = if !args.resume {
+            Self::frts_vidmem_offset(hal, fb_info)?
         } else {
             0
         };
 
         let frts_size: u32 = if !args.resume {
-            fb_layout.frts.len().try_into()?
+            fb_info.frts_size.try_into()?
         } else {
             0
         };
 
-        let version = hal::fsp_hal(args.chipset).ok_or(ENOTSUPP)?.cot_version();
+        let version = hal.cot_version();
         let size = num::usize_into_u16::<{ core::mem::size_of::<NvdmPayloadCot>() }>();
 
         Ok(init!(Self {
@@ -339,7 +351,7 @@ pub(crate) struct FmcBootArgs<'a> {
     fmc_boot_params: Coherent<GspFmcBootParams>,
     resume: bool,
     // Additional dependencies required to be kept alive for FMC boot.
-    _wpr_meta: &'a Coherent<GspFwWprMeta>,
+    _wpr_meta: Coherent<GspFwWprMeta>,
     _libos: &'a Coherent<[LibosMemoryRegionInitArgument]>,
 }
 
@@ -349,7 +361,7 @@ impl<'a> FmcBootArgs<'a> {
     pub(crate) fn new(
         dev: &device::Device<device::Bound>,
         chipset: Chipset,
-        wpr_meta: &'a Coherent<GspFwWprMeta>,
+        wpr_meta: Coherent<GspFwWprMeta>,
         libos: &'a Coherent<[LibosMemoryRegionInitArgument]>,
         resume: bool,
     ) -> Result<Self> {
@@ -526,15 +538,12 @@ impl<'a> Fsp<'a> {
     pub(crate) fn boot_fmc(
         &mut self,
         dev: &device::Device<device::Bound>,
-        fb_layout: &FbLayout,
+        fb_info: &FbSizes,
         args: &FmcBootArgs<'_>,
     ) -> Result {
         dev_dbg!(dev, "Starting FSP boot sequence for {}\n", args.chipset);
 
-        let msg = KBox::init(
-            FspCotMessage::new(fb_layout, &self.fsp_fw, args)?,
-            GFP_KERNEL,
-        )?;
+        let msg = KBox::init(FspCotMessage::new(fb_info, &self.fsp_fw, args)?, GFP_KERNEL)?;
 
         let _response_buf = self.send_sync_fsp(dev, &*msg)?;
 

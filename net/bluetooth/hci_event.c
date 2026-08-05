@@ -3865,8 +3865,10 @@ static u8 hci_cc_le_set_cig_params(struct hci_dev *hdev, void *data,
 	bt_dev_dbg(hdev, "status 0x%2.2x", rp->status);
 
 	cp = hci_sent_cmd_data(hdev, HCI_OP_LE_SET_CIG_PARAMS);
-	if (!rp->status && (!cp || rp->num_handles != cp->num_cis ||
-			    rp->cig_id != cp->cig_id)) {
+	if (!rp->status &&
+	    (!cp || rp->num_handles != cp->num_cis ||
+	     rp->cig_id != cp->cig_id ||
+	     skb->len < array_size(rp->num_handles, sizeof(*rp->handle)))) {
 		bt_dev_err(hdev, "unexpected Set CIG Parameters response data");
 		status = HCI_ERROR_UNSPECIFIED;
 	}
@@ -7602,6 +7604,14 @@ static void hci_le_meta_evt(struct hci_dev *hdev, void *data,
 	subev->func(hdev, data, skb);
 }
 
+static void hci_vendor_evt(struct hci_dev *hdev, void *data, struct sk_buff *skb)
+{
+	if (hdev->handle_ev_vendor && hdev->handle_ev_vendor(hdev, skb))
+		return;
+
+	msft_vendor_evt(hdev, data, skb);
+}
+
 static bool hci_get_cmd_complete(struct hci_dev *hdev, u16 opcode,
 				 u8 event, struct sk_buff *skb)
 {
@@ -7718,7 +7728,7 @@ static const struct hci_ev {
 	HCI_EV_STATUS(HCI_EV_INQUIRY_COMPLETE, hci_inquiry_complete_evt),
 	/* [0x02 = HCI_EV_INQUIRY_RESULT] */
 	HCI_EV_VL(HCI_EV_INQUIRY_RESULT, hci_inquiry_result_evt,
-		  sizeof(struct hci_ev_inquiry_result), HCI_MAX_EVENT_SIZE),
+		  sizeof(struct hci_ev_inquiry_result), HCI_MAX_EVENT_PLEN),
 	/* [0x03 = HCI_EV_CONN_COMPLETE] */
 	HCI_EV(HCI_EV_CONN_COMPLETE, hci_conn_complete_evt,
 	       sizeof(struct hci_ev_conn_complete)),
@@ -7746,7 +7756,7 @@ static const struct hci_ev {
 	       sizeof(struct hci_ev_remote_features)),
 	/* [0x0e = HCI_EV_CMD_COMPLETE] */
 	HCI_EV_REQ_VL(HCI_EV_CMD_COMPLETE, hci_cmd_complete_evt,
-		      sizeof(struct hci_ev_cmd_complete), HCI_MAX_EVENT_SIZE),
+		      sizeof(struct hci_ev_cmd_complete), HCI_MAX_EVENT_PLEN),
 	/* [0x0f = HCI_EV_CMD_STATUS] */
 	HCI_EV_REQ(HCI_EV_CMD_STATUS, hci_cmd_status_evt,
 		   sizeof(struct hci_ev_cmd_status)),
@@ -7758,7 +7768,7 @@ static const struct hci_ev {
 	       sizeof(struct hci_ev_role_change)),
 	/* [0x13 = HCI_EV_NUM_COMP_PKTS] */
 	HCI_EV_VL(HCI_EV_NUM_COMP_PKTS, hci_num_comp_pkts_evt,
-		  sizeof(struct hci_ev_num_comp_pkts), HCI_MAX_EVENT_SIZE),
+		  sizeof(struct hci_ev_num_comp_pkts), HCI_MAX_EVENT_PLEN),
 	/* [0x14 = HCI_EV_MODE_CHANGE] */
 	HCI_EV(HCI_EV_MODE_CHANGE, hci_mode_change_evt,
 	       sizeof(struct hci_ev_mode_change)),
@@ -7784,7 +7794,7 @@ static const struct hci_ev {
 	HCI_EV_VL(HCI_EV_INQUIRY_RESULT_WITH_RSSI,
 		  hci_inquiry_result_with_rssi_evt,
 		  sizeof(struct hci_ev_inquiry_result_rssi),
-		  HCI_MAX_EVENT_SIZE),
+		  HCI_MAX_EVENT_PLEN),
 	/* [0x23 = HCI_EV_REMOTE_EXT_FEATURES] */
 	HCI_EV(HCI_EV_REMOTE_EXT_FEATURES, hci_remote_ext_features_evt,
 	       sizeof(struct hci_ev_remote_ext_features)),
@@ -7794,7 +7804,7 @@ static const struct hci_ev {
 	/* [0x2f = HCI_EV_EXTENDED_INQUIRY_RESULT] */
 	HCI_EV_VL(HCI_EV_EXTENDED_INQUIRY_RESULT,
 		  hci_extended_inquiry_result_evt,
-		  sizeof(struct hci_ev_ext_inquiry_result), HCI_MAX_EVENT_SIZE),
+		  sizeof(struct hci_ev_ext_inquiry_result), HCI_MAX_EVENT_PLEN),
 	/* [0x30 = HCI_EV_KEY_REFRESH_COMPLETE] */
 	HCI_EV(HCI_EV_KEY_REFRESH_COMPLETE, hci_key_refresh_complete_evt,
 	       sizeof(struct hci_ev_key_refresh_complete)),
@@ -7827,9 +7837,9 @@ static const struct hci_ev {
 	       sizeof(struct hci_ev_remote_host_features)),
 	/* [0x3e = HCI_EV_LE_META] */
 	HCI_EV_REQ_VL(HCI_EV_LE_META, hci_le_meta_evt,
-		      sizeof(struct hci_ev_le_meta), HCI_MAX_EVENT_SIZE),
+		      sizeof(struct hci_ev_le_meta), HCI_MAX_EVENT_PLEN),
 	/* [0xff = HCI_EV_VENDOR] */
-	HCI_EV_VL(HCI_EV_VENDOR, msft_vendor_evt, 0, HCI_MAX_EVENT_SIZE),
+	HCI_EV_VL(HCI_EV_VENDOR, hci_vendor_evt, 0, HCI_MAX_EVENT_PLEN),
 };
 
 static void hci_event_func(struct hci_dev *hdev, u8 event, struct sk_buff *skb,

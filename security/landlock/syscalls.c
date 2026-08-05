@@ -510,9 +510,9 @@ SYSCALL_DEFINE4(landlock_add_rule, const int, ruleset_fd,
  * unprivileged tasks can affect the behavior of privileged children.
  *
  * With %LANDLOCK_RESTRICT_SELF_NO_NEW_PRIVS, the no_new_privs attribute of the
- * calling thread is set atomically with the enforcement of the ruleset, which
- * fulfills the above requirement: no_new_privs is set if and only if the call
- * succeeds.
+ * calling thread is set only once the enforcement of the ruleset succeeded,
+ * which fulfills the above requirement: no_new_privs is set if and only if the
+ * call succeeds.
  *
  * Return: 0 on success, or -errno on failure.  Possible returned errors are:
  *

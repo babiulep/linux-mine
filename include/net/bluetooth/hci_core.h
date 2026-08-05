@@ -646,6 +646,8 @@ struct hci_dev {
 	int (*setup)(struct hci_dev *hdev);
 	int (*shutdown)(struct hci_dev *hdev);
 	int (*send)(struct hci_dev *hdev, struct sk_buff *skb);
+	/* Handle HCI_EV_VENDOR; return true if handled, false otherwise */
+	bool (*handle_ev_vendor)(struct hci_dev *hdev, struct sk_buff *skb);
 	void (*notify)(struct hci_dev *hdev, unsigned int evt);
 	void (*hw_error)(struct hci_dev *hdev, u8 code);
 	int (*post_init)(struct hci_dev *hdev);
@@ -775,7 +777,7 @@ struct hci_conn {
 	struct hci_dev	*hdev;
 
 	spinlock_t	proto_lock; /* lock guarding protocol data */
-	void		*l2cap_data;
+	void		*l2cap_data __guarded_by(&proto_lock, &hdev->lock);
 	void		*sco_data;
 	void		*iso_data __guarded_by(&proto_lock);
 
@@ -1785,7 +1787,13 @@ int hci_register_suspend_notifier(struct hci_dev *hdev);
 int hci_unregister_suspend_notifier(struct hci_dev *hdev);
 int hci_suspend_dev(struct hci_dev *hdev);
 int hci_resume_dev(struct hci_dev *hdev);
-int hci_reset_dev(struct hci_dev *hdev);
+int __hci_reset_dev(struct hci_dev *hdev, u8 hw_err_code);
+
+static inline int hci_reset_dev(struct hci_dev *hdev)
+{
+	return __hci_reset_dev(hdev, 0);
+}
+
 int hci_recv_frame(struct hci_dev *hdev, struct sk_buff *skb);
 int hci_recv_diag(struct hci_dev *hdev, struct sk_buff *skb);
 __printf(2, 3) void hci_set_hw_info(struct hci_dev *hdev, const char *fmt, ...);

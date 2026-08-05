@@ -426,7 +426,7 @@ impl<T> Wrapper<T> for Opaque<T> {
             //   - `slot` is a valid pointer to uninitialized memory,
             //   - `slot` is not accessed on error,
             //   - `slot` is pinned in memory.
-            unsafe { pin_init::ptr_try_init(slot, init) }
+            unsafe { pin_init::raw_try_init(slot, init) }
         })
     }
 }

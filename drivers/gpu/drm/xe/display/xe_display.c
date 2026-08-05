@@ -18,7 +18,6 @@
 #include <uapi/drm/xe_drm.h>
 
 #include "intel_acpi.h"
-#include "intel_audio.h"
 #include "intel_display.h"
 #include "intel_display_core.h"
 #include "intel_display_device.h"
@@ -29,7 +28,6 @@
 #include "intel_dmc_wl.h"
 #include "intel_dp.h"
 #include "intel_fbdev.h"
-#include "intel_hdcp.h"
 #include "intel_hotplug.h"
 #include "intel_opregion.h"
 #include "skl_watermark.h"
@@ -37,6 +35,7 @@
 #include "xe_display_bo.h"
 #include "xe_display_pcode.h"
 #include "xe_display_rpm.h"
+#include "xe_display_wa.h"
 #include "xe_dsb_buffer.h"
 #include "xe_fb_pin.h"
 #include "xe_frontbuffer.h"
@@ -129,9 +128,6 @@ static void xe_display_fini(void *arg)
 	struct xe_device *xe = arg;
 	struct intel_display *display = xe->display;
 
-	intel_hpd_poll_fini(display);
-	intel_hdcp_component_fini(display);
-	intel_audio_deinit(display);
 	intel_display_driver_remove(display);
 }
 
@@ -472,6 +468,7 @@ static const struct intel_display_parent_interface parent = {
 	.pcode = &xe_display_pcode_interface,
 	.rpm = &xe_display_rpm_interface,
 	.stolen = &xe_display_stolen_interface,
+	.wa = &xe_display_wa_interface,
 	.has_auxccs = has_auxccs,
 	.transient_data_flush = transient_data_flush,
 };

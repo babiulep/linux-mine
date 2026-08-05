@@ -196,9 +196,9 @@ struct landlock_ruleset_attr {
  * enforcement:
  *
  * %LANDLOCK_RESTRICT_SELF_NO_NEW_PRIVS
- *     Sets the no_new_privs attribute of the calling thread atomically with
- *     the enforcement of the ruleset: no_new_privs is set if and only if
- *     sys_landlock_restrict_self() succeeds.  This removes the need for a
+ *     Sets the no_new_privs attribute of the calling thread only once the
+ *     enforcement of the ruleset succeeded: no_new_privs is set if and only
+ *     if sys_landlock_restrict_self() succeeds.  This removes the need for a
  *     prior :manpage:`prctl(2)` ``PR_SET_NO_NEW_PRIVS`` call, and with it the
  *     %CAP_SYS_ADMIN requirement.  This flag requires a ruleset.  When
  *     combined with %LANDLOCK_RESTRICT_SELF_TSYNC, no_new_privs is set on the
