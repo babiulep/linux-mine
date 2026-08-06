@@ -2058,7 +2058,8 @@ static void f2fs_put_super(struct super_block *sb)
 		if (!get_pages(sbi, i))
 			continue;
 		f2fs_err(sbi, "detect filesystem reference count leak during "
-			"umount, type: %d, count: %lld", i, get_pages(sbi, i));
+			"umount, type: %d, count: %lld, err: %d, cp_err: %d",
+			i, get_pages(sbi, i), err, f2fs_cp_error(sbi));
 		f2fs_bug_on(sbi, 1);
 	}
 
@@ -5068,6 +5069,7 @@ try_onemore:
 
 	sb->s_fs_info = sbi;
 	sbi->raw_super = raw_super;
+	sbi->max_atc_write_bio_size = UINT_MAX;
 
 	INIT_WORK(&sbi->s_error_work, f2fs_record_error_work);
 	memcpy(sbi->errors, raw_super->s_errors, MAX_F2FS_ERRORS);

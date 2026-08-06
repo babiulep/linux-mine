@@ -11802,20 +11802,6 @@ static bool is_bpf_rbtree_api_kfunc(u32 btf_id)
 	       btf_id == special_kfunc_list[KF_bpf_rbtree_right];
 }
 
-static bool is_bpf_iter_num_api_kfunc(u32 btf_id)
-{
-	return btf_id == special_kfunc_list[KF_bpf_iter_num_new] ||
-	       btf_id == special_kfunc_list[KF_bpf_iter_num_next] ||
-	       btf_id == special_kfunc_list[KF_bpf_iter_num_destroy];
-}
-
-static bool is_bpf_graph_api_kfunc(u32 btf_id)
-{
-	return is_bpf_list_api_kfunc(btf_id) ||
-	       is_bpf_rbtree_api_kfunc(btf_id) ||
-	       is_bpf_refcount_acquire_kfunc(btf_id);
-}
-
 static bool is_bpf_res_spin_lock_kfunc(u32 btf_id)
 {
 	return btf_id == special_kfunc_list[KF_bpf_res_spin_lock] ||
@@ -11824,24 +11810,16 @@ static bool is_bpf_res_spin_lock_kfunc(u32 btf_id)
 	       btf_id == special_kfunc_list[KF_bpf_res_spin_unlock_irqrestore];
 }
 
-static bool is_bpf_arena_kfunc(u32 btf_id)
+static bool kfunc_spin_allowed(struct bpf_verifier_env *env, s32 func_id, s16 offset)
 {
-	return btf_id == special_kfunc_list[KF_bpf_arena_alloc_pages] ||
-	       btf_id == special_kfunc_list[KF_bpf_arena_free_pages] ||
-	       btf_id == special_kfunc_list[KF_bpf_arena_reserve_pages];
-}
+	struct bpf_kfunc_meta kfunc;
+	int err;
 
-static bool is_bpf_stream_kfunc(u32 btf_id)
-{
-	return btf_id == special_kfunc_list[KF_bpf_stream_vprintk] ||
-	       btf_id == special_kfunc_list[KF_bpf_stream_print_stack];
-}
+	err = fetch_kfunc_meta(env, func_id, offset, &kfunc);
+	if (err || !kfunc.flags)
+		return false;
 
-static bool kfunc_spin_allowed(u32 btf_id)
-{
-	return is_bpf_graph_api_kfunc(btf_id) || is_bpf_iter_num_api_kfunc(btf_id) ||
-	       is_bpf_res_spin_lock_kfunc(btf_id) || is_bpf_arena_kfunc(btf_id) ||
-	       is_bpf_stream_kfunc(btf_id);
+	return *kfunc.flags & KF_SPINLOCK_SAFE;
 }
 
 static bool is_sync_callback_calling_kfunc(u32 btf_id)
@@ -17419,7 +17397,7 @@ static int do_check_insn(struct bpf_verifier_env *env, bool *do_print_state)
 				     insn->imm != BPF_FUNC_spin_unlock &&
 				     insn->imm != BPF_FUNC_kptr_xchg) ||
 				    (insn->src_reg == BPF_PSEUDO_KFUNC_CALL &&
-				     (insn->off != 0 || !kfunc_spin_allowed(insn->imm)))) {
+				     !kfunc_spin_allowed(env, insn->imm, insn->off))) {
 					verbose(env,
 						"function calls are not allowed while holding a lock\n");
 					return -EINVAL;
@@ -19021,6 +18999,9 @@ static int btf_id_allow_sleepable(u32 btf_id, unsigned long addr, const struct b
 	const struct btf_type *t;
 	const char *tname;
 
+	if (!btf_is_kernel(btf))
+		return -EINVAL;
+
 	switch (prog->type) {
 	case BPF_PROG_TYPE_TRACING:
 		t = btf_type_by_id(btf, btf_id);
@@ -20005,6 +19986,51 @@ int bpf_fixup_kfunc_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 		insn_buf[4] = BPF_ALU64_REG(BPF_SUB, BPF_REG_0, BPF_REG_1);
 		insn_buf[5] = BPF_ALU64_IMM(BPF_NEG, BPF_REG_0, 0);
 		*cnt = 6;
+	} else if (desc->func_id == special_kfunc_list[KF_bpf_iter_num_new]) {
+		/* inline bpf_iter_num_new(&it, start, end); R1=&it, R2=start, R3=end */
+		int i = 0;
+
+		/* if (start > end) goto einval; */
+		insn_buf[i++] = BPF_JMP32_REG(BPF_JSGT, BPF_REG_2, BPF_REG_3, 8);
+		/* r0 = (u32)end - (u32)start; if (r0 > BPF_MAX_LOOPS) goto e2big; */
+		insn_buf[i++] = BPF_MOV32_REG(BPF_REG_0, BPF_REG_3);
+		insn_buf[i++] = BPF_ALU32_REG(BPF_SUB, BPF_REG_0, BPF_REG_2);
+		insn_buf[i++] = BPF_JMP_IMM(BPF_JGT, BPF_REG_0, BPF_MAX_LOOPS, 8);
+		/* s->cur = start - 1; s->end = end; return 0; */
+		insn_buf[i++] = BPF_ALU32_IMM(BPF_ADD, BPF_REG_2, -1);
+		insn_buf[i++] = BPF_STX_MEM(BPF_W, BPF_REG_1, BPF_REG_2, 0);
+		insn_buf[i++] = BPF_STX_MEM(BPF_W, BPF_REG_1, BPF_REG_3, 4);
+		insn_buf[i++] = BPF_MOV64_IMM(BPF_REG_0, 0);
+		insn_buf[i++] = BPF_JMP_A(5);
+		/* einval: s->cur = s->end = 0; return -EINVAL; */
+		insn_buf[i++] = BPF_ST_MEM(BPF_DW, BPF_REG_1, 0, 0);
+		insn_buf[i++] = BPF_MOV64_IMM(BPF_REG_0, -EINVAL);
+		insn_buf[i++] = BPF_JMP_A(2);
+		/* e2big: s->cur = s->end = 0; return -E2BIG; */
+		insn_buf[i++] = BPF_ST_MEM(BPF_DW, BPF_REG_1, 0, 0);
+		insn_buf[i++] = BPF_MOV64_IMM(BPF_REG_0, -E2BIG);
+		*cnt = i;
+	} else if (desc->func_id == special_kfunc_list[KF_bpf_iter_num_next]) {
+		/* inline bpf_iter_num_next(&it); R1=&it, returns &s->cur or NULL */
+		int i = 0;
+
+		/* r0 = s->cur + 1; if ((s32)r0 >= s->end) goto done; */
+		insn_buf[i++] = BPF_LDX_MEM(BPF_W, BPF_REG_0, BPF_REG_1, 0);
+		insn_buf[i++] = BPF_ALU32_IMM(BPF_ADD, BPF_REG_0, 1);
+		insn_buf[i++] = BPF_LDX_MEM(BPF_W, BPF_REG_2, BPF_REG_1, 4);
+		insn_buf[i++] = BPF_JMP32_REG(BPF_JSGE, BPF_REG_0, BPF_REG_2, 3);
+		/* s->cur = r0; return &s->cur; */
+		insn_buf[i++] = BPF_STX_MEM(BPF_W, BPF_REG_1, BPF_REG_0, 0);
+		insn_buf[i++] = BPF_MOV64_REG(BPF_REG_0, BPF_REG_1);
+		insn_buf[i++] = BPF_JMP_A(2);
+		/* done: s->cur = s->end = 0; return NULL; */
+		insn_buf[i++] = BPF_ST_MEM(BPF_DW, BPF_REG_1, 0, 0);
+		insn_buf[i++] = BPF_MOV64_IMM(BPF_REG_0, 0);
+		*cnt = i;
+	} else if (desc->func_id == special_kfunc_list[KF_bpf_iter_num_destroy]) {
+		/* bpf_iter_num_destroy() is a no-op; emit a nop to drop the call */
+		insn_buf[0] = BPF_JMP_A(0);
+		*cnt = 1;
 	}
 
 	if (env->insn_aux_data[insn_idx].arg_prog) {

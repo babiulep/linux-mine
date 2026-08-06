@@ -65,7 +65,7 @@ enum {
 static void page_reporting_schedule_work(struct page_reporting_dev_info *prdev)
 {
 	queue_delayed_work(system_freezable_wq, &prdev->work,
-			      msecs_to_jiffies(page_reporting_delay_ms));
+			   msecs_to_jiffies(page_reporting_delay_ms));
 }
 
 /* request page reporting */
