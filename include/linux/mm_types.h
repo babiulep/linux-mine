@@ -968,10 +968,10 @@ struct vm_area_struct {
 	unsigned int vm_lock_seq;
 #endif
 	/*
-	 * Low 32-bits of virtual page offset.
-	 * See vma_start_virt_pgoff() comment for details.
+	 * Low 32-bits of anonymous page offset.
+	 * See vma_start_anon_pgoff() comment for details.
 	 */
-	unsigned int __vm_virt_pgoff_lo;
+	unsigned int __vm_anon_pgoff_lo;
 	/*
 	 * A file's MAP_PRIVATE vma can be in both i_mmap tree and anon_vma
 	 * list, after a COW of one of the file pages.	A MAP_SHARED vma
@@ -1049,10 +1049,10 @@ struct vm_area_struct {
 #endif
 #ifdef CONFIG_64BIT
 	/*
-	 * High 32-bits of virtual page offset.
-	 * See vma_start_virt_pgoff() comment for details.
+	 * High 32-bits of anonymous page offset.
+	 * See vma_start_anon_pgoff() comment for details.
 	 */
-	unsigned int __vm_virt_pgoff_hi;
+	unsigned int __vm_anon_pgoff_hi;
 #endif
 	/*
 	 * For areas with an address space and backing store,

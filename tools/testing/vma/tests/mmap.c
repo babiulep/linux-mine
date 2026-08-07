@@ -74,7 +74,7 @@ static bool test_pure_anon_dev_zero(void)
 
 	/*
 	 * Map a MAP_PRIVATE-/dev/zero mapping at address 0x300000 with a page
-	 * offset of 0x10, which we expect to be reset to the virtual page
+	 * offset of 0x10, which we expect to be reset to the anonymous page
 	 * offset.
 	 */
 	addr = __mmap_region(&file, 0x300000, 0x3000, vma_flags, 0x10, NULL);
@@ -86,9 +86,9 @@ static bool test_pure_anon_dev_zero(void)
 	ASSERT_TRUE(vma_is_anonymous(vma));
 	ASSERT_EQ(vma->vm_file, NULL);
 	ASSERT_EQ(vma->vm_private_data, NULL);
-	/* Expect virtual page offsets. */
+	/* Expect anonymous page offsets. */
 	ASSERT_EQ(vma->vm_pgoff, 0x300);
-	ASSERT_EQ(vma_start_virt_pgoff(vma), 0x300);
+	ASSERT_EQ(vma_start_anon_pgoff(vma), 0x300);
 
 	cleanup_mm(&mm, &vmi);
 	return true;

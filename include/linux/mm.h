@@ -2269,17 +2269,20 @@ void unpin_user_pages(struct page **pages, unsigned long npages);
 void unpin_user_folio(struct folio *folio, unsigned long npages);
 void unpin_folios(struct folio **folios, unsigned long nfolios);
 
-static inline bool is_cow_mapping(vm_flags_t flags)
+static inline bool vma_flags_is_cow_mapping(const vma_flags_t *flags)
 {
-	return (flags & (VM_SHARED | VM_MAYWRITE)) == VM_MAYWRITE;
+	return vma_flags_test(flags, VMA_MAYWRITE_BIT) &&
+		!vma_flags_test(flags, VMA_SHARED_BIT);
+}
+
+static inline bool vma_is_cow_mapping(const struct vm_area_struct *vma)
+{
+	return vma_flags_is_cow_mapping(&vma->flags);
 }
 
 static inline bool vma_desc_is_cow_mapping(struct vm_area_desc *desc)
 {
-	const vma_flags_t *flags = &desc->vma_flags;
-
-	return vma_flags_test(flags, VMA_MAYWRITE_BIT) &&
-		!vma_flags_test(flags, VMA_SHARED_BIT);
+	return vma_flags_is_cow_mapping(&desc->vma_flags);
 }
 
 #ifndef CONFIG_MMU
@@ -4391,62 +4394,62 @@ static inline pgoff_t vma_last_pgoff(const struct vm_area_struct *vma)
 }
 
 /**
- * vma_start_virt_pgoff() - Get the virtual page offset of the start of @vma
- * @vma: The VMA whose virtual page offset is required.
+ * vma_start_anon_pgoff() - Get the anonymous page offset of the start of @vma
+ * @vma: The VMA whose anonymous page offset is required.
  *
  * If unfaulted, then this is vma->vm_start >> PAGE_SHIFT, if faulted then the
- * virtual page offset at the time of first fault.
+ * anonymous page offset at the time of first fault.
  *
  * If the VMA is anonymous, this returns the same value as vma_start_pgoff().
  *
  * This value is used for tracking MAP_PRIVATE file-backed mappings by their
- * virtual page offset.
+ * anonymous page offset.
  *
- * Returns: The virtual page offset of the start of @vma.
+ * Returns: The anonymous page offset of the start of @vma.
  */
-static inline pgoff_t vma_start_virt_pgoff(const struct vm_area_struct *vma)
+static inline pgoff_t vma_start_anon_pgoff(const struct vm_area_struct *vma)
 {
 	pgoff_t pgoff = 0;
 
 #ifdef CONFIG_64BIT
-	pgoff += vma->__vm_virt_pgoff_hi;
+	pgoff += vma->__vm_anon_pgoff_hi;
 	pgoff <<= 32;
 #endif
-	pgoff += vma->__vm_virt_pgoff_lo;
+	pgoff += vma->__vm_anon_pgoff_lo;
 	return pgoff;
 }
 
 /**
- * vma_end_virt_pgoff() - Get the virtual page offset of the exclusive end of
+ * vma_end_anon_pgoff() - Get the anonymous page offset of the exclusive end of
  * @vma.
- * @vma: The VMA whose end virtual page offset is required.
+ * @vma: The VMA whose end anonymous page offset is required.
  *
- * This returns the virtual exclusive end page offset of @vma, which is useful
+ * This returns the anonymous exclusive end page offset of @vma, which is useful
  * for expressing page offset ranges.
  *
- * See the description of vma_start_virt_pgoff() for a description of VMA
- * virtual page offsets.
+ * See the description of vma_start_anon_pgoff() for a description of VMA
+ * anonymous page offsets.
  *
- * Returns: The exclusive end virtual page offset of @vma.
+ * Returns: The exclusive end anonymous page offset of @vma.
  */
-static inline pgoff_t vma_end_virt_pgoff(const struct vm_area_struct *vma)
+static inline pgoff_t vma_end_anon_pgoff(const struct vm_area_struct *vma)
 {
-	return vma_start_virt_pgoff(vma) + vma_pages(vma);
+	return vma_start_anon_pgoff(vma) + vma_pages(vma);
 }
 
 /**
- * vma_last_virt_pgoff() - Get the virtual page offset of the last page in
+ * vma_last_anon_pgoff() - Get the anonymous page offset of the last page in
  * @vma.
- * @vma: The VMA whose last virtual page offset is required.
+ * @vma: The VMA whose last anonymous page offset is required.
  *
- * See the description of vma_start_virt_pgoff() for a description of VMA
- * virtual page offsets.
+ * See the description of vma_start_anon_pgoff() for a description of VMA
+ * anonymous page offsets.
  *
- * Returns: The last virtual page offset of @vma.
+ * Returns: The last anonymous page offset of @vma.
  */
-static inline pgoff_t vma_last_virt_pgoff(const struct vm_area_struct *vma)
+static inline pgoff_t vma_last_anon_pgoff(const struct vm_area_struct *vma)
 {
-	return vma_end_virt_pgoff(vma) - 1;
+	return vma_end_anon_pgoff(vma) - 1;
 }
 
 static inline unsigned long vma_desc_size(const struct vm_area_desc *desc)

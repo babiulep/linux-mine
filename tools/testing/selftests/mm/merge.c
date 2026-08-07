@@ -1305,7 +1305,7 @@ TEST_F(merge, merge_vmas_with_mseal)
 	ASSERT_EQ(procmap->query.vma_end, (unsigned long)ptr + 2 * page_size);
 }
 
-TEST_F(merge, virt_and_page_offset_mismatch_memfd)
+TEST_F(merge, anon_and_page_offset_mismatch_memfd)
 {
 	struct procmap_fd *procmap = &self->procmap;
 	unsigned int page_size = self->page_size;
@@ -1314,7 +1314,7 @@ TEST_F(merge, virt_and_page_offset_mismatch_memfd)
 	int fd;
 
 	/* Create a 10 page memfd descriptor. */
-	fd = memfd_create("virt_page_offset_test", MFD_CLOEXEC);
+	fd = memfd_create("anon_page_offset_test", MFD_CLOEXEC);
 	ASSERT_NE(fd, -1);
 	ASSERT_EQ(ftruncate(fd, 10 * page_size), 0);
 
@@ -1346,10 +1346,10 @@ TEST_F(merge, virt_and_page_offset_mismatch_memfd)
 	 * | unfaulted |           | faulted |
 	 * |-----------|           |---------|
 	 *
-	 * Because virtual page offset of the faulted region is now
+	 * Because the anonymous page offset of the faulted region is now
 	 * &carveout[10 * page_size], despite the two regions being mergeable
-	 * due to file page offset, they are NOT mergeable due to virtual page
-	 * offset.
+	 * due to file page offset, they are NOT mergeable due to anonymous
+	 * page offset.
 	 */
 	ptr2 = sys_mremap(ptr2, 5 * page_size, 5 * page_size,
 			  MREMAP_MAYMOVE | MREMAP_FIXED,

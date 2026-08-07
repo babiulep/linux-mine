@@ -325,7 +325,7 @@ static void sti_rom_copy(unsigned long base, unsigned long count, void *dest)
 
 
 
-static char default_sti_path[21] __read_mostly;
+static char default_sti_path[32] __read_mostly;
 
 #ifndef MODULE
 static int __init sti_setup(char *str)
@@ -1161,9 +1161,10 @@ static void sti_init_roms(void)
 			dev = hwpath_to_device(&conspath.path);
 		if (!dev)
 			dev = hwpath_to_device(&PAGE0->mem_cons.dp.path);
-		if (dev)
-			print_pa_hwpath(to_parisc_device(dev),
-					default_sti_path);
+		if (dev && dev_is_pci(dev))
+			print_pci_hwpath(to_pci_dev(dev), default_sti_path);
+		else if (dev && !dev_is_pci(dev))
+			print_pa_hwpath(to_parisc_device(dev), default_sti_path);
 		pr_debug("default graphic card: %s\n", default_sti_path);
 	}
 

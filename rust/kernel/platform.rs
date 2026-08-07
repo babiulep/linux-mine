@@ -17,10 +17,7 @@ use crate::{
         from_result,
         to_result, //
     },
-    io::{
-        mem::IoRequest,
-        Resource, //
-    },
+    io::Resource,
     irq::{
         self,
         IrqRequest, //
@@ -30,6 +27,9 @@ use crate::{
     types::Opaque,
     ThisModule, //
 };
+
+#[cfg(CONFIG_HAS_IOMEM)]
+use crate::io::mem::IoRequest;
 
 use core::{
     marker::PhantomData,
@@ -306,6 +306,7 @@ impl<Ctx: device::DeviceContext> Device<Ctx> {
     }
 }
 
+#[cfg(CONFIG_HAS_IOMEM)]
 impl Device<Bound> {
     /// Returns an `IoRequest` for the resource at `index`, if any.
     pub fn io_request_by_index(&self, index: u32) -> Option<IoRequest<'_>> {
@@ -338,22 +339,30 @@ macro_rules! define_irq_accessor_by_index {
         $handler_trait:ident
     ) => {
         $(#[$meta])*
-        pub fn $fn_name<'a, T: irq::$handler_trait + 'static>(
+        ///
+        /// # Safety
+        ///
+        /// Callers must not `mem::forget()` the resulting registration or otherwise prevent its
+        /// [`Drop`] implementation from running.
+        pub unsafe fn $fn_name<'a, T: irq::$handler_trait + 'a>(
             &'a self,
             flags: irq::Flags,
             index: u32,
             name: &'static CStr,
             handler: impl PinInit<T, Error> + 'a,
-        ) -> impl PinInit<irq::$reg_type<T>, Error> + 'a {
+        ) -> impl PinInit<irq::$reg_type<'a, T>, Error> + 'a {
             pin_init::pin_init_scope(move || {
                 let request = self.$request_fn(index)?;
 
-                Ok(irq::$reg_type::<T>::new(
-                    request,
-                    flags,
-                    name,
-                    handler,
-                ))
+                // SAFETY: Caller guarantees the Registration will not be leaked.
+                Ok(unsafe {
+                    irq::$reg_type::<T>::new(
+                        request,
+                        flags,
+                        name,
+                        handler,
+                    )
+                })
             })
         }
     };
@@ -367,22 +376,30 @@ macro_rules! define_irq_accessor_by_name {
         $handler_trait:ident
     ) => {
         $(#[$meta])*
-        pub fn $fn_name<'a, T: irq::$handler_trait + 'static>(
+        ///
+        /// # Safety
+        ///
+        /// Callers must not `mem::forget()` the resulting registration or otherwise prevent its
+        /// [`Drop`] implementation from running.
+        pub unsafe fn $fn_name<'a, T: irq::$handler_trait + 'a>(
             &'a self,
             flags: irq::Flags,
             irq_name: &'a CStr,
             name: &'static CStr,
             handler: impl PinInit<T, Error> + 'a,
-        ) -> impl PinInit<irq::$reg_type<T>, Error> + 'a {
+        ) -> impl PinInit<irq::$reg_type<'a, T>, Error> + 'a {
             pin_init::pin_init_scope(move || {
                 let request = self.$request_fn(irq_name)?;
 
-                Ok(irq::$reg_type::<T>::new(
-                    request,
-                    flags,
-                    name,
-                    handler,
-                ))
+                // SAFETY: Caller guarantees the Registration will not be leaked.
+                Ok(unsafe {
+                    irq::$reg_type::<T>::new(
+                        request,
+                        flags,
+                        name,
+                        handler,
+                    )
+                })
             })
         }
     };

@@ -43,7 +43,7 @@ void workingset_activation(struct folio *folio);
 /* mm/folio.c */
 void folio_add_lru_vma(struct folio *folio, struct vm_area_struct *vma);
 
-static inline bool folio_may_be_lru_cached(struct folio *folio)
+static inline bool folio_may_be_lru_cached(const struct folio *folio)
 {
 	/*
 	 * Holding PMD-sized folios in per-CPU LRU cache unbalances accounting.
@@ -237,19 +237,18 @@ static inline int mmap_file(struct file *file, struct vm_area_struct *vma)
 {
 	int err = vfs_mmap(file, vma);
 
-	/* Hooks cannot mark themselves anonymous. */
-	if (WARN_ON_ONCE(vma_is_anonymous(vma)))
-		err = -EINVAL;
-
-	if (likely(!err))
-		return 0;
-
 	/*
-	 * OK, we tried to call the file hook for mmap(), but an error
-	 * arose. The mapping is in an inconsistent state and we must not invoke
-	 * any further hooks on it.
+	 * Either we tried to call the file hook for mmap() and an error arose
+	 * or a driver set vma->vm_ops = NULL intending there to be no VMA
+	 * operations.
+	 *
+	 * In the former case the VMA is in an inconsistent state and we mustn't
+	 * invoke any further hooks on it, in the latter case the hook actually
+	 * wanted no further hooks to be invoked, so fix both by setting dummy
+	 * VMA ops.
 	 */
-	vma->vm_ops = &vma_dummy_vm_ops;
+	if (unlikely(err || !vma->vm_ops))
+		vma->vm_ops = &vma_dummy_vm_ops;
 
 	return err;
 }
@@ -947,7 +946,7 @@ folio_within_range(struct folio *folio, struct vm_area_struct *vma,
 
 	pgoff_folio = folio_pgoff(folio);
 	pgoff_vma_start = folio_test_anon(folio) ?
-		vma_start_virt_pgoff(vma) : vma_start_pgoff(vma);
+		vma_start_anon_pgoff(vma) : vma_start_pgoff(vma);
 
 	if (start < vma->vm_start)
 		start = vma->vm_start;
@@ -1061,20 +1060,20 @@ static inline unsigned long vma_filebacked_address(const struct vm_area_struct *
  * vma_anon_address - Find the virtual address an anonymous page range is mapped
  * at.
  * @vma: The vma which maps this object.
- * @pgoff_virt: The virtual page index belonging to the folio.
+ * @pgoff_anon: The anonymous page index belonging to the folio.
  * @nr_pages: The number of pages to consider.
  *
  * This is only valid for anonymous or MAP_PRIVATE-mapped file-backed VMAs.
  *
- * Returns: If any page in this range is mapped by this VMA, return the first address
- * where any of these pages appear. Otherwise, return -EFAULT.
+ * Returns: If any page in this range is mapped by this VMA, return the first
+ * address where any of these pages appear. Otherwise, return -EFAULT.
  */
 static inline unsigned long vma_anon_address(const struct vm_area_struct *vma,
-		pgoff_t pgoff_virt, unsigned long nr_pages)
+		pgoff_t pgoff_anon, unsigned long nr_pages)
 {
-	VM_WARN_ON_ONCE(!vma_is_anonymous(vma) && vma_test(vma, VMA_SHARED_BIT));
+	VM_WARN_ON_ONCE(!vma_is_cow_mapping(vma));
 
-	return __vma_address(vma, pgoff_virt, vma_start_virt_pgoff(vma), nr_pages);
+	return __vma_address(vma, pgoff_anon, vma_start_anon_pgoff(vma), nr_pages);
 }
 
 /*
@@ -1083,22 +1082,20 @@ static inline unsigned long vma_anon_address(const struct vm_area_struct *vma,
  */
 static inline unsigned long vma_address_end(struct page_vma_mapped_walk *pvmw)
 {
+	const pgoff_t pgoff_end = pvmw->pgoff + pvmw->nr_pages;
 	const struct vm_area_struct *vma = pvmw->vma;
-	const pgoff_t pgoff = pvmw->pgoff;
 	pgoff_t pgoff_vma_start;
 	unsigned long address;
-	pgoff_t pgoff_end;
 
 	/* Common case, plus ->pgoff is invalid for KSM */
 	if (pvmw->nr_pages == 1)
 		return pvmw->address + PAGE_SIZE;
 
-	if (pvmw->is_anon_walk)
-		pgoff_vma_start = vma_start_virt_pgoff(vma);
+	if (pvmw->pgoff_is_anon)
+		pgoff_vma_start = vma_start_anon_pgoff(vma);
 	else
 		pgoff_vma_start = vma_start_pgoff(vma);
 
-	pgoff_end = pgoff + pvmw->nr_pages;
 	address = vma->vm_start +
 		((pgoff_end - pgoff_vma_start) << PAGE_SHIFT);
 	/* Check for address beyond vma (or wrapped through 0?) */
@@ -1390,7 +1387,7 @@ static inline bool gup_must_unshare(struct vm_area_struct *vma,
 		 * ... because we only care about writable private ("COW")
 		 * mappings where we have to break COW early.
 		 */
-		return is_cow_mapping(vma->vm_flags);
+		return vma_is_cow_mapping(vma);
 	}
 
 	/* Paired with a memory barrier in folio_try_share_anon_rmap_*(). */

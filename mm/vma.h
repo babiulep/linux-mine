@@ -291,86 +291,32 @@ static inline pgoff_t vmg_end_anon_pgoff(const struct vma_merge_struct *vmg)
 	return vmg_start_anon_pgoff(vmg) + vmg_pages(vmg);
 }
 
-static inline void __vma_set_virt_pgoff(struct vm_area_struct *vma, pgoff_t pgoff)
+static inline void __vma_set_anon_pgoff(struct vm_area_struct *vma, pgoff_t pgoff)
 {
 #ifdef CONFIG_64BIT
-	vma->__vm_virt_pgoff_hi = pgoff >> 32;
+	vma->__vm_anon_pgoff_hi = pgoff >> 32;
 #endif
-	vma->__vm_virt_pgoff_lo = pgoff & GENMASK(31, 0);
+	vma->__vm_anon_pgoff_lo = pgoff & GENMASK(31, 0);
 }
 
-static inline void vma_set_virt_pgoff(struct vm_area_struct *vma, pgoff_t pgoff)
+static inline void vma_set_anon_pgoff(struct vm_area_struct *vma, pgoff_t pgoff)
 {
 	vma_assert_can_modify(vma);
-	__vma_set_virt_pgoff(vma, pgoff);
+	__vma_set_anon_pgoff(vma, pgoff);
 }
 
 static inline void vma_add_pgoff(struct vm_area_struct *vma, pgoff_t delta)
 {
 	vma_assert_can_modify(vma);
 	vma_set_pgoff(vma, vma_start_pgoff(vma) + delta);
-	vma_set_virt_pgoff(vma, vma_start_virt_pgoff(vma) + delta);
+	vma_set_anon_pgoff(vma, vma_start_anon_pgoff(vma) + delta);
 }
 
 static inline void vma_sub_pgoff(struct vm_area_struct *vma, pgoff_t delta)
 {
 	vma_assert_can_modify(vma);
 	vma_set_pgoff(vma, vma_start_pgoff(vma) - delta);
-	vma_set_virt_pgoff(vma, vma_start_virt_pgoff(vma) - delta);
-}
-
-/**
- * vma_anon_pgoff_addr() - Calculates the absolute anonymous page offset of
- * @address.
- * @vma: The VMA whose anonymous page offset is required.
- * @address: The address whose absolute page offset is required.
- *
- * If the VMA is a shared file-backed mapping, then the file-based page offset
- * is returned.
- *
- * Otherwise, the virtual page offset is returned.
- *
- * This means that shared file-backed mappings are correctly merged based on
- * their file page offset compatibility.
- *
- * Returns: The absolute anonymous page offset of @address within @vma.
- */
-static inline pgoff_t vma_anon_pgoff_addr(const struct vm_area_struct *vma,
-					  unsigned long address)
-{
-	if (vma_test(vma, VMA_SHARED_BIT))
-		return linear_page_index(vma, address);
-
-	return linear_virt_page_index(vma, address);
-}
-
-/**
- * vma_start_anon_pgoff() - Calculates the absolute anonymous page offset used
- * for purposes of merge compatibility.
- * @vma: The VMA whose anonymous page offset is required.
- *
- * See vma_anon_pgoff_addr().
- *
- * Returns: The absolute anonymous page offset of @vma for purposes of merging.
- */
-static inline pgoff_t vma_start_anon_pgoff(const struct vm_area_struct *vma)
-{
-	return vma_anon_pgoff_addr(vma, vma->vm_start);
-}
-
-/**
- * vma_end_anon_pgoff() - Calculates the absolute exclusive end anonymous page
- * offset used for purposes of merge compatibility.
- * @vma: The VMA whose anonymous end page offset is required.
- *
- * See vma_start_anon_pgoff().
- *
- * Returns: The absolute exclusive end anonymous page offset of @vma for
- * purposes of merging.
- */
-static inline pgoff_t vma_end_anon_pgoff(const struct vm_area_struct *vma)
-{
-	return vma_start_anon_pgoff(vma) + vma_pages(vma);
+	vma_set_anon_pgoff(vma, vma_start_anon_pgoff(vma) - delta);
 }
 
 #define VMG_STATE(name, mm_, vmi_, start_, end_, vma_flags_, pgoff_, anon_pgoff_) \
@@ -396,7 +342,7 @@ static inline pgoff_t vma_end_anon_pgoff(const struct vm_area_struct *vma)
 		.end = end_,						\
 		.vm_flags = vma_->vm_flags,				\
 		.pgoff = linear_page_index(vma_, start_),		\
-		.anon_pgoff = vma_anon_pgoff_addr(vma_, start_),	\
+		.anon_pgoff = __linear_anon_page_index(vma_, start_),	\
 		.file = vma_->vm_file,					\
 		.anon_vma = vma_->anon_vma,				\
 		.policy = vma_policy(vma_),				\
