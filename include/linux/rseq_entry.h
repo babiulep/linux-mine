@@ -132,8 +132,6 @@ static __always_inline bool __rseq_grant_slice_extension(bool work_pending)
 	union rseq_slice_state state;
 	struct rseq __user *rseq;
 
-	lockdep_assert_irqs_disabled();
-
 	if (!rseq_slice_extension_enabled())
 		return false;
 
@@ -221,8 +219,10 @@ static __always_inline bool __rseq_grant_slice_extension(bool work_pending)
 	 *
 	 * which would be inconsistent state.
 	 */
-	clear_tsk_need_resched(curr);
-	clear_preempt_need_resched();
+	scoped_guard(irq) {
+		clear_tsk_need_resched(curr);
+		clear_preempt_need_resched();
+	}
 	return true;
 
 efault:
@@ -233,6 +233,7 @@ efault:
 static __always_inline bool rseq_grant_slice_extension(unsigned long ti_work, unsigned long mask)
 {
 	if (unlikely(__rseq_grant_slice_extension(ti_work & mask))) {
+		guard(irq)();
 		hrtimer_rearm_deferred_tif(ti_work);
 		return true;
 	}

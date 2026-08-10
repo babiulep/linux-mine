@@ -20,6 +20,26 @@ static bool is_cmpxchg_insn(const struct bpf_insn *insn)
 	       insn->imm == BPF_CMPXCHG;
 }
 
+/* Returns true if 'insn' is an address space cast instruction translated as BPF_ALU op */
+static bool is_addr_space_cast32(struct bpf_prog *prog, const struct bpf_insn *insn)
+{
+	struct bpf_map *arena = (struct bpf_map *)prog->aux->arena;
+
+	if (insn->code != (BPF_ALU64 | BPF_MOV | BPF_X) || insn->off != BPF_ADDR_SPACE_CAST)
+		return false;
+
+	/* cast from as(1) to as(0) */
+	if (insn->imm == 1)
+		return true;
+
+	/* cast from as(0) to as(1) */
+	if (insn->imm == 1 << 16)
+		return arena && arena->map_flags & BPF_F_NO_USER_CONV;
+
+	/* non-BPF_F_NO_USER_CONV cast from as(0) to as(1) should be handled by JIT */
+	return false;
+}
+
 /* Return the regno defined by the insn, or -1. */
 static int insn_def_regno(const struct bpf_insn *insn)
 {
@@ -44,15 +64,60 @@ static int insn_def_regno(const struct bpf_insn *insn)
 	}
 }
 
-/* Return TRUE if INSN has defined any 32-bit value explicitly. */
-static bool insn_has_def32(struct bpf_insn *insn)
+/*
+ * For use only in combination with insn_def_regno() >= 0.
+ * Returns TRUE if the destination register operates on 64-bit,
+ * otherwise return FALSE.
+ */
+static bool bpf_is_reg64(struct bpf_prog *prog, struct bpf_insn *insn)
+{
+	u8 class = BPF_CLASS(insn->code);
+	u8 mode = BPF_MODE(insn->code);
+	u8 size = BPF_SIZE(insn->code);
+	u8 op = BPF_OP(insn->code);
+	bool mode_mem;
+
+	/* subregister endiness swap */
+	if ((class == BPF_ALU || class == BPF_ALU64) && op == BPF_END && insn->imm != 64)
+		return false;
+
+	/* w0 += 1 */
+	if (class == BPF_ALU && op != BPF_END)
+		return false;
+
+	/* address space casts converted to BPF_ALU, see bpf_do_misc_fixups() */
+	if (is_addr_space_cast32(prog, insn))
+		return false;
+
+	/* non 64-bit, non signed extended loads */
+	mode_mem = mode == BPF_MEM || mode == BPF_PROBE_MEM || mode == BPF_PROBE_MEM32;
+	if (class == BPF_LDX && mode_mem && size != BPF_DW)
+		return false;
+
+	/* atomics, see insn_def_regno() */
+	if (class == BPF_STX && size != BPF_DW)
+		return false;
+
+	/* both LD_IND and LD_ABS return 32-bit data. */
+	if (class == BPF_LD && (mode == BPF_IND || mode == BPF_ABS))
+		return false;
+
+	/* Conservatively return true at default. */
+	return true;
+}
+
+/*
+ * Return the 32-bit subregister defined by INSN, or -1 if INSN does not
+ * explicitly define a 32-bit value.
+ */
+int bpf_insn_def32(struct bpf_prog *prog, struct bpf_insn *insn)
 {
 	int dst_reg = insn_def_regno(insn);
 
-	if (dst_reg == -1)
-		return false;
+	if (dst_reg < 0 || bpf_is_reg64(prog, insn))
+		return -1;
 
-	return !bpf_is_reg64(insn, dst_reg, NULL, DST_OP);
+	return dst_reg;
 }
 
 static int kfunc_desc_cmp_by_imm_off(const void *a, const void *b)
@@ -169,7 +234,7 @@ static void adjust_insn_aux_data(struct bpf_verifier_env *env,
 	 * (cnt == 1) is taken or not. There is no guarantee INSN at OFF is the
 	 * original insn at old prog.
 	 */
-	data[off].zext_dst = insn_has_def32(insn + off + cnt - 1);
+	data[off].zext_dst = bpf_insn_def32(new_prog, insn + off + cnt - 1) >= 0;
 
 	if (cnt == 1)
 		return;
@@ -181,7 +246,7 @@ static void adjust_insn_aux_data(struct bpf_verifier_env *env,
 	for (i = off; i < off + cnt - 1; i++) {
 		/* Expand insni[off]'s seen count to the patched range. */
 		data[i].seen = old_seen;
-		data[i].zext_dst = insn_has_def32(insn + i);
+		data[i].zext_dst = bpf_insn_def32(new_prog, insn + i) >= 0;
 	}
 
 	/*
@@ -616,11 +681,7 @@ int bpf_opt_subreg_zext_lo32_rnd_hi32(struct bpf_verifier_env *env,
 			if (load_reg == -1)
 				continue;
 
-			/* NOTE: arg "reg" (the fourth one) is only used for
-			 *       BPF_STX + SRC_OP, so it is safe to pass NULL
-			 *       here.
-			 */
-			if (bpf_is_reg64(&insn, load_reg, NULL, DST_OP)) {
+			if (bpf_is_reg64(env->prog, &insn)) {
 				if (class == BPF_LD &&
 				    BPF_MODE(code) == BPF_IMM)
 					i++;
@@ -1513,15 +1574,12 @@ int bpf_do_misc_fixups(struct bpf_verifier_env *env)
 	}
 
 	for (i = 0; i < insn_cnt;) {
-		if (insn->code == (BPF_ALU64 | BPF_MOV | BPF_X) && insn->imm) {
-			if ((insn->off == BPF_ADDR_SPACE_CAST && insn->imm == 1) ||
-			    (((struct bpf_map *)env->prog->aux->arena)->map_flags & BPF_F_NO_USER_CONV)) {
-				/* convert to 32-bit mov that clears upper 32-bit */
-				insn->code = BPF_ALU | BPF_MOV | BPF_X;
-				/* clear off and imm, so it's a normal 'wX = wY' from JIT pov */
-				insn->off = 0;
-				insn->imm = 0;
-			} /* cast from as(0) to as(1) should be handled by JIT */
+		if (is_addr_space_cast32(env->prog, insn)) {
+			/* convert to 32-bit mov that clears upper 32-bit */
+			insn->code = BPF_ALU | BPF_MOV | BPF_X;
+			/* clear off and imm, so it's a normal 'wX = wY' from JIT pov */
+			insn->off = 0;
+			insn->imm = 0;
 			goto next_insn;
 		}
 

@@ -202,6 +202,10 @@ enum reg3_op {
 	amswaph_op	= 0x70b9,
 	amaddb_op	= 0x70ba,
 	amaddh_op	= 0x70bb,
+	amswapdbb_op	= 0x70bc,
+	amswapdbh_op	= 0x70bd,
+	amadddbb_op	= 0x70be,
+	amadddbh_op	= 0x70bf,
 	amswapw_op	= 0x70c0,
 	amswapd_op	= 0x70c1,
 	amaddw_op	= 0x70c2,
@@ -407,6 +411,7 @@ enum loongarch_gpr {
 	LOONGARCH_GPR_T6,
 	LOONGARCH_GPR_T7,
 	LOONGARCH_GPR_T8,
+	LOONGARCH_GPR_U0 = 21,	/* Kernel per-CPU base register ($r21) */
 	LOONGARCH_GPR_FP = 22,
 	LOONGARCH_GPR_S0 = 23,
 	LOONGARCH_GPR_S1,
@@ -789,6 +794,20 @@ DEF_EMIT_REG3_FORMAT(amswapb, amswapb_op)
 DEF_EMIT_REG3_FORMAT(amswaph, amswaph_op)
 DEF_EMIT_REG3_FORMAT(amswapw, amswapw_op)
 DEF_EMIT_REG3_FORMAT(amswapd, amswapd_op)
+DEF_EMIT_REG3_FORMAT(amswapdbb, amswapdbb_op)
+DEF_EMIT_REG3_FORMAT(amswapdbh, amswapdbh_op)
+DEF_EMIT_REG3_FORMAT(amadddbb, amadddbb_op)
+DEF_EMIT_REG3_FORMAT(amadddbh, amadddbh_op)
+DEF_EMIT_REG3_FORMAT(amadddbw, amadddbw_op)
+DEF_EMIT_REG3_FORMAT(amadddbd, amadddbd_op)
+DEF_EMIT_REG3_FORMAT(amanddbw, amanddbw_op)
+DEF_EMIT_REG3_FORMAT(amanddbd, amanddbd_op)
+DEF_EMIT_REG3_FORMAT(amordbw, amordbw_op)
+DEF_EMIT_REG3_FORMAT(amordbd, amordbd_op)
+DEF_EMIT_REG3_FORMAT(amxordbw, amxordbw_op)
+DEF_EMIT_REG3_FORMAT(amxordbd, amxordbd_op)
+DEF_EMIT_REG3_FORMAT(amswapdbw, amswapdbw_op)
+DEF_EMIT_REG3_FORMAT(amswapdbd, amswapdbd_op)
 
 #define DEF_EMIT_REG3SA2_FORMAT(NAME, OP)				\
 static inline void emit_##NAME(union loongarch_instruction *insn,	\

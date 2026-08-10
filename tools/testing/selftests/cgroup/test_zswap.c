@@ -566,19 +566,12 @@ static int test_no_kmem_bypass(const char *root)
 	int child_status;
 	char *test_group = NULL;
 	pid_t child_pid;
-	size_t stored_pages;
 
 	/* Read sys info and compute test values accordingly */
 	if (sysinfo(&sys_info) != 0)
 		return KSFT_FAIL;
-	if (sys_info.totalram > 5000000000) {
-		ksft_print_msg("requires less than 5000000000 total ram\n");
+	if (sys_info.totalram > 5000000000)
 		return KSFT_SKIP;
-	}
-	if (get_zswap_stored_pages(&stored_pages)) {
-		ksft_print_msg("debugfs at /sys/kernel/debug is required\n");
-		return KSFT_SKIP;
-	}
 	values = mmap(0, sizeof(struct no_kmem_bypass_child_args), PROT_READ |
 			PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (values == MAP_FAILED)
@@ -611,6 +604,7 @@ static int test_no_kmem_bypass(const char *root)
 	/* Try to wakeup kswapd and let it push child memory to zswap */
 	set_min_free_kb(min_free_kb_high);
 	for (int i = 0; i < 20; i++) {
+		size_t stored_pages;
 		char *trigger_allocation = malloc(trigger_allocation_size);
 
 		if (!trigger_allocation)

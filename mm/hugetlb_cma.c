@@ -124,6 +124,9 @@ static int __init cmdline_parse_hugetlb_cma(char *p)
 				break;
 			nid = array_index_nospec(tmp, MAX_NUMNODES);
 
+			hugetlb_cma_size = 0;
+			hugetlb_cma_percent = 0;
+
 			s += count + 1;
 			tmp = memparse(s, &next);
 			if (*next == '%') {
@@ -246,14 +249,26 @@ void __init hugetlb_cma_reserve(void)
 	gigantic_page_size = PAGE_SIZE << order;
 
 	if (hugetlb_cma_percent) {
+		unsigned long orig_size = hugetlb_cma_size;
+
 		hugetlb_cma_size = ALIGN_DOWN(hugetlb_cma_size, PAGE_SIZE << order);
+		if (orig_size && !hugetlb_cma_size)
+			pr_warn("hugetlb_cma: reservation size rounded down to 0 from %lu MiB (%u%%)\n",
+				orig_size / SZ_1M, hugetlb_cma_percent);
 	} else if (has_node_specific_param) {
 		hugetlb_cma_size = 0;
 		for (nid = 0; nid < MAX_NUMNODES; nid++) {
 			if (hugetlb_cma_percent_in_node[nid]) {
+				unsigned long orig_size = hugetlb_cma_size_in_node[nid];
+
 				hugetlb_cma_size_in_node[nid] =
 					ALIGN_DOWN(hugetlb_cma_size_in_node[nid],
 						   PAGE_SIZE << order);
+				if (orig_size && !hugetlb_cma_size_in_node[nid])
+					pr_warn("hugetlb_cma: reservation size rounded down to 0 from %lu MiB (%u%%) on node %d\n",
+						orig_size / SZ_1M,
+						hugetlb_cma_percent_in_node[nid],
+						nid);
 			}
 			hugetlb_cma_size += hugetlb_cma_size_in_node[nid];
 		}
@@ -305,8 +320,7 @@ void __init hugetlb_cma_reserve(void)
 				per_node / SZ_1M);
 		else
 			pr_info("hugetlb_cma: reserve %lu MiB, up to %lu MiB per node\n",
-				hugetlb_cma_size / SZ_1M,
-				per_node / SZ_1M);
+				hugetlb_cma_size / SZ_1M, per_node / SZ_1M);
 	}
 
 	reserved = 0;

@@ -2,6 +2,8 @@
 
 #include <test_progs.h>
 
+#include "arena_kfunc.skel.h"
+#include "arena_kfunc_jit.skel.h"
 #include "cap_helpers.h"
 #include "verifier_align.skel.h"
 #include "verifier_and.skel.h"
@@ -126,6 +128,7 @@
 #include "verifier_jit_inline.skel.h"
 #include "irq.skel.h"
 #include "verifier_ctx_ptr_param.skel.h"
+#include "verifier_zext.skel.h"
 
 #define MAX_ENTRIES 11
 
@@ -160,6 +163,10 @@ static void run_tests_aux(const char *skel_name,
 }
 
 #define RUN(skel) run_tests_aux(#skel, skel##__elf_bytes, NULL)
+
+void test_arena_kfunc(void)                   { RUN_TESTS(arena_kfunc); }
+
+void test_arena_kfunc_jit(void)               { RUN_TESTS(arena_kfunc_jit); }
 
 void test_verifier_align(void)                { RUN(verifier_align); }
 void test_verifier_and(void)                  { RUN(verifier_and); }
@@ -281,6 +288,7 @@ void test_irq(void)			      { RUN(irq); }
 void test_verifier_mtu(void)		      { RUN(verifier_mtu); }
 void test_verifier_jit_inline(void)               { RUN(verifier_jit_inline); }
 void test_verifier_ctx_ptr_param(void)       { RUN(verifier_ctx_ptr_param); }
+void test_verifier_zext(void)                 { RUN_TESTS(verifier_zext); }
 
 static int init_test_val_map(struct bpf_object *obj, char *map_name)
 {
