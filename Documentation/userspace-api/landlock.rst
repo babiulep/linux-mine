@@ -281,12 +281,13 @@ The next step is to restrict the current thread from gaining more privileges
 no_new_privs attribute is required by Landlock.
 
 Processes with ``CAP_SYS_ADMIN`` in their namespace can enforce a ruleset
-without it, but not setting no_new_privs is risky even when it is not
-required: sandboxed processes could still execute set-user-ID, set-group-ID
-or file-capability binaries, which would then run with elevated privileges
-while being restricted by a Landlock domain they may not expect, making them
-potential confused deputies.  Setting no_new_privs should only be avoided if
-such a privilege transition is expected.
+without setting no_new_privs, but leaving no_new_privs unset is risky even
+when Landlock does not require this attribute: sandboxed processes could
+still execute set-user-ID, set-group-ID or file-capability binaries, which
+would then run with elevated privileges while being restricted by a Landlock
+domain they may not expect, making them potential confused deputies.
+no_new_privs should only be left unset if such a privilege transition is
+expected.
 
 We now have a ruleset with the first rule allowing read and execute access to
 ``/usr`` while denying all other handled accesses for the filesystem, and two
@@ -821,11 +822,10 @@ accepts the ``LANDLOCK_RESTRICT_SELF_NO_NEW_PRIVS`` flag, which sets the
 no_new_privs attribute of the calling thread only once the enforcement of
 the ruleset succeeded: no_new_privs is set if and only if the call
 succeeds.  This removes the need for a prior :manpage:`prctl(2)`
-``PR_SET_NO_NEW_PRIVS`` call, and with it the ``CAP_SYS_ADMIN``
-requirement.  When combined with ``LANDLOCK_RESTRICT_SELF_TSYNC``,
-no_new_privs is set on all threads of the process.  As explained in the
-tutorial above, not setting no_new_privs is risky even when it is not
-required.
+``PR_SET_NO_NEW_PRIVS`` call (or ``CAP_SYS_ADMIN`` use).  When combined
+with ``LANDLOCK_RESTRICT_SELF_TSYNC``, no_new_privs is set on all threads
+of the process.  As explained in the tutorial above, leaving no_new_privs
+unset is risky even when Landlock does not require it.
 
 .. _kernel_support:
 

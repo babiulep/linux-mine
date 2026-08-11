@@ -255,12 +255,9 @@ TEST(restrict_self_checks_ordering)
 
 	/* Checks unprivileged enforcement without no_new_privs. */
 	drop_caps(_metadata);
-	ASSERT_EQ(-1, landlock_restrict_self(
-			      -1, ~LANDLOCK_RESTRICT_SELF_NO_NEW_PRIVS));
-	ASSERT_EQ(EPERM, errno);
 	/*
-	 * LANDLOCK_RESTRICT_SELF_NO_NEW_PRIVS fulfills the no_new_privs /
-	 * CAP_SYS_ADMIN requirement, so the invalid flags are checked first.
+	 * The flags validity is checked before the no_new_privs /
+	 * CAP_SYS_ADMIN requirement.
 	 */
 	ASSERT_EQ(-1, landlock_restrict_self(-1, -1));
 	ASSERT_EQ(EINVAL, errno);
@@ -268,6 +265,14 @@ TEST(restrict_self_checks_ordering)
 	ASSERT_EQ(EPERM, errno);
 	ASSERT_EQ(-1, landlock_restrict_self(ruleset_fd, 0));
 	ASSERT_EQ(EPERM, errno);
+	/*
+	 * LANDLOCK_RESTRICT_SELF_NO_NEW_PRIVS fulfills the no_new_privs /
+	 * CAP_SYS_ADMIN requirement but requires a ruleset, so the FD is
+	 * checked next.
+	 */
+	ASSERT_EQ(-1, landlock_restrict_self(
+			      -1, LANDLOCK_RESTRICT_SELF_NO_NEW_PRIVS));
+	ASSERT_EQ(EBADF, errno);
 
 	ASSERT_EQ(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
 

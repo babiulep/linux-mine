@@ -552,10 +552,10 @@ static struct aa_loaddata *aa_get_data_from_compressed(const char __user *userbu
 	*compressed_data = kvmalloc(buffer_size, GFP_KERNEL);
 	if (!*compressed_data)
 		return ERR_PTR(-ENOMEM);
-	error = copy_from_user(*compressed_data, userbuf, buffer_size);
-	if (error)
+	if (copy_from_user(*compressed_data, userbuf, buffer_size)) {
+		error = -EFAULT;
 		goto fail;
-
+	}
 	error = zstd_get_frame_header(&header, *compressed_data, buffer_size);
 	if (error || header.frameContentSize == ZSTD_CONTENTSIZE_UNKNOWN ||
 	    header.frameContentSize == ZSTD_CONTENTSIZE_ERROR) {
@@ -856,7 +856,8 @@ static const struct file_operations aa_fs_ns_revision_fops = {
 	.release	= ns_revision_release,
 };
 
-static void profile_query_cb(struct aa_profile *profile, struct aa_perms *perms,
+static void profile_query_cb(const struct aa_profile *profile,
+			     struct aa_perms *perms,
 			     const char *match_str, size_t match_len)
 {
 	struct aa_ruleset *rules = profile->label.rules[0];

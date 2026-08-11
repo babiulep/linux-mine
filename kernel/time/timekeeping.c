@@ -858,7 +858,11 @@ static void timekeeping_update_from_shadow(struct tk_data *tkd, unsigned int act
 	 * the downside that the reader side does not longer benefit from
 	 * the cacheline optimized data layout of the timekeeper and requires
 	 * another indirection.
+	 *
+	 * Write xtime_sec first so that even if the memcpy() tears the store
+	 * data integrity is provided for ktime_get_real_seconds().
 	 */
+	WRITE_ONCE(tkd->timekeeper.xtime_sec, tk->xtime_sec);
 	memcpy(&tkd->timekeeper, tk, sizeof(*tk));
 	write_seqcount_end(&tkd->seq);
 }
@@ -1186,11 +1190,11 @@ time64_t ktime_get_real_seconds(void)
 	unsigned int seq;
 
 	if (IS_ENABLED(CONFIG_64BIT))
-		return tk->xtime_sec;
+		return READ_ONCE(tk->xtime_sec);
 
 	do {
 		seq = read_seqcount_begin(&tk_core.seq);
-		seconds = tk->xtime_sec;
+		seconds = READ_ONCE(tk->xtime_sec);
 
 	} while (read_seqcount_retry(&tk_core.seq, seq));
 
@@ -1212,7 +1216,7 @@ noinstr time64_t __ktime_get_real_seconds(void)
 {
 	struct timekeeper *tk = &tk_core.timekeeper;
 
-	return tk->xtime_sec;
+	return READ_ONCE(tk->xtime_sec);
 }
 
 static inline u64 tk_clock_read_snapshot(const struct tk_read_base *tkr,
@@ -3021,10 +3025,12 @@ static int __do_adjtimex(struct tk_data *tkd, struct __kernel_timex *txc,
 		return ret;
 	add_device_randomness(txc, sizeof(*txc));
 
-	if (!aux_clock)
+	if (!aux_clock) {
 		ktime_get_real_ts64(&ts);
-	else
-		tk_get_aux_ts64(tkd->timekeeper.id, &ts);
+	} else {
+		if (!tk_get_aux_ts64(tkd->timekeeper.id, &ts))
+			return -ENODEV;
+	}
 
 	add_device_randomness(&ts, sizeof(ts));
 

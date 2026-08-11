@@ -28,6 +28,7 @@
 #include <uapi/linux/lsm.h>
 
 #include "include/af_unix.h"
+#include "include/af_inet.h"
 #include "include/apparmor.h"
 #include "include/apparmorfs.h"
 #include "include/audit.h"
@@ -1266,13 +1267,21 @@ static int apparmor_socket_create(int family, int type, int protocol, int kern)
 
 	label = begin_current_label_crit_section(&needput);
 	if (!unconfined(label)) {
-		if (family == PF_UNIX)
+		switch (family) {
+		case PF_UNIX:
 			error = aa_unix_create_perm(label, family, type,
 						    protocol);
-		else
+			break;
+		case PF_INET:
+		case PF_INET6:
+			error = aa_inet_create_perm(label, family, type,
+						    protocol);
+			break;
+		default:
 			error = aa_af_perm(current_cred(), label, OP_CREATE,
 					   AA_MAY_CREATE, family, type,
 					   protocol);
+		}
 	}
 	end_current_label_crit_section(label, needput);
 
@@ -1367,8 +1376,13 @@ static int apparmor_socket_bind(struct socket *sock,
 	AA_BUG(!address);
 	AA_BUG(in_interrupt());
 
-	if (sock->sk->sk_family == PF_UNIX)
+	switch (sock->sk->sk_family) {
+	case PF_UNIX:
 		return aa_unix_bind_perm(sock, address, addrlen);
+	case PF_INET:
+	case PF_INET6:
+		return aa_inet_bind_perm(sock, address, addrlen);
+	}
 	return aa_sk_perm(OP_BIND, AA_MAY_BIND, sock->sk);
 }
 
@@ -1381,8 +1395,13 @@ static int apparmor_socket_connect(struct socket *sock,
 	AA_BUG(in_interrupt());
 
 	/* PF_UNIX goes through unix_stream_connect && unix_may_send */
-	if (sock->sk->sk_family == PF_UNIX)
+	switch (sock->sk->sk_family) {
+	case PF_UNIX:
 		return 0;
+	case PF_INET:
+	case PF_INET6:
+		return aa_inet_connect_perm(sock, address, addrlen);
+	}
 	return aa_sk_perm(OP_CONNECT, AA_MAY_CONNECT, sock->sk);
 }
 
@@ -1392,8 +1411,13 @@ static int apparmor_socket_listen(struct socket *sock, int backlog)
 	AA_BUG(!sock->sk);
 	AA_BUG(in_interrupt());
 
-	if (sock->sk->sk_family == PF_UNIX)
+	switch (sock->sk->sk_family) {
+	case PF_UNIX:
 		return aa_unix_listen_perm(sock, backlog);
+	case PF_INET:
+	case PF_INET6:
+		return aa_inet_listen_perm(sock, backlog);
+	}
 	return aa_sk_perm(OP_LISTEN, AA_MAY_LISTEN, sock->sk);
 }
 
@@ -1408,8 +1432,13 @@ static int apparmor_socket_accept(struct socket *sock, struct socket *newsock)
 	AA_BUG(!newsock);
 	AA_BUG(in_interrupt());
 
-	if (sock->sk->sk_family == PF_UNIX)
+	switch (sock->sk->sk_family) {
+	case PF_UNIX:
 		return aa_unix_accept_perm(sock, newsock);
+	case PF_INET:
+	case PF_INET6:
+		return aa_inet_accept_perm(sock, newsock);
+	}
 	return aa_sk_perm(OP_ACCEPT, AA_MAY_ACCEPT, sock->sk);
 }
 
@@ -1422,8 +1451,14 @@ static int aa_sock_msg_perm(const char *op, u32 request, struct socket *sock,
 	AA_BUG(in_interrupt());
 
 	/* PF_UNIX goes through unix_may_send */
-	if (sock->sk->sk_family == PF_UNIX)
+	switch (sock->sk->sk_family) {
+	case PF_UNIX:
 		return 0;
+	case PF_INET:
+	case PF_INET6:
+		return aa_inet_msg_perm(op, request, sock, msg, size);
+	}
+
 	return aa_sk_perm(op, request, sock->sk);
 }
 
@@ -1442,7 +1477,8 @@ static int apparmor_socket_sendmsg(struct socket *sock,
 	    (sk_is_tcp(sock->sk) ||
 	     (sk_is_inet(sock->sk) && sock->sk->sk_type == SOCK_STREAM &&
 	      sock->sk->sk_protocol == IPPROTO_MPTCP)))
-		error = aa_sk_perm(OP_CONNECT, AA_MAY_CONNECT, sock->sk);
+		error = aa_sock_msg_perm(OP_CONNECT, AA_MAY_CONNECT, sock,
+					 msg, size);
 
 	return error;
 }
@@ -1460,8 +1496,13 @@ static int aa_sock_perm(const char *op, u32 request, struct socket *sock)
 	AA_BUG(!sock->sk);
 	AA_BUG(in_interrupt());
 
-	if (sock->sk->sk_family == PF_UNIX)
+	switch (sock->sk->sk_family) {
+	case PF_UNIX:
 		return aa_unix_sock_perm(op, request, sock);
+	case PF_INET:
+	case PF_INET6:
+		return aa_inet_sock_perm(op, request, sock);
+	}
 	return aa_sk_perm(op, request, sock->sk);
 }
 
@@ -1483,8 +1524,13 @@ static int aa_sock_opt_perm(const char *op, u32 request, struct socket *sock,
 	AA_BUG(!sock->sk);
 	AA_BUG(in_interrupt());
 
-	if (sock->sk->sk_family == PF_UNIX)
+	switch (sock->sk->sk_family) {
+	case PF_UNIX:
 		return aa_unix_opt_perm(op, request, sock, level, optname);
+	case PF_INET:
+	case PF_INET6:
+		return aa_inet_opt_perm(op, request, sock, level, optname);
+	}
 	return aa_sk_perm(op, request, sock->sk);
 }
 
@@ -1506,42 +1552,6 @@ static int apparmor_socket_shutdown(struct socket *sock, int how)
 {
 	return aa_sock_perm(OP_SHUTDOWN, AA_MAY_SHUTDOWN, sock);
 }
-
-#ifdef CONFIG_NETWORK_SECMARK
-/**
- * apparmor_socket_sock_rcv_skb - check perms before associating skb to sk
- * @sk: sk to associate @skb with
- * @skb: skb to check for perms
- *
- * Note: can not sleep may be called with locks held
- *
- * don't want protocol specific in __skb_recv_datagram()
- * to deny an incoming connection  socket_sock_rcv_skb()
- */
-static int apparmor_socket_sock_rcv_skb(struct sock *sk, struct sk_buff *skb)
-{
-	struct aa_sk_ctx *ctx = aa_sock(sk);
-	int error;
-
-	if (!skb->secmark)
-		return 0;
-
-	/*
-	 * If reach here before socket_post_create hook is called, in which
-	 * case label is null, drop the packet.
-	 */
-	if (!rcu_access_pointer(ctx->label))
-		return -EACCES;
-
-	rcu_read_lock();
-	error = apparmor_secmark_check(rcu_dereference(ctx->label), OP_RECVMSG,
-				       AA_MAY_RECEIVE, skb->secmark, sk);
-	rcu_read_unlock();
-
-	return error;
-}
-#endif
-
 
 static struct aa_label *sk_peer_get_label(struct sock *sk)
 {
@@ -1643,6 +1653,39 @@ static void apparmor_sock_graft(struct sock *sk, struct socket *parent)
 }
 
 #ifdef CONFIG_NETWORK_SECMARK
+/**
+ * apparmor_socket_sock_rcv_skb - check perms before associating skb to sk
+ * @sk: sk to associate @skb with
+ * @skb: skb to check for perms
+ *
+ * Note: can not sleep may be called with locks held
+ *
+ * don't want protocol specific in __skb_recv_datagram()
+ * to deny an incoming connection  socket_sock_rcv_skb()
+ */
+static int apparmor_socket_sock_rcv_skb(struct sock *sk, struct sk_buff *skb)
+{
+	struct aa_sk_ctx *ctx = aa_sock(sk);
+	int error;
+
+	if (!skb->secmark)
+		return 0;
+
+	/*
+	 * If reach here before socket_post_create hook is called, in which
+	 * case label is null, drop the packet.
+	 */
+	if (!rcu_access_pointer(ctx->label))
+		return -EACCES;
+
+	rcu_read_lock();
+	error = apparmor_secmark_check(rcu_dereference(ctx->label), OP_RECVMSG,
+				       AA_MAY_RECEIVE, skb->secmark, sk);
+	rcu_read_unlock();
+
+	return error;
+}
+
 static int apparmor_inet_conn_request(const struct sock *sk, struct sk_buff *skb,
 				      struct request_sock *req)
 {
@@ -1659,6 +1702,51 @@ static int apparmor_inet_conn_request(const struct sock *sk, struct sk_buff *skb
 
 	return error;
 }
+#endif
+
+#if defined(CONFIG_NETFILTER) && defined(CONFIG_NETWORK_SECMARK)
+static unsigned int apparmor_ip_postroute(void *priv,
+					  struct sk_buff *skb,
+					  const struct nf_hook_state *state)
+{
+	struct aa_sk_ctx *ctx;
+	struct sock *sk;
+	int error;
+
+	if (!skb->secmark)
+		return NF_ACCEPT;
+
+	sk = skb_to_full_sk(skb);
+	if (sk == NULL)
+		return NF_ACCEPT;
+
+	ctx = aa_sock(sk);
+	rcu_read_lock();
+	error = apparmor_secmark_check(rcu_dereference(ctx->label), OP_SENDMSG,
+				       AA_MAY_SEND, skb->secmark, sk);
+	rcu_read_unlock();
+	if (!error)
+		return NF_ACCEPT;
+
+	return NF_DROP_ERR(-ECONNREFUSED);
+}
+
+static const struct nf_hook_ops apparmor_nf_ops[] = {
+	{
+		.hook =         apparmor_ip_postroute,
+		.pf =           NFPROTO_IPV4,
+		.hooknum =      NF_INET_POST_ROUTING,
+		.priority =     NF_IP_PRI_SELINUX_FIRST,
+	},
+#if IS_ENABLED(CONFIG_IPV6)
+	{
+		.hook =         apparmor_ip_postroute,
+		.pf =           NFPROTO_IPV6,
+		.hooknum =      NF_INET_POST_ROUTING,
+		.priority =     NF_IP6_PRI_SELINUX_FIRST,
+	},
+#endif
+};
 #endif
 
 /*
@@ -2102,7 +2190,7 @@ static int param_set_audit(const char *val, const struct kernel_param *kp)
 	if (apparmor_initialized && !aa_current_policy_admin_capable(NULL))
 		return -EPERM;
 
-	i = match_string(audit_mode_names, AUDIT_MAX_INDEX, val);
+	i = match_string(audit_mode_names, AUDIT_MODE_NAMES_COUNT, val);
 	if (i < 0)
 		return -EINVAL;
 
@@ -2130,7 +2218,7 @@ static int param_set_mode(const char *val, const struct kernel_param *kp)
 	if (apparmor_initialized && !aa_current_policy_admin_capable(NULL))
 		return -EPERM;
 
-	i = match_string(aa_profile_mode_names, APPARMOR_MODE_NAMES_MAX_INDEX,
+	i = match_string(aa_profile_mode_names, PROFILE_MODE_NAMES_COUNT,
 			 val);
 	if (i < 0)
 		return -EINVAL;
@@ -2378,51 +2466,8 @@ static inline int apparmor_init_sysctl(void)
 }
 #endif /* CONFIG_SYSCTL */
 
+
 #if defined(CONFIG_NETFILTER) && defined(CONFIG_NETWORK_SECMARK)
-static unsigned int apparmor_ip_postroute(void *priv,
-					  struct sk_buff *skb,
-					  const struct nf_hook_state *state)
-{
-	struct aa_sk_ctx *ctx;
-	struct sock *sk;
-	int error;
-
-	if (!skb->secmark)
-		return NF_ACCEPT;
-
-	sk = skb_to_full_sk(skb);
-	if (sk == NULL)
-		return NF_ACCEPT;
-
-	ctx = aa_sock(sk);
-	rcu_read_lock();
-	error = apparmor_secmark_check(rcu_dereference(ctx->label), OP_SENDMSG,
-				       AA_MAY_SEND, skb->secmark, sk);
-	rcu_read_unlock();
-	if (!error)
-		return NF_ACCEPT;
-
-	return NF_DROP_ERR(-ECONNREFUSED);
-
-}
-
-static const struct nf_hook_ops apparmor_nf_ops[] = {
-	{
-		.hook =         apparmor_ip_postroute,
-		.pf =           NFPROTO_IPV4,
-		.hooknum =      NF_INET_POST_ROUTING,
-		.priority =     NF_IP_PRI_SELINUX_FIRST,
-	},
-#if IS_ENABLED(CONFIG_IPV6)
-	{
-		.hook =         apparmor_ip_postroute,
-		.pf =           NFPROTO_IPV6,
-		.hooknum =      NF_INET_POST_ROUTING,
-		.priority =     NF_IP6_PRI_SELINUX_FIRST,
-	},
-#endif
-};
-
 static int __net_init apparmor_nf_register(struct net *net)
 {
 	return nf_register_net_hooks(net, apparmor_nf_ops,
@@ -2455,16 +2500,16 @@ static int __init apparmor_nf_ip_init(void)
 }
 #endif
 
-static char nulldfa_src[] __aligned(8) = {
+static const char nulldfa_src[] __aligned(8) = {
 	#include "nulldfa.in"
 };
-static struct aa_dfa *nulldfa;
+static struct aa_dfa *nulldfa __ro_after_init;
 
 static char stacksplitdfa_src[] __aligned(8) = {
 	#include "stacksplitdfa.in"
 };
-struct aa_dfa *stacksplitdfa;
-struct aa_policydb *nullpdb;
+struct aa_dfa *stacksplitdfa __ro_after_init;
+struct aa_policydb *nullpdb __ro_after_init;
 
 static int __init aa_setup_dfa_engine(void)
 {

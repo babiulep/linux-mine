@@ -339,8 +339,7 @@ static void guest_test_arch_events(void)
 	GUEST_DONE();
 }
 
-static void __test_arch_events(struct kvm_vcpu *vcpu, u64 perf_capabilities,
-			       u8 length, u32 unavailable_mask)
+static void __test_arch_events(struct kvm_vcpu *vcpu, u8 length, u32 unavailable_mask)
 {
 	unavailable_mask &= GENMASK(X86_PROPERTY_PMU_EVENTS_MASK.hi_bit,
 				    X86_PROPERTY_PMU_EVENTS_MASK.lo_bit);
@@ -400,8 +399,7 @@ static void test_arch_events(u8 pmu_version, u64 perf_capabilities)
 	 */
 	for (j = 0; j <= NR_INTEL_ARCH_EVENTS + 1; j++) {
 		for (k = 1; k < ARRAY_SIZE(unavailable_masks); k++)
-			__test_arch_events(vcpus[i++], perf_capabilities, j,
-					   unavailable_masks[k]);
+			__test_arch_events(vcpus[i++], j, unavailable_masks[k]);
 	}
 
 	pmu_vm_free(vm, vcpus);

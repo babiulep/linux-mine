@@ -36,7 +36,6 @@ extern int unprivileged_userns_apparmor_policy;
 extern int aa_unprivileged_unconfined_restricted;
 
 extern const char *const aa_profile_mode_names[];
-#define APPARMOR_MODE_NAMES_MAX_INDEX 4
 
 #define PROFILE_MODE(_profile, _mode)		\
 	((aa_g_profile_mode == (_mode)) ||	\
@@ -75,6 +74,7 @@ enum profile_mode {
 	APPARMOR_KILL,		/* kill task on access violation */
 	APPARMOR_UNCONFINED,	/* profile set to unconfined */
 	APPARMOR_USER,		/* modified complain mode to userspace */
+	PROFILE_MODE_NAMES_COUNT	/* Must be last entry */
 };
 
 
@@ -351,8 +351,12 @@ static inline aa_state_t RULE_MEDIATES_NET(struct aa_ruleset *rules)
 	/* fallback and check v7/8 if v9 is NOT mediated */
 	if (!state)
 		state = RULE_MEDIATES(rules, AA_CLASS_NET);
-
 	return state;
+}
+
+static inline aa_state_t RULE_MEDIATES_UNIX(struct aa_ruleset *rules)
+{
+	return RULE_MEDIATES_v9NET(rules);
 }
 
 
@@ -429,7 +433,7 @@ static inline void aa_put_profile(struct aa_profile *p)
 		kref_put(&p->label.count.count, aa_label_kref);
 }
 
-static inline int AUDIT_MODE(struct aa_profile *profile)
+static inline int AUDIT_MODE(const struct aa_profile *profile)
 {
 	if (aa_g_audit != AUDIT_NORMAL)
 		return aa_g_audit;

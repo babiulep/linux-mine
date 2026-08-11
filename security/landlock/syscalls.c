@@ -536,26 +536,25 @@ SYSCALL_DEFINE2(landlock_restrict_self, const int, ruleset_fd, const __u32,
 	struct landlock_ruleset *ruleset __free(landlock_put_ruleset) = NULL;
 	struct cred *new_cred;
 	struct landlock_cred_security *new_llcred;
-	const bool set_no_new_privs =
-		!!(flags & LANDLOCK_RESTRICT_SELF_NO_NEW_PRIVS);
 	bool __maybe_unused log_same_exec, log_new_exec, log_subdomains,
 		prev_log_subdomains;
 
 	if (!is_initialized())
 		return -EOPNOTSUPP;
 
+	if ((flags | LANDLOCK_MASK_RESTRICT_SELF) !=
+	    LANDLOCK_MASK_RESTRICT_SELF)
+		return -EINVAL;
+
 	/*
 	 * Similar checks as for seccomp(2), except that an -EPERM may be
 	 * returned.  LANDLOCK_RESTRICT_SELF_NO_NEW_PRIVS fulfills this
 	 * requirement.
 	 */
-	if (!set_no_new_privs && !task_no_new_privs(current) &&
+	if (!(flags & LANDLOCK_RESTRICT_SELF_NO_NEW_PRIVS) &&
+	    !task_no_new_privs(current) &&
 	    !ns_capable_noaudit(current_user_ns(), CAP_SYS_ADMIN))
 		return -EPERM;
-
-	if ((flags | LANDLOCK_MASK_RESTRICT_SELF) !=
-	    LANDLOCK_MASK_RESTRICT_SELF)
-		return -EINVAL;
 
 	/* Translates "off" flag to boolean. */
 	log_same_exec = !(flags & LANDLOCK_RESTRICT_SELF_LOG_SAME_EXEC_OFF);
@@ -638,7 +637,7 @@ SYSCALL_DEFINE2(landlock_restrict_self, const int, ruleset_fd, const __u32,
 	}
 
 	/* Sets no_new_privs past the last point of failure. */
-	if (set_no_new_privs)
+	if (flags & LANDLOCK_RESTRICT_SELF_NO_NEW_PRIVS)
 		task_set_no_new_privs(current);
 
 	return commit_creds(new_cred);
