@@ -1235,7 +1235,7 @@ int f2fs_reserve_new_blocks(struct dnode_of_data *dn, blkcnt_t count)
 
 	if (unlikely(is_inode_flag_set(dn->inode, FI_NO_ALLOC)))
 		return -EPERM;
-	err = inc_valid_block_count(sbi, dn->inode, &count, true);
+	err = inc_valid_block_count(sbi, dn->inode, &count, true, false);
 	if (unlikely(err))
 		return err;
 
@@ -1508,7 +1508,7 @@ static int __allocate_data_block(struct dnode_of_data *dn, int seg_type)
 
 	dn->data_blkaddr = f2fs_data_blkaddr(dn);
 	if (dn->data_blkaddr == NULL_ADDR) {
-		err = inc_valid_block_count(sbi, dn->inode, &count, true);
+		err = inc_valid_block_count(sbi, dn->inode, &count, true, false);
 		if (unlikely(err))
 			return err;
 	}
@@ -4483,13 +4483,24 @@ int f2fs_init_wq(struct f2fs_sb_info *sbi)
 {
 	sbi->wq = alloc_workqueue("f2fs_wq", WQ_UNBOUND | WQ_HIGHPRI,
 				  num_online_cpus());
-	return sbi->wq ? 0 : -ENOMEM;
+	if (!sbi->wq)
+		return -ENOMEM;
+
+	sbi->evict_wq = alloc_workqueue("f2fs_evict_wq",
+			WQ_UNBOUND | WQ_HIGHPRI, num_online_cpus());
+	if (!sbi->evict_wq) {
+		destroy_workqueue(sbi->wq);
+		return -ENOMEM;
+	}
+	return 0;
 }
 
 void f2fs_destroy_wq(struct f2fs_sb_info *sbi)
 {
 	if (sbi->wq)
 		destroy_workqueue(sbi->wq);
+	if (sbi->evict_wq)
+		destroy_workqueue(sbi->evict_wq);
 }
 
 int __init f2fs_init_bio_entry_cache(void)

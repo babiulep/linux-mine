@@ -1403,6 +1403,8 @@ struct f2fs_dev_info {
 	unsigned int total_segments;
 	block_t start_blk;
 	block_t end_blk;
+	bool has_alias;
+	bool is_reserving;
 #ifdef CONFIG_BLK_DEV_ZONED
 	unsigned int nr_blkz;		/* Total number of zones */
 	unsigned long *blkz_seq;	/* Bitmap indicating sequential zones */
@@ -1883,6 +1885,7 @@ struct f2fs_sb_info {
 	block_t last_valid_block_count;		/* for recovery */
 	block_t reserved_blocks;		/* configurable reserved blocks */
 	block_t current_reserved_blocks;	/* current reserved blocks */
+	block_t alias_reserved_blocks;		/* reserved blocks for device alias */
 
 	/* Additional tracking for no checkpoint mode */
 	block_t unusable_block_count;		/* # of blocks saved by last cp */
@@ -2008,6 +2011,8 @@ struct f2fs_sb_info {
 	__u32 s_chksum_seed;
 
 	struct workqueue_struct *wq;		/* bio completion workqueue */
+
+	struct workqueue_struct *evict_wq;	/* inode eviction workqueue */
 
 	/*
 	 * If we are in irq context, let's update error information into
@@ -2585,7 +2590,8 @@ static inline unsigned int get_available_block_count(struct f2fs_sb_info *sbi,
 	block_t avail_user_block_count;
 
 	avail_user_block_count = sbi->user_block_count -
-					sbi->current_reserved_blocks;
+					sbi->current_reserved_blocks -
+					sbi->alias_reserved_blocks;
 
 	if (test_opt(sbi, RESERVE_ROOT) && !__allow_reserved_root(sbi, inode, cap))
 		avail_user_block_count -= F2FS_OPTION(sbi).root_reserved_blocks;
@@ -2602,7 +2608,8 @@ static inline unsigned int get_available_block_count(struct f2fs_sb_info *sbi,
 
 static inline void f2fs_i_blocks_write(struct inode *, block_t, bool, bool);
 static inline int inc_valid_block_count(struct f2fs_sb_info *sbi,
-				 struct inode *inode, blkcnt_t *count, bool partial)
+				 struct inode *inode, blkcnt_t *count,
+				 bool partial, bool alias_reserved)
 {
 	long long diff = 0, release = 0;
 	block_t avail_user_block_count;
@@ -2625,10 +2632,16 @@ static inline int inc_valid_block_count(struct f2fs_sb_info *sbi,
 
 	spin_lock(&sbi->stat_lock);
 
+	if (alias_reserved)
+		sbi->alias_reserved_blocks -= *count;
+
 	avail_user_block_count = get_available_block_count(sbi, inode, true);
 	diff = (long long)sbi->total_valid_block_count + *count -
 						avail_user_block_count;
 	if (unlikely(diff > 0)) {
+		if (alias_reserved)
+			sbi->alias_reserved_blocks += *count;
+
 		if (!partial) {
 			spin_unlock(&sbi->stat_lock);
 			release = *count;
@@ -3860,6 +3873,8 @@ int f2fs_write_inode(struct inode *inode, struct writeback_control *wbc);
 void f2fs_remove_donate_inode(struct inode *inode);
 void f2fs_evict_inode(struct inode *inode);
 void f2fs_handle_failed_inode(struct inode *inode, struct f2fs_lock_context *lc);
+int f2fs_init_evict_inode_work(void);
+void f2fs_destroy_evict_inode_work(void);
 
 /*
  * namei.c
@@ -4035,6 +4050,8 @@ int f2fs_create_flush_cmd_control(struct f2fs_sb_info *sbi);
 int f2fs_flush_device_cache(struct f2fs_sb_info *sbi);
 void f2fs_destroy_flush_cmd_control(struct f2fs_sb_info *sbi, bool free);
 void f2fs_invalidate_blocks(struct f2fs_sb_info *sbi, block_t addr,
+						unsigned int len);
+void f2fs_reserve_device_alias(struct f2fs_sb_info *sbi, block_t addr,
 						unsigned int len);
 bool f2fs_is_checkpointed_data(struct f2fs_sb_info *sbi, block_t blkaddr);
 int f2fs_start_discard_thread(struct f2fs_sb_info *sbi);
@@ -4256,6 +4273,8 @@ void f2fs_build_gc_manager(struct f2fs_sb_info *sbi);
 int f2fs_gc_range(struct f2fs_sb_info *sbi,
 		unsigned int start_seg, unsigned int end_seg,
 		bool dry_run, unsigned int dry_run_sections);
+void f2fs_reset_gc_victim_resource(struct f2fs_sb_info *sbi,
+		unsigned int start, unsigned int end);
 int f2fs_resize_fs(struct file *filp, __u64 block_count);
 int __init f2fs_create_garbage_collection_cache(void);
 void f2fs_destroy_garbage_collection_cache(void);

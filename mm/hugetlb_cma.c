@@ -56,27 +56,25 @@ struct folio *hugetlb_cma_alloc_frozen_folio(int order, gfp_t gfp_mask,
 	int node;
 	struct folio *folio;
 	struct page *page = NULL;
-	nodemask_t local_node_mask;
+	const nodemask_t *nmask;
+	unsigned int cpuset_mems_cookie;
 
 	if (!hugetlb_cma_size)
 		return NULL;
 
+retry_cpuset:
 	if (!nodemask) {
-		unsigned int cpuset_mems_cookie;
-
-		do {
-			cpuset_mems_cookie = read_mems_allowed_begin();
-			local_node_mask = cpuset_current_mems_allowed;
-		} while (read_mems_allowed_retry(cpuset_mems_cookie));
-
-		nodemask = &local_node_mask;
+		cpuset_mems_cookie = read_mems_allowed_begin();
+		nmask = &cpuset_current_mems_allowed;
+	} else {
+		nmask = nodemask;
 	}
 
-	if (hugetlb_cma[nid] && node_isset(nid, *nodemask))
+	if (hugetlb_cma[nid] && node_isset(nid, *nmask))
 		page = cma_alloc_frozen_compound(hugetlb_cma[nid], order);
 
 	if (!page && !(gfp_mask & __GFP_THISNODE)) {
-		for_each_node_mask(node, *nodemask) {
+		for_each_node_mask(node, *nmask) {
 			if (node == nid || !hugetlb_cma[node])
 				continue;
 
@@ -86,8 +84,12 @@ struct folio *hugetlb_cma_alloc_frozen_folio(int order, gfp_t gfp_mask,
 		}
 	}
 
-	if (!page)
+	if (!page) {
+		if (!nodemask &&
+		    unlikely(read_mems_allowed_retry(cpuset_mems_cookie)))
+			goto retry_cpuset;
 		return NULL;
+	}
 
 	folio = page_folio(page);
 	folio_set_hugetlb_cma(folio);

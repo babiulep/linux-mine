@@ -677,6 +677,8 @@ static ktime_t hrtimer_update_next_event(struct hrtimer_cpu_base *cpu_base)
 
 static inline ktime_t hrtimer_update_base(struct hrtimer_cpu_base *base)
 {
+	lockdep_assert_held(&base->lock);
+
 	ktime_t *offs_real = &base->clock_base[HRTIMER_BASE_REALTIME].offset;
 	ktime_t *offs_boot = &base->clock_base[HRTIMER_BASE_BOOTTIME].offset;
 	ktime_t *offs_tai = &base->clock_base[HRTIMER_BASE_TAI].offset;
@@ -904,8 +906,8 @@ static void hrtimer_reprogram(struct hrtimer *timer, bool reprogram)
 static bool update_needs_ipi(struct hrtimer_cpu_base *cpu_base, unsigned int active)
 {
 	struct hrtimer_clock_base *base;
-	unsigned int seq;
 	ktime_t expires;
+	u32 seq;
 
 	/*
 	 * Update the base offsets unconditionally so the following
@@ -2255,8 +2257,10 @@ retry:
 	expires_next = hrtimer_update_next_event(cpu_base);
 	cpu_base->hang_detected = false;
 	if (expires_next < now) {
-		if (++retries < 3)
+		if (++retries < 3) {
+			cpu_base->nr_retries++;
 			goto retry;
+		}
 
 		delta = ktime_sub(now, entry_time);
 		cpu_base->max_hang_time = max_t(unsigned int, cpu_base->max_hang_time, delta);
