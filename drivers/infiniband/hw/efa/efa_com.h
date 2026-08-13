@@ -22,6 +22,9 @@
 
 #define EFA_MAX_HANDLERS 256
 
+#define EFA_ADMIN_V1_PROTO_VER 0
+#define EFA_ADMIN_V2_PROTO_VER 1
+
 struct efa_com_admin_cq {
 	struct efa_admin_acq_entry *entries;
 	dma_addr_t dma_addr;
@@ -33,9 +36,13 @@ struct efa_com_admin_cq {
 };
 
 struct efa_com_admin_sq {
-	struct efa_admin_aq_entry *entries;
+	u8 *buffer;
+	u16 entry_size;
+	u16 payload_offset;
+	u16 max_payload_size;
 	dma_addr_t dma_addr;
 	spinlock_t lock; /* Protects ASQ */
+	u8 proto_ver;
 
 	u32 __iomem *db_addr;
 
@@ -174,10 +181,9 @@ int efa_com_validate_version(struct efa_com_dev *edev);
 int efa_com_get_dma_width(struct efa_com_dev *edev);
 
 int efa_com_cmd_exec(struct efa_com_admin_queue *aq,
-		     struct efa_admin_aq_entry *cmd,
-		     size_t cmd_size,
-		     struct efa_admin_acq_entry *comp,
-		     size_t comp_size);
+		     u8 opcode, u8 flags,
+		     void *payload, size_t payload_size,
+		     struct efa_admin_acq_entry *comp, size_t comp_size);
 void efa_com_aenq_intr_handler(struct efa_com_dev *edev, void *data);
 void efa_com_eq_comp_intr_handler(struct efa_com_dev *edev,
 				  struct efa_com_eq *eeq);

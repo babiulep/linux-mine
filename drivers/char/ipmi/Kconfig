@@ -72,7 +72,7 @@ config IPMI_SI_ASYNC_INIT
 	depends on IPMI_SI
 	default n
 	help
-	  Offloads invidual SMI inits. It speeds up the boot time.
+	  Offloads individual SMI inits. It speeds up the boot time.
 	  It also introduces a very small risk that something else might fail
 	  if it depends on synchronous IPMI init.
 

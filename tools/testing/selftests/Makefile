@@ -45,6 +45,7 @@ TARGETS += filesystems/fuse
 TARGETS += filesystems/move_mount
 TARGETS += filesystems/empty_mntns
 TARGETS += filesystems/fsmount_ns
+TARGETS += filesystems/fscontext_ns
 TARGETS += filesystems/mntns_cleanup
 TARGETS += firmware
 TARGETS += fpu

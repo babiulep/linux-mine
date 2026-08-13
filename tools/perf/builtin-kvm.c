@@ -1153,13 +1153,16 @@ static int process_sample_event(const struct perf_tool *tool,
 		pr_debug("problem processing %s (%u) event at offset %#" PRIx64 ", skipping it.\n",
 			 perf_event__name(event->header.type), event->header.type,
 			 sample->file_offset);
-		return -1;
+		err = -1;
+		goto out;
 	}
 
 	if (!handle_kvm_event(kvm, thread, sample))
 		err = -1;
 
 	thread__put(thread);
+out:
+	addr_location__exit(&kvm->al);
 	return err;
 }
 
@@ -2145,6 +2148,8 @@ int cmd_kvm(int argc, const char **argv)
 					PARSE_OPT_STOP_AT_NON_OPTION);
 	if (!argc)
 		usage_with_options(kvm_usage, kvm_options);
+
+	thread__set_priv_destructor(free);
 
 	if (!perf_host)
 		perf_guest = 1;
