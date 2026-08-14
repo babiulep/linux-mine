@@ -402,13 +402,17 @@ static int adjust_subprog_starts_after_remove(struct bpf_verifier_env *env,
 			sizeof(*env->subprog_info) * move);
 		env->subprog_cnt -= j - i;
 
-		/* remove func_info */
+		/* remove func_info and its aux */
 		if (aux->func_info) {
 			move = aux->func_info_cnt - j;
 
 			memmove(aux->func_info + i,
 				aux->func_info + j,
 				sizeof(*aux->func_info) * move);
+			if (aux->func_info_aux)
+				memmove(aux->func_info_aux + i,
+					aux->func_info_aux + j,
+					sizeof(*aux->func_info_aux) * move);
 			aux->func_info_cnt -= j - i;
 			/* func_info->insn_off is set after all code rewrites,
 			 * in adjust_btf_func() - no need to adjust
@@ -1466,7 +1470,6 @@ int bpf_fixup_call_args(struct bpf_verifier_env *env)
 	return err;
 }
 
-
 /* The function requires that first instruction in 'patch' is insnsi[prog->len - 1] */
 static int add_hidden_subprog(struct bpf_verifier_env *env, struct bpf_insn *patch, int len)
 {
@@ -1832,6 +1835,43 @@ int bpf_do_misc_fixups(struct bpf_verifier_env *env)
 			delta += cnt - 1;
 			env->prog = prog = new_prog;
 			insn = new_prog->insnsi + i + delta;
+			goto next_insn;
+		}
+
+		if (bpf_jit_supports_percpu_insn() &&
+		    insn->code == (BPF_LD | BPF_IMM | BPF_DW) &&
+		    (insn->src_reg == BPF_PSEUDO_MAP_VALUE ||
+		     insn->src_reg == BPF_PSEUDO_MAP_IDX_VALUE)) {
+			struct bpf_map *map;
+
+			aux = &env->insn_aux_data[i + delta];
+			map = env->used_maps[aux->map_index];
+			if (map->map_type != BPF_MAP_TYPE_PERCPU_ARRAY)
+				goto next_insn;
+
+			prog->jit_required = true;
+
+			/*
+			 * We are *skipping* first half of ld_imm64 insn
+			 * with 'i++;', patching over second half of it
+			 * with that same half + mov64_percpu_reg insn.
+			 * All because bpf_patch_insn_data() can only
+			 * replace one 8-byte insn, which does not work
+			 * well for ld_imm64 insn.
+			 */
+
+			insn_buf[0] = insn[1];
+			insn_buf[1] = BPF_MOV64_PERCPU_REG(insn->dst_reg, insn->dst_reg);
+			cnt = 2;
+
+			i++;
+			new_prog = bpf_patch_insn_data(env, i + delta, insn_buf, cnt);
+			if (!new_prog)
+				return -ENOMEM;
+
+			delta    += cnt - 1;
+			env->prog = prog = new_prog;
+			insn      = new_prog->insnsi + i + delta;
 			goto next_insn;
 		}
 
