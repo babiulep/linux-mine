@@ -12,7 +12,7 @@
 #include <objtool/arch.h>
 #include <objtool/klp.h>
 #include <objtool/util.h>
-#include <arch/special.h>
+#include <objtool/special.h>
 
 #include <linux/align.h>
 #include <linux/objtool_types.h>
@@ -30,7 +30,9 @@ struct elfs {
 
 struct export {
 	struct hlist_node hash;
-	char *mod, *sym;
+	char *mod;
+	char *sym;
+	bool mod_ns;
 };
 
 bool debug, debug_correlate, debug_clone;
@@ -116,7 +118,7 @@ static int read_exports(void)
 {
 	const char *symvers = "Module.symvers";
 	char line[1024], *path = NULL;
-	unsigned int line_num = 1;
+	unsigned int line_num = 0;
 	FILE *file;
 
 	file = fopen(symvers, "r");
@@ -135,8 +137,10 @@ static int read_exports(void)
 	}
 
 	while (fgets(line, 1024, file)) {
-		char *sym, *mod, *type;
+		char *sym, *mod, *type, *namespace;
 		struct export *export;
+
+		line_num++;
 
 		sym = strchr(line, '\t');
 		if (!sym) {
@@ -161,6 +165,14 @@ static int read_exports(void)
 		}
 
 		*type++ = '\0';
+
+		namespace = strchr(type, '\t');
+		if (!namespace) {
+			ERROR("malformed Module.symvers (namespace) at line %d", line_num);
+			return -1;
+		}
+
+		*namespace++ = '\0';
 
 		if (*sym == '\0' || *mod == '\0') {
 			ERROR("malformed Module.symvers at line %d", line_num);
@@ -187,6 +199,9 @@ static int read_exports(void)
 			ERROR_GLIBC("strdup");
 			return -1;
 		}
+
+		/* EXPORT_SYMBOL_FOR_MODULES() */
+		export->mod_ns = strstarts(namespace, "module:");
 
 		hash_add(exports, &export->hash, str_hash(sym));
 	}
@@ -1101,6 +1116,9 @@ static struct export *find_export(struct symbol *sym)
 {
 	struct export *export;
 
+	if (is_local_sym(sym))
+		return NULL;
+
 	hash_for_each_possible(exports, export, hash, str_hash(sym->name)) {
 		if (!strcmp(export->sym, sym->name))
 			return export;
@@ -1171,11 +1189,16 @@ static bool klp_reloc_needed(struct reloc *patched_reloc)
 	 * clusterfunk that is late module patching, the patch module is
 	 * allowed to be loaded before any modules it depends on.
 	 *
-	 * If exported by vmlinux, a normal reloc will do.
+	 * If exported by vmlinux to all modules, a normal reloc will do.
 	 */
 	export = find_export(patched_sym);
-	if (export)
-		return strcmp(export->mod, "vmlinux");
+	if (export) {
+		if (strcmp(export->mod, "vmlinux"))
+			return true;
+
+		/* EXPORT_SYMBOL_FOR_MODULES() gets a klp reloc */
+		return export->mod_ns;
+	}
 
 	if (!patched_sym->twin) {
 		/*
@@ -1292,6 +1315,28 @@ static int convert_reloc_sym(struct elf *elf, struct reloc *reloc)
 }
 
 /*
+ * Check if the original module already has a dependency on dep_mod, i.e. it
+ * already references at least one export from that module.
+ */
+static bool has_module_dep(struct elfs *e, const char *dep_mod)
+{
+	struct symbol *sym;
+
+	for_each_sym(e->orig, sym) {
+		struct export *exp;
+
+		if (!is_undef_sym(sym) || is_weak_sym(sym))
+			continue;
+
+		exp = find_export(sym);
+		if (exp && !strcmp(exp->mod, dep_mod))
+			return true;
+	}
+
+	return false;
+}
+
+/*
  * Convert a regular relocation to a klp relocation (sort of).
  */
 static int clone_reloc_klp(struct elfs *e, struct reloc *patched_reloc,
@@ -1310,8 +1355,17 @@ static int clone_reloc_klp(struct elfs *e, struct reloc *patched_reloc,
 	unsigned long sympos;
 
 	if (!patched_sym->twin) {
-		ERROR("unexpected klp reloc for new symbol %s", patched_sym->name);
-		return -1;
+		if (!export) {
+			ERROR("unexpected klp reloc for new symbol %s", patched_sym->name);
+			return -1;
+		}
+
+		if (strcmp(export->mod, "vmlinux") &&
+		    !has_module_dep(e, export->mod)) {
+			ERROR("%s: new reference to %s (exported by %s) would create an undeclared module dependency",
+			      patched_sym->name, export->sym, export->mod);
+			return -1;
+		}
 	}
 
 	/*
@@ -1380,8 +1434,8 @@ static int clone_reloc_klp(struct elfs *e, struct reloc *patched_reloc,
 	}
 
 	/*
-	 * Create the __klp_relocs entry.  This will be converted to an actual
-	 * KLP rela by "objtool klp post-link".
+	 * Create the __klp_relocs.<objname> entry.  This will be converted to
+	 * an actual KLP rela by "objtool klp post-link".
 	 *
 	 * This intermediate step is necessary to prevent corruption by the
 	 * linker, which doesn't know how to properly handle two rela sections
@@ -1389,7 +1443,18 @@ static int clone_reloc_klp(struct elfs *e, struct reloc *patched_reloc,
 	 */
 
 	if (!klp_relocs) {
-		klp_relocs = elf_create_section(e->out, KLP_RELOCS_SEC, 0,
+		const char *objname = find_modname(e);
+		char sec_name[SEC_NAME_LEN];
+
+		if (!objname)
+			return -1;
+
+		/* section format: __klp_relocs.objname */
+		if (snprintf_check(sec_name, SEC_NAME_LEN,
+				   KLP_RELOCS_SEC ".%s", objname))
+			return -1;
+
+		klp_relocs = elf_create_section(e->out, sec_name, 0,
 						0, SHT_PROGBITS, 8, SHF_ALLOC);
 		if (!klp_relocs)
 			return -1;
@@ -1537,6 +1602,10 @@ static int clone_sym_relocs(struct elfs *e, struct symbol *patched_sym)
 		    !strcmp(patched_reloc->sym->sec->name, ".altinstr_aux"))
 			continue;
 
+		if (arch_alt_ignore_new_reloc(patched_sym->sec,
+					      reloc_offset(patched_reloc)))
+			continue;
+
 		ret = convert_reloc_sym(e->patched, patched_reloc);
 		if (ret < 0) {
 			ERROR_FUNC(patched_rsec->base, reloc_offset(patched_reloc),
@@ -1560,6 +1629,7 @@ static int create_fake_symbol(struct elf *elf, struct section *sec,
 			      unsigned long offset, size_t size)
 {
 	char name[SYM_NAME_LEN];
+	struct symbol *sym;
 	unsigned int type;
 	static int ctr;
 	char *c;
@@ -1576,7 +1646,24 @@ static int create_fake_symbol(struct elf *elf, struct section *sec,
 	 *	       while still allowing objdump to disassemble it.
 	 */
 	type = is_text_sec(sec) ? STT_NOTYPE : STT_OBJECT;
-	return elf_create_symbol(elf, name, sec, STB_LOCAL, type, offset, size) ? 0 : -1;
+
+	sym = elf_create_symbol(elf, name, sec, STB_LOCAL, type, offset, size);
+	if (!sym)
+		return -1;
+
+	sym->fake = 1;
+	return 0;
+}
+
+static bool has_fake_symbols(struct section *sec)
+{
+	struct symbol *sym;
+
+	sec_for_each_sym(sec, sym)
+		if (sym->fake)
+			return true;
+
+	return false;
 }
 
 /*
@@ -1627,13 +1714,17 @@ static int create_fake_symbols(struct elf *elf)
 	for_each_reloc(sec->rsec, reloc) {
 		unsigned long offset, size;
 		struct reloc *next_reloc;
+		bool last = true;
 
 		if (annotype(elf, sec, reloc) != ANNOTYPE_DATA_SPECIAL)
 			continue;
 
 		offset = reloc_addend(reloc);
 
-		size = 0;
+		/*
+		 * Find the start of the next entry so the fake symbol size can
+		 * be calculated.
+		 */
 		next_reloc = reloc;
 		for_each_reloc_continue(sec->rsec, next_reloc) {
 			if (annotype(elf, sec, next_reloc) != ANNOTYPE_DATA_SPECIAL ||
@@ -1641,10 +1732,15 @@ static int create_fake_symbols(struct elf *elf)
 				continue;
 
 			size = reloc_addend(next_reloc) - offset;
+			last = false;
 			break;
 		}
 
-		if (!size)
+		/*
+		 * If no next entry found, this is the last entry, so its size
+		 * is from the current offset to the end of the section.
+		 */
+		if (last)
 			size = sec_size(reloc->sym->sec) - offset;
 
 		if (create_fake_symbol(elf, reloc->sym->sec, offset, size))
@@ -1659,7 +1755,11 @@ entsize:
 		unsigned int entry_size;
 		unsigned long offset;
 
-		if (!is_special_section(sec) || find_symbol_by_offset(sec, 0))
+		if (!is_special_section(sec))
+			continue;
+
+		/* Skip sections already handled by step 1 above */
+		if (has_fake_symbols(sec))
 			continue;
 
 		if (!sec->rsec) {
