@@ -988,7 +988,8 @@ static int hidpp_root_get_protocol_version(struct hidpp_device *hidpp)
 	}
 
 	/* the device might not be connected */
-	if (ret == HIDPP_ERROR_RESOURCE_ERROR ||
+	if (ret == HIDPP_ERROR_CONNECT_FAIL ||
+	    ret == HIDPP_ERROR_RESOURCE_ERROR ||
 	    ret == HIDPP_ERROR_UNKNOWN_DEVICE)
 		return -EIO;
 
@@ -4083,14 +4084,31 @@ static void hidpp_populate_input(struct hidpp_device *hidpp,
 		hidpp20_reprog_controls_populate_input(hidpp, input);
 }
 
-static int hidpp_input_configured(struct hid_device *hdev,
-				struct hid_input *hidinput)
+static int hidpp_input_configured(struct hid_device *hdev, struct hid_input *hidinput)
 {
 	struct hidpp_device *hidpp = hid_get_drvdata(hdev);
 	struct input_dev *input = hidinput->input;
+	int ret;
 
 	if (!hidpp)
 		return 0;
+
+	if (hidpp->quirks & HIDPP_QUIRK_CLASS_G920) {
+		struct hidpp_ff_private_data data;
+
+		if (!list_is_first(&hidinput->list, &hdev->inputs))
+			return 0;
+
+		ret = g920_get_config(hidpp, &data);
+		if (!ret)
+			ret = hidpp_ff_init(hidpp, &data);
+
+		if (ret) {
+			hid_warn(hidpp->hid_dev,
+				 "Unable to initialize force feedback support, errno %d\n",
+				 ret);
+		}
+	}
 
 	hidpp_populate_input(hidpp, input);
 
@@ -4387,8 +4405,50 @@ static int hidpp_initialize_battery(struct hidpp_device *hidpp)
 	return ret;
 }
 
+static bool hidpp_is_bolt_child(struct hid_device *hdev)
+{
+	struct device *parent = hdev->dev.parent;
+	struct hid_device *receiver_hdev;
+
+	if (!parent)
+		return false;
+
+	receiver_hdev = to_hid_device(parent);
+	return receiver_hdev->vendor == USB_VENDOR_ID_LOGITECH &&
+	       receiver_hdev->product == USB_DEVICE_ID_LOGITECH_BOLT_RECEIVER;
+}
+
+static int hidpp_bolt_init(struct hidpp_device *hidpp)
+{
+	struct hid_device *hdev = hidpp->hid_dev;
+	char *name;
+	int ret;
+
+	ret = hidpp_serial_init(hidpp);
+	if (ret)
+		return ret;
+
+	name = hidpp_get_device_name(hidpp);
+	if (!name)
+		return -EIO;
+
+	snprintf(hdev->name, sizeof(hdev->name), "%s", name);
+	dbg_hid("HID++ Bolt: Got name: %s\n", name);
+
+	kfree(name);
+	return 0;
+}
+
+static int hidpp_receiver_init(struct hidpp_device *hidpp)
+{
+	if (hidpp_is_bolt_child(hidpp->hid_dev))
+		return hidpp_bolt_init(hidpp);
+
+	return hidpp_unifying_init(hidpp);
+}
+
 /* Get name + serial for USB and Bluetooth HID++ devices */
-static void hidpp_non_unifying_init(struct hidpp_device *hidpp)
+static void hidpp_non_receiver_init(struct hidpp_device *hidpp)
 {
 	struct hid_device *hdev = hidpp->hid_dev;
 	char *name;
@@ -4740,9 +4800,9 @@ static int hidpp_probe(struct hid_device *hdev, const struct hid_device_id *id)
 
 	/* Get name + serial, store in hdev->name + hdev->uniq */
 	if (id->group == HID_GROUP_LOGITECH_DJ_DEVICE)
-		hidpp_unifying_init(hidpp);
+		hidpp_receiver_init(hidpp);
 	else
-		hidpp_non_unifying_init(hidpp);
+		hidpp_non_receiver_init(hidpp);
 
 	if (hidpp->quirks & HIDPP_QUIRK_DELAYED_INIT)
 		connect_mask &= ~HID_CONNECT_HIDINPUT;
@@ -4759,21 +4819,6 @@ static int hidpp_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	hid_device_io_start(hdev);
 	schedule_work(&hidpp->work);
 	flush_work(&hidpp->work);
-
-	if (hidpp->quirks & HIDPP_QUIRK_CLASS_G920) {
-		struct hidpp_ff_private_data data;
-
-		ret = g920_get_config(hidpp, &data);
-		if (!ret)
-			ret = hidpp_ff_init(hidpp, &data);
-
-		if (ret) {
-			hid_warn(hidpp->hid_dev,
-		     "Unable to initialize force feedback support, errno %d\n",
-				 ret);
-			ret = 0;
-		}
-	}
 
 	/*
 	 * This relies on logi_dj_ll_close() being a no-op so that DJ connection

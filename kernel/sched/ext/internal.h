@@ -485,7 +485,7 @@ struct sched_ext_ops {
 	 * - sleeping (%SCX_DEQ_SLEEP)
 	 * - being moved to another CPU
 	 * - being temporarily taken off the queue for an attribute change
-	 *   (%SCX_DEQ_SAVE)
+	 *   (%SCX_DEQ_SCHED_CHANGE)
 	 *
 	 * This and ->dequeue() are related but not coupled. This operation
 	 * notifies @p's state transition and may not be preceded by ->dequeue()
@@ -520,6 +520,11 @@ struct sched_ext_ops {
 	 * Both @a and @b are runnable and may or may not currently be queued on
 	 * the BPF scheduler. Should return %true if @a should run before @b.
 	 * %false if there's no required ordering or @b should run before @a.
+	 *
+	 * In a scheduler hierarchy, a pair spanning two schedulers is ordered
+	 * by the nearest common ancestor implementing this op, so the op may be
+	 * called on tasks that the scheduler delegated to its sub-schedulers
+	 * and is not scheduling anymore. See scx_prio_less().
 	 *
 	 * If not specified, the default is ordering them according to when they
 	 * became runnable.
@@ -966,8 +971,9 @@ struct sched_ext_ops {
 	 * @name: BPF scheduler's name
 	 *
 	 * Must be a non-zero valid BPF object name including only isalnum(),
-	 * '_' and '.' chars. Shows up in kernel.sched_ext_ops sysctl while the
-	 * BPF scheduler is enabled.
+	 * '_' and '.' chars. Exposed via the ops file in the scheduler's sysfs
+	 * directory, /sys/kernel/sched_ext/root/ops for the root scheduler,
+	 * while the BPF scheduler is enabled.
 	 */
 	char name[SCX_OPS_NAME_LEN];
 

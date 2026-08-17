@@ -14,6 +14,7 @@
 #include "xe_gt_types.h"
 #include "xe_gt_stats.h"
 #include "xe_hw_engine.h"
+#include "xe_log.h"
 #include "xe_pagefault.h"
 #include "xe_pagefault_types.h"
 #include "xe_svm.h"
@@ -327,8 +328,10 @@ xe_pagefault_queue_add(struct xe_pagefault_queue *pf_queue,
 
 	do {
 		/* Not possible, warn on and drop page fault */
-		if (WARN_ON(xe_pagefault_queue_full(pf_queue)))
+		if (WARN_ON_ONCE(xe_pagefault_queue_full(pf_queue))) {
+			xe_log_err(xe, PAGEFAULT, -ENOSPC, "Queue full!\n");
 			return NULL;
+		}
 
 		lpf = (pf_queue->data + pf_queue->head);
 		pf_queue->head = (pf_queue->head + xe_pagefault_entry_size()) %
@@ -625,8 +628,7 @@ static void xe_pagefault_queue_work(struct work_struct *w)
 				xe_pagefault_save_to_vm(gt_to_xe(gt), pf);
 				xe_pagefault_cache_start_invalidate(cache_start);
 				xe_pagefault_print(pf);
-				xe_gt_info(pf->gt, "Fault response: Unsuccessful %pe\n",
-					   ERR_PTR(err));
+				xe_log_err_info(pf->gt, PAGEFAULT, err, "Unsuccessful response\n");
 			} else {
 				xe_gt_stats_incr(pf->gt, XE_GT_STATS_ID_INVALID_PREFETCH_PAGEFAULT_COUNT, 1);
 				xe_gt_dbg(pf->gt, "Prefetch Fault response: Unsuccessful %pe\n",

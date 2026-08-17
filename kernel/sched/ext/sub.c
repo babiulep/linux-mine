@@ -916,7 +916,7 @@ static u64 calc_effective_caps(struct scx_pshard *ps, s32 cid)
  * @cid: cid to update
  *
  * Queue an ecaps update for @sch's @cid and kick the cpu so that it syncs in
- * balance_one().
+ * dispatch_one().
  */
 static void queue_sync_ecaps(struct scx_sched *sch, s32 cid)
 {
@@ -951,7 +951,7 @@ static void discard_queued_syncs(struct rq *rq)
 /**
  * scx_process_sync_ecaps - Sync this cpu's ecaps to pshard->caps[]
  * @rq: the cid's cpu rq
- * @prev: @rq's previous task from the in-progress balance
+ * @prev: @rq's previous task from the in-progress dispatch
  *
  * pshard->caps[] is the target configuration. pcpu->ecaps is the effective
  * transposed copy owned by the cid's cpu and written only here under @rq's
@@ -1015,11 +1015,15 @@ void scx_process_sync_ecaps(struct rq *rq, struct task_struct *prev)
 		 * invocation is equivalent to the dispatch path and may drop
 		 * and re-acquire the rq lock temporarily while the rest of
 		 * @batch is held privately, see scx_discard_ecaps_to_sync().
+		 * The dispatch kfuncs resolve their context on the executing
+		 * cpu, which under core scheduling can differ from @rq's cpu,
+		 * so the context is set up there. The rq recorded in it keeps
+		 * the dispatches targeting @rq.
 		 */
 		if (ecaps != pcpu->reported_ecaps &&
 		    SCX_HAS_OP(pcpu->sch, sub_ecaps_updated) &&
 		    !scx_bypassing(pcpu->sch, cpu)) {
-			struct scx_dsp_ctx *dspc = &pcpu->dsp_ctx;
+			struct scx_dsp_ctx *dspc = &this_cpu_ptr(pcpu->sch->pcpu)->dsp_ctx;
 
 			dspc->rq = rq;
 			/* stash @prev so nested dispatches can access it */
@@ -1063,7 +1067,7 @@ void scx_process_sync_ecaps(struct rq *rq, struct task_struct *prev)
  * sync when bypass lifts, so without a replay a cid that never changes again
  * would never be notified. The attach-time initial grants are the acute case
  * as they are consumed during the enable bypass window. Re-queue a sync for
- * any undelivered delta so the next balance delivers it.
+ * any undelivered delta so the next dispatch delivers it.
  */
 void scx_unbypass_replay_ecaps(struct rq *rq, struct scx_sched *sch)
 {
@@ -2242,7 +2246,7 @@ __bpf_kfunc bool scx_bpf_sub_dispatch(u64 cgroup_id, const struct bpf_prog_aux *
 	/*
 	 * Skip a child that does not effectively hold the base cap on this cpu:
 	 * its inserts would only be rejected. ecaps are synced at the top of
-	 * balance_one() before dispatch, so this reflects the in-effect state.
+	 * dispatch_one() before dispatch, so this reflects the in-effect state.
 	 */
 	if (scx_missing_caps(child, cpu_of(rq), SCX_CAP_BASE))
 		return false;
@@ -2637,6 +2641,39 @@ __bpf_kfunc s32 scx_bpf_sub_kill_bstr(u64 cgroup_id, char *fmt,
 
 	scx_exit_bstr(child, SCX_EXIT_PARENT_KILL, 0, parent, fmt, data, data__sz);
 	return 0;
+}
+
+__bpf_kfunc_end_defs();
+
+#else	/* !CONFIG_EXT_SUB_SCHED */
+
+__bpf_kfunc_start_defs();
+
+__bpf_kfunc s32 scx_bpf_sub_grant(u64 cgroup_id, u64 caps,
+				  const struct scx_cmask *cmask__arena,
+				  struct scx_cmask *denied_out__arena__nullable,
+				  const struct bpf_prog_aux *aux)
+{
+	return -EOPNOTSUPP;
+}
+
+__bpf_kfunc void scx_bpf_sub_revoke(u64 cgroup_id, u64 caps,
+				    const struct scx_cmask *cmask__arena,
+				    const struct bpf_prog_aux *aux)
+{
+}
+
+__bpf_kfunc s32 scx_bpf_sub_caps(u64 cgroup_id, u64 caps, struct scx_cmask *out__arena,
+				 const struct bpf_prog_aux *aux)
+{
+	return -EOPNOTSUPP;
+}
+
+__bpf_kfunc s32 scx_bpf_sub_kill_bstr(u64 cgroup_id, char *fmt,
+				      unsigned long long *data, u32 data__sz,
+				      const struct bpf_prog_aux *aux)
+{
+	return -EOPNOTSUPP;
 }
 
 __bpf_kfunc_end_defs();

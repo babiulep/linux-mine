@@ -52,7 +52,8 @@ pub use self::io::{
 pub use self::irq::{
     IrqType,
     IrqTypes,
-    IrqVector, //
+    IrqVector,
+    IrqVectorRegistration, //
 };
 
 /// An adapter for the registration of PCI drivers.

@@ -22,7 +22,7 @@ enum scx_dsp_verdict {
 };
 
 /*
- * One user of this function is scx_bpf_dispatch() which can be called
+ * One user of this function is scx_bpf_sub_dispatch() which can be called
  * recursively as sub-sched dispatches nest. Always inline to reduce stack usage
  * from the call frame.
  */
@@ -112,7 +112,7 @@ scx_dispatch_sched(struct scx_sched *sch, struct rq *rq,
 		 * ops.dispatch() can trap us in this loop by repeatedly
 		 * dispatching ineligible tasks. Break out once in a while to
 		 * allow the watchdog to run. As IRQ can't be enabled in
-		 * balance(), we want to complete this scheduling cycle and then
+		 * dispatch, we want to complete this scheduling cycle and then
 		 * start a new one. IOW, we want to call resched_curr() on the
 		 * next, most likely idle, task, not the current one. Use
 		 * __scx_bpf_kick_cpu() for deferred kicking.

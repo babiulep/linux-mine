@@ -29,7 +29,7 @@ fsverity	https://git.kernel.org/pub/scm/fs/fsverity/linux.git#for-next
 fuse		https://git.kernel.org/pub/scm/linux/kernel/git/mszeredi/fuse.git#for-next
 gfs2		https://git.kernel.org/pub/scm/linux/kernel/git/gfs2/linux-gfs2.git#for-next
 jfs		https://github.com/kleikamp/linux-shaggy.git#jfs-next
-ksmbd		https://github.com/smfrench/smb3-kernel.git#ksmbd-for-next
+ksmbd		https://git.kernel.org/pub/scm/linux/kernel/git/linkinjeon/smb.git#ksmbd-for-next
 nfs		git://git.linux-nfs.org/projects/trondmy/nfs-2.6.git#linux-next
 nfs-anna	git://git.linux-nfs.org/projects/anna/linux-nfs.git#linux-next
 nfsd		https://git.kernel.org/pub/scm/linux/kernel/git/cel/linux#nfsd-next

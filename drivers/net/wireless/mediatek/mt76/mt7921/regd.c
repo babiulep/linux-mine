@@ -83,6 +83,7 @@ mt7921_regd_channel_update(struct wiphy *wiphy, struct mt792x_dev *dev)
 	}
 }
 
+/* Internal version that assumes mutex is already held by caller */
 int __mt7921_mcu_regd_update(struct mt792x_dev *dev, u8 *alpha2,
 			     enum environment_cap country_ie_env)
 {

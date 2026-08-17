@@ -5,6 +5,7 @@
  * Copyright © 2016-2020 Mickaël Salaün <mic@digikod.net>
  * Copyright © 2018-2020 ANSSI
  * Copyright © 2024-2025 Microsoft Corporation
+ * Copyright © 2026 Cloudflare, Inc.
  */
 
 #include <kunit/test.h>
@@ -599,10 +600,6 @@ int landlock_init_hierarchy_log(struct landlock_hierarchy *const hierarchy)
 	atomic64_set(&hierarchy->num_denials, 0);
 	return 0;
 }
-
-#endif /* CONFIG_SECURITY_LANDLOCK_LOG */
-
-#ifdef CONFIG_SECURITY_LANDLOCK_LOG
 
 static deny_masks_t
 get_layer_deny_mask(const access_mask_t all_existing_optional_access,
