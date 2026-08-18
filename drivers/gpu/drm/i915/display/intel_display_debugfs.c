@@ -49,7 +49,6 @@
 #include "intel_psr.h"
 #include "intel_psr_regs.h"
 #include "intel_vdsc.h"
-#include "intel_vrr.h"
 #include "intel_wm.h"
 #include "intel_tc.h"
 
@@ -1285,11 +1284,22 @@ static ssize_t i915_joiner_write(struct file *file,
 	if (ret < 0)
 		return ret;
 
-	if (force_joined_pipes &&
-	    !intel_joiner_valid_primary_pipe_mask(display, force_joined_pipes))
-		return -EINVAL;
+	switch (force_joined_pipes) {
+	case 0:
+	case 1:
+	case 2:
+		connector->force_joined_pipes = force_joined_pipes;
+		break;
+	case 4:
+		if (HAS_ULTRAJOINER(display)) {
+			connector->force_joined_pipes = force_joined_pipes;
+			break;
+		}
 
-	connector->force_joined_pipes = force_joined_pipes;
+		fallthrough;
+	default:
+		return -EINVAL;
+	}
 
 	*offp += len;
 
@@ -1385,7 +1395,6 @@ void intel_crtc_debugfs_add(struct intel_crtc *crtc)
 	intel_drrs_crtc_debugfs_add(crtc);
 	intel_fbc_crtc_debugfs_add(crtc);
 	hsw_ips_crtc_debugfs_add(crtc);
-	intel_vrr_crtc_debugfs_add(crtc);
 
 	debugfs_create_file("i915_current_bpc", 0444, root, crtc,
 			    &i915_current_bpc_fops);

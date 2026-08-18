@@ -169,7 +169,7 @@ static void __exit maxinefb_exit(void)
 	unregister_framebuffer(&fb_info);
 }
 
-MODULE_LICENSE("GPL");
 module_init(maxinefb_init);
 module_exit(maxinefb_exit);
 
+MODULE_LICENSE("GPL");

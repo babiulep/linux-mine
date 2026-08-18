@@ -3633,15 +3633,11 @@ M:	Dinh Nguyen <dinguyen@kernel.org>
 S:	Maintained
 F:	drivers/clk/socfpga/
 
-ARM/SOCFPGA DWMAC GLUE LAYER BINDINGS
-M:	Matthew Gerlach <matthew.gerlach@altera.com>
-S:	Maintained
-F:	Documentation/devicetree/bindings/net/altr,gmii-to-sgmii-2.0.yaml
-F:	Documentation/devicetree/bindings/net/altr,socfpga-stmmac.yaml
-
 ARM/SOCFPGA DWMAC GLUE LAYER
 M:	Maxime Chevallier <maxime.chevallier@bootlin.com>
 S:	Maintained
+F:	Documentation/devicetree/bindings/net/altr,gmii-to-sgmii-2.0.yaml
+F:	Documentation/devicetree/bindings/net/altr,socfpga-stmmac.yaml
 F:	drivers/net/ethernet/stmicro/stmmac/dwmac-socfpga.c
 
 ARM/SOCFPGA EDAC BINDINGS
@@ -6490,9 +6486,9 @@ F:	include/linux/comedi/
 F:	include/uapi/linux/comedi.h
 
 COMMON CLK FRAMEWORK
-M:	Michael Turquette <mturquette@baylibre.com>
 M:	Stephen Boyd <sboyd@kernel.org>
-R:	Brian Masney <bmasney@redhat.com>
+M:	Brian Masney <bmasney+clk@redhat.com>
+M:	Jerome Brunet <jbrunet+clk@baylibre.com>
 L:	linux-clk@vger.kernel.org
 S:	Maintained
 Q:	http://patchwork.kernel.org/project/linux-clk/list/
@@ -9731,9 +9727,10 @@ ESWIN EIC7700 CLOCK DRIVER
 M:	Yifeng Huang <huangyifeng@eswincomputing.com>
 M:	Xuyang Dong <dongxuyang@eswincomputing.com>
 S:	Maintained
-F:	Documentation/devicetree/bindings/clock/eswin,eic7700-clock.yaml
+F:	Documentation/devicetree/bindings/clock/eswin,eic7700*
 F:	drivers/clk/eswin/
-F:	include/dt-bindings/clock/eswin,eic7700-clock.h
+F:	include/dt-bindings/clock/eswin,eic7700*
+F:	include/dt-bindings/reset/eswin,eic7700-hspcrg.h
 
 ET131X NETWORK DRIVER
 M:	Mark Einon <mark.einon@gmail.com>
@@ -13118,8 +13115,7 @@ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/tnguy/next-queue.git
 F:	Documentation/networking/device_drivers/ethernet/intel/
 F:	drivers/net/ethernet/intel/
 F:	drivers/net/ethernet/intel/*/
-F:	include/linux/avf/virtchnl.h
-F:	include/linux/net/intel/*/
+F:	include/linux/net/intel/
 
 INTEL ETHERNET PROTOCOL DRIVER FOR RDMA
 M:	Tatyana Nikolova <tatyana.e.nikolova@intel.com>
@@ -27981,6 +27977,14 @@ L:	linux-usb@vger.kernel.org
 S:	Maintained
 F:	drivers/usb/common/ulpi.c
 F:	include/linux/ulpi/
+
+ULTRARISC DP1000 CLOCK DRIVER
+M:	Jia Wang <wangjia@ultrarisc.com>
+L:	linux-clk@vger.kernel.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/clock/ultrarisc,dp1000-clk.yaml
+F:	drivers/clk/ultrarisc/*
+F:	include/dt-bindings/clock/ultrarisc,dp1000-clk.h
 
 ULTRARISC DP1000 PINCTRL DRIVER
 M:	Jia Wang <wangjia@ultrarisc.com>

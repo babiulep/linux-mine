@@ -75,6 +75,9 @@ void fuse_chan_set_initialized(struct fuse_chan *fch, struct fuse_chan_param *pa
 		fch->minor = param->minor;
 		fch->max_write = param->max_write;
 		fch->max_pages = param->max_pages;
+
+		if (param->io_uring_enabled)
+			fuse_uring_conn_init(fch);
 	}
 
 	/* Pairs with smp_load_acquire() readers of fch->initialized */
@@ -412,11 +415,6 @@ void fuse_chan_set_fc(struct fuse_chan *fch, struct fuse_conn *fc)
 	fch->conn = fc;
 }
 
-void fuse_chan_io_uring_enable(struct fuse_chan *fch)
-{
-	fch->io_uring = 1;
-}
-
 void fuse_pqueue_init(struct fuse_pqueue *fpq)
 {
 	spin_lock_init(&fpq->lock);
@@ -726,7 +724,7 @@ static void request_wait_answer(struct fuse_req *req)
 
 		if (req->args->abort_on_kill) {
 			fuse_chan_abort(fch, false);
-			return;
+			goto wait_for_finish;
 		}
 
 		if (test_bit(FR_URING, &req->flags))
@@ -737,6 +735,7 @@ static void request_wait_answer(struct fuse_req *req)
 			return;
 	}
 
+wait_for_finish:
 	/*
 	 * Either request is already in userspace, or it was forced.
 	 * Wait it out.
@@ -1250,11 +1249,25 @@ int fuse_copy_folio(struct fuse_copy_state *cs, struct folio **foliop,
 
 	if (folio) {
 		size = folio_size(folio);
-		if (zeroing && count < size)
-			folio_zero_range(folio, 0, size);
+		if (zeroing && count < size) {
+			/*
+			 * When the copy is skipped the folio already holds the
+			 * payload, so only the bytes outside [offset, offset +
+			 * count) may be zeroed.
+			 *
+			 * Otherwise, the whole folio is cleared first so that a
+			 * failed copy leaves zeros rather than stale folio
+			 * contents.
+			 */
+			if (cs->skip_folio_copy)
+				folio_zero_segments(folio, 0, offset,
+						    offset + count, size);
+			else
+				folio_zero_range(folio, 0, size);
+		}
 	}
 
-	while (count) {
+	while (!cs->skip_folio_copy && count) {
 		if (cs->write && cs->pipebufs && folio) {
 			/*
 			 * Can't control lifetime of pipe buffers, so always
@@ -1347,6 +1360,10 @@ int fuse_copy_args(struct fuse_copy_state *cs, unsigned numargs,
 	for (i = 0; !err && i < numargs; i++)  {
 		struct fuse_arg *arg = &args[i];
 		if (i == numargs - 1 && argpages)
+			/*
+			 * if cs->skip_folio_copy is set, this just does any
+			 * needed zeroing. No copying is involved.
+			 */
 			err = fuse_copy_folios(cs, arg->size, zeroing);
 		else
 			err = fuse_copy_one(cs, arg->value, arg->size);
