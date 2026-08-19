@@ -296,8 +296,8 @@ static int ntfs_read_iomap_end(struct inode *inode, loff_t pos, loff_t length,
 	return written;
 }
 
-static DEFINE_IOMAP_ITER_NEXT_END(ntfs_read_iomap_next, ntfs_read_iomap_begin,
-				  ntfs_read_iomap_end);
+static DEFINE_IOMAP_ITER_NEXT_END(ntfs_read_iomap_next,
+		ntfs_read_iomap_begin, ntfs_read_iomap_end);
 
 const struct iomap_ops ntfs_read_iomap_ops = {
 	.iomap_next = ntfs_read_iomap_next,

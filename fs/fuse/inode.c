@@ -791,6 +791,9 @@ static int fuse_opt_fd(struct fs_context *fsc, struct file *file)
 {
 	struct fuse_fs_context *ctx = fsc->fs_private;
 
+	if (ctx->fud)
+		return invalfc(fsc, "Multiple fd specified");
+
 	if (file->f_op != &fuse_dev_operations)
 		return invalfc(fsc, "fd is not a fuse device");
 	/*
@@ -1642,6 +1645,8 @@ static int fuse_fill_super_submount(struct super_block *sb,
 	fuse_fill_attr_from_inode(&root_attr, parent_fi);
 	root = fuse_iget(sb, parent_fi->nodeid, 0, &root_attr, 0, 0,
 			 fuse_get_evict_ctr(fm->fc));
+	if (!root)
+		return -ENOMEM;
 	/*
 	 * This inode is just a duplicate, so it is not looked up and
 	 * its nlookup should not be incremented.  fuse_iget() does

@@ -1240,6 +1240,7 @@ dpll_pin_ref_sync_state_set(struct dpll_pin *pin,
 	}
 	if (state == old_state)
 		return 0;
+
 	ret = ops->ref_sync_set(pin, dpll_pin_on_dpll_priv(dpll, pin),
 				ref_sync_pin,
 				dpll_pin_on_dpll_priv(dpll, ref_sync_pin),

@@ -4926,19 +4926,18 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 				goto unlock;
 
 			/*
-			 * Get a folio reference while we know the folio can't be
+			 * Get a page reference while we know the page can't be
 			 * freed.
 			 */
-			folio = page_folio(vmf->page);
-			if (folio_trylock(folio)) {
+			if (trylock_page(vmf->page)) {
 				struct dev_pagemap *pgmap;
 
-				folio_get(folio);
+				get_page(vmf->page);
 				pte_unmap_unlock(vmf->pte, vmf->ptl);
 				pgmap = page_pgmap(vmf->page);
 				ret = pgmap->ops->migrate_to_ram(vmf);
-				folio_unlock(folio);
-				folio_put(folio);
+				unlock_page(vmf->page);
+				put_page(vmf->page);
 			} else {
 				pte_unmap(vmf->pte);
 				softleaf_entry_wait_on_locked(entry, vmf->ptl);
