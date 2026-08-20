@@ -207,7 +207,7 @@ static const char * const omen_thermal_profile_boards[] = {
 	"886B", "886C", "88C8", "88CB", "88D1", "88D2", "88F4", "88F5", "88F6",
 	"88F7", "88FD", "88FE", "88FF",
 	"8900", "8901", "8902", "8912", "8917", "8918", "8949", "894A", "89EB",
-	"8A15", "8A42",
+	"8A15", "8A42", "8A43",
 	"8BAD",
 	"8C58",
 	"8E41",
@@ -256,6 +256,10 @@ static const struct dmi_system_id hp_wmi_feature_boards[] __initconst = {
 		.driver_data = (void *)&omen_v1_legacy_board_params,
 	},
 	{
+		.matches = { DMI_MATCH(DMI_BOARD_NAME, "8BAA") },
+		.driver_data = (void *)&omen_v1_board_params,
+	},
+	{
 		.matches = { DMI_MATCH(DMI_BOARD_NAME, "8BA9") },
 		.driver_data = (void *)&omen_v1_board_params,
 	},
@@ -266,6 +270,10 @@ static const struct dmi_system_id hp_wmi_feature_boards[] __initconst = {
 	{
 		.matches = { DMI_MATCH(DMI_BOARD_NAME, "8B2F") },
 		.driver_data = (void *)&victus_s_board_params,
+	},
+	{
+		.matches = { DMI_MATCH(DMI_BOARD_NAME, "8BB3") },
+		.driver_data = (void *)&omen_v1_no_ec_board_params,
 	},
 	{
 		.matches = { DMI_MATCH(DMI_BOARD_NAME, "8BBE") },
@@ -321,6 +329,10 @@ static const struct dmi_system_id hp_wmi_feature_boards[] __initconst = {
 	},
 	{
 		.matches = { DMI_MATCH(DMI_BOARD_NAME, "8D87") },
+		.driver_data = (void *)&omen_v1_no_ec_board_params,
+	},
+	{
+		.matches = { DMI_MATCH(DMI_BOARD_NAME, "8D88") },
 		.driver_data = (void *)&omen_v1_no_ec_board_params,
 	},
 	{

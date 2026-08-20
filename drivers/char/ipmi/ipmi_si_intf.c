@@ -2012,7 +2012,7 @@ int ipmi_si_add_smi(struct si_sm_io *io)
 
 	if (initialized) {
 		if (IS_ENABLED(CONFIG_IPMI_SI_ASYNC_INIT))
-			queue_work(system_unbound_wq, &new_smi->init_work);
+			queue_work(system_dfl_wq, &new_smi->init_work);
 		else
 			rv = try_smi_init(new_smi);
 	}
