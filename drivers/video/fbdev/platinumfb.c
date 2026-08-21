@@ -647,7 +647,6 @@ err_unmap_cmap:
 	iounmap(pinfo->cmap_regs);
 err_release_cmap:
 	release_mem_region(pinfo->cmap_regs_phys, 0x1000);
-err_unmap_regs:
 	iounmap(pinfo->platinum_regs);
 err_unmap_fb:
 	iounmap(pinfo->frame_buffer);

@@ -122,17 +122,19 @@ static int ntfs_get_ea(struct inode *inode, const char *name, size_t name_len,
 
 	p_ea_info = ntfs_attr_readall(ni, AT_EA_INFORMATION, NULL, 0,
 			&ea_info_size);
-	if (!p_ea_info || ea_info_size != sizeof(struct ea_information)) {
+	if (IS_ERR(p_ea_info))
+		return PTR_ERR(p_ea_info);
+	if (ea_info_size != sizeof(struct ea_information)) {
 		kvfree(p_ea_info);
-		return -ENODATA;
+		return -EIO;
 	}
 
 	ea_info_qlen = le32_to_cpu(p_ea_info->ea_query_length);
 	kvfree(p_ea_info);
 
 	ea_buf = ntfs_attr_readall(ni, AT_EA, NULL, 0, &all_ea_size);
-	if (!ea_buf)
-		return -ENODATA;
+	if (IS_ERR(ea_buf))
+		return PTR_ERR(ea_buf);
 
 	if (ea_info_qlen > all_ea_size) {
 		err = -EIO;
@@ -208,10 +210,22 @@ static int ntfs_set_ea(struct inode *inode, const char *name, size_t name_len,
 	if (ntfs_attr_exist(ni, AT_EA_INFORMATION, AT_UNNAMED, 0)) {
 		p_ea_info = ntfs_attr_readall(ni, AT_EA_INFORMATION, NULL, 0,
 						&ea_info_size);
-		if (!p_ea_info || ea_info_size != sizeof(struct ea_information))
+		if (IS_ERR(p_ea_info)) {
+			err = PTR_ERR(p_ea_info);
+			p_ea_info = NULL;
 			goto out;
+		}
+		if (ea_info_size != sizeof(struct ea_information)) {
+			err = -EIO;
+			goto out;
+		}
 
 		ea_buf = ntfs_attr_readall(ni, AT_EA, NULL, 0, &all_ea_size);
+		if (IS_ERR(ea_buf)) {
+			err = PTR_ERR(ea_buf);
+			ea_buf = NULL;
+			goto out;
+		}
 		if (!ea_buf) {
 			ea_info_qsize = 0;
 			kvfree(p_ea_info);
@@ -514,14 +528,24 @@ ssize_t ntfs_listxattr(struct dentry *dentry, char *buffer, size_t size)
 	mutex_lock(&NTFS_I(inode)->mrec_lock);
 	ea_info = ntfs_attr_readall(ni, AT_EA_INFORMATION, NULL, 0,
 			&ea_info_size);
-	if (!ea_info || ea_info_size != sizeof(struct ea_information))
+	if (IS_ERR(ea_info)) {
+		err = PTR_ERR(ea_info);
+		ea_info = NULL;
 		goto out;
+	}
+	if (ea_info_size != sizeof(struct ea_information)) {
+		err = -EIO;
+		goto out;
+	}
 
 	ea_info_qsize = le32_to_cpu(ea_info->ea_query_length);
 
 	ea_buf = ntfs_attr_readall(ni, AT_EA, NULL, 0, &ea_buf_size);
-	if (!ea_buf)
+	if (IS_ERR(ea_buf)) {
+		err = PTR_ERR(ea_buf);
+		ea_buf = NULL;
 		goto out;
+	}
 
 	if (ea_info_qsize > ea_buf_size || ea_info_qsize == 0)
 		goto out;
@@ -816,6 +840,17 @@ static bool ntfs_is_reserved_lxattr(const char *name)
 	       !strcmp(name, "$LXMOD") || !strcmp(name, "$LXDEV");
 }
 
+static int ntfs_validate_fattr(struct ntfs_inode *ni, __le32 fattr)
+{
+	const __le32 wof_flags = FILE_ATTR_SPARSE_FILE |
+				 FILE_ATTR_REPARSE_POINT;
+
+	if (NInoWofCompressed(ni) && ((ni->flags ^ fattr) & wof_flags))
+		return -EPERM;
+
+	return 0;
+}
+
 static int ntfs_setxattr(const struct xattr_handler *handler,
 		struct mnt_idmap *idmap, struct dentry *unused,
 		struct inode *inode, const char *name, const void *value,
@@ -836,7 +871,8 @@ static int ntfs_setxattr(const struct xattr_handler *handler,
 			err = -EINVAL;
 			goto out;
 		}
-		fattr = cpu_to_le32(*(u8 *)value);
+		fattr = cpu_to_le32((le32_to_cpu(ni->flags) & ~0xffU) |
+				    *(u8 *)value);
 		goto set_fattr;
 	}
 
@@ -851,6 +887,10 @@ static int ntfs_setxattr(const struct xattr_handler *handler,
 		else
 			fattr = cpu_to_le32(*(u32 *)value);
 
+		err = ntfs_validate_fattr(ni, fattr);
+		if (err)
+			goto out;
+
 		if (S_ISREG(inode->i_mode)) {
 			mutex_lock(&ni->mrec_lock);
 			err = ntfs_new_attr_flags(ni, fattr);
@@ -864,6 +904,10 @@ set_fattr:
 			fattr |= FILE_ATTR_DIRECTORY;
 		else
 			fattr &= ~FILE_ATTR_DIRECTORY;
+
+		err = ntfs_validate_fattr(ni, fattr);
+		if (err)
+			goto out;
 
 		if (ni->flags != fattr) {
 			ni->flags = fattr;
