@@ -193,6 +193,7 @@ enum f2fs_lock_name {
 	LOCK_NAME_GC_LOCK,
 	LOCK_NAME_CP_GLOBAL,
 	LOCK_NAME_IO_RWSEM,
+	LOCK_NAME_NAT_TREE_LOCK,
 	LOCK_NAME_MAX,
 };
 
@@ -388,13 +389,17 @@ enum {
 /* for the list of ino */
 enum {
 	ORPHAN_INO,		/* for orphan ino list */
+	FLUSH_INO,		/* for multiple device flushing */
 	APPEND_INO,		/* for append ino list */
 	UPDATE_INO,		/* for update ino list */
 	TRANS_DIR_INO,		/* for transactions dir ino list */
 	XATTR_DIR_INO,		/* for xattr updated dir ino list */
-	FLUSH_INO,		/* for multiple device flushing */
 	MAX_INO_ENTRY,		/* max. list */
 };
+
+#define INO_BITS_PER_SLOT	BITS_PER_XA_VALUE
+#define INO_SLOT_INDEX(ino)	((ino) / INO_BITS_PER_SLOT)
+#define INO_BIT_OFFSET(ino)	((ino) % INO_BITS_PER_SLOT)
 
 struct ino_entry {
 	struct list_head list;		/* list head */
