@@ -74,7 +74,9 @@ but takes a range.  mtree_load() is used to retrieve the entry stored at a
 given index.  You can use mtree_erase() to erase an entire range by only
 knowing one value within that range, or mtree_store() call with an entry of
 NULL may be used to partially erase a range or many ranges at once.  Note that
-mtree_erase() may use GFP_KERNEL on allocations.
+mtree_erase() may use GFP_KERNEL | __GFP_NOFAIL for allocations and cannot
+fail.  mtree_erase() can sleep, so it must not be called from an atomic
+context.
 
 If you want to only store a new entry to a range (or index) if that range is
 currently ``NULL``, you can use mtree_insert_range() or mtree_insert() which
@@ -174,8 +176,9 @@ You can use mas_erase() to erase an entire range by setting index and
 last of the maple state to the desired range to erase.  This will erase
 the first range that is found in that range, set the maple state index
 and last as the range that was erased and return the entry that existed
-at that location.  Note that mas_erase() may allocate with the GFP_KERNEL flag.
-If this is not okay, consider using mas_store_gfp() and pass it a ``NULL``,
+at that location.  Note that mas_erase() may allocate with the GFP_KERNEL
+__GFP_NOFAIL and cannot fail, but may sleep.  If this is not okay, consider
+using mas_store_gfp() and pass it a ``NULL``,
 after setting up the correct range by walking to the entry.
 
 You can walk each entry within a range by using mas_for_each().  If you want

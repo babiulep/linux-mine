@@ -16,7 +16,7 @@ overlayfs-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/overlayfs/vfs.gi
 fscrypt		https://git.kernel.org/pub/scm/fs/fscrypt/linux.git#for-next
 btrfs		https://git.kernel.org/pub/scm/linux/kernel/git/kdave/linux.git#for-next
 ceph		https://github.com/ceph/ceph-client.git#master
-cifs		git://git.samba.org/sfrench/cifs-2.6.git#for-next
+cifs		https://git.manguebit.org/linux.git#cifs-next
 configfs	https://git.kernel.org/pub/scm/linux/kernel/git/a.hindborg/linux.git#configfs-next
 ecryptfs	https://git.kernel.org/pub/scm/linux/kernel/git/tyhicks/ecryptfs.git#next
 dlm		https://git.kernel.org/pub/scm/linux/kernel/git/teigland/linux-dlm.git#next
@@ -429,3 +429,4 @@ devsec-tsm	https://git.kernel.org/pub/scm/linux/kernel/git/devsec/tsm.git#next
 hisilicon	https://github.com/hisilicon/linux-hisi.git#for-next
 device-id	https://git.kernel.org/pub/scm/linux/kernel/git/ukleinek/linux.git#device-id-rework
 kthread		https://git.kernel.org/pub/scm/linux/kernel/git/frederic/linux-dynticks.git#for-next
+pagemap-headers	git://git.infradead.org/users/willy/pagecache.git#headers

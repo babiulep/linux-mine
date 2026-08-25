@@ -1348,8 +1348,12 @@ static ssize_t fuse_perform_write(struct kiocb *iocb, struct iov_iter *ii)
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	loff_t pos = iocb->ki_pos;
+	loff_t old_size = i_size_read(inode);
 	int err = 0;
 	ssize_t res = 0;
+
+	if (pos > old_size)
+		truncate_pagecache_range(inode, old_size, pos - 1);
 
 	if (inode->i_size < pos + iov_iter_count(ii))
 		set_bit(FUSE_I_SIZE_UNSTABLE, &fi->state);
@@ -1789,13 +1793,14 @@ static ssize_t fuse_direct_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
 	struct inode *inode = file_inode(iocb->ki_filp);
 	struct address_space *mapping = inode->i_mapping;
-	loff_t pos = iocb->ki_pos;
 	ssize_t res;
 	bool exclusive;
 
 	fuse_dio_lock(iocb, from, &exclusive);
 	res = generic_write_checks(iocb, from);
 	if (res > 0) {
+		loff_t pos = iocb->ki_pos;
+
 		task_io_account_write(res);
 		if (!is_sync_kiocb(iocb)) {
 			res = fuse_direct_IO(iocb, from);
@@ -1810,7 +1815,7 @@ static ssize_t fuse_direct_write_iter(struct kiocb *iocb, struct iov_iter *from)
 			/*
 			 * As in generic_file_direct_write(), invalidate after
 			 * write, to invalidate read-ahead cache that may have
-			 * with the write.
+			 * competed with the write.
 			 */
 			invalidate_inode_pages2_range(mapping,
 				pos >> PAGE_SHIFT,
@@ -2896,6 +2901,11 @@ static long fuse_file_fallocate(struct file *file, int mode, loff_t offset,
 
 	/* we could have extended the file */
 	if (!(mode & FALLOC_FL_KEEP_SIZE)) {
+		loff_t oldsize = i_size_read(inode);
+
+		if (offset + length > oldsize)
+			truncate_pagecache_range(inode, oldsize,
+						 offset + length - 1);
 		if (fuse_write_update_attr(inode, offset + length, length))
 			file_update_time(file);
 	}
