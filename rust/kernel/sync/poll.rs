@@ -13,7 +13,7 @@ use crate::{
         rcu::synchronize_rcu,
         CondVar,
         LockClassKey, //
-    },
+    }, //
     types::Opaque, //
 };
 use core::{

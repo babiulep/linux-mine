@@ -44,7 +44,7 @@ xfs		https://git.kernel.org/pub/scm/fs/xfs/xfs-linux.git#for-next
 zonefs		https://git.kernel.org/pub/scm/linux/kernel/git/dlemoal/zonefs.git#for-next
 vfs-brauner	https://git.kernel.org/pub/scm/linux/kernel/git/vfs/vfs.git#vfs.all
 vfs		https://git.kernel.org/pub/scm/linux/kernel/git/viro/vfs.git#for-next
-mm-hotfixes	https://git.kernel.org/pub/scm/linux/kernel/git/akpm/mm#mm-hotfixes-unstable
+mm-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/mm/linux.git#for-next-fixes
 kbuild-current	https://git.kernel.org/pub/scm/linux/kernel/git/kbuild/linux.git#kbuild-fixes-for-next
 clang-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/nathan/linux.git#clang-fixes-for-next
 arc-current	https://git.kernel.org/pub/scm/linux/kernel/git/vgupta/arc.git#for-curr
@@ -131,7 +131,6 @@ gpio-intel-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/andy/linux-gpio
 pinctrl-intel-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/pinctrl/intel.git#fixes
 auxdisplay-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/andy/linux-auxdisplay.git#fixes
 kunit-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/shuah/linux-kselftest.git#kunit-fixes
-memblock-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/rppt/memblock.git#fixes
 renesas-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/geert/renesas-devel.git#fixes
 perf-current	https://git.kernel.org/pub/scm/linux/kernel/git/perf/perf-tools.git#perf-tools
 efi-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/efi/efi.git#urgent
@@ -155,7 +154,6 @@ trace-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/trace/linux-trace.gi
 tracefs-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/trace/linux-trace.git#tracefs/fixes
 spacemit-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/spacemit/linux#fixes
 tip-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git#tip/urgent
-slab-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/vbabka/slab.git#slab/for-next-fixes
 kexec-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/liveupdate/linux.git#kexec-fixes
 liveupdate-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/liveupdate/linux.git#fixes
 drm-msm-fixes	https://gitlab.freedesktop.org/drm/msm.git#msm-fixes
@@ -174,9 +172,8 @@ rust-pin-init	https://github.com/Rust-for-Linux/linux.git#pin-init-next
 rust-timekeeping	https://github.com/Rust-for-Linux/linux.git#timekeeping-next
 rust-xarray	https://github.com/Rust-for-Linux/linux.git#xarray-next
 rust-analyzer	https://github.com/Rust-for-Linux/linux.git#rust-analyzer-next
-mm-stable	https://git.kernel.org/pub/scm/linux/kernel/git/akpm/mm#mm-stable
+mm		https://git.kernel.org/pub/scm/linux/kernel/git/mm/linux.git#for-next
 mm-nonmm-stable	https://git.kernel.org/pub/scm/linux/kernel/git/akpm/mm#mm-nonmm-stable
-mm-unstable	https://git.kernel.org/pub/scm/linux/kernel/git/akpm/mm#mm-unstable
 mm-nonmm-unstable	https://git.kernel.org/pub/scm/linux/kernel/git/akpm/mm#mm-nonmm-unstable
 kbuild		https://git.kernel.org/pub/scm/linux/kernel/git/kbuild/linux.git#kbuild-for-next
 clang-format	https://github.com/ojeda/linux.git#clang-format
@@ -402,12 +399,10 @@ kgdb		https://git.kernel.org/pub/scm/linux/kernel/git/danielt/linux.git#kgdb/for
 hmm		https://git.kernel.org/pub/scm/linux/kernel/git/rdma/rdma.git#hmm
 cfi		https://git.kernel.org/pub/scm/linux/kernel/git/mtd/linux.git#cfi/next
 mhi		https://git.kernel.org/pub/scm/linux/kernel/git/mani/mhi.git#mhi-next
-memblock	https://git.kernel.org/pub/scm/linux/kernel/git/rppt/memblock.git#for-next
 cxl		https://git.kernel.org/pub/scm/linux/kernel/git/cxl/cxl.git#next
 zstd		https://github.com/terrelln/linux.git#zstd-next
 efi		https://git.kernel.org/pub/scm/linux/kernel/git/efi/efi.git#next
 unicode		https://git.kernel.org/pub/scm/linux/kernel/git/krisman/unicode.git#for-next
-slab		https://git.kernel.org/pub/scm/linux/kernel/git/vbabka/slab.git#slab/for-next
 random		https://git.kernel.org/pub/scm/linux/kernel/git/crng/random.git#master
 landlock	https://git.kernel.org/pub/scm/linux/kernel/git/mic/linux.git#next
 sysctl		https://git.kernel.org/pub/scm/linux/kernel/git/sysctl/sysctl.git#sysctl-next
