@@ -157,6 +157,7 @@ const struct iomap_ops exfat_iomap_ops = {
 	.iomap_next = exfat_iomap_next,
 };
 
+#ifdef CONFIG_SWAP
 static int exfat_swap_iomap_begin(struct inode *inode, loff_t offset,
 		loff_t length, unsigned int flags, struct iomap *iomap,
 		struct iomap *srcmap)
@@ -175,6 +176,7 @@ static DEFINE_IOMAP_ITER_NEXT(exfat_swap_iomap_next,
 static const struct iomap_ops exfat_swap_iomap_ops = {
 	.iomap_next = exfat_swap_iomap_next,
 };
+#endif
 
 /*
  * exfat_write_iomap_end - Update the state after write
@@ -294,6 +296,10 @@ const struct iomap_read_ops exfat_iomap_bio_read_ops = {
 int exfat_iomap_swap_activate(struct swap_info_struct *sis,
 			       struct file *file, sector_t *span)
 {
+#ifdef CONFIG_SWAP
 	return iomap_swapfile_activate(sis, file, span,
 				       &exfat_swap_iomap_ops);
+#else
+	return -EIO;
+#endif
 }

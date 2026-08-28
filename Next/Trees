@@ -17,7 +17,7 @@ fscrypt		https://git.kernel.org/pub/scm/fs/fscrypt/linux.git#for-next
 btrfs		https://git.kernel.org/pub/scm/linux/kernel/git/kdave/linux.git#for-next
 ceph		https://github.com/ceph/ceph-client.git#master
 cifs		https://git.manguebit.org/linux.git#cifs-next
-configfs	https://git.kernel.org/pub/scm/linux/kernel/git/a.hindborg/linux.git#configfs-next
+configfs	https://git.kernel.org/pub/scm/linux/kernel/git/leitao/linux.git#configfs-next
 ecryptfs	https://git.kernel.org/pub/scm/linux/kernel/git/tyhicks/ecryptfs.git#next
 dlm		https://git.kernel.org/pub/scm/linux/kernel/git/teigland/linux-dlm.git#next
 erofs		https://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs.git#dev
