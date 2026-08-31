@@ -211,7 +211,8 @@ Christophe Leroy <chleroy@kernel.org> <christophe.leroy@c-s.fr>
 Christophe Leroy <chleroy@kernel.org> <christophe.leroy@csgroup.eu>
 Christophe Leroy <chleroy@kernel.org> <christophe.leroy2@cs-soprasteria.com>
 Christophe Ricard <christophe.ricard@gmail.com>
-Christopher Obbard <christopher.obbard@linaro.org> <chris.obbard@collabora.com>
+Christopher Obbard <chris.obbard@oss.qualcomm.com> <chris.obbard@collabora.com>
+Christopher Obbard <chris.obbard@oss.qualcomm.com> <christopher.obbard@linaro.org>
 Christoph Hellwig <hch@lst.de>
 Christoph Manszewski <c.manszewski@gmail.com> <christoph.manszewski@intel.com>
 Christoph Paasch <cpaasch@openai.com> <christoph.paasch@gmail.com>
@@ -222,6 +223,7 @@ Chuck Lever <cel@kernel.org> <chuck.lever@oracle.com>
 Chuck Lever <cel@kernel.org> <cel@netapp.com>
 Chuck Lever <cel@kernel.org> <cel@citi.umich.edu>
 Claudiu Beznea <claudiu.beznea@tuxon.dev> <claudiu.beznea@microchip.com>
+Coiby Xu <coiby.xu@gmail.com> <coxu@redhat.com>
 Colin Ian King <colin.i.king@gmail.com> <colin.king@canonical.com>
 Corey Minyard <minyard@acm.org>
 Damian Hobson-Garcia <dhobsong@igel.co.jp>
@@ -243,6 +245,10 @@ Daniele Alessandrelli <daniele.alessandrelli@gmail.com> <daniele.alessandrelli@i
 Danila Tikhonov <danila@mainlining.org> <danila@jiaxyga.com>
 Danila Tikhonov <danila@mainlining.org> <JIaxyga@protonmail.com>
 Danilo Krummrich <dakr@kernel.org> <dakr@redhat.com>
+Darrick J. Wong <djwong@kernel.org> <djwong@us.ibm.com>
+Darrick J. Wong <djwong@kernel.org> <darrick.wong@oracle.com>
+Darrick J. Wong <djwong@kernel.org> <djwong@flax.djwong.org>
+Darrick J. Wong <djwong@kernel.org> <djwong@djwong.org>
 David Brownell <david-b@pacbell.net>
 David Collins <quic_collinsd@quicinc.com> <collinsd@codeaurora.org>
 David Gow <david@davidgow.net> <davidgow@google.com>

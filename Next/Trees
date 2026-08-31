@@ -101,6 +101,7 @@ reset-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/pza/linux#reset/fixe
 mips-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/mips/linux.git#mips-fixes
 at91-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/at91/linux.git#at91-fixes
 omap-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/khilman/linux-omap.git#fixes
+tegra-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux.git#fixes
 kvm-fixes	git://git.kernel.org/pub/scm/virt/kvm/kvm.git#master
 kvms390-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/kvms390/linux.git#master
 kvm-arm-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/kvmarm/kvmarm.git#fixes

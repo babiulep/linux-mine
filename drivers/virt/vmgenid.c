@@ -25,7 +25,7 @@ struct vmgenid_state {
 
 static void vmgenid_notify(struct device *device)
 {
-	struct vmgenid_state *state = device->driver_data;
+	struct vmgenid_state *state = dev_get_drvdata(device);
 	u8 old_id[VMGENID_SIZE];
 
 	memcpy(old_id, state->this_id, sizeof(old_id));
@@ -83,6 +83,8 @@ static int vmgenid_add_acpi(struct device *dev, struct vmgenid_state *state)
 	}
 	setup_vmgenid_state(state, virt_addr);
 
+	dev_set_drvdata(dev, state);
+
 	status = acpi_install_notify_handler(device->handle, ACPI_DEVICE_NOTIFY,
 					     vmgenid_acpi_handler, dev);
 	if (ACPI_FAILURE(status)) {
@@ -90,7 +92,6 @@ static int vmgenid_add_acpi(struct device *dev, struct vmgenid_state *state)
 		goto out;
 	}
 
-	dev->driver_data = state;
 out:
 	ACPI_FREE(parsed.pointer);
 	return ret;
@@ -124,12 +125,13 @@ static int vmgenid_add_of(struct platform_device *pdev,
 	if (ret < 0)
 		return ret;
 
+	dev_set_drvdata(&pdev->dev, state);
+
 	ret = devm_request_irq(&pdev->dev, ret, vmgenid_of_irq_handler,
 			       IRQF_SHARED, "vmgenid", &pdev->dev);
 	if (ret < 0)
 		return ret;
 
-	pdev->dev.driver_data = state;
 	return 0;
 }
 
