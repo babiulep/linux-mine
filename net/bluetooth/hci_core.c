@@ -2632,10 +2632,10 @@ int hci_register_dev(struct hci_dev *hdev)
 	if (error)
 		BT_WARN("register suspend notifier failed error:%d\n", error);
 
-	queue_work(hdev->req_workqueue, &hdev->power_on);
-
 	idr_init(&hdev->adv_monitors_idr);
 	msft_register(hdev);
+
+	queue_work(hdev->req_workqueue, &hdev->power_on);
 
 	return id;
 
@@ -4075,7 +4075,7 @@ static int hci_send_cmd_sync(struct hci_dev *hdev, struct sk_buff *skb)
 	if (!hdev->sent_cmd) {
 		skb_queue_head(&hdev->cmd_q, skb);
 		queue_work(hdev->workqueue, &hdev->cmd_work);
-		return -EINVAL;
+		return -ENOMEM;
 	}
 
 	if (hci_skb_opcode(skb) != HCI_OP_NOP) {
