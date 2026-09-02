@@ -3040,10 +3040,22 @@ static int _ocfs2_free_suballoc_bits(handle_t *handle,
 	/* The alloc_bh comes from ocfs2_free_dinode() or
 	 * ocfs2_free_clusters().  The callers have all locked the
 	 * allocator and gotten alloc_bh from the lock call.  This
-	 * validates the dinode buffer.  Any corruption that has happened
-	 * is a code bug. */
+	 * validates the dinode buffer. */
 	BUG_ON(!OCFS2_IS_VALID_DINODE(fe));
-	BUG_ON((count + start_bit) > ocfs2_bits_per_group(cl));
+
+	/*
+	 * ocfs2_bits_per_group() is derived from cl_cpg and cl_bpc of the
+	 * allocator dinode, which are not validated against the volume
+	 * geometry.  A corrupted image can carry a suballoc bit beyond it,
+	 * so error out instead of crashing.
+	 */
+	if ((count + start_bit) > ocfs2_bits_per_group(cl)) {
+		return ocfs2_error(alloc_inode->i_sb,
+				   "Allocator #%llu: freeing bits %u+%u exceeds bits per group %u\n",
+				   (unsigned long long)le64_to_cpu(fe->i_blkno),
+				   count, start_bit,
+				   ocfs2_bits_per_group(cl));
+	}
 
 	trace_ocfs2_free_suballoc_bits(
 		(unsigned long long)OCFS2_I(alloc_inode)->ip_blkno,
@@ -3058,7 +3070,20 @@ static int _ocfs2_free_suballoc_bits(handle_t *handle,
 	}
 	group = (struct ocfs2_group_desc *) group_bh->b_data;
 
-	BUG_ON((count + start_bit) > le16_to_cpu(group->bg_bits));
+	/*
+	 * Group descriptor validation only guarantees bg_bits within the
+	 * physical bitmap size, so double check the freeing range here.
+	 * Otherwise ocfs2_block_group_clear_bits() would clear bits beyond
+	 * bg_bitmap.
+	 */
+	if ((count + start_bit) > le16_to_cpu(group->bg_bits)) {
+		status = ocfs2_error(alloc_inode->i_sb,
+				     "Group descriptor #%llu has %u bits, cannot free bits %u+%u\n",
+				     (unsigned long long)le64_to_cpu(group->bg_blkno),
+				     le16_to_cpu(group->bg_bits),
+				     count, start_bit);
+		goto bail;
+	}
 
 	if (ocfs2_is_cluster_bitmap(alloc_inode))
 		old_bg_contig_free_bits = group->bg_contig_free_bits;

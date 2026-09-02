@@ -360,10 +360,10 @@ free_mem:
 }
 
 static struct sbiret pmu_sbi_ctr_cfg_match(unsigned long cbase,
-					    unsigned long ctr_mask,
-					    unsigned long cflags,
-					    unsigned long event_idx,
-					    u64 config)
+					   unsigned long ctr_mask,
+					   unsigned long cflags,
+					   unsigned long event_idx,
+					   u64 config)
 {
 #if defined(CONFIG_32BIT)
 	return sbi_ecall(SBI_EXT_PMU, SBI_EXT_PMU_COUNTER_CFG_MATCH, cbase,
@@ -563,7 +563,7 @@ static int pmu_sbi_ctr_get_idx(struct perf_event *event)
 	struct cpu_hw_events *cpuc = this_cpu_ptr(rvpmu->hw_events);
 	struct sbiret ret;
 	int idx, i;
-	uint64_t cbase = 0, cmask = 0;
+	u64 cbase = 0, cmask = 0;
 	unsigned long cflags = 0;
 
 	cflags = pmu_sbi_get_filter_flags(event);
@@ -586,7 +586,7 @@ static int pmu_sbi_ctr_get_idx(struct perf_event *event)
 	/* retrieve the available counter index */
 	if (cmask) {
 		ret = pmu_sbi_ctr_cfg_match(cbase, cmask, cflags, hwc->event_base,
-					   hwc->config);
+					    hwc->config);
 	} else {
 		ret.error = SBI_ERR_NOT_SUPPORTED;
 		for (i = 0; i < BITS_TO_LONGS(RISCV_MAX_COUNTERS); i++) {
@@ -594,7 +594,7 @@ static int pmu_sbi_ctr_get_idx(struct perf_event *event)
 				continue;
 			cbase = i * BITS_PER_LONG;
 			ret = pmu_sbi_ctr_cfg_match(cbase, rvpmu->cmask[i], cflags,
-						   hwc->event_base, hwc->config);
+						    hwc->event_base, hwc->config);
 			if (!ret.error)
 				break;
 		}
@@ -1086,10 +1086,12 @@ static irqreturn_t pmu_sbi_ovf_handler(int irq, void *dev)
 	u64 overflowed_ctrs = 0;
 	struct cpu_hw_events *cpu_hw_evt = dev;
 	u64 start_clock = sched_clock();
-	struct riscv_pmu_snapshot_data *sdata = cpu_hw_evt->snapshot_addr;
+	struct riscv_pmu_snapshot_data *sdata;
 
 	if (WARN_ON_ONCE(!cpu_hw_evt))
 		return IRQ_NONE;
+
+	sdata = cpu_hw_evt->snapshot_addr;
 
 	/* Firmware counter don't support overflow yet */
 	fidx = find_first_bit(cpu_hw_evt->used_hw_ctrs, RISCV_MAX_COUNTERS);

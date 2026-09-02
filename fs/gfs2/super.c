@@ -1228,6 +1228,8 @@ static enum evict_behavior gfs2_upgrade_iopen_glock(struct inode *inode)
 		ret = schedule_timeout(ret);
 		if (gfs2_glock_poll(gh) || glock_needs_demote(gl))
 			break;
+		if (!ret)
+			break;
 		if (signal_pending(current))
 			break;
 	}
