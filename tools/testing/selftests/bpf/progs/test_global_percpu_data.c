@@ -8,12 +8,9 @@ int loong SEC(".percpu.looooooooong");
 int data3 SEC(".data.percpu");
 int data2 SEC(".percpu.data");
 
-/* Used for testing bpf_map__set_value_size(). */
-int arr[1] SEC(".percpu.arr");
-int arr_sum;
-
 int run;
-int cpu_id SEC(".percpu");
+/* cpu_id as array to verify map value resizing. */
+int cpu_id[1] SEC(".percpu");
 int data SEC(".percpu") = -1;
 int nums[7] SEC(".percpu");
 bool set SEC(".percpu") = false;
@@ -37,8 +34,7 @@ int update_percpu_data(void *ctx)
 	data = 1;
 	run++;
 	set = true;
-	cpu_id = bpf_get_smp_processor_id();
-	arr_sum += arr[0];
+	cpu_id[0] = bpf_get_smp_processor_id();
 	return 0;
 }
 

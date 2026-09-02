@@ -95,12 +95,25 @@ struct mem_cgroup_per_node {
 	struct lruvec_stats			*lruvec_stats;
 	struct shrinker_info __rcu	*shrinker_info;
 
+#ifdef CONFIG_MEMCG_V1
+	/*
+	 * Memcg-v1 only stuff in middle as buffer between read mostly fields
+	 * and update often fields to avoid false sharing. If v1 stuff is
+	 * not present, an explicit padding is needed.
+	 */
+
+	struct rb_node		tree_node;	/* RB tree node */
+	unsigned long		usage_in_excess;/* Set to the value by which */
+						/* the soft limit is exceeded*/
+	bool			on_tree;
+#else
 	CACHELINE_PADDING(_pad1_);
+#endif
 
 	/* Fields which get updated often at the end. */
 	struct lruvec		lruvec;
 	CACHELINE_PADDING(_pad2_);
-	atomic_long_t		lru_zone_size[MAX_NR_ZONES][NR_LRU_LISTS];
+	unsigned long		lru_zone_size[MAX_NR_ZONES][NR_LRU_LISTS];
 	struct mem_cgroup_reclaim_iter	iter;
 
 	/*
@@ -280,6 +293,8 @@ struct mem_cgroup {
 
 	struct memcg1_events_percpu __percpu *events_percpu;
 
+	unsigned long soft_limit;
+
 	/* protected by memcg_oom_lock */
 	bool oom_lock;
 	int under_oom;
@@ -365,7 +380,7 @@ enum objext_flags {
 static inline struct mem_cgroup *obj_cgroup_memcg(struct obj_cgroup *objcg)
 {
 	lockdep_assert_once(rcu_read_lock_held() || lockdep_is_held(&cgroup_mutex));
-	return objcg ? READ_ONCE(objcg->memcg) : NULL;
+	return READ_ONCE(objcg->memcg);
 }
 
 /*
@@ -418,7 +433,7 @@ static inline struct mem_cgroup *folio_memcg(struct folio *folio)
 {
 	struct obj_cgroup *objcg = folio_objcg(folio);
 
-	return obj_cgroup_memcg(objcg);
+	return objcg ? obj_cgroup_memcg(objcg) : NULL;
 }
 
 /*
@@ -461,7 +476,7 @@ static inline struct mem_cgroup *folio_memcg_check(struct folio *folio)
 
 	objcg = (void *)(memcg_data & ~OBJEXTS_FLAGS_MASK);
 
-	return obj_cgroup_memcg(objcg);
+	return objcg ? obj_cgroup_memcg(objcg) : NULL;
 }
 
 static inline struct mem_cgroup *page_memcg_check(struct page *page)
@@ -887,15 +902,10 @@ static inline
 unsigned long mem_cgroup_get_zone_lru_size(struct lruvec *lruvec,
 		enum lru_list lru, int zone_idx)
 {
-	long val;
 	struct mem_cgroup_per_node *mz;
 
 	mz = container_of(lruvec, struct mem_cgroup_per_node, lruvec);
-	val = atomic_long_read(&mz->lru_zone_size[zone_idx][lru]);
-	if (WARN_ON_ONCE(val < 0))
-		return 0;
-
-	return val;
+	return READ_ONCE(mz->lru_zone_size[zone_idx][lru]);
 }
 
 void __mem_cgroup_handle_over_high(gfp_t gfp_mask);
@@ -1039,11 +1049,6 @@ void mem_cgroup_flush_workqueue(void);
 
 extern int mem_cgroup_init(void);
 #else /* CONFIG_MEMCG */
-
-static inline struct mem_cgroup *obj_cgroup_memcg(struct obj_cgroup *objcg)
-{
-	return NULL;
-}
 
 #define MEM_CGROUP_ID_SHIFT	0
 
@@ -1914,6 +1919,10 @@ static inline bool mem_cgroup_zswap_writeback_enabled(struct mem_cgroup *memcg)
 /* Cgroup v1-related declarations */
 
 #ifdef CONFIG_MEMCG_V1
+unsigned long memcg1_soft_limit_reclaim(pg_data_t *pgdat, int order,
+					gfp_t gfp_mask,
+					unsigned long *total_scanned);
+
 bool mem_cgroup_oom_synchronize(bool wait);
 
 static inline bool task_in_memcg_oom(struct task_struct *p)
@@ -1934,6 +1943,14 @@ static inline void mem_cgroup_exit_user_fault(void)
 }
 
 #else /* CONFIG_MEMCG_V1 */
+static inline
+unsigned long memcg1_soft_limit_reclaim(pg_data_t *pgdat, int order,
+					gfp_t gfp_mask,
+					unsigned long *total_scanned)
+{
+	return 0;
+}
+
 static inline bool task_in_memcg_oom(struct task_struct *p)
 {
 	return false;

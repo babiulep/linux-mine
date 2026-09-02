@@ -344,7 +344,7 @@ virtio_gpu_user_framebuffer_create(struct drm_device *dev,
 	if (ret) {
 		kfree(virtio_gpu_fb);
 		drm_gem_object_put(obj);
-		return ERR_PTR(ret);
+		return NULL;
 	}
 
 	return &virtio_gpu_fb->base;
@@ -378,11 +378,8 @@ int virtio_gpu_modeset_init(struct virtio_gpu_device *vgdev)
 
 	vgdev->ddev->mode_config.fb_modifiers_not_supported = true;
 
-	for (i = 0; i < vgdev->num_scanouts; ++i) {
-		ret = vgdev_output_init(vgdev, i);
-		if (ret)
-			return ret;
-	}
+	for (i = 0 ; i < vgdev->num_scanouts; ++i)
+		vgdev_output_init(vgdev, i);
 
 	ret = drm_vblank_init(vgdev->ddev, vgdev->num_scanouts);
 	if (ret)

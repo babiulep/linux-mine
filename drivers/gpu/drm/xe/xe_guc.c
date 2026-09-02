@@ -39,7 +39,6 @@
 #include "xe_guc_rc.h"
 #include "xe_guc_relay.h"
 #include "xe_guc_submit.h"
-#include "xe_log.h"
 #include "xe_memirq.h"
 #include "xe_mmio.h"
 #include "xe_platform_types.h"
@@ -1543,9 +1542,8 @@ retry:
 		/* scratch registers might be cleared during FLR, try once more */
 		if (!header) {
 			if (++lost > MAX_RETRIES_ON_FLR) {
-				xe_log_err(gt, GUC, -ENOLINK,
-					   "MMIO request %#x: lost, too many retries %u\n",
-					   request[0], lost);
+				xe_gt_err(gt, "GuC mmio request %#x: lost, too many retries %u\n",
+					  request[0], lost);
 				return -ENOLINK;
 			}
 			xe_gt_dbg(gt, "GuC mmio request %#x: lost, trying again\n", request[0]);
@@ -1553,8 +1551,8 @@ retry:
 			goto retry;
 		}
 timeout:
-		xe_log_err(gt, GUC, ret, "MMIO request %#x: no reply %#x\n",
-			   request[0], header);
+		xe_gt_err(gt, "GuC mmio request %#x: no reply %#x\n",
+			  request[0], header);
 		return ret;
 	}
 
@@ -1609,16 +1607,16 @@ timeout:
 			return -EREMCHG;
 		}
 
-		xe_log_err(gt, GUC, -ENXIO, "MMIO request %#x: failure %#x hint %#x\n",
-			   request[0], error, hint);
+		xe_gt_err(gt, "GuC mmio request %#x: failure %#x hint %#x\n",
+			  request[0], error, hint);
 		return -ENXIO;
 	}
 
 	if (FIELD_GET(GUC_HXG_MSG_0_TYPE, header) !=
 	    GUC_HXG_TYPE_RESPONSE_SUCCESS) {
 proto:
-		xe_log_err(gt, GUC, -EPROTO, "MMIO request %#x: unexpected reply %#x\n",
-			   request[0], header);
+		xe_gt_err(gt, "GuC mmio request %#x: unexpected reply %#x\n",
+			  request[0], header);
 		return -EPROTO;
 	}
 

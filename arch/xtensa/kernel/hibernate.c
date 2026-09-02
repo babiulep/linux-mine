@@ -3,7 +3,6 @@
 #include <linux/mm.h>
 #include <linux/suspend.h>
 #include <asm/coprocessor.h>
-#include <asm/sections.h>
 
 int pfn_is_nosave(unsigned long pfn)
 {

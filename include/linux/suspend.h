@@ -2,6 +2,7 @@
 #ifndef _LINUX_SUSPEND_H
 #define _LINUX_SUSPEND_H
 
+#include <linux/swap.h>
 #include <linux/notifier.h>
 #include <linux/init.h>
 #include <linux/pm.h>

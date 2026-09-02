@@ -104,7 +104,6 @@ struct qcom_adsp {
 	struct completion stop_done;
 
 	phys_addr_t mem_phys;
-	unsigned long iova;
 	phys_addr_t mem_reloc;
 	void __iomem *mem_region;
 	size_t mem_size;
@@ -334,7 +333,7 @@ static void adsp_unmap_carveout(struct rproc *rproc)
 	struct qcom_adsp *adsp = rproc->priv;
 
 	if (adsp->has_iommu)
-		iommu_unmap(rproc->domain, adsp->iova, adsp->mem_size);
+		iommu_unmap(rproc->domain, adsp->mem_phys, adsp->mem_size);
 }
 
 static int adsp_map_carveout(struct rproc *rproc)
@@ -342,6 +341,7 @@ static int adsp_map_carveout(struct rproc *rproc)
 	struct qcom_adsp *adsp = rproc->priv;
 	struct of_phandle_args args;
 	long long sid;
+	unsigned long iova;
 	int ret;
 
 	if (!adsp->has_iommu)
@@ -358,9 +358,9 @@ static int adsp_map_carveout(struct rproc *rproc)
 	of_node_put(args.np);
 
 	/* Add SID configuration for ADSP Firmware to SMMU */
-	adsp->iova = adsp->mem_phys | (sid << 32);
+	iova =  adsp->mem_phys | (sid << 32);
 
-	ret = iommu_map(rproc->domain, adsp->iova, adsp->mem_phys,
+	ret = iommu_map(rproc->domain, iova, adsp->mem_phys,
 			adsp->mem_size,	IOMMU_READ | IOMMU_WRITE,
 			GFP_KERNEL);
 	if (ret) {
@@ -430,7 +430,7 @@ static int adsp_start(struct rproc *rproc)
 		goto disable_adsp_clks;
 	}
 
-	ret = qcom_q6v5_wait_for_start(&adsp->q6v5, msecs_to_jiffies(5000));
+	ret = qcom_q6v5_wait_for_start(&adsp->q6v5, msecs_to_jiffies(5 * HZ));
 	if (ret == -ETIMEDOUT) {
 		dev_err(adsp->dev, "start timed out\n");
 		goto disable_adsp_clks;

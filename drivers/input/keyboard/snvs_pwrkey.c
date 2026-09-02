@@ -179,7 +179,7 @@ static int imx_snvs_pwrkey_probe(struct platform_device *pdev)
 	clk = devm_clk_get_optional_enabled(dev, NULL);
 	if (IS_ERR(clk))
 		return dev_err_probe(dev, PTR_ERR(clk),
-				     "Failed to get snvs clock\n");
+				     "Failed to get snvs clock (%pe)\n", clk);
 
 	pdata->wakeup = of_property_read_bool(np, "wakeup-source");
 
@@ -236,13 +236,14 @@ static int imx_snvs_pwrkey_probe(struct platform_device *pdev)
 	pdata->input = input;
 	platform_set_drvdata(pdev, pdata);
 
-	error = devm_request_irq(dev, pdata->irq, imx_snvs_pwrkey_interrupt,
+	error = devm_request_irq(dev, pdata->irq,
+				 imx_snvs_pwrkey_interrupt,
 				 0, pdev->name, pdev);
 	if (error)
-		return error;
+		return dev_err_probe(dev, error, "interrupt not available.\n");
 
 	error = input_register_device(input);
-	if (error)
+	if (error < 0)
 		return dev_err_probe(dev, error, "failed to register input device\n");
 
 	device_init_wakeup(dev, pdata->wakeup);

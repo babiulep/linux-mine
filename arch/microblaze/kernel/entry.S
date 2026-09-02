@@ -943,7 +943,7 @@ ret_from_break:
 	mbar	1
 	mbar	2
 	bri	4
-	mbar	24 /* suspend */
+	suspend
 	nop
 #endif
 

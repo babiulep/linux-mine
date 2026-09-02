@@ -289,7 +289,7 @@ static int bm1390_read_data(struct bm1390_data *data,
 	if (warn)
 		dev_warn(data->dev, "Failed to stop measurement (%d)\n", warn);
 
-	return ret;
+	return 0;
 }
 
 static int bm1390_read_raw(struct iio_dev *idev,

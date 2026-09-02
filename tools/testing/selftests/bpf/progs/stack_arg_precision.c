@@ -124,7 +124,6 @@ __naked void stack_arg_precision_bpf2bpf(void)
 
 SEC("socket")
 __description("stack_arg_precision: not supported, dummy test")
-__skip("stack_arg_precision: not supported")
 __success
 int dummy_test(void)
 {

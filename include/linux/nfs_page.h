@@ -12,6 +12,7 @@
 
 
 #include <linux/list.h>
+#include <linux/pagemap.h>
 #include <linux/wait.h>
 #include <linux/sunrpc/auth.h>
 #include <linux/nfs_xdr.h>

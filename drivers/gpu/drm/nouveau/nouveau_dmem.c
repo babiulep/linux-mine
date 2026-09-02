@@ -40,7 +40,6 @@
 #include <linux/hmm.h>
 #include <linux/memremap.h>
 #include <linux/migrate.h>
-#include <linux/pagemap.h>
 
 /*
  * FIXME: this is ugly right now we are using TTM to allocate vram and we pin

@@ -47,7 +47,6 @@
 #include <linux/nfsd/cld.h>
 
 #include "nfsd.h"
-#include "nfs4ctl.h"
 #include "state.h"
 #include "vfs.h"
 #include "netns.h"

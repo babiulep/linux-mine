@@ -121,17 +121,11 @@ Voltages
 `in[0-*]_lcrit`
 		Voltage critical min value.
 
-`in[0-*]_lemergency`
-		Voltage emergency min value.
-
 `in[0-*]_max`
 		Voltage max value.
 
 `in[0-*]_crit`
 		Voltage critical max value.
-
-`in[0-*]_emergency`
-		Voltage emergency max value.
 
 `in[0-*]_input`
 		Voltage input value.
@@ -338,9 +332,6 @@ Currents
 `curr[1-*]_crit`
 		Current critical high value.
 
-`curr[1-*]_emergency`
-		Current emergency high value.
-
 `curr[1-*]_input`
 		Current input value.
 
@@ -536,15 +527,12 @@ implementation.
 +-------------------------------+-----------------------+
 | **`in[0-*]_min_alarm`,	| Limit alarm		|
 | `in[0-*]_max_alarm`,		|			|
-| `in[0-*]_lemergency_alarm`,	|			|
 | `in[0-*]_lcrit_alarm`,	|   - 0: no alarm	|
 | `in[0-*]_crit_alarm`,		|   - 1: alarm		|
-| `in[0-*]_emergency_alarm`,	|			|
 | `curr[1-*]_min_alarm`,	|			|
 | `curr[1-*]_max_alarm`,	| RO			|
 | `curr[1-*]_lcrit_alarm`,	|			|
 | `curr[1-*]_crit_alarm`,	|			|
-| `curr[1-*]_emergency_alarm`,	|			|
 | `power[1-*]_cap_alarm`,	|			|
 | `power[1-*]_max_alarm`,	|			|
 | `power[1-*]_crit_alarm`,	|			|

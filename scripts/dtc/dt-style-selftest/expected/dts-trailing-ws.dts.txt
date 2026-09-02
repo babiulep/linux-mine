@@ -1,2 +1,0 @@
-# mode=relaxed
-bad/dts-trailing-ws.dts:5: [trailing-whitespace] trailing whitespace

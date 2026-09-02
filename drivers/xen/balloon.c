@@ -48,7 +48,6 @@
 #include <linux/mm.h>
 #include <linux/memblock.h>
 #include <linux/pagemap.h>
-#include <linux/swap.h>
 #include <linux/highmem.h>
 #include <linux/mutex.h>
 #include <linux/list.h>

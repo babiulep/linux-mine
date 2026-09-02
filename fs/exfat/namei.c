@@ -645,8 +645,7 @@ static int exfat_find(struct inode *dir, const struct qstr *qname,
 	info->entry = dentry;
 	info->num_subdirs = 0;
 
-	/* Validate the complete set, including recognized benign entries. */
-	if (exfat_get_dentry_set(&es, sb, &cdir, dentry, ES_ALL_ENTRIES))
+	if (exfat_get_dentry_set(&es, sb, &cdir, dentry, ES_2_ENTRIES))
 		return -EIO;
 	ep = exfat_get_dentry_cached(&es, ES_IDX_FILE);
 	ep2 = exfat_get_dentry_cached(&es, ES_IDX_STREAM);

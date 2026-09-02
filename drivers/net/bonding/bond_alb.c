@@ -875,7 +875,7 @@ static int rlb_initialize(struct bonding *bond)
 	spin_unlock_bh(&bond->mode_lock);
 
 	/* register to receive ARPs */
-	WRITE_ONCE(bond->recv_probe, rlb_arp_recv);
+	bond->recv_probe = rlb_arp_recv;
 
 	return 0;
 }

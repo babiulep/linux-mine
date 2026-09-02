@@ -4684,7 +4684,7 @@ void scx_tg_init(struct task_group *tg)
 	tg->scx.weight = CGROUP_WEIGHT_DFL;
 	tg->scx.bw_period_us = default_bw_period_us();
 	tg->scx.bw_quota_us = RUNTIME_INF;
-	tg->scx.sched_idle = false;
+	tg->scx.idle = false;
 }
 
 /**
@@ -4766,8 +4766,7 @@ int scx_tg_online(struct task_group *tg)
 				{ .weight = tg->scx.weight,
 				  .bw_period_us = tg->scx.bw_period_us,
 				  .bw_quota_us = tg->scx.bw_quota_us,
-				  .bw_burst_us = tg->scx.bw_burst_us,
-				  .sched_idle = tg->scx.sched_idle };
+				  .bw_burst_us = tg->scx.bw_burst_us };
 
 			ret = SCX_CALL_OP_RET(sch, cgroup_init,
 					      NULL, tg->css.cgroup, &args);
@@ -4937,7 +4936,7 @@ void scx_group_set_idle(struct task_group *tg, bool idle)
 		SCX_CALL_OP(sch, cgroup_set_idle, NULL, tg_cgrp(tg), idle);
 
 	/* Update the task group's idle state */
-	tg->scx.sched_idle = idle;
+	tg->scx.idle = idle;
 
 	percpu_up_read(&scx_cgroup_ops_rwsem);
 }
@@ -5188,7 +5187,6 @@ static int scx_cgroup_init(struct scx_sched *sch)
 				.bw_period_us = tg->scx.bw_period_us,
 				.bw_quota_us = tg->scx.bw_quota_us,
 				.bw_burst_us = tg->scx.bw_burst_us,
-				.sched_idle = tg->scx.sched_idle,
 			};
 
 			ret = SCX_CALL_OP_RET(sch, cgroup_init, NULL, css->cgroup, &args);

@@ -2449,7 +2449,6 @@
 			keypad: keypad@0 {
 				compatible = "ti,omap4-keypad";
 				reg = <0x0 0x400>;
-				status = "disabled";
 			};
 		};
 	};

@@ -122,6 +122,7 @@ struct vm_area_struct *find_vma_and_prepare_anon(struct mm_struct *mm,
 	return vma;
 }
 
+#ifdef CONFIG_PER_VMA_LOCK
 /*
  * uffd_lock_vma() - Lookup and lock vma corresponding to @address.
  * @mm: mm to search vma in.
@@ -129,10 +130,8 @@ struct vm_area_struct *find_vma_and_prepare_anon(struct mm_struct *mm,
  *
  * Should be called without holding mmap_lock.
  *
- * Return: A locked vma containing @address, -ENOENT if no vma is found,
- * -ENOMEM if anon_vma couldn't be allocated, or -EAGAIN if vma refcount
- * overflow happened due to high number of readers and the caller should
- * retry later.
+ * Return: A locked vma containing @address, -ENOENT if no vma is found, or
+ * -ENOMEM if anon_vma couldn't be allocated.
  */
 static struct vm_area_struct *uffd_lock_vma(struct mm_struct *mm,
 				       unsigned long address)
@@ -182,6 +181,34 @@ static void uffd_mfill_unlock(struct vm_area_struct *vma)
 {
 	vma_end_read(vma);
 }
+
+#else
+
+static struct vm_area_struct *uffd_mfill_lock(struct mm_struct *dst_mm,
+					      unsigned long dst_start,
+					      unsigned long len)
+{
+	struct vm_area_struct *dst_vma;
+
+	mmap_read_lock(dst_mm);
+	dst_vma = find_vma_and_prepare_anon(dst_mm, dst_start);
+	if (IS_ERR(dst_vma))
+		goto out_unlock;
+
+	if (validate_dst_vma(dst_vma, dst_start + len))
+		return dst_vma;
+
+	dst_vma = ERR_PTR(-ENOENT);
+out_unlock:
+	mmap_read_unlock(dst_mm);
+	return dst_vma;
+}
+
+static void uffd_mfill_unlock(struct vm_area_struct *vma)
+{
+	mmap_read_unlock(vma->vm_mm);
+}
+#endif
 
 static void mfill_put_vma(struct mfill_state *state)
 {
@@ -1673,7 +1700,7 @@ retry:
 		}
 
 		si = get_swap_device(entry);
-		if (IS_ERR_OR_NULL(si)) {
+		if (unlikely(!si)) {
 			ret = -EAGAIN;
 			goto out;
 		}
@@ -1730,7 +1757,7 @@ out:
 	if (dst_pte)
 		pte_unmap(dst_pte);
 	mmu_notifier_invalidate_range_end(&range);
-	if (!IS_ERR_OR_NULL(si))
+	if (si)
 		put_swap_device(si);
 
 	return ret;
@@ -1823,6 +1850,7 @@ out_success:
 	return 0;
 }
 
+#ifdef CONFIG_PER_VMA_LOCK
 static int uffd_move_lock(struct mm_struct *mm,
 			  unsigned long dst_start,
 			  unsigned long src_start,
@@ -1896,6 +1924,31 @@ static void uffd_move_unlock(struct vm_area_struct *dst_vma,
 	if (src_vma != dst_vma)
 		vma_end_read(dst_vma);
 }
+
+#else
+
+static int uffd_move_lock(struct mm_struct *mm,
+			  unsigned long dst_start,
+			  unsigned long src_start,
+			  struct vm_area_struct **dst_vmap,
+			  struct vm_area_struct **src_vmap)
+{
+	int err;
+
+	mmap_read_lock(mm);
+	err = find_vmas_mm_locked(mm, dst_start, src_start, dst_vmap, src_vmap);
+	if (err)
+		mmap_read_unlock(mm);
+	return err;
+}
+
+static void uffd_move_unlock(struct vm_area_struct *dst_vma,
+			     struct vm_area_struct *src_vma)
+{
+	mmap_assert_locked(src_vma->vm_mm);
+	mmap_read_unlock(dst_vma->vm_mm);
+}
+#endif
 
 /**
  * move_pages - move arbitrary anonymous pages of an existing vma
@@ -2118,10 +2171,8 @@ static ssize_t move_pages(struct userfaultfd_ctx *ctx, unsigned long dst_start,
 		}
 
 		if (err) {
-			if (err == -EAGAIN) {
-				err = 0;
+			if (err == -EAGAIN)
 				continue;
-			}
 			break;
 		}
 

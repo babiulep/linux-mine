@@ -46,7 +46,6 @@
 #include <linux/random.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
-#include <linux/string_choices.h>
 #include <linux/types.h>
 
 #include <linux/iio/buffer.h>
@@ -840,7 +839,7 @@ static int bmp280_write_sampling_frequency(struct bmp280_data *data,
 					   int val, int val2)
 {
 	const int (*avail)[2] = data->chip_info->sampling_freq_avail;
-	const int n = data->chip_info->num_sampling_freq_avail / 2;
+	const int n = data->chip_info->num_sampling_freq_avail;
 	int ret, prev;
 	int i;
 

@@ -492,8 +492,32 @@ static inline void add_mm_rss_vec(struct mm_struct *mm, int *rss)
 			add_mm_counter(mm, i, rss[i]);
 }
 
-/* Allow a burst of 60 bad page map reports per minute. */
-static DEFINE_RATELIMIT_STATE(bad_page_map_ratelimit, 60 * HZ, 60);
+static bool is_bad_page_map_ratelimited(void)
+{
+	static unsigned long resume;
+	static unsigned long nr_shown;
+	static unsigned long nr_unshown;
+
+	/*
+	 * Allow a burst of 60 reports, then keep quiet for that minute;
+	 * or allow a steady drip of one report per second.
+	 */
+	if (nr_shown == 60) {
+		if (time_before(jiffies, resume)) {
+			nr_unshown++;
+			return true;
+		}
+		if (nr_unshown) {
+			pr_alert("BUG: Bad page map: %lu messages suppressed\n",
+				 nr_unshown);
+			nr_unshown = 0;
+		}
+		nr_shown = 0;
+	}
+	if (nr_shown++ == 0)
+		resume = jiffies + 60 * HZ;
+	return false;
+}
 
 static void ptval_bytes_to_hex_str(char *buf, size_t buf_size, const void *entry, size_t entry_size)
 {
@@ -609,7 +633,7 @@ static void print_bad_page_map(struct vm_area_struct *vma,
 	char entry_str[PTVAL_STR_MAX];
 	pgoff_t index, anon_index;
 
-	if (!__ratelimit(&bad_page_map_ratelimit))
+	if (is_bad_page_map_ratelimited())
 		return;
 
 	mapping = vma->vm_file ? vma->vm_file->f_mapping : NULL;
@@ -2541,22 +2565,20 @@ static int insert_pages(struct vm_area_struct *vma, unsigned long addr,
 	unsigned long curr_page_idx = 0;
 	unsigned long remaining_pages_total = *num;
 	unsigned long pages_to_write_in_pmd;
-	int err = 0;
+	int ret;
 more:
+	ret = -EFAULT;
 	pmd = walk_to_pmd(mm, addr);
-	if (!pmd) {
-		err = -ENOMEM;
+	if (!pmd)
 		goto out;
-	}
 
 	pages_to_write_in_pmd = min_t(unsigned long,
 		remaining_pages_total, PTRS_PER_PTE - pte_index(addr));
 
 	/* Allocate the PTE if necessary; takes PMD lock once only. */
-	if (pte_alloc(mm, pmd)) {
-		err = -ENOMEM;
+	ret = -ENOMEM;
+	if (pte_alloc(mm, pmd))
 		goto out;
-	}
 
 	while (pages_to_write_in_pmd) {
 		int pte_idx = 0;
@@ -2564,14 +2586,15 @@ more:
 
 		start_pte = pte_offset_map_lock(mm, pmd, addr, &pte_lock);
 		if (!start_pte) {
-			err = -EFAULT;
+			ret = -EFAULT;
 			goto out;
 		}
 		for (pte = start_pte; pte_idx < batch_size; ++pte, ++pte_idx) {
-			err = insert_page_in_batch_locked(vma, pte, addr,
-							  pages[curr_page_idx], prot);
+			int err = insert_page_in_batch_locked(vma, pte,
+				addr, pages[curr_page_idx], prot);
 			if (unlikely(err)) {
 				pte_unmap_unlock(start_pte, pte_lock);
+				ret = err;
 				remaining_pages_total -= pte_idx;
 				goto out;
 			}
@@ -2584,9 +2607,10 @@ more:
 	}
 	if (remaining_pages_total)
 		goto more;
+	ret = 0;
 out:
 	*num = remaining_pages_total;
-	return err;
+	return ret;
 }
 
 /**
@@ -4902,21 +4926,18 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 				goto unlock;
 
 			/*
-			 * Get a folio reference while we know the folio can't
-			 * be freed.
+			 * Get a page reference while we know the page can't be
+			 * freed.
 			 */
-			folio = page_folio(vmf->page);
-			if (folio_trylock(folio)) {
+			if (trylock_page(vmf->page)) {
 				struct dev_pagemap *pgmap;
 
-				folio_get(folio);
+				get_page(vmf->page);
 				pte_unmap_unlock(vmf->pte, vmf->ptl);
 				pgmap = page_pgmap(vmf->page);
 				ret = pgmap->ops->migrate_to_ram(vmf);
-				/* migrate_to_ram() might have split the folio. */
-				folio = page_folio(vmf->page);
-				folio_unlock(folio);
-				folio_put(folio);
+				unlock_page(vmf->page);
+				put_page(vmf->page);
 			} else {
 				pte_unmap(vmf->pte);
 				softleaf_entry_wait_on_locked(entry, vmf->ptl);
@@ -4932,13 +4953,10 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 		goto out;
 	}
 
-	/* Prevent swapoff from happening to us, and reject a bad entry. */
+	/* Prevent swapoff from happening to us. */
 	si = get_swap_device(entry);
-	if (IS_ERR_OR_NULL(si)) {
-		if (IS_ERR(si))
-			ret = VM_FAULT_SIGBUS;
+	if (unlikely(!si))
 		goto out;
-	}
 
 	folio = swap_cache_get_folio(entry);
 	if (folio)
@@ -5247,7 +5265,7 @@ unlock:
 	if (vmf->pte)
 		pte_unmap_unlock(vmf->pte, vmf->ptl);
 out:
-	if (!IS_ERR_OR_NULL(si))
+	if (si)
 		put_swap_device(si);
 	return ret;
 out_nomap:
@@ -6799,6 +6817,7 @@ static vm_fault_t sanitize_fault_flags(struct vm_area_struct *vma,
 				 !vma_is_cow_mapping(vma)))
 			return VM_FAULT_SIGSEGV;
 	}
+#ifdef CONFIG_PER_VMA_LOCK
 	/*
 	 * Per-VMA locks can't be used with FAULT_FLAG_RETRY_NOWAIT because of
 	 * the assumption that lock is dropped on VM_FAULT_RETRY.
@@ -6807,6 +6826,7 @@ static vm_fault_t sanitize_fault_flags(struct vm_area_struct *vma,
 			(FAULT_FLAG_VMA_LOCK | FAULT_FLAG_RETRY_NOWAIT)) ==
 			(FAULT_FLAG_VMA_LOCK | FAULT_FLAG_RETRY_NOWAIT)))
 		return VM_FAULT_SIGSEGV;
+#endif
 
 	return 0;
 }

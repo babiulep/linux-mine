@@ -475,7 +475,6 @@ static int locate_mem_hole_top_down(unsigned long start, unsigned long end,
 {
 	struct kimage *image = kbuf->image;
 	unsigned long temp_start, temp_end;
-	phys_addr_t poison;
 
 	temp_end = min(end, kbuf->buf_max);
 	temp_start = temp_end - kbuf->memsz + 1;
@@ -485,9 +484,7 @@ static int locate_mem_hole_top_down(unsigned long start, unsigned long end,
 		/* align down start */
 		temp_start = ALIGN_DOWN(temp_start, kbuf->buf_align);
 
-		/* A candidate above the range means the walk wrapped around */
-		if (temp_start < start || temp_start < kbuf->buf_min ||
-		    temp_start > end)
+		if (temp_start < start || temp_start < kbuf->buf_min)
 			return 0;
 
 		temp_end = temp_start + kbuf->memsz - 1;
@@ -507,13 +504,6 @@ static int locate_mem_hole_top_down(unsigned long start, unsigned long end,
 			continue;
 		}
 
-		poison = range_first_hwpoison(temp_start, kbuf->memsz);
-		if (poison != PHYS_ADDR_MAX) {
-			/* we hit a poisoned page */
-			temp_start = poison - kbuf->memsz;
-			continue;
-		}
-
 		/* We found a suitable memory range */
 		break;
 	} while (1);
@@ -530,7 +520,6 @@ static int locate_mem_hole_bottom_up(unsigned long start, unsigned long end,
 {
 	struct kimage *image = kbuf->image;
 	unsigned long temp_start, temp_end;
-	phys_addr_t poison;
 
 	temp_start = max(start, kbuf->buf_min);
 
@@ -554,13 +543,6 @@ static int locate_mem_hole_bottom_up(unsigned long start, unsigned long end,
 		/* Make sure this does not conflict with exclude range */
 		if (arch_check_excluded_range(image, temp_start, temp_end)) {
 			temp_start = temp_start + PAGE_SIZE;
-			continue;
-		}
-
-		poison = range_last_hwpoison(temp_start, kbuf->memsz);
-		if (poison != PHYS_ADDR_MAX) {
-			/* we hit a poisoned page */
-			temp_start = poison + PAGE_SIZE;
 			continue;
 		}
 

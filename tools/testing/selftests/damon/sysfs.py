@@ -385,10 +385,6 @@ def main():
     assert_ctxs_committed(kdamonds)
     kdamonds.stop()
 
-    for proc in (proc1, proc2, proc3):
-        proc.terminate()
-        proc.communicate()
-
     test_memcg_filter_memcg_path_staging()
 
 if __name__ == '__main__':

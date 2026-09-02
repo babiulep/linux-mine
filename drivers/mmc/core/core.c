@@ -13,6 +13,7 @@
 #include <linux/completion.h>
 #include <linux/device.h>
 #include <linux/delay.h>
+#include <linux/pagemap.h>
 #include <linux/err.h>
 #include <linux/leds.h>
 #include <linux/scatterlist.h>

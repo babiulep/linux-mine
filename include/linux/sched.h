@@ -1172,12 +1172,8 @@ struct task_struct {
 	/* Objective and real subjective task credentials (COW): */
 	const struct cred __rcu		*real_cred;
 
-	/*
-	 * Effective (overridable) subjective task credentials (COW).
-	 * Only accessible for the current task and during task creation/freeing.
-	 * This pointer is not managed by RCU!
-	 */
-	const struct cred		*cred;
+	/* Effective (overridable) subjective task credentials (COW): */
+	const struct cred __rcu		*cred;
 
 #ifdef CONFIG_KEYS
 	/* Cached requested key. */
@@ -1791,7 +1787,7 @@ static inline bool is_lazy_mmu_mode_active(void)
 }
 #endif
 
-extern struct pid __rcu *cad_pid;
+extern struct pid *cad_pid;
 
 /*
  * Per process flags
@@ -1820,7 +1816,7 @@ extern struct pid __rcu *cad_pid;
 						 * I am cleaning dirty pages from some other bdi. */
 #define PF_KTHREAD		0x00200000	/* I am a kernel thread */
 #define PF_RANDOMIZE		0x00400000	/* Randomize virtual address space */
-#define PF_NO_NOTIFY_SIGNAL	0x00800000	/* see no_notify_signal_save() */
+#define PF__HOLE__00800000	0x00800000
 #define PF__HOLE__01000000	0x01000000
 #define PF__HOLE__02000000	0x02000000
 #define PF_NO_SETAFFINITY	0x04000000	/* Userland is not allowed to meddle with cpus_mask */
@@ -2138,44 +2134,19 @@ static inline void set_need_resched_current(void)
  * value indicates whether a reschedule was done in fact.
  * cond_resched_lock() will drop the spinlock before scheduling,
  */
-#if !defined(CONFIG_PREEMPTION) || defined(CONFIG_PREEMPT_DYNAMIC)
+#if !defined(CONFIG_PREEMPTION)
 extern int __cond_resched(void);
-
-#if defined(CONFIG_PREEMPT_DYNAMIC) && defined(CONFIG_HAVE_PREEMPT_DYNAMIC_CALL)
-
-DECLARE_STATIC_CALL(cond_resched, __cond_resched);
-
-static __always_inline int _cond_resched(void)
-{
-	return static_call_mod(cond_resched)();
-}
-
-#elif defined(CONFIG_PREEMPT_DYNAMIC) && defined(CONFIG_HAVE_PREEMPT_DYNAMIC_KEY)
-
-extern int dynamic_cond_resched(void);
-
-static __always_inline int _cond_resched(void)
-{
-	return dynamic_cond_resched();
-}
-
-#else /* !CONFIG_PREEMPTION */
 
 static inline int _cond_resched(void)
 {
 	return __cond_resched();
 }
-
-#endif /* PREEMPT_DYNAMIC && CONFIG_HAVE_PREEMPT_DYNAMIC_CALL */
-
-#else /* CONFIG_PREEMPTION && !CONFIG_PREEMPT_DYNAMIC */
-
+#else
 static inline int _cond_resched(void)
 {
 	return 0;
 }
-
-#endif /* !CONFIG_PREEMPTION || CONFIG_PREEMPT_DYNAMIC */
+#endif
 
 #define cond_resched() ({			\
 	__might_resched(__FILE__, __LINE__, 0);	\

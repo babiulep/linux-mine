@@ -100,13 +100,6 @@ static const struct binfmt_misc_flag *misc_flag_by_char(const char c)
 	return NULL;
 }
 
-static bool misc_valid_delim(const char c)
-{
-	if (!isascii(c) || !ispunct(c))
-		return false;
-	return c != '\\';
-}
-
 struct binfmt_misc_entry {
 	struct hlist_node node;
 	unsigned long flags;		/* type, status, etc. */
@@ -879,9 +872,10 @@ static struct binfmt_misc_entry *create_entry(const char __user *buffer,
 
 	del = *p++;	/* delimiter */
 
-	pr_debug("register: delim: %#x\n", del);
+	pr_debug("register: delim: %#x {%c}\n", del, del);
 
-	if (!misc_valid_delim(del))
+	/* A flag-char delimiter runs the flag scan off the buffer. */
+	if (misc_flag_by_char(del))
 		return ERR_PTR(-EINVAL);
 
 	/* Pad the buffer with the delim to simplify parsing below. */

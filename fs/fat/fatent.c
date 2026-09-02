@@ -413,7 +413,7 @@ error:
 }
 
 int fat_ent_write(struct inode *inode, struct fat_entry *fatent,
-		  int new, int old, int wait)
+		  int new, int wait)
 {
 	struct super_block *sb = inode->i_sb;
 	const struct fatent_operations *ops = MSDOS_SB(sb)->fatent_ops;
@@ -422,25 +422,10 @@ int fat_ent_write(struct inode *inode, struct fat_entry *fatent,
 	ops->ent_put(fatent, new);
 	if (wait) {
 		err = fat_sync_bhs(fatent->bhs, fatent->nr_bhs);
-		if (err) {
-			/*
-			 * bhs are not uptodate after I/O error. So we
-			 * can't simply re-dirty to revert. And it
-			 * would not have value to write again on I/O
-			 * error.
-			 */
+		if (err)
 			return err;
-		}
 	}
-
-	err = fat_mirror_bhs(sb, fatent->bhs, fatent->nr_bhs);
-	if (err) {
-		/* Try to revert if got the error on mirror FAT */
-		ops->ent_put(fatent, old);
-		if (wait)
-			fat_sync_bhs(fatent->bhs, fatent->nr_bhs);
-	}
-	return err;
+	return fat_mirror_bhs(sb, fatent->bhs, fatent->nr_bhs);
 }
 
 static inline int fat_ent_next(struct msdos_sb_info *sbi,

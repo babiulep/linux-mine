@@ -1032,6 +1032,8 @@ static void omap_gpio_mod_init(struct gpio_bank *bank)
 static int omap_gpio_chip_init(struct gpio_bank *bank, struct device *pm_dev)
 {
 	struct gpio_irq_chip *irq;
+	static int gpio;
+	const char *label;
 	int ret;
 
 	/*
@@ -1053,7 +1055,11 @@ static int omap_gpio_chip_init(struct gpio_bank *bank, struct device *pm_dev)
 		if (bank->regs->wkup_en)
 			bank->chip.parent = &omap_mpuio_device.dev;
 	} else {
-		bank->chip.label = dev_name(bank->chip.parent);
+		label = devm_kasprintf(bank->chip.parent, GFP_KERNEL, "gpio-%d-%d",
+				       gpio, gpio + bank->width - 1);
+		if (!label)
+			return -ENOMEM;
+		bank->chip.label = label;
 	}
 	bank->chip.base = -1;
 	bank->chip.ngpio = bank->width;
@@ -1079,6 +1085,9 @@ static int omap_gpio_chip_init(struct gpio_bank *bank, struct device *pm_dev)
 			       0, dev_name(bank->chip.parent), bank);
 	if (ret)
 		gpiochip_remove(&bank->chip);
+
+	if (!bank->is_mpuio)
+		gpio += bank->width;
 
 	return ret;
 }

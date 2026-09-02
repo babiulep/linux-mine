@@ -30,7 +30,6 @@
 #include <scsi/scsi_cmnd.h>
 #include <linux/libata.h>
 #include <linux/pci.h>
-#include <linux/pm_runtime.h>
 #include "ahci.h"
 #include "libata.h"
 

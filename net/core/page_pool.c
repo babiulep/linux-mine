@@ -1073,8 +1073,7 @@ netmem_ref page_pool_alloc_frag_netmem(struct page_pool *pool,
 	if (WARN_ON(size > max_size))
 		return 0;
 
-	size = ALIGN(size, max_t(unsigned int, dma_get_cache_alignment(),
-				 __alignof__(struct skb_shared_info)));
+	size = ALIGN(size, dma_get_cache_alignment());
 	*offset = pool->frag_offset;
 
 	if (netmem && *offset + size > max_size) {

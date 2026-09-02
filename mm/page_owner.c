@@ -575,7 +575,7 @@ static inline int print_page_owner_memcg(char *kbuf, size_t count, int ret,
 	}
 
 	objcg = (void *)(memcg_data & ~OBJEXTS_FLAGS_MASK);
-	memcg = obj_cgroup_memcg(objcg);
+	memcg = objcg ? obj_cgroup_memcg(objcg) : NULL;
 	if (!memcg)
 		goto out_unlock;
 

@@ -1737,8 +1737,8 @@ static struct attr_def *ntfs_attr_find_in_attrdef(const struct ntfs_volume *vol,
 	struct attr_def *ad;
 
 	WARN_ON(!type);
-	for (ad = vol->attrdef; (u8 *)ad - (u8 *)vol->attrdef <=
-	     vol->attrdef_size - (s32)sizeof(*ad) && ad->type; ++ad) {
+	for (ad = vol->attrdef; (u8 *)ad - (u8 *)vol->attrdef <
+			vol->attrdef_size && ad->type; ++ad) {
 		/* We have not found it yet, carry on searching. */
 		if (likely(le32_to_cpu(ad->type) < le32_to_cpu(type)))
 			continue;
@@ -2500,7 +2500,7 @@ int ntfs_resident_attr_record_add(struct ntfs_inode *ni, __le32 type,
 	return offset;
 put_err_out:
 	ntfs_attr_put_search_ctx(ctx);
-	return err;
+	return -EIO;
 }
 
 /*
@@ -2639,7 +2639,7 @@ static int ntfs_non_resident_attr_record_add(struct ntfs_inode *ni, __le32 type,
 	return offset;
 put_err_out:
 	ntfs_attr_put_search_ctx(ctx);
-	return err;
+	return -1;
 }
 
 /*
@@ -5704,12 +5704,12 @@ int ntfs_attr_fallocate(struct ntfs_inode *ni, loff_t start, loff_t byte_len, bo
 								  lcn << vol->cluster_size_bits,
 								  alloc_cnt <<
 								  vol->cluster_size_bits);
-					if (err)
+					if (err > 0)
 						goto out;
 				}
 
 				if (signal_pending(current))
-					goto signal_out;
+					goto out;
 
 				vcn += alloc_cnt;
 				try_alloc_cnt -= alloc_cnt;
@@ -5730,7 +5730,7 @@ int ntfs_attr_fallocate(struct ntfs_inode *ni, loff_t start, loff_t byte_len, bo
 		up_write(&ni->runlist.lock);
 		mutex_unlock(&ni->mrec_lock);
 		if (err || signal_pending(current))
-			goto signal_out;
+			goto out;
 
 		vcn += alloc_cnt;
 		try_alloc_cnt -= alloc_cnt;
@@ -5756,8 +5756,4 @@ out_unmap:
 	mutex_unlock(&ni->mrec_lock);
 out:
 	return err >= 0 ? 0 : err;
-signal_out:
-	if (!err)
-		err = -EINTR;
-	goto out;
 }

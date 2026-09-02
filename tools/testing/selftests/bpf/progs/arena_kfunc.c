@@ -233,9 +233,8 @@ SEC("syscall")
 __arch_x86_64
 __arch_arm64
 __description("arena_arg_stack: not supported, dummy test")
-__skip("arena_arg_stack: not supported")
 __success
-int dummy_test(void *ctx)
+int arena_arg_stack(void *ctx)
 {
 	return 0;
 }

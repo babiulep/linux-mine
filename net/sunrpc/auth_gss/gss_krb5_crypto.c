@@ -39,6 +39,7 @@
 #include <linux/mm.h>
 #include <linux/scatterlist.h>
 #include <linux/highmem.h>
+#include <linux/pagemap.h>
 #include <linux/sunrpc/gss_krb5.h>
 #include <linux/sunrpc/xdr.h>
 

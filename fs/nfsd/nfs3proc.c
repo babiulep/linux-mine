@@ -13,7 +13,6 @@
 #include "cache.h"
 #include "xdr3.h"
 #include "vfs.h"
-#include "nfserr.h"
 #include "filecache.h"
 #include "trace.h"
 
@@ -47,20 +46,6 @@ static bool nfsd3_time_in_range(const struct iattr *iap)
 	    (unsigned long)iap->ia_mtime.tv_nsec >= NSEC_PER_SEC)
 		return false;
 	return true;
-}
-
-static int nfsd3_iocb_flags(enum nfs3_stable_how how)
-{
-	switch (how) {
-	case NFS_FILE_SYNC:
-		/* persist data and timestamps */
-		return IOCB_DSYNC | IOCB_SYNC;
-	case NFS_DATA_SYNC:
-		/* persist data only */
-		return IOCB_DSYNC;
-	default:
-		return 0;
-	}
 }
 
 static __be32 nfsd3_map_status(__be32 status)
@@ -275,8 +260,7 @@ nfsd3_proc_write(struct svc_rqst *rqstp)
 	resp->committed = argp->stable;
 	resp->status = nfsd_write(rqstp, &resp->fh, argp->offset,
 				  &argp->payload, &cnt,
-				  nfsd3_iocb_flags(resp->committed),
-				  resp->verf);
+				  resp->committed, resp->verf);
 	resp->count = cnt;
 	resp->status = nfsd3_map_status(resp->status);
 	return rpc_success;
@@ -298,7 +282,6 @@ nfsd3_create_file(struct svc_rqst *rqstp, struct svc_fh *fhp,
 	struct nfsd_attrs attrs = {
 		.na_iattr	= iap,
 	};
-	struct svc_export *exp;
 	__u32 v_mtime, v_atime;
 	struct inode *inode;
 	__be32 status;
@@ -337,23 +320,7 @@ nfsd3_create_file(struct svc_rqst *rqstp, struct svc_fh *fhp,
 			goto out;
 	}
 
-	exp = exp_get(fhp->fh_export);
-	if (argp->createmode == NFS3_CREATE_UNCHECKED) {
-		/*
-		 * If name is already in dcache we need to check for mountpoints
-		 */
-		if (d_is_reg(child) &&
-		    unlikely(nfsd_mountpoint(child, exp))) {
-			status = nfsd_cross_mnt(rqstp, &child, &exp);
-			if (status != nfs_ok) {
-				exp_put(exp);
-				goto out;
-			}
-		}
-	}
-
-	status = fh_compose(resfhp, exp, child, fhp);
-	exp_put(exp);
+	status = fh_compose(resfhp, fhp->fh_export, child, fhp);
 	if (status != nfs_ok)
 		goto out;
 

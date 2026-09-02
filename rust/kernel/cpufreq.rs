@@ -14,13 +14,7 @@ use crate::{
     cpumask,
     device::{Bound, Device},
     devres,
-    error::{
-        code::*,
-        from_result,
-        to_result,
-        Result,
-        VTABLE_DEFAULT_ERROR, //
-    },
+    error::{code::*, from_err_ptr, from_result, to_result, Result, VTABLE_DEFAULT_ERROR},
     ffi::{c_char, c_ulong},
     prelude::*,
     types::ForeignOwnable,
@@ -35,10 +29,7 @@ use core::{
     marker::PhantomData,
     ops::{Deref, DerefMut},
     pin::Pin,
-    ptr::{
-        self,
-        NonNull, //
-    },
+    ptr,
 };
 
 use macros::vtable;
@@ -696,13 +687,12 @@ struct PolicyCpu<'a>(&'a mut Policy);
 impl<'a> PolicyCpu<'a> {
     fn from_cpu(cpu: CpuId) -> Result<Self> {
         // SAFETY: It is safe to call `cpufreq_cpu_get` for any valid CPU.
-        let ptr =
-            NonNull::new(unsafe { bindings::cpufreq_cpu_get(u32::from(cpu)) }).ok_or(ENODEV)?;
+        let ptr = from_err_ptr(unsafe { bindings::cpufreq_cpu_get(u32::from(cpu)) })?;
 
         Ok(Self(
             // SAFETY: The `ptr` is guaranteed to be valid and remains valid for the lifetime of
             // the returned reference.
-            unsafe { Policy::from_raw_mut(ptr.as_ptr()) },
+            unsafe { Policy::from_raw_mut(ptr) },
         ))
     }
 }

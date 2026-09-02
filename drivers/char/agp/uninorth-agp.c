@@ -7,11 +7,10 @@
 #include <linux/pci.h>
 #include <linux/slab.h>
 #include <linux/init.h>
+#include <linux/pagemap.h>
 #include <linux/agp_backend.h>
 #include <linux/delay.h>
 #include <linux/vmalloc.h>
-
-#include <asm/cacheflush.h>
 #include <asm/uninorth.h>
 #include <asm/prom.h>
 #include <asm/pmac_feature.h>

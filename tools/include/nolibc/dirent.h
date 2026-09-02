@@ -30,23 +30,10 @@ typedef struct {
 static __attribute__((unused))
 DIR *fdopendir(int fd)
 {
-	struct stat buf;
-	int ret;
-
 	if (fd < 0) {
 		SET_ERRNO(EBADF);
 		return NULL;
 	}
-
-	ret = fstat(fd, &buf);
-	if (ret < 0)
-		return NULL;
-
-	if (!S_ISDIR(buf.st_mode)) {
-		SET_ERRNO(ENOTDIR);
-		return NULL;
-	}
-
 	return (DIR *)(intptr_t)~fd;
 }
 
@@ -55,11 +42,10 @@ DIR *opendir(const char *name)
 {
 	int fd;
 
-	fd = open(name, O_RDONLY | O_DIRECTORY);
+	fd = open(name, O_RDONLY);
 	if (fd == -1)
 		return NULL;
-
-	return (DIR *)(intptr_t)~fd;
+	return fdopendir(fd);
 }
 
 static __attribute__((unused))

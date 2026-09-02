@@ -87,7 +87,8 @@ int btmrvl_process_event(struct btmrvl_private *priv, struct sk_buff *skb)
 	event = (struct btmrvl_event *) skb->data;
 	if (event->ec != 0xff) {
 		BT_DBG("Not Marvell Event=%x", event->ec);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto exit;
 	}
 
 	switch (event->data[0]) {
@@ -164,6 +165,7 @@ int btmrvl_process_event(struct btmrvl_private *priv, struct sk_buff *skb)
 		break;
 	}
 
+exit:
 	if (!ret)
 		kfree_skb(skb);
 

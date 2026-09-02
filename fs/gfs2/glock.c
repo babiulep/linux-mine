@@ -329,6 +329,11 @@ static void gfs2_holder_wake(struct gfs2_holder *gh)
 	clear_bit(HIF_WAIT, &gh->gh_iflags);
 	smp_mb__after_atomic();
 	wake_up_bit(&gh->gh_iflags, HIF_WAIT);
+	if (gh->gh_flags & GL_ASYNC) {
+		struct gfs2_sbd *sdp = glock_sbd(gh->gh_gl);
+
+		wake_up(&sdp->sd_async_glock_wait);
+	}
 }
 
 /**
@@ -507,9 +512,11 @@ static void state_change(struct gfs2_glock *gl, unsigned int new_state)
 
 static void gfs2_set_demote(int nr, struct gfs2_glock *gl)
 {
+	struct gfs2_sbd *sdp = glock_sbd(gl);
+
 	set_bit(nr, &gl->gl_flags);
-	smp_mb__after_atomic();
-	wake_up_bit(&gl->gl_flags, GLF_DEMOTE);
+	smp_mb();
+	wake_up(&sdp->sd_async_glock_wait);
 }
 
 static void gfs2_demote_wake(struct gfs2_glock *gl)
@@ -884,9 +891,7 @@ static void gfs2_try_to_evict(struct gfs2_glock *gl)
 		/* If the inode was evicted, gl->gl_object will now be NULL. */
 		ip = gfs2_grab_existing_inode(gl);
 		if (ip) {
-			struct gfs2_glock *gl = gfs2_inode_glock(&ip->i_inode);
-
-			gfs2_glock_poke(gl);
+			gfs2_glock_poke(ip->i_gl);
 			iput(&ip->i_inode);
 		}
 	}
@@ -1265,14 +1270,11 @@ static int glocks_pending(unsigned int num_gh, struct gfs2_holder *ghs)
 int gfs2_glock_async_wait(unsigned int num_gh, struct gfs2_holder *ghs,
 			  unsigned int retries)
 {
+	struct gfs2_sbd *sdp = glock_sbd(ghs[0].gh_gl);
 	unsigned long start_time = jiffies;
-	struct wait_queue_head *waitq[4];
-	struct wait_queue_entry wait[4];
-	long ret, timeout;
-	int i;
+	int i, ret = 0;
+	long timeout;
 
-	BUILD_BUG_ON(ARRAY_SIZE(waitq) != ARRAY_SIZE(wait));
-	BUG_ON(num_gh > ARRAY_SIZE(wait));
 	might_sleep();
 
 	timeout = GL_GLOCK_MIN_HOLD;
@@ -1290,38 +1292,14 @@ int gfs2_glock_async_wait(unsigned int num_gh, struct gfs2_holder *ghs,
 		timeout += (incr / 3) + get_random_long() % (incr / 3);
 	}
 
-	ret = timeout;
-	for (i = 0; i < num_gh; i++) {
-		waitq[i] = bit_waitqueue(&ghs[i].gh_iflags, HIF_WAIT);
-		init_wait(wait + i);
-	}
-	for (;;) {
-		for (i = 0; i < num_gh; i++)
-			prepare_to_wait(waitq[i], wait + i, TASK_INTERRUPTIBLE);
-		if (!glocks_pending(num_gh, ghs))
-			break;
-		if (signal_pending(current)) {
-			ret = -EINTR;
-			break;
-		}
-		ret = schedule_timeout(ret);
-		if (!glocks_pending(num_gh, ghs))
-			break;
-		if (!ret) {
-			ret = -ESTALE; /* request timed out. */
-			break;
-		}
-		if (signal_pending(current)) {
-			ret = -EINTR;
-			break;
-		}
-	}
-	for (i = 0; i < num_gh; i++)
-		finish_wait(waitq[i], wait + i);
-	if (ret < 0)
+	if (!wait_event_interruptible_timeout(sdp->sd_async_glock_wait,
+				!glocks_pending(num_gh, ghs), timeout)) {
+		ret = -ESTALE; /* request timed out. */
 		goto out;
+	}
+	if (signal_pending(current))
+		goto interrupted;
 
-	ret = 0;
 	for (i = 0; i < num_gh; i++) {
 		struct gfs2_holder *gh = &ghs[i];
 		int ret2;

@@ -69,11 +69,9 @@ __le64 *squashfs_read_fragment_index_table(struct super_block *sb,
 	/*
 	 * Sanity check, length bytes should not extend into the next table -
 	 * this check also traps instances where fragment_table_start is
-	 * incorrectly larger than the next table start.  Both values are read
-	 * from the filesystem image, so compare without adding them.
+	 * incorrectly larger than the next table start
 	 */
-	if (fragment_table_start > next_table ||
-	    length > next_table - fragment_table_start)
+	if (fragment_table_start + length > next_table)
 		return ERR_PTR(-EINVAL);
 
 	table = squashfs_read_table(sb, fragment_table_start, length);

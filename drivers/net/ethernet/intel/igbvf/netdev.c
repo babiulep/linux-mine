@@ -12,6 +12,7 @@
 #include <linux/mii.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
+#include <linux/pagemap.h>
 #include <linux/pci.h>
 #include <linux/prefetch.h>
 #include <linux/sctp.h>

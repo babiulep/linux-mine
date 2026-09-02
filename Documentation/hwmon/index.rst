@@ -90,7 +90,6 @@ Hardware Monitoring Kernel Drivers
    gxp-fan-ctrl
    hac300s
    hih6130
-   honor-fmi
    hp-wmi-sensors
    hs3001
    htu31

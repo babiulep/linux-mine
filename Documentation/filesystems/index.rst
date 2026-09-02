@@ -87,7 +87,6 @@ Documentation for filesystem implementations.
    ecryptfs
    efivarfs
    erofs
-   exfat
    ext2
    ext3
    ext4/index

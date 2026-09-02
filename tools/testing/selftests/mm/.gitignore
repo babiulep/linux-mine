@@ -2,9 +2,7 @@
 *
 !/**/
 !*.c
-*.mod.c
 !*.h
-local_config.h
 !*.sh
 !.gitignore
 !Makefile

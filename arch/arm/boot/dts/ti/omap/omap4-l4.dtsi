@@ -1200,7 +1200,6 @@
 				reg = <0x0 0x80>;
 				interrupts = <GIC_SPI 120 IRQ_TYPE_LEVEL_HIGH>;
 				reg-names = "mpu";
-				status = "disabled";
 			};
 		};
 

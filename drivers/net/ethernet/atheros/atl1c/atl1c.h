@@ -29,6 +29,7 @@
 #include <linux/mii.h>
 #include <linux/io.h>
 #include <linux/vmalloc.h>
+#include <linux/pagemap.h>
 #include <linux/tcp.h>
 #include <linux/ethtool.h>
 #include <linux/if_vlan.h>

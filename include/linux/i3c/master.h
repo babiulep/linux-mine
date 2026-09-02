@@ -11,7 +11,6 @@
 #include <asm/bitsperlong.h>
 
 #include <linux/bitops.h>
-#include <linux/dma-direction.h>
 #include <linux/i2c.h>
 #include <linux/i3c/ccc.h>
 #include <linux/i3c/device.h>

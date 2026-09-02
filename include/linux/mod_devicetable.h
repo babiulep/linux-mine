@@ -15,6 +15,7 @@
 #include "device-id/acpi.h"
 #include "device-id/amba.h"
 #include "device-id/ap.h"
+#include "device-id/apr.h"
 #include "device-id/auxiliary.h"
 #include "device-id/bcma.h"
 #include "device-id/ccw.h"

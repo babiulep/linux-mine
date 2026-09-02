@@ -31,7 +31,6 @@ all_archs=(
 	sh4
 	parisc32
 	alpha
-	hexagon
 )
 archs="${all_archs[@]}"
 
@@ -133,13 +132,6 @@ crosstool_abi() {
 	esac
 }
 
-need_gcc() {
-	case "$1" in
-	hexagon);;
-	*) echo "1";;
-	esac
-}
-
 download_crosstool() {
 	arch="$(crosstool_arch "$1")"
 	abi="$(crosstool_abi "$1")"
@@ -172,18 +164,14 @@ test_arch() {
 	arch=$1
 	ct_arch=$(crosstool_arch "$arch")
 	ct_abi=$(crosstool_abi "$1")
-	gcc="$(need_gcc "$1")"
-	cross_compile=
 
-	if [ -n "$gcc" ] && [ ! -d "${download_location}gcc-${crosstool_version}-nolibc/${ct_arch}-${ct_abi}/bin/." ]; then
+	if [ ! -d "${download_location}gcc-${crosstool_version}-nolibc/${ct_arch}-${ct_abi}/bin/." ]; then
 		echo "No toolchain found in ${download_location}gcc-${crosstool_version}-nolibc/${ct_arch}-${ct_abi}."
 		echo "Did you install the toolchains or set the correct arch ? Rerun with -h for help."
 		return 1
 	fi
 
-	if [ -n "$gcc" ]; then
-		cross_compile=$(realpath "${download_location}gcc-${crosstool_version}-nolibc/${ct_arch}-${ct_abi}/bin/${ct_arch}-${ct_abi}-")
-	fi
+	cross_compile=$(realpath "${download_location}gcc-${crosstool_version}-nolibc/${ct_arch}-${ct_abi}/bin/${ct_arch}-${ct_abi}-")
 	build_dir="${build_location}/${arch}"
 	if [ "$werror" -ne 0 ]; then
 		CFLAGS_EXTRA="$CFLAGS_EXTRA -Werror -Wl,--fatal-warnings"
@@ -206,15 +194,11 @@ test_arch() {
 			exit 1
 	esac
 	printf '%-15s' "$arch:"
-	if [ "$llvm" = "1" ] && [ "$arch" = "m68k" -o "$arch" = "sh4" -o "$arch" = "openrisc" -o "$arch" = "parisc32" -o "$arch" = "alpha" ]; then
+	if [ "$arch" = "m68k" -o "$arch" = "sh4" -o "$arch" = "openrisc" -o "$arch" = "parisc32" -o "$arch" = "alpha" ] && [ "$llvm" = "1" ]; then
 		echo "Unsupported configuration"
 		return
 	fi
-	if [ "$test_mode" = "user" ] && [ "$arch" = "x32" ]; then
-		echo "Unsupported configuration"
-		return
-	fi
-	if [ -z "$llvm" -o "$test_mode" = "system" ] && [ "$arch" = "hexagon" ]; then
+	if [ "$arch" = "x32" ] && [ "$test_mode" = "user" ]; then
 		echo "Unsupported configuration"
 		return
 	fi

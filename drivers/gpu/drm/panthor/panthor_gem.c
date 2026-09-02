@@ -9,9 +9,6 @@
 #include <linux/dma-buf.h>
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
-#include <linux/highmem.h>
-#include <linux/pagemap.h>
-#include <linux/swap.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 

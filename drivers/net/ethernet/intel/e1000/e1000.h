@@ -24,6 +24,7 @@
 #include <linux/vmalloc.h>
 #include <linux/interrupt.h>
 #include <linux/string.h>
+#include <linux/pagemap.h>
 #include <linux/dma-mapping.h>
 #include <linux/bitops.h>
 #include <asm/io.h>

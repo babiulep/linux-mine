@@ -1014,8 +1014,7 @@ int main(int argc, const char *argv[])
 	if (output != NULL)
 		fclose(output);
 
-	if (fd >= 0)
-		close(fd);
+	close(fd);
 
 	poptFreeContext(con);
 

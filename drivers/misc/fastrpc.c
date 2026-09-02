@@ -1822,19 +1822,23 @@ static int fastrpc_dmabuf_alloc(struct fastrpc_user *fl, char __user *argp)
 		return err;
 	}
 
-	bp.fd = get_unused_fd_flags(O_ACCMODE);
+	bp.fd = dma_buf_fd(buf->dmabuf, O_ACCMODE);
 	if (bp.fd < 0) {
 		dma_buf_put(buf->dmabuf);
-		return bp.fd;
+		return -EINVAL;
 	}
 
 	if (copy_to_user(argp, &bp, sizeof(bp))) {
-		put_unused_fd(bp.fd);
-		dma_buf_put(buf->dmabuf);
+		/*
+		 * The usercopy failed, but we can't do much about it, as
+		 * dma_buf_fd() already called fd_install() and made the
+		 * file descriptor accessible for the current process. It
+		 * might already be closed and dmabuf no longer valid when
+		 * we reach this point. Therefore "leak" the fd and rely on
+		 * the process exit path to do any required cleanup.
+		 */
 		return -EFAULT;
 	}
-
-	dma_buf_fd_install(buf->dmabuf, bp.fd);
 
 	return 0;
 }

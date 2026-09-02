@@ -323,7 +323,7 @@ struct scx_task_group {
 	u64			bw_period_us;
 	u64			bw_quota_us;
 	u64			bw_burst_us;
-	bool			sched_idle;
+	bool			idle;
 #endif
 };
 

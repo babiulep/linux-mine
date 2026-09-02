@@ -27,6 +27,7 @@
 #include <linux/net.h>
 #include <linux/workqueue.h>
 #include <linux/mutex.h>
+#include <linux/pagemap.h>
 #include <asm/ioctls.h>
 #include <linux/sunrpc/types.h>
 #include <linux/sunrpc/cache.h>

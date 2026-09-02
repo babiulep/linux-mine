@@ -22,6 +22,7 @@
  */
 #include <linux/dma-buf.h>
 #include <linux/list.h>
+#include <linux/pagemap.h>
 #include <linux/sched/mm.h>
 #include <linux/sched/task.h>
 #include <drm/ttm/ttm_tt.h>

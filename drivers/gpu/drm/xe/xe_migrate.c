@@ -493,6 +493,7 @@ int xe_migrate_init(struct xe_migrate *m)
 		 */
 		m->q = xe_exec_queue_create(xe, vm, logical_mask, 1, hwe0,
 					    EXEC_QUEUE_FLAG_KERNEL |
+					    EXEC_QUEUE_FLAG_PERMANENT |
 					    EXEC_QUEUE_FLAG_HIGH_PRIORITY |
 					    EXEC_QUEUE_FLAG_MIGRATE |
 					    EXEC_QUEUE_FLAG_LOW_LATENCY, 0);
@@ -500,6 +501,7 @@ int xe_migrate_init(struct xe_migrate *m)
 		m->q = xe_exec_queue_create_class(xe, primary_gt, vm,
 						  XE_ENGINE_CLASS_COPY,
 						  EXEC_QUEUE_FLAG_KERNEL |
+						  EXEC_QUEUE_FLAG_PERMANENT |
 						  EXEC_QUEUE_FLAG_MIGRATE, 0);
 	}
 	if (IS_ERR(m->q)) {

@@ -16,6 +16,7 @@
  */
 
 #include <linux/xattr.h>
+#include <linux/pagemap.h>
 #include <linux/mount.h>
 #include <linux/stat.h>
 #include <linux/kd.h>

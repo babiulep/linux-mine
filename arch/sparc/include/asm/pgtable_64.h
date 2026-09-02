@@ -13,7 +13,6 @@
  * the SpitFire page tables.
  */
 
-#include <asm/page.h>
 #include <asm-generic/pgtable-nop4d.h>
 #include <linux/compiler.h>
 #include <linux/const.h>
@@ -21,6 +20,7 @@
 #include <asm/spitfire.h>
 #include <asm/asi.h>
 #include <asm/adi.h>
+#include <asm/page.h>
 #include <asm/processor.h>
 
 /* The kernel image occupies 0x4000000 to 0x6000000 (4MB --> 96MB).

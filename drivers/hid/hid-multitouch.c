@@ -1321,18 +1321,21 @@ static void mt_touch_report(struct hid_device *hid,
 	 * Includes multi-packet support where subsequent
 	 * packets are sent with zero contactcount.
 	 */
-	if (contact_count > 0)
-		app->num_expected = contact_count;
-	else if (app->num_received == 0 && app->prev_scantime != scantime) {
+	if (contact_count >= 0) {
 		/*
-		 * New multi-report frame:
-		 *
 		 * For Win8 PTPs the first packet (td->num_received == 0) may
 		 * have a contactcount of 0 if there only is a button event.
-		 *
-		 * Some other devices use a sentinel frame with 0 to release all contacts
+		 * We double check that this is not a continuation packet
+		 * of a possible multi-packet frame be checking that the
+		 * timestamp has changed.
 		 */
-		app->num_expected = 0;
+		if ((app->quirks & MT_QUIRK_WIN8_PTP_BUTTONS) &&
+		    app->num_received == 0 &&
+		    app->prev_scantime != scantime)
+			app->num_expected = contact_count;
+		/* A non 0 contact count always indicates a first packet */
+		else if (contact_count)
+			app->num_expected = contact_count;
 	}
 	app->prev_scantime = scantime;
 

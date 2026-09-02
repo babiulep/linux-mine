@@ -1037,13 +1037,13 @@ bool policydb_context_isvalid(const struct policydb *p, const struct context *c)
 	const struct role_datum *role;
 	const struct user_datum *usrdatum;
 
-	if (!policydb_role_isvalid(p, c->role))
+	if (!c->role || c->role > p->p_roles.nprim)
 		return false;
 
-	if (!policydb_user_isvalid(p, c->user))
+	if (!c->user || c->user > p->p_users.nprim)
 		return false;
 
-	if (!policydb_simpletype_isvalid(p, c->type))
+	if (!c->type || c->type > p->p_types.nprim)
 		return false;
 
 	if (c->role != OBJECT_R_VAL) {
@@ -1051,7 +1051,7 @@ bool policydb_context_isvalid(const struct policydb *p, const struct context *c)
 		 * Role must be authorized for the type.
 		 */
 		role = p->role_val_to_struct[c->role - 1];
-		if (!ebitmap_get_bit(&role->types, c->type - 1))
+		if (!role || !ebitmap_get_bit(&role->types, c->type - 1))
 			/* role may not be associated with type */
 			return false;
 
@@ -1059,6 +1059,9 @@ bool policydb_context_isvalid(const struct policydb *p, const struct context *c)
 		 * User must be authorized for the role.
 		 */
 		usrdatum = p->user_val_to_struct[c->user - 1];
+		if (!usrdatum)
+			return false;
+
 		if (!ebitmap_get_bit(&usrdatum->roles, c->role - 1))
 			/* user may not be associated with role */
 			return false;

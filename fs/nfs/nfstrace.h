@@ -9,7 +9,6 @@
 #define _TRACE_NFS_H
 
 #include <linux/tracepoint.h>
-#include <linux/pagemap.h>
 #include <linux/iversion.h>
 
 #include <trace/misc/fs.h>

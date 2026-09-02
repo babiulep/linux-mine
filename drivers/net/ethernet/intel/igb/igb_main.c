@@ -8,6 +8,7 @@
 #include <linux/init.h>
 #include <linux/bitops.h>
 #include <linux/vmalloc.h>
+#include <linux/pagemap.h>
 #include <linux/netdevice.h>
 #include <linux/ipv6.h>
 #include <linux/slab.h>

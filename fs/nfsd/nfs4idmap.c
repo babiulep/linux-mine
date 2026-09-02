@@ -41,7 +41,6 @@
 #include "auth.h"
 #include "idmap.h"
 #include "nfsd.h"
-#include "nfserr.h"
 #include "netns.h"
 #include "vfs.h"
 
