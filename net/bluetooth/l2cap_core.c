@@ -59,7 +59,8 @@ static void l2cap_tx(struct l2cap_chan *chan, struct l2cap_ctrl *control,
 static void l2cap_retrans_timeout(struct work_struct *work);
 static void l2cap_monitor_timeout(struct work_struct *work);
 static void l2cap_ack_timeout(struct work_struct *work);
-static void __l2cap_chan_close(struct l2cap_chan *chan, int reason);
+static void __l2cap_chan_close(struct l2cap_chan *chan, int reason)
+	__must_hold(&chan->lock) __must_hold(&chan->conn->lock);
 
 static inline u8 bdaddr_type(u8 link_type, u8 bdaddr_type)
 {
@@ -622,6 +623,10 @@ void __l2cap_chan_add(struct l2cap_conn *conn, struct l2cap_chan *chan)
 	BT_DBG("conn %p, psm 0x%2.2x, dcid 0x%4.4x", conn,
 	       __le16_to_cpu(chan->psm), chan->dcid);
 
+	/* Caller must ensure l2cap_chan is linked to l2cap_conn only once */
+	if (WARN_ON_ONCE(chan->conn || test_bit(FLAG_DEL, &chan->flags)))
+		return;
+
 	conn->disc_reason = HCI_ERROR_REMOTE_USER_TERM;
 
 	chan->conn = l2cap_conn_get(conn);
@@ -681,6 +686,8 @@ void l2cap_chan_add(struct l2cap_conn *conn, struct l2cap_chan *chan)
 
 void l2cap_chan_del(struct l2cap_chan *chan, int err)
 {
+	lockdep_assert(!chan->conn || lockdep_is_held(&chan->conn->lock));
+
 	__clear_chan_timer(chan);
 
 	BT_DBG("chan %p, err %d, state %s", chan, err,
@@ -812,11 +819,10 @@ static void l2cap_chan_le_connect_reject(struct l2cap_chan *chan)
 }
 
 static void l2cap_chan_ecred_connect_reject(struct l2cap_chan *chan)
+	__must_hold(&chan->lock)
+	__must_hold(&chan->conn->lock)
 {
 	l2cap_state_change(chan, BT_DISCONN);
-
-	lockdep_assert_held(&chan->lock);
-	lockdep_assert_held(&chan->conn->lock);
 
 	__l2cap_ecred_conn_rsp_defer(chan);
 }
@@ -932,7 +938,10 @@ void l2cap_chan_close_unlocked(struct l2cap_chan *chan, int reason)
 	bool have_conn;
 
 	have_conn = l2cap_chan_lock_conn(chan);
-	__l2cap_chan_close(chan, reason);
+
+	/* Context analysis: consider chan->conn->lock held also if conn NULL */
+	context_unsafe(__l2cap_chan_close(chan, reason));
+
 	l2cap_chan_unlock_conn(chan, have_conn);
 }
 EXPORT_SYMBOL(l2cap_chan_close_unlocked);
@@ -1334,6 +1343,8 @@ void l2cap_send_conn_req(struct l2cap_chan *chan)
 }
 
 static void l2cap_chan_ready(struct l2cap_chan *chan)
+	__must_hold(&chan->lock)
+	__must_hold(&chan->conn->lock)
 {
 	/* The channel may have already been flagged as connected in
 	 * case of receiving data before the L2CAP info req/rsp
@@ -1469,6 +1480,7 @@ static void l2cap_ecred_connect(struct l2cap_chan *chan)
 }
 
 static void l2cap_le_start(struct l2cap_chan *chan)
+	__must_hold(&chan->lock)
 	__must_hold(&chan->conn->lock)
 {
 	struct l2cap_conn *conn = chan->conn;
@@ -1490,6 +1502,7 @@ static void l2cap_le_start(struct l2cap_chan *chan)
 }
 
 static void l2cap_start_connection(struct l2cap_chan *chan)
+	__must_hold(&chan->lock)
 	__must_hold(&chan->conn->lock)
 {
 	if (chan->conn->hcon->type == LE_LINK) {
@@ -1540,6 +1553,7 @@ static bool l2cap_check_enc_key_size(struct hci_conn *hcon,
 }
 
 static void l2cap_do_start(struct l2cap_chan *chan)
+	__must_hold(&chan->lock)
 	__must_hold(&chan->conn->lock)
 {
 	struct l2cap_conn *conn = chan->conn;
@@ -1890,6 +1904,8 @@ static void l2cap_conn_del(struct hci_conn *hcon, int err)
 	list_for_each_entry_safe(chan, l, &conn->chan_l, list) {
 		l2cap_chan_hold(chan);
 		l2cap_chan_lock(chan);
+
+		lockdep_assert_held(&chan->conn->lock);
 
 		l2cap_chan_del(chan, err);
 
@@ -3950,6 +3966,7 @@ static void l2cap_ecred_list_defer(struct l2cap_chan *chan, void *data)
 }
 
 struct l2cap_ecred_rsp_data {
+	struct l2cap_chan *locked_chan;
 	struct {
 		struct l2cap_ecred_conn_rsp_hdr rsp;
 		__le16 scid[L2CAP_ECRED_MAX_CID];
@@ -3957,11 +3974,45 @@ struct l2cap_ecred_rsp_data {
 	int count;
 };
 
+/* Lock @chan if it is not @locked_chan, and has same or lower nesting level.
+ *
+ * They must have the same chan->conn, and conn->lock must be held.
+ *
+ * Caller must ensure @chan has lock nesting level <= that of @locked_chan, as
+ * nested locking of l2cap_chan of different levels is allowed also without
+ * holding conn->lock.
+ *
+ * See l2cap.h for the global l2cap_chan locking rules.
+ */
+static bool l2cap_chan_try_sibling_lock(struct l2cap_chan *chan,
+					struct l2cap_chan *locked_chan)
+	__must_hold(&locked_chan->lock)
+	__must_hold(&locked_chan->conn->lock)
+	__cond_acquires(true, &chan->lock)
+{
+	if (chan == locked_chan)
+		return false;
+
+	if (WARN_ON_ONCE(locked_chan->conn != chan->conn))
+		return false;
+
+	if (WARN_ON_ONCE(atomic_read(&locked_chan->nesting)
+			 < atomic_read(&chan->nesting)))
+		return false;
+
+	mutex_lock_nest_lock(&chan->lock, &locked_chan->conn->lock);
+	return true;
+}
+
 static void l2cap_ecred_rsp_defer(struct l2cap_chan *chan, void *data)
 {
 	struct l2cap_ecred_rsp_data *rsp = data;
 	struct l2cap_ecred_conn_rsp *rsp_flex =
 		container_of(&rsp->pdu.rsp, struct l2cap_ecred_conn_rsp, hdr);
+	bool locked;
+
+	if (chan->mode != L2CAP_MODE_EXT_FLOWCTL)
+		return;
 
 	if (chan->mode != L2CAP_MODE_EXT_FLOWCTL)
 		return;
@@ -3972,6 +4023,22 @@ static void l2cap_ecred_rsp_defer(struct l2cap_chan *chan, void *data)
 	if (test_bit(FLAG_ECRED_CONN_REQ_SENT, &chan->flags) ||
 	    !test_and_clear_bit(FLAG_DEFER_SETUP, &chan->flags))
 		return;
+
+	lockdep_assert_held(&rsp->locked_chan->lock);
+	lockdep_assert_held(&rsp->locked_chan->conn->lock);
+
+	l2cap_chan_hold(chan);
+
+	locked = l2cap_chan_try_sibling_lock(chan, rsp->locked_chan);
+
+	/* Cannot occur: PARENT channels do not appear in chan_l, and SMP
+	 * channels never have FLAG_DEFER_SETUP.
+	 */
+	if (context_unsafe(!locked && chan != rsp->locked_chan))
+		goto done;
+
+	lockdep_assert_held(&chan->lock);
+	lockdep_assert_held(&chan->conn->lock);
 
 	/* Reset ident so only one response is sent */
 	chan->ident = 0;
@@ -3985,6 +4052,12 @@ static void l2cap_ecred_rsp_defer(struct l2cap_chan *chan, void *data)
 		rsp_flex->dcid[rsp->count++] = cpu_to_le16(chan->scid);
 	else
 		l2cap_chan_del(chan, ECONNRESET);
+
+done:
+	if (locked)
+		l2cap_chan_unlock(chan);
+
+	l2cap_chan_put(chan);
 }
 
 void __l2cap_ecred_conn_rsp_defer(struct l2cap_chan *chan)
@@ -3996,10 +4069,14 @@ void __l2cap_ecred_conn_rsp_defer(struct l2cap_chan *chan)
 
 	if (!id)
 		return;
+	if (!test_bit(FLAG_DEFER_SETUP, &chan->flags))
+		return;
 
 	BT_DBG("chan %p id %d", chan, id);
 
 	memset(&data, 0, sizeof(data));
+
+	data.locked_chan = chan;
 
 	data.pdu.rsp.mtu     = cpu_to_le16(chan->imtu);
 	data.pdu.rsp.mps     = cpu_to_le16(chan->mps);
@@ -4144,6 +4221,7 @@ static inline int l2cap_command_rej(struct l2cap_conn *conn,
 static struct l2cap_chan *l2cap_new_connection(struct l2cap_conn *conn,
 					       struct l2cap_chan *pchan)
 	__must_hold(&conn->lock)
+	__must_hold(&pchan->lock)
 {
 	struct l2cap_chan *chan;
 
@@ -4157,6 +4235,8 @@ static struct l2cap_chan *l2cap_new_connection(struct l2cap_conn *conn,
 	chan->ops = pchan->ops;
 
 	__l2cap_chan_add(conn, chan);
+
+	lockdep_assert_held(&chan->conn->lock);
 
 	if (pchan->ops->new_connection &&
 	    pchan->ops->new_connection(pchan, chan) < 0) {
@@ -4359,6 +4439,8 @@ static int l2cap_connect_create_rsp(struct l2cap_conn *conn,
 
 	l2cap_chan_lock(chan);
 
+	lockdep_assert_held(&chan->conn->lock);
+
 	switch (result) {
 	case L2CAP_CR_SUCCESS:
 		if (__l2cap_get_chan_by_dcid(conn, dcid)) {
@@ -4459,6 +4541,8 @@ static inline int l2cap_config_req(struct l2cap_conn *conn,
 	}
 
 	l2cap_chan_lock(chan);
+
+	lockdep_assert_held(&chan->conn->lock);
 
 	if (chan->state != BT_CONFIG && chan->state != BT_CONNECT2 &&
 	    chan->state != BT_CONNECTED) {
@@ -4574,6 +4658,8 @@ static inline int l2cap_config_rsp(struct l2cap_conn *conn,
 
 	l2cap_chan_lock(chan);
 
+	lockdep_assert_held(&chan->conn->lock);
+
 	switch (result) {
 	case L2CAP_CONF_SUCCESS:
 		l2cap_conf_rfc_get(chan, rsp->data, len);
@@ -4683,6 +4769,8 @@ static inline int l2cap_disconnect_req(struct l2cap_conn *conn,
 
 	l2cap_chan_lock(chan);
 
+	lockdep_assert_held(&chan->conn->lock);
+
 	rsp.dcid = cpu_to_le16(chan->scid);
 	rsp.scid = cpu_to_le16(chan->dcid);
 	l2cap_send_cmd(conn, cmd->ident, L2CAP_DISCONN_RSP, sizeof(rsp), &rsp);
@@ -4722,6 +4810,8 @@ static inline int l2cap_disconnect_rsp(struct l2cap_conn *conn,
 	}
 
 	l2cap_chan_lock(chan);
+
+	lockdep_assert_held(&chan->conn->lock);
 
 	if (chan->state != BT_DISCONN) {
 		l2cap_chan_unlock(chan);
@@ -4934,6 +5024,8 @@ static int l2cap_le_connect_rsp(struct l2cap_conn *conn,
 	err = 0;
 
 	l2cap_chan_lock(chan);
+
+	lockdep_assert_held(&chan->conn->lock);
 
 	switch (result) {
 	case L2CAP_CR_LE_SUCCESS:
@@ -5152,6 +5244,8 @@ static int l2cap_le_connect_req(struct l2cap_conn *conn,
 	}
 
 	l2cap_chan_lock(chan);
+
+	lockdep_assert_held(&chan->conn->lock);
 
 	bacpy(&chan->src, &conn->hcon->src);
 	bacpy(&chan->dst, &conn->hcon->dst);
@@ -5384,6 +5478,8 @@ static inline int l2cap_ecred_conn_req(struct l2cap_conn *conn,
 
 		l2cap_chan_lock(chan);
 
+		lockdep_assert_held(&chan->conn->lock);
+
 		bacpy(&chan->src, &conn->hcon->src);
 		bacpy(&chan->dst, &conn->hcon->dst);
 		chan->src_type = bdaddr_src_type(conn->hcon);
@@ -5472,6 +5568,8 @@ static inline int l2cap_ecred_conn_rsp(struct l2cap_conn *conn,
 
 		l2cap_chan_hold(chan);
 		l2cap_chan_lock(chan);
+
+		lockdep_assert_held(&chan->conn->lock);
 
 		/* Check that there is a dcid for each pending channel */
 		if (cmd_len < sizeof(dcid)) {
@@ -5700,6 +5798,8 @@ static inline int l2cap_ecred_reconf_rsp(struct l2cap_conn *conn,
 			continue;
 		l2cap_chan_lock(chan);
 
+		lockdep_assert_held(&chan->conn->lock);
+
 		l2cap_chan_del(chan, ECONNRESET);
 
 		l2cap_chan_unlock(chan);
@@ -5729,6 +5829,7 @@ static inline int l2cap_le_command_rej(struct l2cap_conn *conn,
 		goto done;
 
 	l2cap_chan_lock(chan);
+	lockdep_assert_held(&chan->conn->lock);
 	l2cap_chan_del(chan, ECONNREFUSED);
 	l2cap_chan_unlock(chan);
 	l2cap_chan_put(chan);
@@ -7116,6 +7217,8 @@ static void l2cap_data_channel(struct l2cap_conn *conn, u16 cid,
 
 	l2cap_chan_lock(chan);
 
+	lockdep_assert_held(&chan->conn->lock);
+
 	BT_DBG("chan %p, len %d", chan, skb->len);
 
 	/* If we receive data on a fixed channel before the info req/rsp
@@ -7527,7 +7630,8 @@ int l2cap_chan_connect(struct l2cap_chan *chan, __le16 psm, u16 cid,
 		}
 	}
 
-	if (cid && __l2cap_get_chan_by_dcid(conn, cid)) {
+	if ((cid && __l2cap_get_chan_by_dcid(conn, cid)) || chan->conn ||
+	    test_bit(FLAG_DEL, &chan->flags)) {
 		hci_conn_drop(hcon);
 		err = -EBUSY;
 		goto chan_unlock;
