@@ -73,13 +73,13 @@ static int sched_feat_show(struct seq_file *m, void *v)
 
 #ifdef CONFIG_JUMP_LABEL
 
-#define jump_label_key__true  { .key_true  = STATIC_KEY_TRUE_INIT  }
-#define jump_label_key__false { .key_false = STATIC_KEY_FALSE_INIT }
+#define jump_label_key__true  STATIC_KEY_INIT_TRUE
+#define jump_label_key__false STATIC_KEY_INIT_FALSE
 
 #define SCHED_FEAT(name, enabled)	\
 	jump_label_key__##enabled ,
 
-union sched_feat_key sched_feat_keys[__SCHED_FEAT_NR] = {
+struct static_key sched_feat_keys[__SCHED_FEAT_NR] = {
 #include "features.h"
 };
 
@@ -87,12 +87,12 @@ union sched_feat_key sched_feat_keys[__SCHED_FEAT_NR] = {
 
 static void sched_feat_disable(int i)
 {
-	static_branch_disable_cpuslocked(&sched_feat_keys[i].key_true);
+	static_key_disable_cpuslocked(&sched_feat_keys[i]);
 }
 
 static void sched_feat_enable(int i)
 {
-	static_branch_enable_cpuslocked(&sched_feat_keys[i].key_false);
+	static_key_enable_cpuslocked(&sched_feat_keys[i]);
 }
 #else /* !CONFIG_JUMP_LABEL: */
 static void sched_feat_disable(int i) { };
@@ -280,10 +280,16 @@ static ssize_t sched_dynamic_write(struct file *filp, const char __user *ubuf,
 
 static int sched_dynamic_show(struct seq_file *m, void *v)
 {
+	int i = (IS_ENABLED(CONFIG_PREEMPT_RT) || IS_ENABLED(CONFIG_ARCH_HAS_PREEMPT_LAZY)) * 2;
 	int mode = READ_ONCE(preempt_dynamic_mode);
+	int j;
 
-	/* Stop at NULL terminator */
-	for (int i = 0; preempt_modes[i]; i++) {
+	/* Count entries in NULL terminated preempt_modes */
+	for (j = 0; preempt_modes[j]; j++)
+		;
+	j -= !IS_ENABLED(CONFIG_ARCH_HAS_PREEMPT_LAZY);
+
+	for (; i < j; i++) {
 		if (mode == i)
 			seq_puts(m, "(");
 		seq_puts(m, preempt_modes[i]);
