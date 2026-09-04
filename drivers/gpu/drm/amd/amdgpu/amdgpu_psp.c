@@ -398,6 +398,12 @@ static bool psp_get_runtime_db_entry(struct amdgpu_device *adev,
 	bool ret = false;
 	int i;
 
+	/*
+	 * Runtime DB is for dGPUs only.
+	 */
+	if (adev->flags & AMD_IS_APU)
+		return false;
+
 	if (amdgpu_ip_version(adev, MP0_HWIP, 0) == IP_VERSION(13, 0, 6) ||
 	    amdgpu_ip_version(adev, MP0_HWIP, 0) == IP_VERSION(13, 0, 12) ||
 	    amdgpu_ip_version(adev, MP0_HWIP, 0) == IP_VERSION(13, 0, 14) ||
@@ -827,6 +833,18 @@ static const char *psp_gfx_cmd_name(enum psp_gfx_cmd_id cmd_id)
 		return "NPS_MODE_CHANGE";
 	case GFX_CMD_ID_PERF_HW:
 		return "PERF MONITORING HW";
+	case GFX_CMD_ID_UAL_GET_INTERFACE_VER:
+		return "UAL_GET_INTERFACE_VER";
+	case GFX_CMD_ID_UAL_GET_CONFIG:
+		return "UAL_GET_CONFIG";
+	case GFX_CMD_ID_UAL_SET_PPOD_CONFIG:
+		return "UAL_SET_PPOD_CONFIG";
+	case GFX_CMD_ID_UAL_SET_VPOD_CONFIG:
+		return "UAL_SET_VPOD_CONFIG";
+	case GFX_CMD_ID_UAL_SET_STATION_CONFIG:
+		return "UAL_SET_STATION_CONFIG";
+	case GFX_CMD_ID_UAL_SET_NPA_CONFIG:
+		return "UAL_SET_NPA_CONFIG";
 	default:
 		return "UNKNOWN CMD";
 	}
@@ -883,7 +901,7 @@ psp_cmd_submit_buf(struct psp_context *psp,
 		ras_intr = amdgpu_ras_intr_triggered();
 		if (ras_intr)
 			break;
-		usleep_range(60, 100);
+		usleep_range(60, 150);
 		amdgpu_device_invalidate_hdp(psp->adev, NULL);
 	}
 
@@ -1185,6 +1203,261 @@ static int psp_get_fw_reservation_info(struct psp_context *psp,
 	release_psp_cmd_buf(psp);
 
 	return 0;
+}
+
+int psp_ual_get_interface_version(struct psp_context *psp, uint32_t *intf_ver)
+{
+	struct psp_gfx_cmd_resp *cmd;
+	int ret;
+
+	cmd = acquire_psp_cmd_buf(psp);
+
+	cmd->cmd_id = GFX_CMD_ID_UAL_GET_INTERFACE_VER;
+
+	ret = psp_cmd_submit_buf(psp, NULL, cmd, psp->fence_buf_mc_addr);
+
+	if (!ret && !cmd->resp.status) {
+		*intf_ver = cmd->resp.uresp.get_intf_ver_ual.intf_ver;
+	} else if (!ret) {
+		pr_debug("ual_get_if_ver: PSP status %x\n", cmd->resp.status);
+		ret = -EINVAL;
+	}
+
+	release_psp_cmd_buf(psp);
+
+	return ret;
+}
+
+int psp_ual_query_info(struct psp_context *psp, uint32_t intf_ver,
+		       struct amdgpu_ualink_info *info,
+		       enum psp_gfx_ual_config_state *cfg_state)
+{
+	struct psp_gfx_get_config_ual_v1 *ual_config;
+	struct psp_gfx_cmd_resp *cmd;
+	int ret;
+
+	/* TBD check interface version 1.x */
+	if (intf_ver > 0x1ffff) {
+		pr_warn("PSP UAL interface version mismatch: 0x%x\n", intf_ver);
+		return -EOPNOTSUPP;
+	}
+
+	cmd = acquire_psp_cmd_buf(psp);
+
+	ual_config = psp->cmd_ext_resp_mem;
+
+	cmd->cmd_id = GFX_CMD_ID_UAL_GET_CONFIG;
+	cmd->cmd.cmd_get_config_ual.ual_cfg_addr_lo = lower_32_bits(psp->cmd_ext_resp_mc_addr);
+	cmd->cmd.cmd_get_config_ual.ual_cfg_addr_hi = upper_32_bits(psp->cmd_ext_resp_mc_addr);
+	cmd->cmd.cmd_get_config_ual.ual_cfg_size = sizeof(*ual_config);
+
+	ret = psp_cmd_submit_buf(psp, NULL, cmd, psp->fence_buf_mc_addr);
+
+	if (!ret && !cmd->resp.status) {
+		WARN_ON(cmd->resp.uresp.get_config_ual.resp_size < sizeof(*ual_config));
+
+		info->link_type = (enum amdgpu_ualink_type)ual_config->link_type;
+
+		info->ppod.accel_id = ual_config->accelerator_id;
+		info->ppod.bandwidth = ual_config->bandwidth;
+		info->ppod.latency = ual_config->latency;
+		info->ppod.size = ual_config->ppod_size;
+		memcpy(&info->ppod.id, ual_config->ppod_id, sizeof(info->ppod.id));
+
+		info->vpod.id = ual_config->vpod_id;
+		info->vpod.size = ual_config->vpod_size;
+		info->vpod.addr_mode = ual_config->addr_mode;
+		bitmap_from_arr32(info->vpod.active_accel_bits,
+				  ual_config->vpod_active_accelerators,
+				  min(AMDGPU_UALINK_ACCEL_MAX, PSP_GFX_UAL_MAX_ACC_BIT_MASK*32));
+		/* Ensure no uninitialized data in the bitmap, even if these
+		 * constants change in the future.
+		 */
+		if (AMDGPU_UALINK_ACCEL_MAX > PSP_GFX_UAL_MAX_ACC_BIT_MASK*32)
+			bitmap_clear(info->vpod.active_accel_bits, PSP_GFX_UAL_MAX_ACC_BIT_MASK*32,
+				     AMDGPU_UALINK_ACCEL_MAX - PSP_GFX_UAL_MAX_ACC_BIT_MASK*32);
+
+		if (cfg_state)
+			*cfg_state = ual_config->config_state;
+	} else if (!ret) {
+		ret = -EINVAL;
+	}
+
+	release_psp_cmd_buf(psp);
+
+	return ret;
+}
+
+int psp_ual_set_ppod_config(struct psp_context *psp, uint32_t intf_ver,
+			    const struct amdgpu_ualink_ppod_setup *setup)
+{
+	struct psp_gfx_cmd_resp *cmd;
+	int ret;
+
+	/* TBD check interface version 1.x */
+	if (intf_ver > 0x1ffff) {
+		pr_warn("PSP UAL interface version mismatch: 0x%x\n", intf_ver);
+		return -EOPNOTSUPP;
+	}
+
+	cmd = acquire_psp_cmd_buf(psp);
+
+	cmd->cmd_id = GFX_CMD_ID_UAL_SET_PPOD_CONFIG;
+	cmd->cmd.cmd_set_ppod_config_ual.accelerator_id = setup->ppod.accel_id;
+	memcpy(cmd->cmd.cmd_set_ppod_config_ual.ppod_id, &setup->ppod.id,
+	       sizeof(cmd->cmd.cmd_set_ppod_config_ual.ppod_id));
+	cmd->cmd.cmd_set_ppod_config_ual.ppod_size = setup->ppod.size;
+	cmd->cmd.cmd_set_ppod_config_ual.bandwidth = setup->ppod.bandwidth;
+	cmd->cmd.cmd_set_ppod_config_ual.latency = setup->ppod.latency;
+
+	memcpy(cmd->cmd.cmd_set_ppod_config_ual.local_accelerators,
+	       setup->local_accels,
+	       min(sizeof(cmd->cmd.cmd_set_ppod_config_ual.local_accelerators),
+		   setup->n_local_accels * sizeof(u32)));
+	/* Fill the remainder of the array with invalid accelerator IDs */
+	if (sizeof(cmd->cmd.cmd_set_ppod_config_ual.local_accelerators) >
+	    setup->n_local_accels * sizeof(u32))
+		memset(&cmd->cmd.cmd_set_ppod_config_ual.local_accelerators[setup->n_local_accels],
+		       0xff, sizeof(cmd->cmd.cmd_set_ppod_config_ual.local_accelerators) -
+		       setup->n_local_accels * sizeof(u32));
+
+	ret = psp_cmd_submit_buf(psp, NULL, cmd, psp->fence_buf_mc_addr);
+
+	if (!ret && cmd->resp.status)
+		ret = -EINVAL;
+
+	release_psp_cmd_buf(psp);
+
+	return ret;
+}
+
+int psp_ual_set_vpod_config(struct psp_context *psp, uint32_t intf_ver,
+			    const struct amdgpu_ualink_vpod_config *config)
+{
+	struct psp_gfx_cmd_resp *cmd;
+	int ret;
+
+	/* TBD check interface version 1.x */
+	if (intf_ver > 0x1ffff) {
+		pr_warn("PSP UAL interface version mismatch: 0x%x\n", intf_ver);
+		return -EOPNOTSUPP;
+	}
+
+	cmd = acquire_psp_cmd_buf(psp);
+
+	cmd->cmd_id = GFX_CMD_ID_UAL_SET_VPOD_CONFIG;
+	cmd->cmd.cmd_set_vpod_config_ual.addr_mode =
+		(enum psp_gfx_ual_npa_address_mode)config->vpod.addr_mode;
+	cmd->cmd.cmd_set_vpod_config_ual.vpod_id = config->vpod.id;
+	cmd->cmd.cmd_set_vpod_config_ual.vpod_size = config->vpod.size;
+
+	bitmap_to_arr32(cmd->cmd.cmd_set_vpod_config_ual.vpod_active_accelerators,
+			config->vpod.active_accel_bits,
+			min(AMDGPU_UALINK_ACCEL_MAX, PSP_GFX_UAL_MAX_ACC_BIT_MASK*32));
+	/* Clear any remaining accelerator bits */
+	if (PSP_GFX_UAL_MAX_ACC_BIT_MASK > DIV_ROUND_UP(AMDGPU_UALINK_ACCEL_MAX, 32))
+		memset(cmd->cmd.cmd_set_vpod_config_ual.vpod_active_accelerators +
+		       DIV_ROUND_UP(AMDGPU_UALINK_ACCEL_MAX, 32), 0,
+		       (PSP_GFX_UAL_MAX_ACC_BIT_MASK -
+			DIV_ROUND_UP(AMDGPU_UALINK_ACCEL_MAX, 32)) * sizeof(u32));
+
+	ret = psp_cmd_submit_buf(psp, NULL, cmd, psp->fence_buf_mc_addr);
+
+	if (!ret && cmd->resp.status)
+		ret = -EINVAL;
+
+	release_psp_cmd_buf(psp);
+
+	return ret;
+}
+
+int psp_ual_set_station_config(struct psp_context *psp, uint32_t intf_ver,
+			       const struct amdgpu_ualink_station_config *stations)
+{
+	struct psp_gfx_cmd_resp *cmd;
+	int ret;
+
+	/* TBD check interface version 1.x */
+	if (intf_ver > 0x1ffff) {
+		pr_warn("PSP UAL interface version mismatch: 0x%x\n", intf_ver);
+		return -EOPNOTSUPP;
+	}
+
+	cmd = acquire_psp_cmd_buf(psp);
+
+	cmd->cmd_id = GFX_CMD_ID_UAL_SET_STATION_CONFIG;
+	cmd->cmd.cmd_set_station_config_ual.num_stations = stations->n_stations;
+	cmd->cmd.cmd_set_station_config_ual.station_flag = stations->flags;
+	memcpy(cmd->cmd.cmd_set_station_config_ual.lane_en_bitmap,
+	       stations->lane_en_bitmap,
+	       min(stations->n_stations,
+		   sizeof(cmd->cmd.cmd_set_station_config_ual.lane_en_bitmap)));
+	/* The remainder is already 0-initialized by acquire_psp_cmd_buf */
+
+	ret = psp_cmd_submit_buf(psp, NULL, cmd, psp->fence_buf_mc_addr);
+
+	if (!ret && cmd->resp.status)
+		ret = -EINVAL;
+
+	release_psp_cmd_buf(psp);
+
+	return ret;
+}
+
+int psp_ual_set_npa_config(struct psp_context *psp, uint32_t intf_ver,
+			   unsigned int vmid, bool enable)
+{
+	struct psp_gfx_cmd_resp *cmd;
+	int ret;
+
+	/* TBD check interface version 1.x */
+	if (intf_ver > 0x1ffff) {
+		pr_warn("PSP UAL interface version mismatch: 0x%x\n", intf_ver);
+		return -EOPNOTSUPP;
+	}
+
+	cmd = acquire_psp_cmd_buf(psp);
+
+	cmd->cmd_id = GFX_CMD_ID_UAL_SET_NPA_CONFIG;
+	cmd->cmd.cmd_set_npa_config_ual.vmid = vmid;
+	cmd->cmd.cmd_set_npa_config_ual.enable_npa_translation = enable;
+
+	ret = psp_cmd_submit_buf(psp, NULL, cmd, psp->fence_buf_mc_addr);
+
+	if (!ret && cmd->resp.status)
+		ret = -EINVAL;
+
+	release_psp_cmd_buf(psp);
+
+	return ret;
+}
+
+int psp_ual_send_completion(struct psp_context *psp, uint32_t intf_ver,
+			    uint32_t cmd_id, uint32_t status)
+{
+	struct psp_gfx_cmd_resp *cmd;
+	int ret;
+
+	/* TBD check interface version 1.x */
+	if (intf_ver > 0x1ffff) {
+		pr_warn("PSP UAL interface version mismatch: 0x%x\n", intf_ver);
+		return -EOPNOTSUPP;
+	}
+
+	cmd = acquire_psp_cmd_buf(psp);
+
+	cmd->cmd_id = GFX_CMD_ID_UAL_SEND_COMPLETION;
+	cmd->cmd.cmd_send_completion_ual.cmd_id = cmd_id;
+	cmd->cmd.cmd_send_completion_ual.status = status;
+
+	ret = psp_cmd_submit_buf(psp, NULL, cmd, psp->fence_buf_mc_addr);
+
+	if (!ret && cmd->resp.status)
+		ret = -EINVAL;
+
+	release_psp_cmd_buf(psp);
+
+	return ret;
 }
 
 int psp_update_fw_reservation(struct psp_context *psp)
@@ -2022,14 +2295,19 @@ int psp_xgmi_terminate(struct psp_context *psp)
 	return ret;
 }
 
+bool psp_is_xgmi_ta_supported(struct psp_context *psp)
+{
+	return psp->ta_fw &&
+	       psp->xgmi_context.context.bin_desc.size_bytes &&
+	       psp->xgmi_context.context.bin_desc.start_addr;
+}
+
 int psp_xgmi_initialize(struct psp_context *psp, bool set_extended_data, bool load_ta)
 {
 	struct ta_xgmi_shared_memory *xgmi_cmd;
 	int ret;
 
-	if (!psp->ta_fw ||
-	    !psp->xgmi_context.context.bin_desc.size_bytes ||
-	    !psp->xgmi_context.context.bin_desc.start_addr)
+	if (!psp_is_xgmi_ta_supported(psp))
 		return -ENOENT;
 
 	if (!load_ta)

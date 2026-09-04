@@ -1742,7 +1742,8 @@ CIFSSMBRead(const unsigned int xid, struct cifs_io_parms *io_parms,
 			rc = smb_EIO2(smb_eio_trace_read_overlarge,
 				      data_length, count);
 			*nbytes = 0;
-		} else if ((size_t)data_offset + data_length > rsp_iov.iov_len) {
+		} else if (data_offset < sizeof(*pSMBr) ||
+			   (size_t)data_offset + data_length > rsp_iov.iov_len) {
 			/* check that the data lies within the received response */
 			cifs_dbg(FYI, "%s: bad data offset %u length %u for response of %zu\n",
 				 __func__, data_offset, data_length, rsp_iov.iov_len);

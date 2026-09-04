@@ -1134,7 +1134,7 @@ static int ext2_fill_super(struct super_block *sb, struct fs_context *fc)
 
 	/* per filesystem reservation list head & lock */
 	spin_lock_init(&sbi->s_rsv_window_lock);
-	scoped_guard(spinlock, &sbi->s_rsv_window_lock) {
+	scoped_guard(spinlock, &EXT2_SB(sb)->s_rsv_window_lock) {
 		sbi->s_rsv_window_root = RB_ROOT;
 		/*
 		 * Add a single, static dummy reservation to the start of the

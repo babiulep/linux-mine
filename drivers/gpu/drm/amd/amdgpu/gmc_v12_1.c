@@ -28,6 +28,10 @@
 #include "oss/osssys_7_1_0_sh_mask.h"
 #include "ivsrcid/vmc/irqsrcs_vmc_1_0.h"
 
+static void gmc_v12_1_get_mtypes(struct amdgpu_device *adev,
+				 unsigned int *mtype_local,
+				 unsigned int *mtype_remote);
+
 static int gmc_v12_1_vm_fault_interrupt_state(struct amdgpu_device *adev,
 					      struct amdgpu_irq_src *src,
 					      unsigned int type,
@@ -600,6 +604,67 @@ static void gmc_v12_1_get_vm_pde(struct amdgpu_device *adev, int level,
 	}
 }
 
+static void gmc_v12_1_get_npa_flags(struct amdgpu_device *adev,
+				    uint64_t *flags)
+{
+	unsigned int mtype_local, mtype_remote;
+
+	gmc_v12_1_get_mtypes(adev, &mtype_local, &mtype_remote);
+
+	*flags = AMDGPU_PTE_MTYPE_GFX12(*flags, mtype_remote);
+	/* VSCT = 0011 to identify NPA. Additionally PTE.B = 1 */
+	*flags |= AMDGPU_PTE_SNOOPED | AMDGPU_PTE_PRT_GFX12 |
+		   AMDGPU_PTE_BUS_ATOMICS;
+	*flags &= ~AMDGPU_PTE_VALID;
+	*flags &= ~AMDGPU_PTE_EXECUTABLE;
+}
+
+/*
+ * Resolve the MTYPEs used for local and remote memory accesses on GFX 12.1.
+ * Both default to an ASIC-dependent value that can be overridden through the
+ * amdgpu_mtype_local and amdgpu_mtype_remote module parameters.
+ */
+static void gmc_v12_1_get_mtypes(struct amdgpu_device *adev,
+				 unsigned int *mtype_local,
+				 unsigned int *mtype_remote)
+{
+	bool is_aid_a1 = (adev->rev_id & 0x10);
+
+	/* Local memory: ASIC default depends on the AID stepping. */
+	*mtype_local = is_aid_a1 ? MTYPE_RW : MTYPE_NC;
+	if (amdgpu_mtype_local == 0)
+		*mtype_local = MTYPE_RW;
+	else if (amdgpu_mtype_local == 1)
+		*mtype_local = MTYPE_NC;
+	else if (amdgpu_mtype_local == 2)
+		DRM_INFO_ONCE("MTYPE_CC not supported for local memory\n");
+
+	/* Remote memory defaults to MTYPE_UC on GFX 12.1. */
+	*mtype_remote = MTYPE_UC;
+	if (amdgpu_mtype_remote == 0)
+		*mtype_remote = MTYPE_NC;
+	else if (amdgpu_mtype_remote == 1)
+		*mtype_remote = MTYPE_UC;
+
+	DRM_INFO_ONCE("Using %s for local memory and %s for remote memory\n",
+		      *mtype_local == MTYPE_RW ? "MTYPE_RW" : "MTYPE_NC",
+		      *mtype_remote == MTYPE_NC ? "MTYPE_NC" : "MTYPE_UC");
+}
+
+/*
+ * The compute MQD coherent_aql_mtype field (offset 509) must be programmed to
+ * 0 whenever the driver maps local or remote memory as MTYPE_NC, and to 1 in
+ * all other cases.
+ */
+u32 gmc_v12_1_get_coherent_aql_mtype(struct amdgpu_device *adev)
+{
+	unsigned int mtype_local, mtype_remote;
+
+	gmc_v12_1_get_mtypes(adev, &mtype_local, &mtype_remote);
+
+	return (mtype_local == MTYPE_NC || mtype_remote == MTYPE_NC) ? 0 : 1;
+}
+
 static void gmc_v12_1_get_coherence_flags(struct amdgpu_device *adev,
 					  struct amdgpu_bo *bo,
 					  uint64_t *flags)
@@ -615,26 +680,10 @@ static void gmc_v12_1_get_coherence_flags(struct amdgpu_device *adev,
 	unsigned int mtype, mtype_local, mtype_remote;
 	bool snoop = false;
 	bool is_local = false;
-	bool is_aid_a1;
 
 	switch (gc_ip_version) {
 	case IP_VERSION(12, 1, 0):
-		is_aid_a1 = (adev->rev_id & 0x10);
-
-		mtype_local = is_aid_a1 ? MTYPE_RW : MTYPE_NC;
-		mtype_remote = is_aid_a1 ? MTYPE_NC : MTYPE_UC;
-		if (amdgpu_mtype_local == 0) {
-			DRM_INFO_ONCE("Using MTYPE_RW for local memory and MTYPE_NC for remote memory\n");
-			mtype_local = MTYPE_RW;
-			mtype_remote = MTYPE_NC;
-		} else if (amdgpu_mtype_local == 1) {
-			DRM_INFO_ONCE("Using MTYPE_NC for local memory\n");
-			mtype_local = MTYPE_NC;
-		} else if (amdgpu_mtype_local == 2) {
-			DRM_INFO_ONCE("MTYPE_CC not supported, using %s for local memory\n", is_aid_a1 ? "MTYPE_RW" : "MTYPE_NC");
-		} else {
-			DRM_INFO_ONCE("Using %s for local memory\n", is_aid_a1 ? "MTYPE_RW" : "MTYPE_NC");
-		}
+		gmc_v12_1_get_mtypes(adev, &mtype_local, &mtype_remote);
 
 		is_local = (is_vram && adev == bo_adev);
 		snoop = true;
@@ -668,6 +717,8 @@ static void gmc_v12_1_get_vm_pte(struct amdgpu_device *adev,
 				 uint32_t vm_flags,
 				 uint64_t *flags)
 {
+	struct ttm_resource *mem;
+
 	if (vm_flags & AMDGPU_VM_PAGE_EXECUTABLE)
 		*flags |= AMDGPU_PTE_EXECUTABLE;
 	else
@@ -689,8 +740,17 @@ static void gmc_v12_1_get_vm_pte(struct amdgpu_device *adev,
 		break;
 	}
 
-	if ((*flags & AMDGPU_PTE_VALID) && bo)
-		gmc_v12_1_get_coherence_flags(adev, bo, flags);
+	if (bo) {
+		mem = bo->tbo.resource;
+		if (mem && mem->mem_type == AMDGPU_PL_NPA) {
+			dev_dbg(adev->dev,
+				"Setting PTE for NPA BO, mem->type: %d, mem->start: %lx, mem->size: %u, cur_flags: %llx\n",
+				mem->mem_type, mem->start, (u32)mem->size, *flags);
+			gmc_v12_1_get_npa_flags(adev, flags);
+		} else if (*flags & AMDGPU_PTE_VALID) {
+			gmc_v12_1_get_coherence_flags(adev, bo, flags);
+		}
+	}
 }
 
 static const struct amdgpu_gmc_funcs gmc_v12_1_gmc_funcs = {

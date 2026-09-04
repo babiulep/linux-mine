@@ -99,6 +99,7 @@ static int gmc_v12_0_process_interrupt(struct amdgpu_device *adev,
 	bool write_fault = !!(entry->src_data[1] &
 			      AMDGPU_GMC9_FAULT_SOURCE_DATA_WRITE);
 	uint32_t status = 0;
+	uint32_t cam_index;
 	u64 addr;
 
 	addr = (u64)entry->src_data[0] << 12;
@@ -110,7 +111,9 @@ static int gmc_v12_0_process_interrupt(struct amdgpu_device *adev,
 		hub = &adev->vmhub[AMDGPU_GFXHUB(0)];
 
 	if (retry_fault) {
-		int ret = amdgpu_gmc_handle_retry_fault(adev, entry, addr, 0, 0,
+		cam_index = entry->src_data[2] & 0x3ff;
+
+		int ret = amdgpu_gmc_handle_retry_fault(adev, entry, addr, cam_index, 0,
 							write_fault);
 		/* Returning 1 here also prevents sending the IV to the KFD */
 		if (ret == 1)
@@ -641,6 +644,8 @@ static int gmc_v12_0_early_init(struct amdgpu_ip_block *ip_block)
 		adev->gmc.xgmi.connected_to_cpu =
 			adev->smuio.funcs->is_host_gpu_xgmi_supported(adev);
 
+	adev->gmc.init_pte_flags = AMDGPU_PTE_IS_PTE;
+
 	switch (amdgpu_ip_version(adev, GC_HWIP, 0)) {
 	case IP_VERSION(12, 1, 0):
 		gmc_v12_1_set_gmc_funcs(adev);
@@ -809,6 +814,7 @@ static int gmc_v12_0_sw_init(struct amdgpu_ip_block *ip_block)
 	int r, vram_width = 0, vram_type = 0, vram_vendor = 0, dma_addr_bits;
 	struct amdgpu_device *adev = ip_block->adev;
 	uint64_t pte_addr_mask = 0;
+	u32 mmhub_vmid_mask;
 	int i;
 
 	adev->mmhub.funcs->init(adev);
@@ -952,13 +958,26 @@ static int gmc_v12_0_sw_init(struct amdgpu_ip_block *ip_block)
 	 * number of VMs
 	 * VMID 0 is reserved for System
 	 * amdgpu graphics/compute will use VMIDs 1-7
-	 * amdkfd will use VMIDs 8-15
+	 * amdkfd will use VMIDs 8-15.
+	 * On GFX 12.1, amdkfd will use VMIDs 3-15, with VMID 15 reserved
+	 * for NPA and therefore excluded from the MMHUB VMID pool.
 	 */
-	adev->vm_manager.first_kfd_vmid =
-		 amdgpu_ip_version(adev, GC_HWIP, 0) == IP_VERSION(12, 1, 0) ?
-		3 : 8;
-	adev->vm_manager.first_kfd_vmid =
-		adev->gfx.disable_kq ? 1 : (adev->vm_manager.first_kfd_vmid);
+	mmhub_vmid_mask = GENMASK(AMDGPU_NUM_VMID - 1, 1);
+	if (amdgpu_ip_version(adev, GC_HWIP, 0) == IP_VERSION(12, 1, 0)) {
+		adev->vm_manager.first_kfd_vmid = 3;
+		adev->vm_manager.npa_vmid = 15;
+		mmhub_vmid_mask &= ~BIT(adev->vm_manager.npa_vmid);
+	} else {
+		adev->vm_manager.first_kfd_vmid = 8;
+	}
+
+	if (adev->gfx.disable_kq)
+		adev->vm_manager.first_kfd_vmid = 1;
+
+	amdgpu_vmid_mgr_set_vmid_mask(adev, mmhub_vmid_mask, true);
+	amdgpu_vmid_mgr_set_vmid_mask(adev,
+				      GENMASK(adev->vm_manager.first_kfd_vmid - 1, 1),
+				      false);
 
 	amdgpu_vm_manager_init(adev);
 

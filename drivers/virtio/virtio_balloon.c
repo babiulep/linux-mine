@@ -69,6 +69,8 @@ struct virtio_balloon {
 	/* Prevent updating balloon when it is being canceled. */
 	spinlock_t stop_update_lock;
 	bool stop_update;
+	/* Prevent shrinker from running while device is suspended. */
+	bool suspended;
 	/* Bitmap to indicate if reading the related config fields are needed */
 	unsigned long config_read_bitmap;
 
@@ -477,17 +479,15 @@ static inline s64 towards_target(struct virtio_balloon *vb)
 	return target - vb->num_pages;
 }
 
-/* Gives back @num_to_return blocks of free pages to mm. */
-static unsigned long return_free_pages_to_mm(struct virtio_balloon *vb,
-					     unsigned long num_to_return)
+/* Helper: must be called with free_page_list_lock held */
+static unsigned long __return_free_pages_to_mm(struct virtio_balloon *vb,
+					       unsigned long num_to_return)
 {
 	unsigned long num_returned = 0;
 	struct page *page, *next;
 
 	if (unlikely(!num_to_return))
 		return 0;
-
-	spin_lock_irq(&vb->free_page_list_lock);
 
 	list_for_each_entry_safe(page, next, &vb->free_page_list, lru) {
 		list_del(&page->lru);
@@ -496,9 +496,25 @@ static unsigned long return_free_pages_to_mm(struct virtio_balloon *vb,
 			break;
 	}
 	vb->num_free_page_blocks -= num_returned;
-	spin_unlock_irq(&vb->free_page_list_lock);
 
 	return num_returned;
+}
+
+/* Gives back @num_to_return blocks of free pages to mm. */
+static unsigned long return_free_pages_to_mm(struct virtio_balloon *vb,
+					     unsigned long num_to_return)
+{
+	unsigned long ret;
+
+	spin_lock_irq(&vb->free_page_list_lock);
+	if (vb->suspended) {
+		spin_unlock_irq(&vb->free_page_list_lock);
+		return 0;
+	}
+	ret = __return_free_pages_to_mm(vb, num_to_return);
+	spin_unlock_irq(&vb->free_page_list_lock);
+
+	return ret;
 }
 
 static void virtio_balloon_queue_free_page_work(struct virtio_balloon *vb)
@@ -617,9 +633,25 @@ static int init_vqs(struct virtio_balloon *vb)
 	vb->inflate_vq = vqs[VIRTIO_BALLOON_VQ_INFLATE];
 	vb->deflate_vq = vqs[VIRTIO_BALLOON_VQ_DEFLATE];
 	if (virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_STATS_VQ)) {
+		struct scatterlist sg;
+		unsigned int num_stats;
 		vb->stats_vq = vqs[VIRTIO_BALLOON_VQ_STATS];
-		/* Prevent update_balloon_stats_work from accessing the stats vq. */
-		disable_work(&vb->update_balloon_stats_work);
+
+		/*
+		 * Prime this virtqueue with one buffer so the hypervisor can
+		 * use it to signal us later (it can't be broken yet!).
+		 */
+		num_stats = update_balloon_stats(vb);
+
+		sg_init_one(&sg, vb->stats, sizeof(vb->stats[0]) * num_stats);
+		err = virtqueue_add_outbuf(vb->stats_vq, &sg, 1, vb,
+					   GFP_KERNEL);
+		if (err) {
+			dev_warn(&vb->vdev->dev, "%s: add stat_vq failed\n",
+				 __func__);
+			return err;
+		}
+		virtqueue_kick(vb->stats_vq);
 	}
 
 	if (virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_FREE_PAGE_HINT))
@@ -861,6 +893,9 @@ static unsigned long virtio_balloon_shrinker_scan(struct shrinker *shrinker,
 {
 	struct virtio_balloon *vb = shrinker->private_data;
 
+	if (READ_ONCE(vb->suspended))
+		return 0;
+
 	return shrink_free_pages(vb, sc->nr_to_scan);
 }
 
@@ -868,6 +903,9 @@ static unsigned long virtio_balloon_shrinker_count(struct shrinker *shrinker,
 						   struct shrink_control *sc)
 {
 	struct virtio_balloon *vb = shrinker->private_data;
+
+	if (READ_ONCE(vb->suspended))
+		return 0;
 
 	return vb->num_free_page_blocks * VIRTIO_BALLOON_HINT_BLOCK_PAGES;
 }
@@ -904,33 +942,6 @@ static int virtio_balloon_register_shrinker(struct virtio_balloon *vb)
 	shrinker_register(vb->shrinker);
 
 	return 0;
-}
-
-static void setup_vqs(struct virtio_balloon *vb)
-{
-	struct scatterlist sg;
-	unsigned int num_stats;
-	bool ret;
-
-	if (!virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_STATS_VQ))
-		return;
-
-	/*
-	 * Prime this virtqueue with one buffer so the hypervisor can
-	 * use it to signal us later (it can't be broken yet!).
-	 */
-	num_stats = update_balloon_stats(vb);
-	sg_init_one(&sg, vb->stats, sizeof(vb->stats[0]) * num_stats);
-	if (virtqueue_add_outbuf(vb->stats_vq, &sg, 1, vb, GFP_KERNEL)) {
-		dev_warn(&vb->vdev->dev, "%s: add stat_vq failed\n", __func__);
-		return;
-	}
-	virtqueue_kick(vb->stats_vq);
-
-	ret = enable_and_queue_work(system_freezable_wq,
-				    &vb->update_balloon_stats_work);
-	/* Make sure we balanced enable/disable, or we won't report stats. */
-	WARN_ON_ONCE(!ret);
 }
 
 static int virtballoon_probe(struct virtio_device *vdev)
@@ -1073,8 +1084,6 @@ static int virtballoon_probe(struct virtio_device *vdev)
 
 	virtio_device_ready(vdev);
 
-	setup_vqs(vb);
-
 	if (towards_target(vb))
 		virtballoon_changed(vdev);
 	return 0;
@@ -1105,8 +1114,11 @@ static void remove_common(struct virtio_balloon *vb)
 	update_balloon_size(vb);
 
 	/* There might be free pages that are being reported: release them. */
-	if (virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_FREE_PAGE_HINT))
-		return_free_pages_to_mm(vb, ULONG_MAX);
+	if (virtio_has_feature(vb->vdev, VIRTIO_BALLOON_F_FREE_PAGE_HINT)) {
+		spin_lock_irq(&vb->free_page_list_lock);
+		__return_free_pages_to_mm(vb, ULONG_MAX);
+		spin_unlock_irq(&vb->free_page_list_lock);
+	}
 
 	/* Now we reset the device so we can clean up the queues. */
 	virtio_reset_device(vb->vdev);
@@ -1168,6 +1180,10 @@ static int virtballoon_freeze(struct virtio_device *vdev)
 	 * The workqueue is already frozen by the PM core before this
 	 * function is called.
 	 */
+	spin_lock_irq(&vb->free_page_list_lock);
+	WRITE_ONCE(vb->suspended, true);
+	spin_unlock_irq(&vb->free_page_list_lock);
+
 	remove_common(vb);
 	return 0;
 }
@@ -1183,7 +1199,9 @@ static int virtballoon_restore(struct virtio_device *vdev)
 
 	virtio_device_ready(vdev);
 
-	setup_vqs(vb);
+	spin_lock_irq(&vb->free_page_list_lock);
+	WRITE_ONCE(vb->suspended, false);
+	spin_unlock_irq(&vb->free_page_list_lock);
 
 	if (towards_target(vb))
 		virtballoon_changed(vdev);

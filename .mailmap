@@ -10,6 +10,7 @@
 #
 # Please keep this list dictionary sorted.
 #
+Aaradhana Sahu <aaradhana.sahu@oss.qualcomm.com> <quic_aarasahu@quicinc.com>
 Aaron Durbin <adurbin@google.com>
 Abel Vesa <abelvesa@kernel.org> <abel.vesa@nxp.com>
 Abel Vesa <abelvesa@kernel.org> <abel.vesa@linaro.org>
@@ -130,7 +131,8 @@ Axel Dyks <xl@xlsigned.net>
 Axel Lin <axel.lin@gmail.com>
 Balakrishna Godavarthi <quic_bgodavar@quicinc.com> <bgodavar@codeaurora.org>
 Banajit Goswami <quic_bgoswami@quicinc.com> <bgoswami@codeaurora.org>
-Baochen Qiang <quic_bqiang@quicinc.com> <bqiang@codeaurora.org>
+Baochen Qiang <baochen.qiang@oss.qualcomm.com> <bqiang@codeaurora.org>
+Baochen Qiang <baochen.qiang@oss.qualcomm.com> <quic_bqiang@quicinc.com>
 Baolin Wang <baolin.wang@linux.alibaba.com> <baolin.wang@linaro.org>
 Baolin Wang <baolin.wang@linux.alibaba.com> <baolin.wang@spreadtrum.com>
 Baolin Wang <baolin.wang@linux.alibaba.com> <baolin.wang@unisoc.com>
@@ -356,6 +358,8 @@ Hans Verkuil <hverkuil@kernel.org> <hverkuil-cisco@xs4all.nl>
 Hans Verkuil <hverkuil@kernel.org> <hansverk@cisco.com>
 Hans Verkuil <hverkuil@kernel.org> <hans.verkuil@cisco.com>
 Hao Ge <hao.ge@linux.dev> <gehao@kylinos.cn>
+Haowen Bai <baihaowen88@gmail.com> <baihaowen@meizu.com>
+Haowen Bai <baihaowen88@gmail.com> <calvin.bai@ugreen.com>
 Harry Yoo <harry.yoo@oracle.com> <42.hyeyoo@gmail.com>
 Harry Yoo <harry@kernel.org> <harry.yoo@oracle.com>
 Heiko Carstens <hca@linux.ibm.com> <h.carstens@de.ibm.com>
@@ -554,6 +558,9 @@ Li Yang <leoyang.li@nxp.com> <leo@zh-kernel.org>
 Lior David <quic_liord@quicinc.com> <liord@codeaurora.org>
 Loic Poulain <loic.poulain@oss.qualcomm.com> <loic.poulain@linaro.org>
 Loic Poulain <loic.poulain@oss.qualcomm.com> <loic.poulain@intel.com>
+Lorenzo Bianconi <lorenzo@kernel.org> <lorenzo.bianconi@redhat.com>
+Lorenzo Bianconi <lorenzo@kernel.org> <lorenzo.bianconi@st.com>
+Lorenzo Bianconi <lorenzo@kernel.org> <lorenzo.bianconi83@gmail.com>
 Lorenzo Pieralisi <lpieralisi@kernel.org> <lorenzo.pieralisi@arm.com>
 Lorenzo Stoakes <ljs@kernel.org> <lstoakes@gmail.com>
 Lorenzo Stoakes <ljs@kernel.org> <lorenzo.stoakes@oracle.com>
@@ -572,6 +579,7 @@ Maheshwar Ajja <quic_majja@quicinc.com> <majja@codeaurora.org>
 Maíra Canal <mairacanal@riseup.net> <maira.canal@usp.br>
 Malathi Gottam <quic_mgottam@quicinc.com> <mgottam@codeaurora.org>
 Manikanta Pubbisetty <quic_mpubbise@quicinc.com> <mpubbise@codeaurora.org>
+Manish Dharanenthiran <manish.dharanenthiran@oss.qualcomm.com> <quic_mdharane@quicinc.com>
 Manivannan Sadhasivam <mani@kernel.org> <manivannanece23@gmail.com>
 Manivannan Sadhasivam <mani@kernel.org> <manivannan.sadhasivam@linaro.org>
 Manoj Basapathi <quic_manojbm@quicinc.com> <manojbm@codeaurora.org>
@@ -703,6 +711,7 @@ Oliver Hartkopp <socketcan@hartkopp.net> <oliver.hartkopp@volkswagen.de>
 Oliver Hartkopp <socketcan@hartkopp.net> <oliver@hartkopp.net>
 Oliver Upton <oupton@kernel.org> <oupton@google.com>
 Oliver Upton <oupton@kernel.org> <oliver.upton@linux.dev>
+Ondrej Mosnáček <omosnacek@gmail.com> <omosnace@redhat.com>
 Ondřej Jirman <megi@xff.cz> <megous@megous.com>
 Oza Pawandeep <quic_poza@quicinc.com> <poza@codeaurora.org>
 Pali Rohár <pali@kernel.org> <pali.rohar@gmail.com>
@@ -760,6 +769,8 @@ Rakesh Pillai <quic_pillair@quicinc.com> <pillair@codeaurora.org>
 Ralf Baechle <ralf@linux-mips.org>
 Ralf Wildenhues <Ralf.Wildenhues@gmx.de>
 Ram Chandra Jangir <quic_rjangir@quicinc.com> <rjangir@codeaurora.org>
+Rameshkumar Sundaram <rameshkumar.sundaram@oss.qualcomm.com> <quic_ramess@quicinc.com>
+Rameshkumar Sundaram <rameshkumar.sundaram@oss.qualcomm.com> <ramess@codeaurora.org>
 Randy Dunlap <rdunlap@infradead.org> <rdunlap@xenotime.net>
 Randy Dunlap <rdunlap@infradead.org> <randy.dunlap@oracle.com>
 Randy Dunlap <rdunlap@infradead.org> <rddunlap@osdl.org>
@@ -858,7 +869,8 @@ Sricharan Ramabadhran <quic_srichara@quicinc.com> <sricharan@codeaurora.org>
 Srinivas Kandagatla <srini@kernel.org> <srinivas.kandagatla@st.com>
 Srinivas Kandagatla <srini@kernel.org> <srinivas.kandagatla@linaro.org>
 Srinivas Ramana <quic_sramana@quicinc.com> <sramana@codeaurora.org>
-Sriram R <quic_srirrama@quicinc.com> <srirrama@codeaurora.org>
+Sriram R <sriram.ramachandran@oss.qualcomm.com> <quic_srirrama@quicinc.com>
+Sriram R <sriram.ramachandran@oss.qualcomm.com> <srirrama@codeaurora.org>
 Sriram Yagnaraman <sriram.yagnaraman@ericsson.com> <sriram.yagnaraman@est.tech>
 Stanislav Fomichev <sdf@fomichev.me> <sdf@google.com>
 Stanislav Fomichev <sdf@fomichev.me> <stfomichev@gmail.com>
@@ -942,7 +954,8 @@ Vadim Fedorenko <vadim.fedorenko@linux.dev> <vfedorenko@novek.ru>
 Valdis Kletnieks <Valdis.Kletnieks@vt.edu>
 Vara Reddy <quic_varar@quicinc.com> <varar@codeaurora.org>
 Varadarajan Narayanan <quic_varada@quicinc.com> <varada@codeaurora.org>
-Vasanthakumar Thiagarajan <quic_vthiagar@quicinc.com> <vthiagar@codeaurora.org>
+Vasanthakumar Thiagarajan <vasanthakumar.thiagarajan@oss.qualcomm.com> <quic_vthiagar@quicinc.com>
+Vasanthakumar Thiagarajan <vasanthakumar.thiagarajan@oss.qualcomm.com> <vthiagar@codeaurora.org>
 Vasily Averin <vasily.averin@linux.dev> <vvs@virtuozzo.com>
 Vasily Averin <vasily.averin@linux.dev> <vvs@openvz.org>
 Vasily Averin <vasily.averin@linux.dev> <vvs@parallels.com>

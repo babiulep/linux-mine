@@ -25,7 +25,7 @@
 #include "aca.h"
 #include "ras_mce.h"
 #include "aca_v1_0.h"
-#include "ras_aca_v5_0.h"
+#include "aca_v5_0.h"
 #include "ras_mp1_v13_0.h"
 
 #define ACA_MARK_FATAL_FLAG    0x100
@@ -128,6 +128,11 @@ static void aca_bank_log(struct ras_core_context *ras_core,
 			"{%llu}" RAS_HW_ERR "ACA[%02d/%02d].%s=0x%016llx\n",
 			bank->seq_no, idx + 1, total,
 			aca_regs[i].name, bank->regs[aca_regs[i].reg_idx]);
+
+	if (ACA_REG_STATUS_SCRUB(bank->regs[ACA_REG_IDX__STATUS]))
+		RAS_DEV_INFO(ras_core->dev,
+			"{%llu}" RAS_HW_ERR "hardware error logged by the scrubber\n",
+			bank->seq_no);
 }
 
 static void aca_log_bank_data(struct ras_core_context *ras_core,
@@ -389,10 +394,6 @@ static int aca_banks_update(struct ras_core_context *ras_core,
 	if (!count)
 		goto out;
 
-	/* Only one MCE error is logged for each batch */
-	if (ecc_type != RAS_ERR_TYPE__MCE)
-		batch_tag = ras_log_ring_create_batch_tag(ras_core);
-
 	for (i = 0; i < count; i++) {
 		memset(&bank, 0, sizeof(bank));
 		ret = aca_dump_bank(ras_core, ecc_type, i, &bank);
@@ -403,10 +404,21 @@ static int aca_banks_update(struct ras_core_context *ras_core,
 
 		memset(&bank_ecc, 0, sizeof(bank_ecc));
 		aca_blk = aca_get_bank_aca_block(ras_core, &bank);
+
+		/* Outside of UMC a poison bank is a consumption, not a new error. */
+		if (ecc_type == RAS_ERR_TYPE__UE &&
+		    ACA_REG_STATUS_POISON(bank.regs[ACA_REG_IDX__STATUS]) &&
+		    (!aca_blk || aca_blk->blk_info->ras_block_id != RAS_BLOCK_ID__UMC))
+			continue;
+
 		if (aca_blk)
 			ret = aca_parse_bank(ras_core, aca_blk, &bank, &bank_ecc);
 
 		bank.seq_no = aca_get_bank_seqno(ras_core, ecc_type, aca_blk, &bank_ecc);
+
+		/* Only one MCE error is logged for each batch */
+		if (ecc_type != RAS_ERR_TYPE__MCE && !batch_tag)
+			batch_tag = ras_log_ring_create_batch_tag(ras_core);
 
 		aca_log_bank_data(ras_core, &bank, &bank_ecc, batch_tag);
 		aca_bank_log(ras_core, i, count, &bank, &bank_ecc);
