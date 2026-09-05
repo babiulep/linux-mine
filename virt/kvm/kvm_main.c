@@ -4177,11 +4177,6 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, unsigned long id)
 		return -EINVAL;
 	}
 
-	if (test_bit(id, kvm->vcpu_ids)) {
-		mutex_unlock(&kvm->lock);
-		return -EEXIST;
-	}
-
 	r = kvm_arch_vcpu_precreate(kvm, id);
 	if (r) {
 		mutex_unlock(&kvm->lock);
@@ -4189,7 +4184,6 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, unsigned long id)
 	}
 
 	kvm->created_vcpus++;
-	__set_bit(id, kvm->vcpu_ids);
 	mutex_unlock(&kvm->lock);
 
 	vcpu = kmem_cache_zalloc(kvm_vcpu_cache, GFP_KERNEL_ACCOUNT);
@@ -4223,7 +4217,7 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, unsigned long id)
 
 	mutex_lock(&kvm->lock);
 
-	if (WARN_ON_ONCE(kvm_get_vcpu_by_id(kvm, id))) {
+	if (kvm_get_vcpu_by_id(kvm, id)) {
 		r = -EEXIST;
 		goto unlock_vcpu_destroy;
 	}
@@ -4283,7 +4277,6 @@ vcpu_free:
 vcpu_decrement:
 	mutex_lock(&kvm->lock);
 	kvm->created_vcpus--;
-	__clear_bit(id, kvm->vcpu_ids);
 	mutex_unlock(&kvm->lock);
 	return r;
 }
