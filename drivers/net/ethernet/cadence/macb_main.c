@@ -4334,7 +4334,7 @@ static int macb_taprio_setup_replace(struct net_device *netdev,
 		return -EINVAL;
 	}
 
-	enst_queue = kcalloc(conf->num_entries, sizeof(*enst_queue), GFP_KERNEL);
+	enst_queue = kzalloc_objs(*enst_queue, conf->num_entries);
 	if (unlikely(!enst_queue))
 		return -ENOMEM;
 
@@ -5976,8 +5976,10 @@ err_out_free_tieoff:
 	macb_free_tieoff(bp);
 
 err_out_unregister_mdio:
-	mdiobus_unregister(bp->mii_bus);
-	mdiobus_free(bp->mii_bus);
+	if (bp->mii_bus) {
+		mdiobus_unregister(bp->mii_bus);
+		mdiobus_free(bp->mii_bus);
+	}
 
 err_out_phy_exit:
 	phy_exit(bp->phy);
@@ -6006,8 +6008,10 @@ static void macb_remove(struct platform_device *pdev)
 		unregister_netdev(netdev);
 		macb_free_tieoff(bp);
 		phy_exit(bp->phy);
-		mdiobus_unregister(bp->mii_bus);
-		mdiobus_free(bp->mii_bus);
+		if (bp->mii_bus) {
+			mdiobus_unregister(bp->mii_bus);
+			mdiobus_free(bp->mii_bus);
+		}
 
 		device_set_wakeup_enable(&bp->pdev->dev, 0);
 		cancel_delayed_work_sync(&bp->tx_lpi_work);

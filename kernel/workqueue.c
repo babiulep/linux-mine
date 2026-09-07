@@ -56,6 +56,7 @@
 #include <linux/kvm_para.h>
 #include <linux/delay.h>
 #include <linux/irq_work.h>
+#include <linux/math64.h>
 
 #include "workqueue_internal.h"
 
@@ -1535,6 +1536,7 @@ void wq_worker_tick(struct task_struct *task)
 	struct worker *worker = kthread_data(task);
 	struct pool_workqueue *pwq = worker->current_pwq;
 	struct worker_pool *pool = worker->pool;
+	u64 delta;
 
 	if (!pwq)
 		return;
@@ -1575,6 +1577,11 @@ void wq_worker_tick(struct task_struct *task)
 		pwq->stats[PWQ_STAT_CM_WAKEUP]++;
 
 	raw_spin_unlock(&pool->lock);
+
+	delta = READ_ONCE(worker->task->se.sum_exec_runtime) - worker->current_at;
+	trace_workqueue_cpu_intensive(pwq, worker->current_work,
+				      worker->current_func,
+				      div_u64(delta, NSEC_PER_USEC));
 }
 
 /**
@@ -3120,6 +3127,7 @@ static void send_mayday(struct pool_workqueue *pwq)
 		list_add_tail(&pwq->mayday_node, &wq->maydays);
 		wake_up_process(wq->rescuer->task);
 		pwq->stats[PWQ_STAT_MAYDAY]++;
+		trace_workqueue_mayday(pwq);
 	}
 }
 
@@ -3626,6 +3634,7 @@ static bool assign_rescuer_work(struct pool_workqueue *pwq, struct worker *rescu
 	list_for_each_entry_safe_from(work, n, &pool->worklist, entry) {
 		if (get_work_pwq(work) == pwq && assign_work(work, rescuer, &n)) {
 			pwq->stats[PWQ_STAT_RESCUED]++;
+			trace_workqueue_rescued(pwq, work, work->func);
 			/* put the cursor for next search */
 			list_move_tail(&cursor->entry, &n->entry);
 			return true;
@@ -3761,6 +3770,9 @@ static void bh_worker(struct worker *worker)
 	struct worker_pool *pool = worker->pool;
 	int nr_restarts = BH_WORKER_RESTARTS;
 	unsigned long end = jiffies + BH_WORKER_JIFFIES;
+	bool budget_exhausted = false;
+	bool timeout = false;
+	int restarts = 0;
 
 	worker_lock_callback(pool);
 	raw_spin_lock_irq(&pool->lock);
@@ -3783,8 +3795,23 @@ static void bh_worker(struct worker *worker)
 
 		if (assign_work(work, worker, NULL))
 			process_scheduled_works(worker);
-	} while (keep_working(pool) &&
-		 --nr_restarts && time_before(jiffies, end));
+
+		if (!keep_working(pool))
+			break;
+
+		if (!--nr_restarts) {
+			budget_exhausted = true;
+			break;
+		}
+
+		if (!time_before(jiffies, end)) {
+			budget_exhausted = true;
+			timeout = true;
+			break;
+		}
+
+		restarts++;
+	} while (1);
 
 	worker_set_flags(worker, WORKER_PREP);
 done:
@@ -3792,6 +3819,10 @@ done:
 	kick_pool(pool);
 	raw_spin_unlock_irq(&pool->lock);
 	worker_unlock_callback(pool);
+
+	if (budget_exhausted)
+		trace_workqueue_bh_budget_yield(pool, restarts, timeout,
+						pool->attrs->nice == HIGHPRI_NICE_LEVEL);
 }
 
 /*

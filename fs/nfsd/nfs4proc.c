@@ -73,6 +73,43 @@ MODULE_PARM_DESC(nfsd4_ssc_umount_timeout,
 
 #define NFSDDBG_FACILITY		NFSDDBG_PROC
 
+static const struct nfsd_access_map nfsd4_regaccess[] = {
+	{ NFS4_ACCESS_READ,	NFSD_MAY_READ				},
+	{ NFS4_ACCESS_EXECUTE,	NFSD_MAY_EXEC				},
+	{ NFS4_ACCESS_MODIFY,	NFSD_MAY_WRITE|NFSD_MAY_TRUNC		},
+	{ NFS4_ACCESS_EXTEND,	NFSD_MAY_WRITE				},
+	{ NFS4_ACCESS_XAREAD,	NFSD_MAY_READ				},
+	{ NFS4_ACCESS_XAWRITE,	NFSD_MAY_WRITE				},
+	{ NFS4_ACCESS_XALIST,	NFSD_MAY_READ				},
+	{ 0,			0					}
+};
+
+static const struct nfsd_access_map nfsd4_diraccess[] = {
+	{ NFS4_ACCESS_READ,	NFSD_MAY_READ				},
+	{ NFS4_ACCESS_LOOKUP,	NFSD_MAY_EXEC				},
+	{ NFS4_ACCESS_MODIFY,	NFSD_MAY_EXEC|NFSD_MAY_WRITE|NFSD_MAY_TRUNC },
+	{ NFS4_ACCESS_EXTEND,	NFSD_MAY_EXEC|NFSD_MAY_WRITE		},
+	{ NFS4_ACCESS_DELETE,	NFSD_MAY_REMOVE				},
+	{ NFS4_ACCESS_XAREAD,	NFSD_MAY_READ				},
+	{ NFS4_ACCESS_XAWRITE,	NFSD_MAY_WRITE				},
+	{ NFS4_ACCESS_XALIST,	NFSD_MAY_READ				},
+	{ 0,			0					}
+};
+
+static const struct nfsd_access_map nfsd4_otheraccess[] = {
+	{ NFS4_ACCESS_READ,	NFSD_MAY_READ				},
+	{ NFS4_ACCESS_EXECUTE,	NFSD_MAY_EXEC				},
+	{ NFS4_ACCESS_MODIFY,	NFSD_MAY_WRITE|NFSD_MAY_LOCAL_ACCESS	},
+	{ NFS4_ACCESS_EXTEND,	NFSD_MAY_WRITE|NFSD_MAY_LOCAL_ACCESS	},
+	{ 0,			0					}
+};
+
+static const struct nfsd_access_maps nfsd4_access_maps = {
+	.regular	= nfsd4_regaccess,
+	.directory	= nfsd4_diraccess,
+	.other		= nfsd4_otheraccess,
+};
+
 static int nfsd4_iocb_flags(enum stable_how4 how)
 {
 	switch (how) {
@@ -844,17 +881,18 @@ nfsd4_access(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	struct nfsd4_access *access = &u->access;
 	u32 access_full;
 
-	access_full = NFS3_ACCESS_FULL;
+	access_full = NFS4_ACCESS_READ | NFS4_ACCESS_LOOKUP |
+		      NFS4_ACCESS_MODIFY | NFS4_ACCESS_EXTEND |
+		      NFS4_ACCESS_DELETE | NFS4_ACCESS_EXECUTE;
 	if (cstate->minorversion >= 2)
 		access_full |= NFS4_ACCESS_XALIST | NFS4_ACCESS_XAREAD |
 			       NFS4_ACCESS_XAWRITE;
 
 	if (access->ac_req_access & ~access_full)
 		return nfserr_inval;
-
 	access->ac_resp_access = access->ac_req_access;
-	return nfsd_access(rqstp, &cstate->current_fh, &access->ac_resp_access,
-			   &access->ac_supported);
+	return nfsd_access(rqstp, &cstate->current_fh, &nfsd4_access_maps,
+			   &access->ac_resp_access, &access->ac_supported);
 }
 
 static __be32
@@ -1487,16 +1525,37 @@ nfsd4_clone(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 {
 	struct nfsd4_clone *clone = &u->clone;
 	struct nfsd_file *src, *dst;
+	bool sync_failed = false;
+	errseq_t since;
 	__be32 status;
+	int host_err;
 
 	status = nfsd4_verify_copy(rqstp, cstate, &clone->cl_src_stateid, &src,
 				   &clone->cl_dst_stateid, &dst);
 	if (status)
 		goto out;
 
-	status = nfsd4_clone_file_range(rqstp, src, clone->cl_src_pos,
-			dst, clone->cl_dst_pos, clone->cl_count,
-			EX_ISSYNC(cstate->current_fh.fh_export));
+	host_err = nfsd_clone_file_range(src->nf_file, clone->cl_src_pos,
+					 dst->nf_file, clone->cl_dst_pos,
+					 clone->cl_count, &since);
+	if (!host_err && EX_ISSYNC(cstate->current_fh.fh_export)) {
+		host_err = nfsd_clone_sync_range(src->nf_file, dst->nf_file,
+						 clone->cl_dst_pos,
+						 clone->cl_count, since);
+		sync_failed = host_err < 0;
+	}
+	if (host_err < 0) {
+		trace_nfsd_clone_file_range_err(rqstp, &cstate->save_fh,
+				clone->cl_src_pos, &cstate->current_fh,
+				clone->cl_dst_pos, clone->cl_count, host_err);
+		if (sync_failed) {
+			struct nfsd_net *nn = net_generic(dst->nf_net,
+							  nfsd_net_id);
+
+			nfsd_maybe_reset_write_verifier(nn, rqstp, host_err);
+		}
+	}
+	status = nfserrno(host_err);
 
 	if (!status && (READ_ONCE(dst->nf_file->f_mode) & FMODE_NOCMTIME) != 0)
 		nfsd_update_cmtime_attr(dst->nf_file, 0);

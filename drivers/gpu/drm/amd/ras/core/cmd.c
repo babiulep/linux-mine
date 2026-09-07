@@ -321,7 +321,7 @@ static int ras_cmd_get_batch_trace_records(struct ras_core_context *ras_core,
 	    (input_data->start_batch_id >= overview.last_batch_id))
 		return RAS_CMD__ERROR_INVALID_INPUT_SIZE;
 
-	trace_arry = kcalloc(trace_count, sizeof(*trace_arry), GFP_KERNEL);
+	trace_arry = kzalloc_objs(*trace_arry, trace_count);
 	if (!trace_arry)
 		return RAS_CMD__ERROR_GENERIC;
 

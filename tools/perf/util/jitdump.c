@@ -14,6 +14,8 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <linux/stringify.h>
+#include <linux/kernel.h>
+#include <linux/unaligned.h>
 
 #include "event.h"
 #include "debug.h"
@@ -343,9 +345,14 @@ jit_get_next_entry(struct jit_buf_desc *jd)
 				/* name must be NUL-terminated within the record */
 				if (!memchr(ent->name, '\0', (char *)end - ent->name))
 					break;
-				ent->addr    = bswap_64(ent->addr);
-				ent->lineno  = bswap_32(ent->lineno);
-				ent->discrim = bswap_32(ent->discrim);
+				/*
+				 * debug entries are packed with a variable-length
+				 * name[], so entries after the first may be
+				 * unaligned: byte-swap via unaligned-safe accessors.
+				 */
+				put_unaligned(bswap_64(get_unaligned(&ent->addr)), &ent->addr);
+				put_unaligned(bswap_32(get_unaligned(&ent->lineno)), &ent->lineno);
+				put_unaligned(bswap_32(get_unaligned(&ent->discrim)), &ent->discrim);
 				ent = debug_entry_next(ent);
 			}
 			/* clamp so downstream consumers don't overrun */
@@ -465,10 +472,8 @@ static int jit_repipe_code_load(struct jit_buf_desc *jd, union jr_entry *jr)
 	int ret, csize;
 	uint64_t usize;
 	pid_t nspid, pid, tid;
-	struct {
-		u32 pid, tid;
-		u64 time;
-	} *id;
+	uint64_t timestamp = 0;
+	unsigned long id;
 
 	nspid = jr->load.pid;
 	pid   = jr_entry_pid(jd, jr);
@@ -523,7 +528,7 @@ static int jit_repipe_code_load(struct jit_buf_desc *jd, union jr_entry *jr)
 		jd->nr_debug_entries = 0;
 	}
 
-	if (jd->unwinding_data && jd->eh_frame_hdr_size) {
+	if (jd->unwinding_data) {
 		zfree(&jd->unwinding_data);
 		jd->eh_frame_hdr_size = 0;
 		jd->unwinding_mapped_size = 0;
@@ -554,13 +559,27 @@ static int jit_repipe_code_load(struct jit_buf_desc *jd, union jr_entry *jr)
 	event->mmap2.flags = MAP_SHARED;
 	event->mmap2.ino_generation = 1;
 
-	id = (void *)((unsigned long)event + event->mmap.header.size - idr_size);
+	/*
+	 * The sample id fields are appended in the order accounted for by
+	 * evsel__id_hdr_size(), skipping the ones not requested in
+	 * sample_type, so they cannot be written through a fixed struct:
+	 * with PERF_SAMPLE_TID unset, PERF_SAMPLE_TIME starts at offset 0
+	 * and idr_size is 8, so storing it at offset 8 runs past the end of
+	 * the event allocation.
+	 */
+	id = (unsigned long)event + event->mmap.header.size - idr_size;
 	if (jd->sample_type & PERF_SAMPLE_TID) {
-		id->pid  = pid;
-		id->tid  = tid;
+		struct { u32 pid, tid; } *id_tid = (void *)id;
+
+		id_tid->pid = pid;
+		id_tid->tid = tid;
+		id += sizeof(u64);
 	}
-	if (jd->sample_type & PERF_SAMPLE_TIME)
-		id->time = convert_timestamp(jd, jr->load.p.timestamp);
+	if (jd->sample_type & PERF_SAMPLE_TIME) {
+		timestamp = convert_timestamp(jd, jr->load.p.timestamp);
+		*(u64 *)id = timestamp;
+		id += sizeof(u64);
+	}
 
 	/*
 	 * create pseudo sample to induce dso hit increment
@@ -570,7 +589,7 @@ static int jit_repipe_code_load(struct jit_buf_desc *jd, union jr_entry *jr)
 	sample.cpumode = PERF_RECORD_MISC_USER;
 	sample.pid  = pid;
 	sample.tid  = tid;
-	sample.time = id->time;
+	sample.time = timestamp;
 	sample.ip   = addr;
 
 	ret = perf_event__process_mmap2(tool, event, &sample, jd->machine);
@@ -617,10 +636,8 @@ static int jit_repipe_code_move(struct jit_buf_desc *jd, union jr_entry *jr)
 	u16 idr_size;
 	int ret;
 	pid_t nspid, pid, tid;
-	struct {
-		u32 pid, tid;
-		u64 time;
-	} *id;
+	uint64_t timestamp = 0;
+	unsigned long id;
 
 	nspid = jr->load.pid;
 	pid   = jr_entry_pid(jd, jr);
@@ -629,9 +646,10 @@ static int jit_repipe_code_move(struct jit_buf_desc *jd, union jr_entry *jr)
 	idr_size = jd->machine->id_hdr_size;
 
 	/*
-	 * +16 to account for sample_id_all (hack)
+	 * Sample ID is written past the end of the mmap2 record; size
+	 * the allocation to account for it instead of a hardcoded +16.
 	 */
-	event = calloc(1, sizeof(*event) + 16);
+	event = calloc(1, sizeof(*event) + idr_size);
 	if (!event)
 		return -1;
 
@@ -668,13 +686,27 @@ static int jit_repipe_code_move(struct jit_buf_desc *jd, union jr_entry *jr)
 	event->mmap2.flags = MAP_SHARED;
 	event->mmap2.ino_generation = 1;
 
-	id = (void *)((unsigned long)event + event->mmap.header.size - idr_size);
+	/*
+	 * The sample id fields are appended in the order accounted for by
+	 * evsel__id_hdr_size(), skipping the ones not requested in
+	 * sample_type, so they cannot be written through a fixed struct:
+	 * with PERF_SAMPLE_TID unset, PERF_SAMPLE_TIME starts at offset 0
+	 * and idr_size is 8, so storing it at offset 8 runs past the end of
+	 * the event allocation.
+	 */
+	id = (unsigned long)event + event->mmap.header.size - idr_size;
 	if (jd->sample_type & PERF_SAMPLE_TID) {
-		id->pid  = pid;
-		id->tid  = tid;
+		struct { u32 pid, tid; } *id_tid = (void *)id;
+
+		id_tid->pid = pid;
+		id_tid->tid = tid;
+		id += sizeof(u64);
 	}
-	if (jd->sample_type & PERF_SAMPLE_TIME)
-		id->time = convert_timestamp(jd, jr->load.p.timestamp);
+	if (jd->sample_type & PERF_SAMPLE_TIME) {
+		timestamp = convert_timestamp(jd, jr->load.p.timestamp);
+		*(u64 *)id = timestamp;
+		id += sizeof(u64);
+	}
 
 	/*
 	 * create pseudo sample to induce dso hit increment
@@ -684,7 +716,7 @@ static int jit_repipe_code_move(struct jit_buf_desc *jd, union jr_entry *jr)
 	sample.cpumode = PERF_RECORD_MISC_USER;
 	sample.pid  = pid;
 	sample.tid  = tid;
-	sample.time = id->time;
+	sample.time = timestamp;
 	sample.ip   = jr->move.new_code_addr;
 
 	ret = perf_event__process_mmap2(tool, event, &sample, jd->machine);

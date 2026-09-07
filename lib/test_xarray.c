@@ -1250,59 +1250,67 @@ static noinline void check_multi_find_3(struct xarray *xa)
 static noinline void check_multi_find_4(struct xarray *xa)
 {
 #ifdef CONFIG_XARRAY_MULTI
-	XA_STATE(xas, xa, 100);
+	unsigned int order = XA_CHUNK_SHIFT + 1;
+	unsigned long next = 1UL << order;
+	unsigned long start = next - 1;
+	XA_STATE(xas, xa, start);
 	XA_STATE_ORDER(split, xa, 0, 0);
 	void *entry;
 	unsigned long i;
 
-	/* (1) Order-7 entry (0-127) with adjacent entry at 128, starting at 100 */
-	xa_store_order(xa, 0, 7, xa_mk_index(0), GFP_KERNEL);
-	XA_BUG_ON(xa, xa_store_index(xa, 128, GFP_KERNEL) != NULL);
+	/* Multi-index entry in two slots of a non-leaf node. */
+	xa_store_order(xa, 0, order, xa_mk_index(0), GFP_KERNEL);
+	XA_BUG_ON(xa, xa_store_index(xa, next, GFP_KERNEL) != NULL);
 
 	rcu_read_lock();
 	entry = xas_find(&xas, ULONG_MAX);
 	XA_BUG_ON(xa, entry != xa_mk_index(0));
-	XA_BUG_ON(xa, xas.xa_index != 100);
+	XA_BUG_ON(xa, xas.xa_index != start);
 
 	entry = xas_find(&xas, ULONG_MAX);
-	XA_BUG_ON(xa, entry != xa_mk_index(128));
-	XA_BUG_ON(xa, xas.xa_index != 128);
+	XA_BUG_ON(xa, entry != xa_mk_index(next));
+	XA_BUG_ON(xa, xas.xa_index != next);
 
 	entry = xas_find(&xas, ULONG_MAX);
 	XA_BUG_ON(xa, entry != NULL);
 	rcu_read_unlock();
 
-	xa_erase_index(xa, 128);
+	xa_erase_index(xa, next);
 	xa_erase_index(xa, 0);
 	XA_BUG_ON(xa, !xa_empty(xa));
 
-	/* (2) Splitting a multi-index entry after a lookup begins inside it */
-	xa_store_order(xa, 0, 7, xa_mk_index(0), GFP_KERNEL);
-	XA_BUG_ON(xa, xa_store_index(xa, 128, GFP_KERNEL) != NULL);
+	/* Split the multi-index entry after a lookup begins inside it. */
+	xa_store_order(xa, 0, order, xa_mk_index(0), GFP_KERNEL);
+	XA_BUG_ON(xa, xa_store_index(xa, next, GFP_KERNEL) != NULL);
 
-	xas_set(&xas, 100);
+	xas_set(&xas, start);
 	rcu_read_lock();
 	entry = xas_find(&xas, ULONG_MAX);
 	XA_BUG_ON(xa, entry != xa_mk_index(0));
-	XA_BUG_ON(xa, xas.xa_index != 100);
+	XA_BUG_ON(xa, xas.xa_index != start);
 	rcu_read_unlock();
 
-	xas_split_alloc(&split, xa_mk_index(0), 7, GFP_KERNEL);
+	xas_split_alloc(&split, xa_mk_index(0), order, GFP_KERNEL);
+	if (xas_error(&split)) {
+		XA_BUG_ON(xa, true);
+		goto out;
+	}
 	xas_lock(&split);
-	xas_split(&split, xa_mk_index(0), 7);
-	for (i = 0; i < 128; i++)
+	xas_split(&split, xa_mk_index(0), order);
+	for (i = 0; i < next; i++)
 		__xa_store(xa, i, xa_mk_index(i), 0);
 	xas_unlock(&split);
 
 	rcu_read_lock();
 	entry = xas_find(&xas, ULONG_MAX);
-	XA_BUG_ON(xa, entry != xa_mk_index(128));
-	XA_BUG_ON(xa, xas.xa_index != 128);
+	XA_BUG_ON(xa, entry != xa_mk_index(next));
+	XA_BUG_ON(xa, xas.xa_index != next);
 
 	entry = xas_find(&xas, ULONG_MAX);
 	XA_BUG_ON(xa, entry != NULL);
 	rcu_read_unlock();
 
+out:
 	xa_destroy(xa);
 	XA_BUG_ON(xa, !xa_empty(xa));
 #endif
