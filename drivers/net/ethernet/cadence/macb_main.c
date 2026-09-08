@@ -4300,9 +4300,9 @@ static int macb_taprio_setup_replace(struct net_device *netdev,
 	u64 total_on_time = 0, start_time_sec = 0, start_time = conf->base_time;
 	u32 configured_queues = 0, speed = 0, start_time_nsec;
 	struct macb_queue_enst_config *enst_queue;
-	struct tc_taprio_sched_entry *entry;
+	struct ethtool_link_ksettings kset = {};
 	struct macb *bp = netdev_priv(netdev);
-	struct ethtool_link_ksettings kset;
+	struct tc_taprio_sched_entry *entry;
 	struct macb_queue *queue;
 	u32 queue_mask;
 	u8 queue_id;
@@ -4329,8 +4329,8 @@ static int macb_taprio_setup_replace(struct net_device *netdev,
 	}
 
 	speed = kset.base.speed;
-	if (unlikely(speed <= 0)) {
-		netdev_err(netdev, "Invalid speed: %d\n", speed);
+	if (unlikely(speed == SPEED_UNKNOWN || !speed)) {
+		netdev_err(netdev, "Invalid speed %d, link-down?\n", speed);
 		return -EINVAL;
 	}
 
@@ -5380,7 +5380,7 @@ static int fu540_c000_clk_init(struct platform_device *pdev, struct clk **pclk,
 			       struct clk **hclk, struct clk **tx_clk,
 			       struct clk **rx_clk, struct clk **tsu_clk)
 {
-	struct clk_init_data init;
+	struct clk_init_data init = {};
 	int err = 0;
 
 	err = macb_clk_init_dflt(pdev, pclk, hclk, tx_clk, rx_clk, tsu_clk);

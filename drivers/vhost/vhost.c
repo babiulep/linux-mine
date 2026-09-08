@@ -1957,7 +1957,11 @@ int vq_meta_prefetch(struct vhost_virtqueue *vq)
 {
 	unsigned int num = vq->num;
 
-	if (!vq->desc || !vq->avail || !vq->used)
+	/*
+	 * vhost_vq_invalidate_access() clears all three addresses together.
+	 * A single zero address may be a valid GIOVA in IOTLB mode.
+	 */
+	if (!vq->desc && !vq->avail && !vq->used)
 		return 0;
 
 	if (!vq->iotlb)
@@ -2339,24 +2343,24 @@ void vhost_clear_device_iotlb(struct vhost_dev *d)
 	if (!iotlb)
 		return;
 
+	vhost_dev_lock_vqs(d);
+
 	/*
-	 * Drop the device-wide view first.  Each VQ then drops its
-	 * per-VQ view and its cached ring access under its own mutex.
-	 * Keep the old table alive until every VQ has completed this
-	 * handoff, since a worker may still be using it while waiting
-	 * for its VQ mutex.
+	 * vhost_dev_lock_vqs() takes all VQ mutexes in index order.  Drop the
+	 * device-wide view while they are held, then clear each per-VQ view
+	 * and its cached ring access before releasing the locks.  Workers
+	 * cannot observe a mixed address-space state during this handoff.
 	 */
 	d->iotlb = NULL;
 
 	for (i = 0; i < d->nvqs; ++i) {
 		struct vhost_virtqueue *vq = d->vqs[i];
 
-		mutex_lock(&vq->mutex);
 		vq->iotlb = NULL;
 		vhost_vq_invalidate_access(vq);
-		mutex_unlock(&vq->mutex);
 	}
 
+	vhost_dev_unlock_vqs(d);
 	vhost_clear_msg(d);
 	vhost_iotlb_free(iotlb);
 	wake_up_interruptible_poll(&d->wait, EPOLLIN | EPOLLRDNORM);
@@ -2367,9 +2371,6 @@ int vhost_init_device_iotlb(struct vhost_dev *d)
 {
 	struct vhost_iotlb *niotlb, *oiotlb;
 	int i;
-
-	if (d->iotlb)
-		return 0;
 
 	if (max_iotlb_entries <= 0)
 		return -EINVAL;
@@ -2386,7 +2387,10 @@ int vhost_init_device_iotlb(struct vhost_dev *d)
 
 		mutex_lock(&vq->mutex);
 		vq->iotlb = niotlb;
-		vhost_vq_invalidate_access(vq);
+		if (oiotlb)
+			__vhost_vq_meta_reset(vq);
+		else
+			vhost_vq_invalidate_access(vq);
 		mutex_unlock(&vq->mutex);
 	}
 

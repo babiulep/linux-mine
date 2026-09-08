@@ -50,7 +50,7 @@ static void virtinput_recv_events(struct virtqueue *vq)
 				    le32_to_cpu(event->value));
 			spin_lock_irqsave(&vi->lock, flags);
 			if (!vi->ready)
-				break;
+				continue;
 			virtinput_queue_evtbuf(vi, event);
 		}
 		if (vi->ready)
@@ -354,7 +354,7 @@ static void virtinput_remove(struct virtio_device *vdev)
 	vi->ready = false;
 	spin_unlock_irqrestore(&vi->lock, flags);
 
-	/* Stop callbacks before unregistering the input device. */
+	/* Callbacks use vi->idev. */
 	virtio_reset_device(vdev);
 	input_unregister_device(vi->idev);
 	while ((buf = virtqueue_detach_unused_buf(vi->sts)) != NULL)
