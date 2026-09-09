@@ -46,7 +46,7 @@ vfs-brauner	https://git.kernel.org/pub/scm/linux/kernel/git/vfs/vfs.git#vfs.all
 vfs		https://git.kernel.org/pub/scm/linux/kernel/git/viro/vfs.git#for-next
 mm-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/mm/linux.git#for-next-fixes
 kbuild-current	https://git.kernel.org/pub/scm/linux/kernel/git/kbuild/linux.git#kbuild-fixes-for-next
-clang-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/nathan/linux.git#clang-fixes-for-next
+clang-fixes-current	https://git.kernel.org/pub/scm/linux/kernel/git/nathan/linux.git#clang-fixes-for-current
 arc-current	https://git.kernel.org/pub/scm/linux/kernel/git/vgupta/arc.git#for-curr
 arm-current	https://git.kernel.org/pub/scm/linux/kernel/git/rmk/linux.git#fixes
 arm64-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux#for-next/fixes
@@ -177,6 +177,7 @@ mm		https://git.kernel.org/pub/scm/linux/kernel/git/mm/linux.git#for-next
 mm-nonmm-stable	https://git.kernel.org/pub/scm/linux/kernel/git/akpm/mm#mm-nonmm-stable
 mm-nonmm-unstable	https://git.kernel.org/pub/scm/linux/kernel/git/akpm/mm#mm-nonmm-unstable
 kbuild		https://git.kernel.org/pub/scm/linux/kernel/git/kbuild/linux.git#kbuild-for-next
+clang-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/nathan/linux.git#clang-fixes-for-next
 clang-format	https://github.com/ojeda/linux.git#clang-format
 perf		https://git.kernel.org/pub/scm/linux/kernel/git/perf/perf-tools-next.git#perf-tools-next
 compiler-attributes	https://github.com/ojeda/linux.git#compiler-attributes

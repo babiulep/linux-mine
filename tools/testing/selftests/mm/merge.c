@@ -1381,7 +1381,7 @@ TEST_F(merge, merge_map_private_dev_zero_unfaulted)
 	 *
 	 * With these being made truly anonymous upon mapping, they will
 	 * merge. If they were file-backed VMAs the page offsets would prevent
-	 * merge:
+	 * the merge:
 	 *
 	 * |-----||------|    |-------------|
 	 * | ptr || ptr2 | -> |     ptr     |
@@ -1389,17 +1389,11 @@ TEST_F(merge, merge_map_private_dev_zero_unfaulted)
 	 */
 	ptr = mmap(carveout, 5 * page_size, PROT_READ | PROT_WRITE,
 		   MAP_FIXED | MAP_PRIVATE, fd_zero, 0);
-	if (ptr == MAP_FAILED) {
-		close(fd_zero);
-		ASSERT_TRUE(false);
-	}
 	ptr2 = mmap(&carveout[5 * page_size], 5 * page_size,
 		   PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE, fd_zero, 0);
-	if (ptr2 == MAP_FAILED) {
-		close(fd_zero);
-		ASSERT_TRUE(false);
-	}
 	close(fd_zero);
+	ASSERT_NE(ptr, MAP_FAILED);
+	ASSERT_NE(ptr2, MAP_FAILED);
 
 	/* Assert that they merged. */
 	ASSERT_TRUE(find_vma_procmap(procmap, ptr));
@@ -1430,10 +1424,7 @@ TEST_F(merge, merge_map_private_dev_zero_faulted_unfaulted)
 	 */
 	ptr = mmap(carveout, 15 * page_size, PROT_READ | PROT_WRITE,
 		   MAP_FIXED | MAP_PRIVATE, fd_zero, 0);
-	if (ptr == MAP_FAILED) {
-		close(fd_zero);
-		ASSERT_TRUE(false);
-	}
+	ASSERT_NE(ptr, MAP_FAILED);
 	memset(ptr, 'x', 15 * page_size);
 
 	/*

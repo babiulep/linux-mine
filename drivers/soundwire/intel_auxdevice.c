@@ -672,7 +672,8 @@ static int __maybe_unused intel_suspend(struct device *dev)
 		return 0;
 	}
 
-	ret = sdw_intel_stop_bus(sdw, false);
+	/* Perform clock stop with proper mode and keep the bus unwakeable in system suspend. */
+	ret = sdw_intel_stop_bus(sdw, true, false);
 	if (ret < 0) {
 		dev_err(dev, "%s: cannot stop bus: %d\n", __func__, ret);
 		return ret;
@@ -698,14 +699,14 @@ static int __maybe_unused intel_suspend_runtime(struct device *dev)
 	clock_stop_quirks = sdw->link_res->clock_stop_quirks;
 
 	if (clock_stop_quirks & SDW_INTEL_CLK_STOP_TEARDOWN) {
-		ret = sdw_intel_stop_bus(sdw, false);
+		ret = sdw_intel_stop_bus(sdw, false, false);
 		if (ret < 0) {
 			dev_err(dev, "%s: cannot stop bus during teardown: %d\n",
 				__func__, ret);
 			return ret;
 		}
 	} else if (clock_stop_quirks & SDW_INTEL_CLK_STOP_BUS_RESET || !clock_stop_quirks) {
-		ret = sdw_intel_stop_bus(sdw, true);
+		ret = sdw_intel_stop_bus(sdw, true, true);
 		if (ret < 0) {
 			dev_err(dev, "%s: cannot stop bus during clock_stop: %d\n",
 				__func__, ret);
