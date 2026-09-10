@@ -66,8 +66,8 @@ static const char *xfeature_names[] =
 	"AMX Tile config",
 	"AMX Tile data",
 	"APX registers",
+	"unknown xstate feature",
 };
-static_assert(ARRAY_SIZE(xfeature_names) == XFEATURE_MAX);
 
 static unsigned short xsave_cpuid_features[] __initdata = {
 	[XFEATURE_FP]				= X86_FEATURE_FPU,
@@ -121,6 +121,44 @@ static inline unsigned int next_xfeature_order(unsigned int i, u64 mask)
 
 #define XSTATE_FLAG_SUPERVISOR	BIT(0)
 #define XSTATE_FLAG_ALIGNED64	BIT(1)
+
+/*
+ * Return whether the system supports a given xfeature.
+ *
+ * Also return the name of the (most advanced) feature that the caller requested:
+ */
+int cpu_has_xfeatures(u64 xfeatures_needed, const char **feature_name)
+{
+	u64 xfeatures_missing = xfeatures_needed & ~fpu_kernel_cfg.max_features;
+
+	if (unlikely(feature_name)) {
+		long xfeature_idx, max_idx;
+		u64 xfeatures_print;
+		/*
+		 * So we use FLS here to be able to print the most advanced
+		 * feature that was requested but is missing. So if a driver
+		 * asks about "XFEATURE_MASK_SSE | XFEATURE_MASK_YMM" we'll print the
+		 * missing AVX feature - this is the most informative message
+		 * to users:
+		 */
+		if (xfeatures_missing)
+			xfeatures_print = xfeatures_missing;
+		else
+			xfeatures_print = xfeatures_needed;
+
+		xfeature_idx = fls64(xfeatures_print)-1;
+		max_idx = ARRAY_SIZE(xfeature_names)-1;
+		xfeature_idx = min(xfeature_idx, max_idx);
+
+		*feature_name = xfeature_names[xfeature_idx];
+	}
+
+	if (xfeatures_missing)
+		return 0;
+
+	return 1;
+}
+EXPORT_SYMBOL_GPL(cpu_has_xfeatures);
 
 static bool xfeature_is_aligned64(int xfeature_nr)
 {
@@ -264,9 +302,9 @@ static void __init print_xstate_features(void)
 
 	for (i = 0; i < XFEATURE_MAX; i++) {
 		u64 mask = BIT_ULL(i);
-		const char *name = xfeature_names[i];
+		const char *name;
 
-		if (fpu_kernel_cfg.max_features & mask)
+		if (cpu_has_xfeatures(mask, &name))
 			pr_info("x86/fpu: Supporting XSAVE feature 0x%03Lx: '%s'\n", mask, name);
 	}
 }
@@ -768,7 +806,7 @@ static u64 __init guest_default_mask(void)
 void __init fpu__init_system_xstate(unsigned int legacy_size)
 {
 	unsigned int eax, ebx, ecx, edx;
-	u64 xfeatures, mask;
+	u64 xfeatures;
 	int err;
 	int i;
 
@@ -780,8 +818,6 @@ void __init fpu__init_system_xstate(unsigned int legacy_size)
 	if (!boot_cpu_has(X86_FEATURE_XSAVE)) {
 		pr_info("x86/fpu: x87 FPU will use %s\n",
 			boot_cpu_has(X86_FEATURE_FXSR) ? "FXSAVE" : "FSAVE");
-		/* Disable all dependent flags too */
-		setup_clear_cpu_cap(X86_FEATURE_XSAVE);
 		return;
 	}
 
@@ -797,8 +833,7 @@ void __init fpu__init_system_xstate(unsigned int legacy_size)
 	cpuid_count(CPUID_LEAF_XSTATE, 1, &eax, &ebx, &ecx, &edx);
 	fpu_kernel_cfg.max_features |= ecx + ((u64)edx << 32);
 
-	mask = XFEATURE_MASK_FPSSE;
-	if ((fpu_kernel_cfg.max_features & mask) != mask) {
+	if ((fpu_kernel_cfg.max_features & XFEATURE_MASK_FPSSE) != XFEATURE_MASK_FPSSE) {
 		/*
 		 * This indicates that something really unexpected happened
 		 * with the enumeration.  Disable XSAVE and try to continue
@@ -807,24 +842,6 @@ void __init fpu__init_system_xstate(unsigned int legacy_size)
 		pr_err("x86/fpu: FP/SSE not present amongst the CPU's xstate features: 0x%llx.\n",
 		       fpu_kernel_cfg.max_features);
 		goto out_disable;
-	}
-
-	mask |= XFEATURE_MASK_YMM;
-	if (boot_cpu_has(X86_FEATURE_AVX)) {
-		if ((fpu_kernel_cfg.max_features & mask) != mask) {
-			pr_err(FW_BUG
-			       "x86/fpu: Disabling AVX support due to missing xstate features\n");
-			setup_clear_cpu_cap(X86_FEATURE_AVX);
-		}
-	}
-
-	mask |= XFEATURE_MASK_AVX512;
-	if (boot_cpu_has(X86_FEATURE_AVX512F)) {
-		if ((fpu_kernel_cfg.max_features & mask) != mask) {
-			pr_err(FW_BUG
-			       "x86/fpu: Disabling AVX-512 support due to missing xstate features\n");
-			setup_clear_cpu_cap(X86_FEATURE_AVX512F);
-		}
 	}
 
 	if (fpu_kernel_cfg.max_features & XFEATURE_MASK_APX &&
