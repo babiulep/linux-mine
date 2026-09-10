@@ -59,6 +59,7 @@
 #include <linux/profile.h>
 #include <linux/psi.h>
 #include <linux/rcuwait_api.h>
+#include <linux/hazptr.h>
 #include <linux/rseq.h>
 #include <linux/sched/wake_q.h>
 #include <linux/scs.h>
@@ -5777,8 +5778,8 @@ void sched_tick(void)
 {
 	int cpu = smp_processor_id();
 	struct rq *rq = cpu_rq(cpu);
-	/* accounting goes to the donor task */
-	struct task_struct *donor;
+	/* scheduler accounting goes to the donor task */
+	struct task_struct *curr, *donor;
 	struct rq_flags rf;
 	unsigned long hw_pressure;
 	u64 resched_latency;
@@ -5789,6 +5790,7 @@ void sched_tick(void)
 	sched_clock_tick();
 
 	rq_lock(rq, &rf);
+	curr = rq->curr;
 	donor = rq->donor;
 
 	psi_account_irqtime(rq, donor, NULL);
@@ -5814,8 +5816,8 @@ void sched_tick(void)
 
 	perf_event_task_tick();
 
-	if (donor->flags & PF_WQ_WORKER)
-		wq_worker_tick(donor);
+	if (curr->flags & PF_WQ_WORKER)
+		wq_worker_tick(curr);
 
 	if (!scx_switched_all()) {
 		rq->idle_balance = idle_cpu(cpu);
@@ -7148,6 +7150,7 @@ static void __sched notrace __schedule(int sched_mode)
 	local_irq_disable();
 	rcu_note_context_switch(preempt);
 	migrate_disable_switch(rq, prev);
+	hazptr_note_context_switch();
 
 	/*
 	 * Make sure that signal_pending_state()->signal_pending() below

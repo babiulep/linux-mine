@@ -7958,6 +7958,7 @@ S:	Supported
 F:	Documentation/devicetree/bindings/dpll/dpll-device.yaml
 F:	Documentation/devicetree/bindings/dpll/dpll-pin.yaml
 F:	Documentation/driver-api/dpll.rst
+F:	Documentation/netlink/specs/dpll.yaml
 F:	drivers/dpll/
 F:	include/linux/dpll.h
 F:	include/uapi/linux/dpll.h
@@ -14042,6 +14043,14 @@ T:	git https://gitlab.freedesktop.org/drm/misc/kernel.git
 F:	Documentation/devicetree/bindings/display/bridge/ite,it66121.yaml
 F:	drivers/gpu/drm/bridge/ite-it66121.c
 
+ITE IT6625 HDMI to MIPI MEDIA DRIVER
+M:	Hermes Wu <Hermes.Wu@ite.com.tw>
+S:	Maintained
+T:	git git://linuxtv.org/media.git
+F:	Documentation/devicetree/bindings/media/i2c/ite,it6625.yaml
+F:	drivers/media/i2c/it6625.c
+F:	include/uapi/linux/it6625.h
+
 IVTV VIDEO4LINUX DRIVER
 M:	Andy Walls <awalls@md.metrocast.net>
 L:	linux-media@vger.kernel.org
@@ -17145,8 +17154,8 @@ MEMBLOCK AND MEMORY MANAGEMENT INITIALIZATION
 M:	Mike Rapoport <rppt@kernel.org>
 L:	linux-mm@kvack.org
 S:	Maintained
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/rppt/memblock.git for-next
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/rppt/memblock.git fixes
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/mm/memblock.git for-next
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/mm/memblock.git fixes
 F:	Documentation/core-api/boot-time-mm.rst
 F:	include/linux/kho/abi/memblock.h
 F:	include/linux/memblock.h
@@ -27157,7 +27166,7 @@ TEXAS INSTRUMENTS DMA DRIVERS
 M:	Vignesh Raghavendra <vigneshr@ti.com>
 L:	dmaengine@vger.kernel.org
 S:	Maintained
-F:	Documentation/devicetree/bindings/dma/ti-dma-crossbar.txt
+F:	Documentation/devicetree/bindings/dma/ti,dra7-dma-crossbar.yaml
 F:	Documentation/devicetree/bindings/dma/ti-edma.txt
 F:	Documentation/devicetree/bindings/dma/ti/
 F:	drivers/dma/ti/
@@ -28148,6 +28157,12 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/clock/ultrarisc,dp1000-clk.yaml
 F:	drivers/clk/ultrarisc/*
 F:	include/dt-bindings/clock/ultrarisc,dp1000-clk.h
+
+ULTRARISC DP1000 DWMAC GLUE LAYER
+M:	Jia Wang <wangjia@ultrarisc.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/net/ultrarisc,dp1000-gmac.yaml
+F:	drivers/net/ethernet/stmicro/stmmac/dwmac-ultrarisc.c
 
 ULTRARISC DP1000 PINCTRL DRIVER
 M:	Jia Wang <wangjia@ultrarisc.com>

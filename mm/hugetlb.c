@@ -2927,15 +2927,8 @@ struct folio *hugetlb_alloc_folio(struct hstate *h,
 		 * would have cleared those up.
 		 */
 		/*
-		 * Return -ENOSPC when this function fails to allocate
-		 * or charge a huge page. If a standard (PAGE_SIZE)
-		 * page allocation fails, the OOM killer is given a
-		 * chance to run, which may resolve the failure on
-		 * retry. However, for HugeTLB allocations, the OOM
-		 * killer is not triggered.  Returning -ENOMEM (or
-		 * anything resulting in VM_FAULT_OOM) would leak to
-		 * the #PF handler, causing it to loop indefinitely
-		 * retrying the fault.
+		 * Return -ENOSPC, since retrying the fault is futile:
+		 * the OOM killer is not triggered for HugeTLB.
 		 */
 		return ERR_PTR(-ENOSPC);
 	}

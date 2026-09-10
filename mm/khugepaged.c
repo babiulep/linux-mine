@@ -1790,13 +1790,10 @@ out_unmap:
 				       unmapped, cc, enabled_orders);
 		/* mmap_lock was released above, set lock_dropped */
 		*lock_dropped = true;
-		trace_mm_khugepaged_scan_pmd(mm, -1, referenced, none_or_zero,
-					     SCAN_SUCCEED, unmapped);
-	} else {
-out:
-		trace_mm_khugepaged_scan_pmd(mm, failed_pfn, referenced,
-					     none_or_zero, result, unmapped);
 	}
+out:
+	trace_mm_khugepaged_scan_pmd(mm, failed_pfn, referenced,
+				     none_or_zero, result, unmapped);
 	return result;
 }
 
@@ -2796,13 +2793,9 @@ static enum scan_result collapse_scan_file(struct mm_struct *mm,
 		} else {
 			result = collapse_file(mm, addr, file, start, cc);
 		}
-		trace_mm_khugepaged_scan_file(mm, -1, file, present, swap,
-					      SCAN_SUCCEED);
-	} else {
-		trace_mm_khugepaged_scan_file(mm, failed_pfn, file, present,
-					      swap, result);
 	}
 
+	trace_mm_khugepaged_scan_file(mm, failed_pfn, file, present, swap, result);
 	return result;
 }
 
