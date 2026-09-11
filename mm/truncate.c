@@ -206,41 +206,35 @@ static int folio_split_or_unmap(struct folio *folio, struct page *split_at,
 /*
  * Handle partial folios.  The folio may be entirely within the
  * range if a split has raced with us.  If not, we zero the part of the
- * folio that's within the [lstart, lend] range, and then split the folio if
+ * folio that's within the [start, end] range, and then split the folio if
  * it's large.  split_page_range() will discard pages which now lie beyond
  * i_size, and we rely on the caller to discard pages which lie within a
  * newly created hole.
  *
- * When @pstart and/or @pend are non-NULL they receive the indexes of the
- * page range fully covered by [lstart, lend] after any split (or none),
- * i.e. the range of pages that are wholly within [lstart, lend] and so safe
- * to discard.
- *
- * Return %true if the folio was split, %false otherwise.
+ * Returns false if splitting failed so the caller can avoid
+ * discarding the entire folio which is stubbornly unsplit.
  */
-bool truncate_inode_partial_folio(struct folio *folio, loff_t lstart,
-				  loff_t lend, pgoff_t *pstart, pgoff_t *pend)
+bool truncate_inode_partial_folio(struct folio *folio, loff_t start, loff_t end)
 {
 	loff_t pos = folio_pos(folio);
 	size_t size = folio_size(folio);
 	unsigned int offset, length;
 	struct page *split_at, *split_at2;
-	unsigned long min_nrbytes;
 	unsigned int min_order;
 
-	if (pos < lstart)
-		offset = lstart - pos;
+	if (pos < start)
+		offset = start - pos;
 	else
 		offset = 0;
-	if (pos + size <= (u64)lend)
+	if (pos + size <= (u64)end)
 		length = size - offset;
 	else
-		length = lend + 1 - pos - offset;
+		length = end + 1 - pos - offset;
 
 	folio_wait_writeback(folio);
 	if (length == size) {
 		truncate_inode_folio(folio->mapping, folio);
-		goto no_split;
+		return true;
 	}
 
 	/*
@@ -254,10 +248,9 @@ bool truncate_inode_partial_folio(struct folio *folio, loff_t lstart,
 	if (folio_needs_release(folio))
 		folio_invalidate(folio, offset, length);
 	if (!folio_test_large(folio))
-		goto no_split;
+		return true;
 
 	min_order = mapping_min_folio_order(folio->mapping);
-	min_nrbytes = mapping_min_folio_nrbytes(folio->mapping);
 	split_at = folio_page(folio, PAGE_ALIGN_DOWN(offset) / PAGE_SIZE);
 	if (!folio_split_or_unmap(folio, split_at, min_order)) {
 		/*
@@ -266,67 +259,38 @@ bool truncate_inode_partial_folio(struct folio *folio, loff_t lstart,
 		 * for shmem truncate
 		 */
 		struct folio *folio2;
-		bool tail_isolated = true;
-
-		if (pend)
-			*pend = round_down(pos + offset + length,
-					   min_nrbytes) >> PAGE_SHIFT;
 
 		if (offset + length == size)
-			goto split;
-retry:
+			goto no_split;
+
 		split_at2 = folio_page(folio,
 				PAGE_ALIGN_DOWN(offset + length) / PAGE_SIZE);
 		folio2 = page_folio(split_at2);
 
 		if (!folio_try_get(folio2))
-			goto split;
+			goto no_split;
 
 		if (!folio_test_large(folio2))
 			goto out;
 
-		if (!folio_trylock(folio2)) {
-			tail_isolated = false;
+		if (!folio_trylock(folio2))
 			goto out;
-		}
-
-		/*
-		 * split_at2 may no longer belong to folio2 due to concurrent
-		 * split. Retry to find the correct folio in case it's still
-		 * large.
-		 */
-		if (page_folio(split_at2) != folio2) {
-			folio_unlock(folio2);
-			folio_put(folio2);
-			goto retry;
-		}
 
 		/* make sure folio2 is large and does not change its mapping */
 		if (folio_test_large(folio2) &&
-		    folio2->mapping == folio->mapping &&
-		    folio_split_or_unmap(folio2, split_at2, min_order))
-			tail_isolated = false;
+		    folio2->mapping == folio->mapping)
+			folio_split_or_unmap(folio2, split_at2, min_order);
 
 		folio_unlock(folio2);
 out:
-		if (!tail_isolated && pend)
-			*pend = folio2->index;
 		folio_put(folio2);
-split:
-		if (pstart)
-			*pstart = round_up(pos + offset,
-					   min_nrbytes) >> PAGE_SHIFT;
+no_split:
 		return true;
 	}
-	if (!folio_test_dirty(folio))
-		truncate_inode_folio(folio->mapping, folio);
-no_split:
-	if (pstart)
-		*pstart = offset ? folio_next_index(folio) : folio->index;
-	if (pend)
-		*pend = (pos + size > (u64)lend) ? folio->index :
-						   folio_next_index(folio);
-	return false;
+	if (folio_test_dirty(folio))
+		return false;
+	truncate_inode_folio(folio->mapping, folio);
+	return true;
 }
 
 /*
@@ -449,8 +413,11 @@ void truncate_inode_pages_range(struct address_space *mapping,
 	folio = __filemap_get_folio(mapping, lstart >> PAGE_SHIFT, FGP_LOCK, 0);
 	if (!IS_ERR(folio)) {
 		same_folio = lend < folio_next_pos(folio);
-		truncate_inode_partial_folio(folio, lstart, lend, &start,
-					     same_folio ? &end : NULL);
+		if (!truncate_inode_partial_folio(folio, lstart, lend)) {
+			start = folio_next_index(folio);
+			if (same_folio)
+				end = folio->index;
+		}
 		folio_unlock(folio);
 		folio_put(folio);
 		folio = NULL;
@@ -460,7 +427,8 @@ void truncate_inode_pages_range(struct address_space *mapping,
 		folio = __filemap_get_folio(mapping, lend >> PAGE_SHIFT,
 						FGP_LOCK, 0);
 		if (!IS_ERR(folio)) {
-			truncate_inode_partial_folio(folio, lstart, lend, NULL, &end);
+			if (!truncate_inode_partial_folio(folio, lstart, lend))
+				end = folio->index;
 			folio_unlock(folio);
 			folio_put(folio);
 		}

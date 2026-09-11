@@ -757,10 +757,14 @@ amdgpu_dm_get_output_color_space(const struct dc_crtc_timing *dc_crtc_timing,
 		break;
 	case DRM_MODE_COLORIMETRY_BT2020_RGB:
 	case DRM_MODE_COLORIMETRY_BT2020_YCC:
-		if (dc_crtc_timing->pixel_encoding == PIXEL_ENCODING_RGB)
-			color_space = COLOR_SPACE_2020_RGB_FULLRANGE;
-		else
+		if (dc_crtc_timing->pixel_encoding == PIXEL_ENCODING_RGB) {
+			if (connector_state->hdmi.broadcast_rgb == DRM_HDMI_BROADCAST_RGB_LIMITED)
+				color_space = COLOR_SPACE_2020_RGB_LIMITEDRANGE;
+			else
+				color_space = COLOR_SPACE_2020_RGB_FULLRANGE;
+		} else {
 			color_space = COLOR_SPACE_2020_YCBCR_LIMITED;
+		}
 		break;
 	case DRM_MODE_COLORIMETRY_DEFAULT: /* ITU601 */
 	default:
@@ -3597,6 +3601,108 @@ void dm_restore_drm_connector_state(struct drm_device *dev,
 	if (acrtc_state->stream->sink != aconnector->dc_sink)
 		dm_force_atomic_commit(&aconnector->base);
 }
+EXPORT_IF_KUNIT(dm_restore_drm_connector_state);
+
+STATIC_IFN_KUNIT bool dm_edid_parser_send_cea(struct amdgpu_display_manager *dm,
+		unsigned int offset,
+		unsigned int total_length,
+		u8 *data,
+		unsigned int length,
+		struct amdgpu_hdmi_vsdb_info *vsdb)
+{
+	bool res;
+	union dmub_rb_cmd cmd;
+	struct dmub_cmd_send_edid_cea *input;
+	struct dmub_cmd_edid_cea_output *output;
+
+	if (length > DMUB_EDID_CEA_DATA_CHUNK_BYTES)
+		return false;
+
+	memset(&cmd, 0, sizeof(cmd));
+
+	input = &cmd.edid_cea.data.input;
+
+	cmd.edid_cea.header.type = DMUB_CMD__EDID_CEA;
+	cmd.edid_cea.header.sub_type = 0;
+	cmd.edid_cea.header.payload_bytes =
+		sizeof(cmd.edid_cea) - sizeof(cmd.edid_cea.header);
+	input->offset = offset;
+	input->length = length;
+	input->cea_total_length = total_length;
+	memcpy(input->payload, data, length);
+
+	res = dc_wake_and_execute_dmub_cmd(dm->dc->ctx, &cmd, DM_DMUB_WAIT_TYPE_WAIT_WITH_REPLY);
+	if (!res) {
+		drm_err(adev_to_drm(dm->adev), "EDID CEA parser failed\n");
+		return false;
+	}
+
+	output = &cmd.edid_cea.data.output;
+
+	if (output->type == DMUB_CMD__EDID_CEA_ACK) {
+		if (!output->ack.success) {
+			drm_err(adev_to_drm(dm->adev), "EDID CEA ack failed at offset %d\n",
+					output->ack.offset);
+		}
+	} else if (output->type == DMUB_CMD__EDID_CEA_AMD_VSDB) {
+		if (!output->amd_vsdb.vsdb_found)
+			return false;
+
+		vsdb->freesync_supported = output->amd_vsdb.freesync_supported;
+		vsdb->amd_vsdb_version = output->amd_vsdb.amd_vsdb_version;
+		vsdb->min_refresh_rate_hz = output->amd_vsdb.min_frame_rate;
+		vsdb->max_refresh_rate_hz = output->amd_vsdb.max_frame_rate;
+		vsdb->freesync_mccs_vcp_code = output->amd_vsdb.freesync_mccs_vcp_code;
+	} else {
+		drm_warn(adev_to_drm(dm->adev), "Unknown EDID CEA parser results\n");
+		return false;
+	}
+
+	return true;
+}
+EXPORT_IF_KUNIT(dm_edid_parser_send_cea);
+
+STATIC_IFN_KUNIT bool parse_edid_cea_dmcu(struct amdgpu_display_manager *dm,
+		u8 *edid_ext, int len,
+		struct amdgpu_hdmi_vsdb_info *vsdb_info)
+{
+	return false;
+}
+EXPORT_IF_KUNIT(parse_edid_cea_dmcu);
+
+STATIC_IFN_KUNIT bool parse_edid_cea_dmub(struct amdgpu_display_manager *dm,
+		u8 *edid_ext, int len,
+		struct amdgpu_hdmi_vsdb_info *vsdb_info)
+{
+	int i;
+
+	/* send extension block to DMCU for parsing */
+	for (i = 0; i < len; i += 8) {
+		/* send 8 bytes a time */
+		if (!dm_edid_parser_send_cea(dm, i, len, &edid_ext[i], 8, vsdb_info))
+			return false;
+	}
+
+	return vsdb_info->freesync_supported;
+}
+EXPORT_IF_KUNIT(parse_edid_cea_dmub);
+
+STATIC_IFN_KUNIT bool parse_edid_cea(struct amdgpu_dm_connector *aconnector,
+		u8 *edid_ext, int len,
+		struct amdgpu_hdmi_vsdb_info *vsdb_info)
+{
+	struct amdgpu_device *adev = drm_to_adev(aconnector->base.dev);
+	bool ret;
+
+	mutex_lock(&adev->dm.dc_lock);
+	if (adev->dm.dmub_srv)
+		ret = parse_edid_cea_dmub(&adev->dm, edid_ext, len, vsdb_info);
+	else
+		ret = parse_edid_cea_dmcu(&adev->dm, edid_ext, len, vsdb_info);
+	mutex_unlock(&adev->dm.dc_lock);
+	return ret;
+}
+EXPORT_IF_KUNIT(parse_edid_cea);
 
 STATIC_IFN_KUNIT void parse_edid_displayid_vrr(struct drm_connector *connector,
 				     const struct edid *edid)
@@ -3843,17 +3949,15 @@ void amdgpu_dm_update_freesync_caps(struct drm_connector *connector,
 	}
 
 	/* Handle MCCS */
-	if (do_mccs)
+	if (do_mccs) {
 		dm_helpers_read_mccs_caps(adev->dm.dc->ctx, amdgpu_dm_connector->dc_link, sink);
 
-	if ((sink->sink_signal == SIGNAL_TYPE_HDMI_TYPE_A ||
-		as_type == FREESYNC_TYPE_PCON_IN_WHITELIST) &&
-		(!sink->edid_caps.freesync_vcp_code ||
-		(sink->edid_caps.freesync_vcp_code && !sink->mccs_caps.freesync_supported)))
-		freesync_capable = false;
+		if (sink->edid_caps.freesync_vcp_code && !sink->mccs_caps.freesync_supported)
+			freesync_capable = false;
 
-	if (do_mccs && sink->mccs_caps.freesync_supported && freesync_capable)
-		dm_helpers_mccs_vcp_set(adev->dm.dc->ctx, amdgpu_dm_connector->dc_link, sink);
+		if (sink->mccs_caps.freesync_supported && freesync_capable)
+			dm_helpers_mccs_vcp_set(adev->dm.dc->ctx, amdgpu_dm_connector->dc_link, sink);
+	}
 
 update:
 	if (dm_con_state)

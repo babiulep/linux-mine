@@ -571,6 +571,23 @@ static void dm_test_output_color_space_bt2020_rgb(struct kunit *test)
 }
 
 /**
+ * dm_test_output_color_space_bt2020_rgb_limited - Test limited BT.2020 RGB
+ * @test: The KUnit test context
+ */
+static void dm_test_output_color_space_bt2020_rgb_limited(struct kunit *test)
+{
+	struct dc_crtc_timing timing = {};
+	struct drm_connector_state state = {};
+
+	timing.pixel_encoding = PIXEL_ENCODING_RGB;
+	state.colorspace = DRM_MODE_COLORIMETRY_BT2020_RGB;
+	state.hdmi.broadcast_rgb = DRM_HDMI_BROADCAST_RGB_LIMITED;
+
+	KUNIT_EXPECT_EQ(test, (int)amdgpu_dm_get_output_color_space(&timing, &state),
+			(int)COLOR_SPACE_2020_RGB_LIMITEDRANGE);
+}
+
+/**
  * dm_test_output_color_space_bt2020_ycc - Test Output color space bt2020 ycc
  * @test: The KUnit test context
  */
@@ -639,6 +656,24 @@ static void dm_test_output_color_space_bt2020_ycc_rgb_encoding(struct kunit *tes
 
 	KUNIT_EXPECT_EQ(test, (int)amdgpu_dm_get_output_color_space(&timing, &state),
 			(int)COLOR_SPACE_2020_RGB_FULLRANGE);
+}
+
+/**
+ * dm_test_output_color_space_bt2020_ycc_rgb_encoding_limited - Test limited
+ * BT.2020 RGB output selected through the BT.2020 YCC connector colorspace
+ * @test: The KUnit test context
+ */
+static void dm_test_output_color_space_bt2020_ycc_rgb_encoding_limited(struct kunit *test)
+{
+	struct dc_crtc_timing timing = {};
+	struct drm_connector_state state = {};
+
+	timing.pixel_encoding = PIXEL_ENCODING_RGB;
+	state.colorspace = DRM_MODE_COLORIMETRY_BT2020_YCC;
+	state.hdmi.broadcast_rgb = DRM_HDMI_BROADCAST_RGB_LIMITED;
+
+	KUNIT_EXPECT_EQ(test, (int)amdgpu_dm_get_output_color_space(&timing, &state),
+			(int)COLOR_SPACE_2020_RGB_LIMITEDRANGE);
 }
 
 /**
@@ -5930,6 +5965,429 @@ static void dm_test_create_i2c_hw_bus(struct kunit *test)
 }
 
 /**
+ * dm_test_restore_state_writeback - Test writeback connectors are skipped
+ * @test: The KUnit test context
+ *
+ * A writeback connector short-circuits before dc_sink is ever read, so leaving
+ * it NULL must not crash and no connector state is created.
+ */
+static void dm_test_restore_state_writeback(struct kunit *test)
+{
+	struct drm_device *drm = dm_test_alloc_drm(test);
+	struct amdgpu_dm_connector *aconnector;
+
+	aconnector = dm_test_add_connector(test, drm,
+					   DRM_MODE_CONNECTOR_WRITEBACK);
+
+	dm_restore_drm_connector_state(drm, &aconnector->base);
+
+	KUNIT_EXPECT_NULL(test, aconnector->base.state);
+}
+
+/**
+ * dm_test_restore_state_no_dc_sink - Test a connector without a dc_sink is a no-op
+ * @test: The KUnit test context
+ *
+ * With no dc_sink there is nothing to restore, so the function returns before
+ * touching the connector state or encoder.
+ */
+static void dm_test_restore_state_no_dc_sink(struct kunit *test)
+{
+	struct drm_device *drm = dm_test_alloc_drm(test);
+	struct amdgpu_dm_connector *aconnector;
+
+	aconnector = dm_test_add_connector(test, drm,
+					   DRM_MODE_CONNECTOR_HDMIA);
+	/* dc_sink left NULL by kzalloc. */
+
+	dm_restore_drm_connector_state(drm, &aconnector->base);
+
+	KUNIT_EXPECT_NULL(test, aconnector->base.state);
+}
+
+/**
+ * dm_test_restore_state_no_connector_state - Test a NULL connector state bails out
+ * @test: The KUnit test context
+ *
+ * A dc_sink is present but the connector has no atomic state, so the function
+ * returns before dereferencing the encoder.
+ */
+static void dm_test_restore_state_no_connector_state(struct kunit *test)
+{
+	struct drm_device *drm = dm_test_alloc_drm(test);
+	struct amdgpu_dm_connector *aconnector;
+
+	aconnector = dm_test_add_connector(test, drm,
+					   DRM_MODE_CONNECTOR_HDMIA);
+	aconnector->dc_sink = kunit_kzalloc(test, 1, GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, aconnector->dc_sink);
+	/* connector->state left NULL: the guard must catch it. */
+
+	dm_restore_drm_connector_state(drm, &aconnector->base);
+
+	KUNIT_EXPECT_NULL(test, aconnector->base.encoder);
+}
+
+/**
+ * dm_test_restore_state_no_encoder - Test a NULL encoder bails out
+ * @test: The KUnit test context
+ *
+ * A dc_sink and connector state are present but the connector is not routed to
+ * any encoder, so the function returns before reading the encoder's crtc.
+ */
+static void dm_test_restore_state_no_encoder(struct kunit *test)
+{
+	struct drm_device *drm = dm_test_alloc_drm(test);
+	struct amdgpu_dm_connector *aconnector;
+
+	aconnector = dm_test_add_connector(test, drm,
+					   DRM_MODE_CONNECTOR_HDMIA);
+	aconnector->dc_sink = kunit_kzalloc(test, 1, GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, aconnector->dc_sink);
+	aconnector->base.funcs->reset(&aconnector->base);
+	KUNIT_ASSERT_NOT_NULL(test, aconnector->base.state);
+	/* connector->encoder left NULL. */
+
+	dm_restore_drm_connector_state(drm, &aconnector->base);
+
+	KUNIT_EXPECT_NULL(test, aconnector->base.encoder);
+}
+
+/**
+ * dm_test_restore_state_no_stream - Test a crtc without a stream bails out
+ * @test: The KUnit test context
+ *
+ * The connector is routed to an encoder and crtc, but the crtc state carries no
+ * dc stream, so the function returns before comparing sinks.
+ */
+static void dm_test_restore_state_no_stream(struct kunit *test)
+{
+	struct drm_device *drm = dm_test_alloc_drm(test);
+	struct amdgpu_dm_connector *aconnector;
+	struct dm_crtc_state *acrtc_state;
+	struct drm_encoder *enc;
+	struct drm_crtc *crtc;
+
+	aconnector = dm_test_add_connector(test, drm,
+					   DRM_MODE_CONNECTOR_HDMIA);
+	aconnector->dc_sink = kunit_kzalloc(test, 1, GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, aconnector->dc_sink);
+	aconnector->base.funcs->reset(&aconnector->base);
+
+	enc = kunit_kzalloc(test, sizeof(*enc), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, enc);
+	crtc = kunit_kzalloc(test, sizeof(*crtc), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, crtc);
+	acrtc_state = kunit_kzalloc(test, sizeof(*acrtc_state), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, acrtc_state);
+
+	crtc->state = &acrtc_state->base;
+	enc->crtc = crtc;
+	aconnector->base.encoder = enc;
+	/* acrtc_state->stream left NULL. */
+
+	dm_restore_drm_connector_state(drm, &aconnector->base);
+
+	KUNIT_EXPECT_NULL(test, acrtc_state->stream);
+}
+
+/**
+ * dm_test_restore_state_same_sink - Test an unchanged sink skips the commit
+ * @test: The KUnit test context
+ *
+ * When the streamed sink already matches the connector's dc_sink there is
+ * nothing to restore, so the forced atomic commit is not issued.
+ */
+static void dm_test_restore_state_same_sink(struct kunit *test)
+{
+	struct drm_device *drm = dm_test_alloc_drm(test);
+	struct amdgpu_dm_connector *aconnector;
+	struct dm_crtc_state *acrtc_state;
+	struct dc_stream_state *stream;
+	struct drm_encoder *enc;
+	struct drm_crtc *crtc;
+
+	aconnector = dm_test_add_connector(test, drm,
+					   DRM_MODE_CONNECTOR_HDMIA);
+	aconnector->dc_sink = kunit_kzalloc(test, 1, GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, aconnector->dc_sink);
+	aconnector->base.funcs->reset(&aconnector->base);
+
+	enc = kunit_kzalloc(test, sizeof(*enc), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, enc);
+	crtc = kunit_kzalloc(test, sizeof(*crtc), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, crtc);
+	acrtc_state = kunit_kzalloc(test, sizeof(*acrtc_state), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, acrtc_state);
+	stream = dm_kunit_alloc_stream(test, NULL);
+	KUNIT_ASSERT_NOT_NULL(test, stream);
+
+	/* Same sink as the connector: the final branch is not taken. */
+	stream->sink = aconnector->dc_sink;
+	acrtc_state->stream = stream;
+	crtc->state = &acrtc_state->base;
+	enc->crtc = crtc;
+	aconnector->base.encoder = enc;
+
+	dm_restore_drm_connector_state(drm, &aconnector->base);
+
+	KUNIT_EXPECT_PTR_EQ(test, stream->sink, aconnector->dc_sink);
+}
+
+/* Mock DMCU plumbing for parse_edid_cea_dmcu() tests. */
+static bool dm_test_dmcu_is_init(struct dmcu *dmcu)
+{
+	return true;
+}
+
+static const struct dmcu_funcs dm_test_dmcu_funcs_vsdb = {
+	.is_dmcu_initialized = dm_test_dmcu_is_init,
+};
+
+static const struct dmcu_funcs dm_test_dmcu_funcs_novsdb = {
+	.is_dmcu_initialized = dm_test_dmcu_is_init,
+};
+
+static const struct dmcu_funcs dm_test_dmcu_funcs_ackfail = {
+	.is_dmcu_initialized = dm_test_dmcu_is_init,
+};
+
+/*
+ * Build a bare display manager carrying a dc with a resource pool whose DMCU
+ * uses the supplied funcs table (or no DMCU at all when @funcs is NULL). The
+ * DMCU CEA parser path only touches dm->dc->res_pool->dmcu, so no adev/ctx is
+ * required.
+ */
+static struct amdgpu_display_manager *
+dm_test_alloc_dm_dmcu(struct kunit *test, const struct dmcu_funcs *funcs)
+{
+	struct amdgpu_display_manager *dm;
+	struct resource_pool *pool;
+	struct dmcu *dmcu = NULL;
+	struct dc *dc;
+
+	dm = kunit_kzalloc(test, sizeof(*dm), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, dm);
+	dc = kunit_kzalloc(test, sizeof(*dc), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, dc);
+	pool = kunit_kzalloc(test, sizeof(*pool), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, pool);
+
+	if (funcs) {
+		dmcu = kunit_kzalloc(test, sizeof(*dmcu), GFP_KERNEL);
+		KUNIT_ASSERT_NOT_NULL(test, dmcu);
+		dmcu->funcs = funcs;
+	}
+
+	pool->dmcu = dmcu;
+	dc->res_pool = pool;
+	dm->dc = dc;
+	return dm;
+}
+
+/*
+ * Build a display manager backed by an amdgpu_device and a dc with a ctx (but
+ * no DMUB), so the DMUB CEA send path can build a command, fail the execute,
+ * and log via drm_err() safely.
+ */
+static struct amdgpu_display_manager *dm_test_alloc_dm_adev(struct kunit *test)
+{
+	struct amdgpu_device *adev = dm_kunit_alloc_adev(test);
+	struct dc *dc = dm_kunit_alloc_dc_with_ctx(test);
+
+	KUNIT_ASSERT_NOT_NULL(test, adev);
+	KUNIT_ASSERT_NOT_NULL(test, dc);
+	adev->dm.adev = adev;
+	adev->dm.dc = dc;
+	return &adev->dm;
+}
+
+/**
+ * dm_test_send_cea_length_too_long - Test an oversized chunk is rejected
+ * @test: KUnit test context
+ */
+static void dm_test_send_cea_length_too_long(struct kunit *test)
+{
+	struct amdgpu_display_manager *dm = dm_test_alloc_dm_adev(test);
+	struct amdgpu_hdmi_vsdb_info vsdb = {0};
+	u8 data[16] = {0};
+	bool ret;
+
+	ret = dm_edid_parser_send_cea(dm, 0, 128, data,
+				      DMUB_EDID_CEA_DATA_CHUNK_BYTES + 1, &vsdb);
+	KUNIT_EXPECT_FALSE(test, ret);
+}
+
+/**
+ * dm_test_send_cea_dmub_unavailable - Test a failed DMUB command reports false
+ * @test: KUnit test context
+ */
+static void dm_test_send_cea_dmub_unavailable(struct kunit *test)
+{
+	struct amdgpu_display_manager *dm = dm_test_alloc_dm_adev(test);
+	struct amdgpu_hdmi_vsdb_info vsdb = {0};
+	u8 data[DMUB_EDID_CEA_DATA_CHUNK_BYTES] = {0};
+	bool ret;
+
+	/* ctx->dmub_srv is NULL, so the DMUB command execute fails. */
+	ret = dm_edid_parser_send_cea(dm, 0, 8, data,
+				      DMUB_EDID_CEA_DATA_CHUNK_BYTES, &vsdb);
+	KUNIT_EXPECT_FALSE(test, ret);
+}
+
+/**
+ * dm_test_parse_cea_dmcu_empty - Test an empty extension parses to no VSDB
+ * @test: KUnit test context
+ */
+static void dm_test_parse_cea_dmcu_empty(struct kunit *test)
+{
+	struct amdgpu_display_manager *dm = dm_test_alloc_dm_dmcu(test, NULL);
+	struct amdgpu_hdmi_vsdb_info vsdb = {0};
+	u8 ext[1] = {0};
+
+	KUNIT_EXPECT_FALSE(test, parse_edid_cea_dmcu(dm, ext, 0, &vsdb));
+}
+
+/**
+ * dm_test_parse_cea_dmcu_no_dmcu - Test a missing DMCU fails the first send
+ * @test: KUnit test context
+ */
+static void dm_test_parse_cea_dmcu_no_dmcu(struct kunit *test)
+{
+}
+
+/**
+ * dm_test_parse_cea_dmcu_vsdb_none - Test the DMCU finds no AMD VSDB
+ * @test: KUnit test context
+ */
+static void dm_test_parse_cea_dmcu_vsdb_none(struct kunit *test)
+{
+	struct amdgpu_display_manager *dm =
+		dm_test_alloc_dm_dmcu(test, &dm_test_dmcu_funcs_novsdb);
+	struct amdgpu_hdmi_vsdb_info vsdb = {0};
+	u8 ext[DMUB_EDID_CEA_DATA_CHUNK_BYTES] = {0};
+	bool ret;
+
+	ret = parse_edid_cea_dmcu(dm, ext, DMUB_EDID_CEA_DATA_CHUNK_BYTES,
+				  &vsdb);
+	KUNIT_EXPECT_FALSE(test, ret);
+}
+
+/**
+ * dm_test_parse_cea_dmcu_multi_chunk - Test intermediate chunks are acked
+ * @test: KUnit test context
+ */
+static void dm_test_parse_cea_dmcu_multi_chunk(struct kunit *test)
+{
+	struct amdgpu_display_manager *dm =
+		dm_test_alloc_dm_dmcu(test, &dm_test_dmcu_funcs_vsdb);
+	struct amdgpu_hdmi_vsdb_info vsdb = {0};
+	u8 ext[2 * DMUB_EDID_CEA_DATA_CHUNK_BYTES] = {0};
+	bool ret;
+
+	ret = parse_edid_cea_dmcu(dm, ext, 2 * DMUB_EDID_CEA_DATA_CHUNK_BYTES,
+				  &vsdb);
+	KUNIT_EXPECT_TRUE(test, ret);
+}
+
+/**
+ * dm_test_parse_cea_dmcu_ack_fail - Test a failed chunk ack aborts the parse
+ * @test: KUnit test context
+ */
+static void dm_test_parse_cea_dmcu_ack_fail(struct kunit *test)
+{
+	struct amdgpu_display_manager *dm =
+		dm_test_alloc_dm_dmcu(test, &dm_test_dmcu_funcs_ackfail);
+	struct amdgpu_hdmi_vsdb_info vsdb = {0};
+	u8 ext[2 * DMUB_EDID_CEA_DATA_CHUNK_BYTES] = {0};
+	bool ret;
+
+	ret = parse_edid_cea_dmcu(dm, ext, 2 * DMUB_EDID_CEA_DATA_CHUNK_BYTES,
+				  &vsdb);
+	KUNIT_EXPECT_FALSE(test, ret);
+}
+
+/**
+ * dm_test_parse_cea_dmub_empty - Test an empty extension returns the flag
+ * @test: KUnit test context
+ */
+static void dm_test_parse_cea_dmub_empty(struct kunit *test)
+{
+	struct amdgpu_display_manager *dm = dm_test_alloc_dm_adev(test);
+	struct amdgpu_hdmi_vsdb_info vsdb = {0};
+	u8 ext[1] = {0};
+
+	/* No chunks are sent, so the freesync flag is returned as-is. */
+	vsdb.freesync_supported = true;
+	KUNIT_EXPECT_TRUE(test, parse_edid_cea_dmub(dm, ext, 0, &vsdb));
+}
+
+/**
+ * dm_test_parse_cea_dmub_send_fail - Test a chunk send failure aborts the parse
+ * @test: KUnit test context
+ */
+static void dm_test_parse_cea_dmub_send_fail(struct kunit *test)
+{
+	struct amdgpu_display_manager *dm = dm_test_alloc_dm_adev(test);
+	struct amdgpu_hdmi_vsdb_info vsdb = {0};
+	u8 ext[DMUB_EDID_CEA_DATA_CHUNK_BYTES] = {0};
+	bool ret;
+
+	/* The first chunk send fails (no DMUB), so the parse bails out. */
+	ret = parse_edid_cea_dmub(dm, ext, DMUB_EDID_CEA_DATA_CHUNK_BYTES,
+				  &vsdb);
+	KUNIT_EXPECT_FALSE(test, ret);
+}
+
+/**
+ * dm_test_parse_cea_routes_dmub - Test a present dmub_srv routes to DMUB
+ * @test: KUnit test context
+ */
+static void dm_test_parse_cea_routes_dmub(struct kunit *test)
+{
+	struct amdgpu_device *adev = dm_kunit_alloc_adev(test);
+	struct amdgpu_dm_connector *aconnector;
+	struct amdgpu_hdmi_vsdb_info vsdb = {0};
+	u8 ext[1] = {0};
+
+	KUNIT_ASSERT_NOT_NULL(test, adev);
+	mutex_init(&adev->dm.dc_lock);
+	adev->dm.dmub_srv = kunit_kzalloc(test, 1, GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, adev->dm.dmub_srv);
+
+	aconnector = kunit_kzalloc(test, sizeof(*aconnector), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, aconnector);
+	aconnector->base.dev = &adev->ddev;
+
+	/* len 0 routes to the DMUB parser, which returns the freesync flag. */
+	vsdb.freesync_supported = true;
+	KUNIT_EXPECT_TRUE(test, parse_edid_cea(aconnector, ext, 0, &vsdb));
+}
+
+/**
+ * dm_test_parse_cea_routes_dmcu - Test a missing dmub_srv routes to DMCU
+ * @test: KUnit test context
+ */
+static void dm_test_parse_cea_routes_dmcu(struct kunit *test)
+{
+	struct amdgpu_device *adev = dm_kunit_alloc_adev(test);
+	struct amdgpu_dm_connector *aconnector;
+	struct amdgpu_hdmi_vsdb_info vsdb = {0};
+	u8 ext[1] = {0};
+
+	KUNIT_ASSERT_NOT_NULL(test, adev);
+	mutex_init(&adev->dm.dc_lock);
+	adev->dm.dmub_srv = NULL;
+
+	aconnector = kunit_kzalloc(test, sizeof(*aconnector), GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, aconnector);
+	aconnector->base.dev = &adev->ddev;
+
+	/* len 0 routes to the DMCU parser, which returns false. */
+	KUNIT_EXPECT_FALSE(test, parse_edid_cea(aconnector, ext, 0, &vsdb));
+}
+
+/**
  * dm_test_get_amd_vsdb_unsupported - Test a zero VSDB version reports no support
  * @test: The KUnit test context
  */
@@ -8340,10 +8798,12 @@ static struct kunit_case amdgpu_dm_connector_tests[] = {
 	KUNIT_CASE(dm_test_output_color_space_bt709_y_only),
 	KUNIT_CASE(dm_test_output_color_space_oprgb),
 	KUNIT_CASE(dm_test_output_color_space_bt2020_rgb),
+	KUNIT_CASE(dm_test_output_color_space_bt2020_rgb_limited),
 	KUNIT_CASE(dm_test_output_color_space_bt2020_ycc),
 	KUNIT_CASE(dm_test_output_color_space_default_ycbcr709_y_only),
 	KUNIT_CASE(dm_test_output_color_space_default_ycbcr601),
 	KUNIT_CASE(dm_test_output_color_space_bt2020_ycc_rgb_encoding),
+	KUNIT_CASE(dm_test_output_color_space_bt2020_ycc_rgb_encoding_limited),
 	KUNIT_CASE(dm_test_output_color_space_bt2020_rgb_ycc_encoding),
 	/* Tests for amdgpu_dm_convert_dc_color_depth_into_bpc */
 	KUNIT_CASE(dm_test_convert_color_depth_bpc_mappings),
@@ -8616,6 +9076,24 @@ static struct kunit_case amdgpu_dm_connector_tests[] = {
 	/* amdgpu_dm_create_i2c */
 	KUNIT_CASE(dm_test_create_i2c_oem),
 	KUNIT_CASE(dm_test_create_i2c_hw_bus),
+	/* dm_restore_drm_connector_state */
+	KUNIT_CASE(dm_test_restore_state_writeback),
+	KUNIT_CASE(dm_test_restore_state_no_dc_sink),
+	KUNIT_CASE(dm_test_restore_state_no_connector_state),
+	KUNIT_CASE(dm_test_restore_state_no_encoder),
+	KUNIT_CASE(dm_test_restore_state_no_stream),
+	KUNIT_CASE(dm_test_restore_state_same_sink),
+	KUNIT_CASE(dm_test_send_cea_length_too_long),
+	KUNIT_CASE(dm_test_send_cea_dmub_unavailable),
+	KUNIT_CASE(dm_test_parse_cea_dmcu_empty),
+	KUNIT_CASE(dm_test_parse_cea_dmcu_no_dmcu),
+	KUNIT_CASE(dm_test_parse_cea_dmcu_vsdb_none),
+	KUNIT_CASE(dm_test_parse_cea_dmcu_multi_chunk),
+	KUNIT_CASE(dm_test_parse_cea_dmcu_ack_fail),
+	KUNIT_CASE(dm_test_parse_cea_dmub_empty),
+	KUNIT_CASE(dm_test_parse_cea_dmub_send_fail),
+	KUNIT_CASE(dm_test_parse_cea_routes_dmub),
+	KUNIT_CASE(dm_test_parse_cea_routes_dmcu),
 	/* get_amd_vsdb */
 	KUNIT_CASE(dm_test_get_amd_vsdb_unsupported),
 	KUNIT_CASE(dm_test_get_amd_vsdb_supported),

@@ -1469,6 +1469,7 @@ L:	linux-iio@vger.kernel.org
 S:	Supported
 W:	https://ez.analog.com/linux-software-drivers
 F:	Documentation/devicetree/bindings/iio/dac/adi,ad3530r.yaml
+F:	Documentation/devicetree/bindings/iio/dac/adi,ad5710r.yaml
 F:	drivers/iio/dac/ad3530r.c
 
 ANALOG DEVICES INC AD3552R DRIVER
@@ -1572,6 +1573,14 @@ S:	Supported
 W:	https://ez.analog.com/linux-software-drivers
 F:	Documentation/devicetree/bindings/iio/adc/adi,ad4851.yaml
 F:	drivers/iio/adc/ad4851.c
+
+ANALOG DEVICES INC AD5529R DRIVER
+M:	Janani Sunil <janani.sunil@analog.com>
+L:	linux-iio@vger.kernel.org
+S:	Supported
+W:	https://ez.analog.com/linux-software-drivers
+F:	Documentation/devicetree/bindings/iio/dac/adi,ad5529r.yaml
+F:	drivers/iio/dac/ad5529r.c
 
 ANALOG DEVICES INC AD5706R DRIVER
 M:	Alexis Czezar Torreno <alexisczezar.torreno@analog.com>
@@ -2181,7 +2190,7 @@ F:	drivers/net/arcnet/
 F:	include/uapi/linux/if_arcnet.h
 
 ARCTIC FAN CONTROLLER DRIVER
-M:	Aureo Serrano de Souza <aureo.serrano@arctic.de>
+M:	ARCTIC (HK) <arctic.it.hk@arctic.de>
 L:	linux-hwmon@vger.kernel.org
 S:	Maintained
 F:	Documentation/hwmon/arctic_fan_controller.rst
@@ -3436,6 +3445,7 @@ F:	include/linux/soc/qcom/
 ARM/QUALCOMM SUPPORT
 M:	Bjorn Andersson <andersson@kernel.org>
 M:	Konrad Dybcio <konradybcio@kernel.org>
+R:	Abel Vesa <abelvesa@kernel.org>
 L:	linux-arm-msm@vger.kernel.org
 S:	Maintained
 C:	irc://irc.oftc.net/linux-msm
@@ -4536,7 +4546,7 @@ AYANEO PLATFORM EC DRIVER
 M:	Antheas Kapenekakis <lkml@antheas.dev>
 L:	platform-driver-x86@vger.kernel.org
 S:	Maintained
-F:	Documentation/ABI/testing/sysfs-platform-ayaneo
+F:	Documentation/ABI/testing/sysfs-platform-ayaneo-ec
 F:	drivers/platform/x86/ayaneo-ec.c
 
 AZ6007 DVB DRIVER
@@ -7767,6 +7777,7 @@ F:	include/linux/dma-direct.h
 F:	include/linux/dma-map-ops.h
 F:	include/linux/dma-mapping.h
 F:	include/linux/swiotlb.h
+F:	include/trace/events/dma.h
 F:	kernel/dma/
 
 DMA MAPPING & SCATTERLIST API [RUST]
@@ -9563,7 +9574,7 @@ F:	drivers/edac/ie31200_edac.c
 
 EDAC-IGEN6
 M:	Tony Luck <tony.luck@intel.com>
-R:	Qiuxu Zhuo <qiuxu.zhuo@intel.com>
+R:	Qiuxu Zhuo <qzhuo@nvidia.com>
 L:	linux-edac@vger.kernel.org
 S:	Maintained
 F:	drivers/edac/igen6_edac.c
@@ -9608,7 +9619,7 @@ F:	drivers/edac/qcom_edac.c
 
 EDAC-SBRIDGE
 M:	Tony Luck <tony.luck@intel.com>
-R:	Qiuxu Zhuo <qiuxu.zhuo@intel.com>
+R:	Qiuxu Zhuo <qzhuo@nvidia.com>
 L:	linux-edac@vger.kernel.org
 S:	Maintained
 F:	drivers/edac/sb_edac.c
@@ -12544,6 +12555,7 @@ F:	drivers/crypto/nx/Makefile
 F:	drivers/crypto/nx/nx-842*
 F:	include/linux/sw842.h
 F:	lib/842/
+F:	lib/tests/842_decompress_kunit.c
 
 IBM Power in-Nest Crypto Acceleration
 M:	Breno Leitão <leitao@debian.org>
@@ -17316,7 +17328,7 @@ F:	tools/testing/selftests/mm/gup_test.c
 MEMORY MANAGEMENT - KSM (Kernel Samepage Merging)
 M:	Andrew Morton <akpm@linux-foundation.org>
 M:	David Hildenbrand <david@kernel.org>
-R:	Xu Xin <xu.xin16@zte.com.cn>
+R:	Xu Xin <xu.xin@linux.dev>
 R:	Chengming Zhou <chengming.zhou@linux.dev>
 L:	linux-mm@kvack.org
 S:	Maintained
@@ -21193,6 +21205,21 @@ L:	linux-pci@vger.kernel.org
 S:	Supported
 F:	Documentation/PCI/pci-error-recovery.rst
 
+PCI LIVE UPDATE
+M:	David Matlack <dmatlack@google.com>
+R:	Pasha Tatashin <pasha.tatashin@soleen.com>
+R:	Mike Rapoport <rppt@kernel.org>
+R:	Pratyush Yadav <pratyush@kernel.org>
+L:	kexec@lists.infradead.org
+L:	linux-pci@vger.kernel.org
+S:	Maintained
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/liveupdate/linux.git
+F:	Documentation/PCI/liveupdate.rst
+F:	drivers/pci/liveupdate.c
+F:	drivers/pci/liveupdate.h
+F:	include/linux/kho/abi/pci.h
+F:	include/linux/pci_liveupdate.h
+
 PCI MSI DRIVER FOR ALTERA MSI IP
 L:	linux-pci@vger.kernel.org
 S:	Orphan
@@ -22514,6 +22541,7 @@ F:	drivers/media/platform/qcom/camss/
 
 QUALCOMM CLOCK DRIVERS
 M:	Bjorn Andersson <andersson@kernel.org>
+R:	Abel Vesa <abelvesa@kernel.org>
 L:	linux-arm-msm@vger.kernel.org
 S:	Supported
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/qcom/linux.git
@@ -22629,6 +22657,15 @@ L:	linux-arm-msm@vger.kernel.org
 S:	Maintained
 F:	Documentation/devicetree/bindings/i2c/qcom,i2c-cci.yaml
 F:	drivers/i2c/busses/i2c-qcom-cci.c
+
+QUALCOMM INLINE CRYPTO ENGINE DRIVER
+M:	Abel Vesa <abelvesa@kernel.org>
+L:	linux-arm-msm@vger.kernel.org
+L:	linux-crypto@vger.kernel.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/crypto/qcom,inline-crypto-engine.yaml
+F:	drivers/soc/qcom/ice.c
+F:	include/soc/qcom/ice.h
 
 QUALCOMM INTERCONNECT BWMON DRIVER
 M:	Krzysztof Kozlowski <krzk@kernel.org>
@@ -27079,9 +27116,11 @@ M:	Luca Ceresoli <luca.ceresoli@bootlin.com>
 L:	linux-media@vger.kernel.org
 L:	linux-tegra@vger.kernel.org
 S:	Maintained
+F:	Documentation/devicetree/bindings/display/tegra/nvidia,tegra20-csi.yaml
 F:	Documentation/devicetree/bindings/display/tegra/nvidia,tegra20-host1x.yaml
 F:	Documentation/devicetree/bindings/display/tegra/nvidia,tegra20-vi.yaml
 F:	Documentation/devicetree/bindings/display/tegra/nvidia,tegra20-vip.yaml
+F:	Documentation/devicetree/bindings/display/tegra/nvidia,tegra210-csi.yaml
 F:	drivers/staging/media/tegra-video/
 
 TEGRA XUSB PADCTL DRIVER

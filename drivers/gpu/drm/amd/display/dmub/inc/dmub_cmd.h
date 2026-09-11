@@ -1759,6 +1759,30 @@ enum dmub_gpint_command {
 	 *       1 - Enable panel polarity
 	 */
 	DMUB_GPINT__PANEL_POLARITY_DEBUG_ENABLE = 140,
+	/**
+	 * DESC: Reset the boot-time cumulative PHY-off residency counter.
+	 * PARAMS: [7:0] panel_inst
+	 * RETURN: 0 (ACK)
+	 */
+	DMUB_GPINT__REPLAY_RESET_CUMULATIVE_RESIDENCY = 141,
+	/**
+	 * DESC: Query boot-time cumulative PHY-off residency, low 32 bits (microseconds).
+	 * PARAMS: [7:0] panel_inst
+	 * RETURN: Lower 32 bits of accumulated PHY-off time in microseconds.
+	 */
+	DMUB_GPINT__REPLAY_GET_CUMULATIVE_RESIDENCY_US_LO = 142,
+	/**
+	 * DESC: Query boot-time cumulative PHY-off residency, high 32 bits (microseconds).
+	 * PARAMS: [7:0] panel_inst
+	 * RETURN: Upper 32 bits of accumulated PHY-off time in microseconds.
+	 */
+	DMUB_GPINT__REPLAY_GET_CUMULATIVE_RESIDENCY_US_HI = 143,
+	/**
+	 * DESC: Compute + log cumulative PHY-off residency snapshot; return milli-percent.
+	 * PARAMS: [7:0] panel_inst
+	 * RETURN: Residency in milli-percent (0-100000). Also emits DMUB trace log.
+	 */
+	DMUB_GPINT__REPLAY_SNAPSHOT_CUMULATIVE_RESIDENCY = 144,
 };
 
 /**
@@ -1933,6 +1957,10 @@ enum dmub_cmd_type {
 	 * Command type used for interfacing with DPIA.
 	 */
 	DMUB_CMD__DPIA = 77,
+        /**
+         * Command type used for EDID CEA parsing
+         */
+        DMUB_CMD__EDID_CEA = 79,
 	/**
 	 * Command type used for getting usbc cable ID
 	 */
@@ -2773,6 +2801,7 @@ struct dmub_fams2_stream_static_state {
 			uint8_t is_drr : 1; // stream is DRR enabled
 			uint8_t clamp_vtotal_min : 1; // clamp vtotal to min instead of nominal
 			uint8_t min_ttu_vblank_usable : 1; // if min ttu vblank is above wm, no force pstate is needed in blank
+			uint8_t imm_restore_drr : 1; // does not wait to latch DRR vtotal on restore
 		} bits;
 		uint8_t all;
 	} config;
@@ -2805,6 +2834,7 @@ struct dmub_fams2_cmd_stream_static_base_state {
 			uint8_t is_drr : 1; // stream is DRR enabled
 			uint8_t clamp_vtotal_min : 1; // clamp vtotal to min instead of nominal
 			uint8_t min_ttu_vblank_usable : 1; // if min ttu vblank is above wm, no force pstate is needed in blank
+			uint8_t imm_restore_drr : 1; // does not wait to latch DRR vtotal on restore
 		} bits;
 		uint8_t all;
 	} config;
@@ -6901,6 +6931,72 @@ struct dmub_rb_cmd_transmitter_set_phy_fsm {
 };
 
 /**
+ * Maximum number of bytes a chunk sent to DMUB for parsing
+ */
+#define DMUB_EDID_CEA_DATA_CHUNK_BYTES 8
+
+/**
+ *  Represent a chunk of CEA blocks sent to DMUB for parsing
+ */
+struct dmub_cmd_send_edid_cea {
+        uint16_t offset;        /**< offset into the CEA block */
+        uint8_t length; /**< number of bytes in payload to copy as part of CEA block */
+        uint16_t cea_total_length;  /**< total length of the CEA block */
+        uint8_t payload[DMUB_EDID_CEA_DATA_CHUNK_BYTES]; /**< data chunk of the CEA block */
+        uint8_t pad[3]; /**< padding and for future expansion */
+};
+
+/**
+ * Result of VSDB parsing from CEA block
+ */
+struct dmub_cmd_edid_cea_amd_vsdb {
+        uint8_t vsdb_found;             /**< 1 if parsing has found valid AMD VS
+DB */
+        uint8_t freesync_supported;     /**< 1 if Freesync is supported */
+        uint16_t amd_vsdb_version;      /**< AMD VSDB version */
+        uint16_t min_frame_rate;        /**< Maximum frame rate */
+        uint16_t max_frame_rate;        /**< Minimum frame rate */
+        uint8_t freesync_mccs_vcp_code; /**< Freesync MCCS VCP code */
+};
+
+/**
+ * Result of sending a CEA chunk
+ */
+struct dmub_cmd_edid_cea_ack {
+        uint16_t offset;        /**< offset of the chunk into the CEA block */
+        uint8_t success;        /**< 1 if this sending of chunk succeeded */
+        uint8_t pad;            /**< padding and for future expansion */
+};
+
+/**
+ * Specify whether the result is an ACK/NACK or the parsing has finished
+ */
+enum dmub_cmd_edid_cea_reply_type {
+        DMUB_CMD__EDID_CEA_AMD_VSDB     = 1, /**< VSDB parsing has finished */
+        DMUB_CMD__EDID_CEA_ACK          = 2, /**< acknowledges the CEA sending i
+s OK or failing */
+};
+
+/**
+ * Definition of a DMUB_CMD__EDID_CEA command.
+ */
+struct dmub_rb_cmd_edid_cea {
+        struct dmub_cmd_header header;  /**< Command header */
+        union dmub_cmd_edid_cea_data {
+                struct dmub_cmd_send_edid_cea input; /**< input to send CEA chun
+ks */
+                struct dmub_cmd_edid_cea_output { /**< output with results */
+                        uint8_t type;   /**< dmub_cmd_edid_cea_reply_type */
+                        union {
+                                struct dmub_cmd_edid_cea_amd_vsdb amd_vsdb;
+                                struct dmub_cmd_edid_cea_ack ack;
+                        };
+                } output;       /**< output to retrieve ACK/NACK or VSDB parsing results */
+        } data; /**< Command data */
+
+};
+
+/**
  * struct dmub_cmd_cable_id_input - Defines the input of DMUB_CMD_GET_USBC_CABLE_ID command.
  */
 struct dmub_cmd_cable_id_input {
@@ -7771,6 +7867,12 @@ union dmub_rb_cmd {
 	 * Definition of a DMUB_CMD__DPIA_SET_TPS_NOTIFICATION command.
 	 */
 	struct dmub_rb_cmd_set_tps_notification set_tps_notification;
+
+        /**
+         * Definition of a DMUB_CMD__EDID_CEA command.
+         */
+        struct dmub_rb_cmd_edid_cea edid_cea;
+
 	/**
 	 * Definition of a DMUB_CMD_GET_USBC_CABLE_ID command.
 	 */

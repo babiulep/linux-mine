@@ -745,6 +745,7 @@ static int xe_pagefault_queue_init(struct xe_device *xe,
 	drm_dbg(&xe->drm, "xe_pagefault_entry_size=%d, total_num_eus=%d, pf_queue->size=%u",
 		xe_pagefault_entry_size(), total_num_eus, pf_queue->size);
 
+	pf_queue->xe = xe;
 	spin_lock_init(&pf_queue->lock);
 
 	pf_queue->data = drmm_kzalloc(&xe->drm, pf_queue->size, GFP_KERNEL);

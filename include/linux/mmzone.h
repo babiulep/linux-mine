@@ -2025,7 +2025,7 @@ struct mem_section {
 	 * sections with HVO enabled, this tracks the compound page order
 	 * to enable deduplication of redundant vmemmap pages.
 	 */
-	unsigned int order;
+	unsigned int compound_page_order;
 #endif
 #ifdef CONFIG_PAGE_EXTENSION
 	/*

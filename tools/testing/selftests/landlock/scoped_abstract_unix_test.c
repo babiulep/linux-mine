@@ -1268,38 +1268,27 @@ FIXTURE_VARIANT(trace_unix) {
 	size_t name_len;
 };
 
-/* Stream: sandboxed client connect() to an unsandboxed peer (peer_domain=0). */
 /* clang-format off */
+
+/* Stream: sandboxed client connect() to an unsandboxed peer (peer_domain=0). */
 FIXTURE_VARIANT_ADD(trace_unix, stream_denied) {
-	/* clang-format on */
-	.sock_type = SOCK_STREAM,
-	.sandbox = true,
-	.sandbox_target = false,
-	.expect_denied = 1,
+	.sock_type = SOCK_STREAM, .sandbox = true,
+	.sandbox_target = false, .expect_denied = 1,
 };
 
 /* Stream: peer socket owned by a domain, so peer_domain != 0. */
-/* clang-format off */
 FIXTURE_VARIANT_ADD(trace_unix, stream_denied_scoped_peer) {
-	/* clang-format on */
-	.sock_type = SOCK_STREAM,
-	.sandbox = true,
-	.sandbox_target = true,
-	.expect_denied = 1,
+	.sock_type = SOCK_STREAM, .sandbox = true,
+	.sandbox_target = true, .expect_denied = 1,
 };
 
 /* Stream: unsandboxed client, connect() succeeds, no event. */
-/* clang-format off */
 FIXTURE_VARIANT_ADD(trace_unix, stream_allowed) {
-	/* clang-format on */
-	.sock_type = SOCK_STREAM,
-	.sandbox = false,
-	.sandbox_target = false,
-	.expect_denied = 0,
+	.sock_type = SOCK_STREAM, .sandbox = false,
+	.sandbox_target = false, .expect_denied = 0,
 };
 
 /* Stream: lower abstract-name length boundary. */
-/* clang-format off */
 FIXTURE_VARIANT_ADD(trace_unix, stream_denied_empty_name) {
 	.sock_type = SOCK_STREAM,
 	.sandbox = true,
@@ -1308,12 +1297,9 @@ FIXTURE_VARIANT_ADD(trace_unix, stream_denied_empty_name) {
 	.name = "",
 	.name_len = 0,
 };
-/* clang-format on */
 
 /* Stream: upper abstract-name length boundary. */
-/* clang-format off */
 FIXTURE_VARIANT_ADD(trace_unix, stream_denied_max_name) {
-	/* clang-format on */
 	.sock_type = SOCK_STREAM,
 	.sandbox = true,
 	.sandbox_target = false,
@@ -1323,34 +1309,24 @@ FIXTURE_VARIANT_ADD(trace_unix, stream_denied_max_name) {
 };
 
 /* Datagram: sandboxed client sendto() an unsandboxed peer (peer_domain=0). */
-/* clang-format off */
 FIXTURE_VARIANT_ADD(trace_unix, dgram_denied) {
-	/* clang-format on */
-	.sock_type = SOCK_DGRAM,
-	.sandbox = true,
-	.sandbox_target = false,
-	.expect_denied = 1,
+	.sock_type = SOCK_DGRAM, .sandbox = true,
+	.sandbox_target = false, .expect_denied = 1,
 };
 
 /* Datagram: peer socket owned by a domain, so peer_domain != 0. */
-/* clang-format off */
 FIXTURE_VARIANT_ADD(trace_unix, dgram_denied_scoped_peer) {
-	/* clang-format on */
-	.sock_type = SOCK_DGRAM,
-	.sandbox = true,
-	.sandbox_target = true,
-	.expect_denied = 1,
+	.sock_type = SOCK_DGRAM, .sandbox = true,
+	.sandbox_target = true, .expect_denied = 1,
 };
 
 /* Datagram: unsandboxed client, sendto() succeeds, no event. */
-/* clang-format off */
 FIXTURE_VARIANT_ADD(trace_unix, dgram_allowed) {
-	/* clang-format on */
-	.sock_type = SOCK_DGRAM,
-	.sandbox = false,
-	.sandbox_target = false,
-	.expect_denied = 0,
+	.sock_type = SOCK_DGRAM, .sandbox = false,
+	.sandbox_target = false, .expect_denied = 0,
 };
+
+/* clang-format on */
 
 /*
  * A sandboxed thread reaching an abstract unix socket peer through connect(2)

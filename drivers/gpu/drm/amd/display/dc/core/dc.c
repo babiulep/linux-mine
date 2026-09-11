@@ -3200,6 +3200,7 @@ static struct dc_update_descriptor check_update_surfaces_for_stream(
 		}
 
 		if ((stream_update->hdr_static_metadata && !stream_update->stream->use_dynamic_meta) ||
+				stream_update->output_color_space ||
 				stream_update->vrr_infopacket ||
 				stream_update->vsc_infopacket ||
 				stream_update->vsp_infopacket ||
@@ -3955,7 +3956,7 @@ static void program_cursor_attributes_sequence(
 
 		hwss_add_set_cursor_attribute(seq_state, dc, tmp_pipe);
 		if (dc->ctx->dmub_srv)
-			hwss_add_send_update_cursor_info_to_dmu(seq_state, tmp_pipe, k);
+			hwss_add_send_update_cursor_info_to_dmu(seq_state, tmp_pipe);
 		hwss_add_set_cursor_sdr_white_level(seq_state, tmp_pipe);
 		if (enable_cursor_offload && dc->hwss.update_cursor_offload_pipe)
 			hwss_add_update_cursor_offload_pipe(seq_state, dc, tmp_pipe);
@@ -4006,7 +4007,7 @@ static void program_cursor_position_sequence(
 			hwss_add_update_cursor_offload_pipe(seq_state, dc, tmp_pipe);
 
 		if (dc->ctx->dmub_srv)
-			hwss_add_send_update_cursor_info_to_dmu(seq_state, tmp_pipe, k);
+			hwss_add_send_update_cursor_info_to_dmu(seq_state, tmp_pipe);
 	}
 
 	if (pipe_to_program) {
@@ -4193,6 +4194,7 @@ static void commit_planes_do_stream_update_sequence(struct dc *dc,
 				hwss_add_setup_periodic_interrupt(&seq_state, dc, pipe_ctx);
 
 			if ((stream_update->hdr_static_metadata && !stream->use_dynamic_meta) ||
+					stream_update->output_color_space ||
 					stream_update->vrr_infopacket ||
 					stream_update->vsc_infopacket ||
 					stream_update->vsp_infopacket ||
@@ -4375,6 +4377,7 @@ static void commit_planes_do_stream_update(struct dc *dc,
 				hwss_setup_periodic_interrupt(dc, pipe_ctx);
 
 			if ((stream_update->hdr_static_metadata && !stream->use_dynamic_meta) ||
+					stream_update->output_color_space ||
 					stream_update->vrr_infopacket ||
 					stream_update->vsc_infopacket ||
 					stream_update->vsp_infopacket ||

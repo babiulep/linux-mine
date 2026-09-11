@@ -3309,6 +3309,7 @@ static void __init gather_bootmem_prealloc_node(unsigned long nid)
 	list_for_each_entry_safe(m, tm, &huge_boot_pages[nid], list) {
 		struct page *page = virt_to_page(m);
 		struct folio *folio = (void *)page;
+		const unsigned long pfn = folio_pfn(folio);
 
 		h = m->hstate;
 		/*
@@ -3326,9 +3327,9 @@ static void __init gather_bootmem_prealloc_node(unsigned long nid)
 					   HUGETLB_VMEMMAP_RESERVE_PAGES);
 		init_new_hugetlb_folio(folio);
 
-		if (vmemmap_optimizable_order(pfn_to_section_order(folio_pfn(folio))))
+		if (vmemmap_optimizable_order(pfn_to_section_compound_order(pfn)))
 			folio_set_hugetlb_vmemmap_optimized(folio);
-		section_set_order_range(folio_pfn(folio), folio_nr_pages(folio), 0);
+		section_set_compound_order_range(pfn, folio_nr_pages(folio), 0);
 
 		list_add(&folio->lru, &folio_list);
 
