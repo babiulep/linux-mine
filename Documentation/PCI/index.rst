@@ -20,4 +20,3 @@ PCI Bus Subsystem
    controller/index
    boot-interrupts
    tph
-   liveupdate

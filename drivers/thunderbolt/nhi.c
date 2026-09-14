@@ -440,6 +440,13 @@ struct ring_frame *tb_ring_poll(struct tb_ring *ring)
 		}
 
 		ring->tail = (ring->tail + 1) % ring->size;
+
+		/*
+		 * There is one more slot available so we can push next
+		 * descriptor to the ring. This is needed when the ring
+		 * is created with %RING_FLAG_NO_INTERRUPT.
+		 */
+		ring_write_descriptors(ring, true);
 	}
 
 unlock:
@@ -447,6 +454,25 @@ unlock:
 	return frame;
 }
 EXPORT_SYMBOL_GPL(tb_ring_poll);
+
+/**
+ * tb_ring_poll_pending() - Does the ring have completed frame
+ * @ring: Ring to check
+ *
+ * Can be used to check whether there is a completed frame in the ring
+ * that next call to tb_ring_poll() returns.
+ *
+ * Return: %true if a completed frame is waiting, %false otherwise.
+ */
+bool tb_ring_poll_pending(struct tb_ring *ring)
+{
+	guard(spinlock_irqsave)(&ring->lock);
+
+	if (!ring->running || ring_empty(ring))
+		return false;
+	return !!(ring->descriptors[ring->tail].flags & RING_DESC_COMPLETED);
+}
+EXPORT_SYMBOL_GPL(tb_ring_poll_pending);
 
 static void __ring_interrupt_mask(struct tb_ring *ring, bool mask)
 {

@@ -1487,7 +1487,13 @@ struct io_wq_work *io_wq_free_work(struct io_wq_work *work)
 	struct io_kiocb *nxt = NULL;
 
 	if (req_ref_put_and_test_atomic(req)) {
-		if (req->flags & IO_REQ_LINK_FLAGS) {
+		/*
+		 * Only continue the link from here if the completion has been
+		 * posted. If it's still pending, io_free_req() completes the
+		 * request and the next link follows from there, after the CQE.
+		 */
+		if ((req->flags & IO_REQ_LINK_FLAGS) &&
+		    (req->flags & REQ_F_CQE_SKIP)) {
 			struct io_ring_ctx *ctx = req->ctx;
 
 			mutex_lock(&ctx->uring_lock);

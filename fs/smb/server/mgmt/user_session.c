@@ -596,7 +596,7 @@ static int ksmbd_chann_del(struct ksmbd_conn *conn, struct ksmbd_session *sess)
 	return 0;
 }
 
-void ksmbd_sessions_deregister(struct ksmbd_conn *conn)
+void ksmbd_conn_sessions_cleanup(struct ksmbd_conn *conn)
 {
 	struct ksmbd_session *sess;
 	unsigned long id;

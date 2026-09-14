@@ -8,6 +8,7 @@
 
 #include <linux/bitfield.h>
 #include <linux/bits.h>
+#include <linux/cleanup.h>
 #include <linux/clk-provider.h>
 #include <linux/clk/renesas.h>
 #include <linux/device.h>
@@ -20,6 +21,7 @@
 #include <linux/module.h>
 #include <linux/of_address.h>
 #include <linux/regmap.h>
+#include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/units.h>
 

@@ -102,7 +102,7 @@ int ksmbd_session_register(struct ksmbd_conn *conn,
 			   struct ksmbd_session *sess);
 void ksmbd_session_unregister(struct ksmbd_conn *conn,
 			      struct ksmbd_session *sess);
-void ksmbd_sessions_deregister(struct ksmbd_conn *conn);
+void ksmbd_conn_sessions_cleanup(struct ksmbd_conn *conn);
 bool ksmbd_conn_has_valid_or_expired_session(struct ksmbd_conn *conn);
 void ksmbd_expire_sessions(void);
 struct ksmbd_session *__session_lookup(unsigned long long id);

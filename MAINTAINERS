@@ -4661,13 +4661,6 @@ S:	Odd Fixes
 F:	Documentation/block/bfq-iosched.rst
 F:	block/bfq-*
 
-BFS FILE SYSTEM
-M:	"Tigran A. Aivazian" <aivazian.tigran@gmail.com>
-S:	Maintained
-F:	Documentation/filesystems/bfs.rst
-F:	fs/bfs/
-F:	include/uapi/linux/bfs_fs.h
-
 BITMAP API
 M:	Yury Norov <yury.norov@gmail.com>
 R:	Rasmus Villemoes <linux@rasmusvillemoes.dk>
@@ -9924,6 +9917,7 @@ R:	Yuezhang Mo <yuezhang.mo@sony.com>
 L:	exfat@lists.linux.dev
 S:	Maintained
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/linkinjeon/exfat.git
+F:	Documentation/filesystems/exfat.rst
 F:	fs/exfat/
 
 EXPRESSWIRE PROTOCOL LIBRARY
@@ -11722,6 +11716,12 @@ L:	linux-input@vger.kernel.org
 S:	Supported
 F:	drivers/hid/hid-playstation.c
 
+HID PULSAR DRIVER
+M:	Nikolas Koesling <nikolas@koesling.info>
+L:	linux-input@vger.kernel.org
+S:	Maintained
+F:	drivers/hid/hid-pulsar.c
+
 HID SENSOR HUB DRIVERS
 M:	Jiri Kosina <jikos@kernel.org>
 M:	Jonathan Cameron <jic23@kernel.org>
@@ -12195,6 +12195,7 @@ F:	Documentation/mm/hugetlbfs_reserv.rst
 F:	Documentation/mm/vmemmap_dedup.rst
 F:	fs/hugetlbfs/
 F:	include/linux/hugetlb.h
+F:	include/linux/vmemmap-optimization.h
 F:	include/trace/events/hugetlbfs.h
 F:	mm/hugetlb.c
 F:	mm/hugetlb_cgroup.c
@@ -14537,6 +14538,7 @@ S:	Supported
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/driver-core/driver-core.git
 F:	fs/kernfs/
 F:	include/linux/kernfs.h
+F:	tools/testing/selftests/filesystems/kernfs_test.c
 
 KEXEC
 M:	Andrew Morton <akpm@linux-foundation.org>
@@ -16112,6 +16114,15 @@ F:	Documentation/devicetree/bindings/hwmon/pmbus/adi,max17616.yaml
 F:	Documentation/hwmon/max17616.rst
 F:	drivers/hwmon/pmbus/max17616.c
 
+MAX20826 HARDWARE MONITOR CONTROLLER DRIVER
+M:	Nuno Sá <nuno.sa@analog.com>
+L:	linux-hwmon@vger.kernel.org
+S:	Supported
+W:	https://ez.analog.com/linux-software-drivers
+F:	Documentation/devicetree/bindings/hwmon/pmbus/adi,max20826.yaml
+F:	Documentation/hwmon/max20826.rst
+F:	drivers/hwmon/pmbus/max20826.c
+
 MAX20830 HARDWARE MONITOR DRIVER
 M:	Alexis Czezar Torreno <alexisczezar.torreno@analog.com>
 L:	linux-hwmon@vger.kernel.org
@@ -17569,6 +17580,7 @@ F:	Documentation/admin-guide/mm/transhuge.rst
 F:	include/linux/huge_mm.h
 F:	include/linux/khugepaged.h
 F:	include/trace/events/huge_memory.h
+F:	mm/collapse.h
 F:	mm/huge_memory.c
 F:	mm/khugepaged.c
 F:	mm/mm_slot.h
@@ -18512,6 +18524,12 @@ F:	rust/macros/module.rs
 F:	scripts/module*
 F:	tools/testing/selftests/kmod/
 F:	tools/testing/selftests/module/
+
+MONOLITHIC POWER SYSTEM MPQ4210 REGULATOR DRIVER
+M:	Tapio Reijonen <tapio.reijonen@vaisala.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/regulator/mps,mpq4210.yaml
+F:	drivers/regulator/mpq4210.c
 
 MONOLITHIC POWER SYSTEM PMIC DRIVER
 M:	Saravanan Sekar <sravanhome@gmail.com>
@@ -21204,21 +21222,6 @@ M:	Linas Vepstas <linasvepstas@gmail.com>
 L:	linux-pci@vger.kernel.org
 S:	Supported
 F:	Documentation/PCI/pci-error-recovery.rst
-
-PCI LIVE UPDATE
-M:	David Matlack <dmatlack@google.com>
-R:	Pasha Tatashin <pasha.tatashin@soleen.com>
-R:	Mike Rapoport <rppt@kernel.org>
-R:	Pratyush Yadav <pratyush@kernel.org>
-L:	kexec@lists.infradead.org
-L:	linux-pci@vger.kernel.org
-S:	Maintained
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/liveupdate/linux.git
-F:	Documentation/PCI/liveupdate.rst
-F:	drivers/pci/liveupdate.c
-F:	drivers/pci/liveupdate.h
-F:	include/linux/kho/abi/pci.h
-F:	include/linux/pci_liveupdate.h
 
 PCI MSI DRIVER FOR ALTERA MSI IP
 L:	linux-pci@vger.kernel.org
@@ -24873,6 +24876,13 @@ R:	Broadcom internal kernel review list <bcm-kernel-feedback-list@broadcom.com>
 L:	linux-mmc@vger.kernel.org
 S:	Maintained
 F:	drivers/mmc/host/sdhci-brcmstb*
+
+SECURE DIGITAL HOST CONTROLLER INTERFACE (SDHCI) CADENCE DRIVER
+M:	Tanmay Kathpalia <tanmay.kathpalia@altera.com>
+L:	linux-mmc@vger.kernel.org
+S:	Supported
+F:	Documentation/devicetree/bindings/mmc/cdns,sd6hc.yaml
+F:	drivers/mmc/host/sdhci-cadence*
 
 SECURE DIGITAL HOST CONTROLLER INTERFACE (SDHCI) DRIVER
 M:	Adrian Hunter <adrian.hunter@intel.com>

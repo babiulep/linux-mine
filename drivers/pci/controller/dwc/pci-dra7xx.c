@@ -9,7 +9,6 @@
 
 #include <linux/clk.h>
 #include <linux/delay.h>
-#include <linux/device.h>
 #include <linux/err.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
@@ -680,7 +679,6 @@ static int dra7xx_pcie_probe(struct platform_device *pdev)
 	int i;
 	int phy_count;
 	struct phy **phy;
-	struct device_link **link;
 	void __iomem *base;
 	struct dw_pcie *pci;
 	struct dra7xx_pcie *dra7xx;
@@ -728,28 +726,20 @@ static int dra7xx_pcie_probe(struct platform_device *pdev)
 	if (!phy)
 		return -ENOMEM;
 
-	link = devm_kcalloc(dev, phy_count, sizeof(*link), GFP_KERNEL);
-	if (!link)
-		return -ENOMEM;
-
-	dra7xx->clk = devm_clk_get_optional_enabled(dev, NULL);
+	dra7xx->clk = devm_clk_get_optional(dev, NULL);
 	if (IS_ERR(dra7xx->clk))
 		return dev_err_probe(dev, PTR_ERR(dra7xx->clk),
 				     "clock request failed");
 
+	ret = clk_prepare_enable(dra7xx->clk);
+	if (ret)
+		return ret;
+
 	for (i = 0; i < phy_count; i++) {
 		snprintf(name, sizeof(name), "pcie-phy%d", i);
 		phy[i] = devm_phy_get(dev, name);
-		if (IS_ERR(phy[i])) {
-			ret = PTR_ERR(phy[i]);
-			goto err_link;
-		}
-
-		link[i] = device_link_add(dev, &phy[i]->dev, DL_FLAG_STATELESS);
-		if (!link[i]) {
-			ret = -EINVAL;
-			goto err_link;
-		}
+		if (IS_ERR(phy[i]))
+			return PTR_ERR(phy[i]);
 	}
 
 	dra7xx->base = base;
@@ -766,7 +756,7 @@ static int dra7xx_pcie_probe(struct platform_device *pdev)
 	ret = dra7xx_pcie_enable_phy(dra7xx);
 	if (ret) {
 		dev_err(dev, "failed to enable phy\n");
-		goto err_link;
+		return ret;
 	}
 
 	platform_set_drvdata(pdev, dra7xx);
@@ -850,10 +840,6 @@ err_get_sync:
 	pm_runtime_put(dev);
 	pm_runtime_disable(dev);
 	dra7xx_pcie_disable_phy(dra7xx);
-
-err_link:
-	while (--i >= 0)
-		device_link_del(link[i]);
 
 	return ret;
 }
