@@ -3827,7 +3827,7 @@ static int __get_segment_type_4(struct f2fs_io_info *fio)
 		else
 			return CURSEG_COLD_DATA;
 	} else {
-		if (IS_DNODE(fio->folio) && is_cold_node(fio->folio))
+		if (IS_DNODE(fio->sbi, fio->folio) && is_cold_node(fio->sbi, fio->folio))
 			return CURSEG_WARM_NODE;
 		else
 			return CURSEG_COLD_NODE;
@@ -3885,8 +3885,8 @@ static int __get_segment_type_6(struct f2fs_io_info *fio)
 		return f2fs_rw_hint_to_seg_type(F2FS_I_SB(inode),
 						inode->i_write_hint);
 	} else {
-		if (IS_DNODE(fio->folio))
-			return is_cold_node(fio->folio) ? CURSEG_WARM_NODE :
+		if (IS_DNODE(fio->sbi, fio->folio))
+			return is_cold_node(fio->sbi, fio->folio) ? CURSEG_WARM_NODE :
 						CURSEG_HOT_NODE;
 		return CURSEG_COLD_NODE;
 	}
@@ -4063,7 +4063,7 @@ skip_new_segment:
 	up_write(&sit_i->sentry_lock);
 
 	if (folio && IS_NODESEG(curseg->seg_type)) {
-		fill_node_footer_blkaddr(folio, NEXT_FREE_BLKADDR(sbi, curseg));
+		fill_node_footer_blkaddr(sbi, folio, NEXT_FREE_BLKADDR(sbi, curseg));
 
 		f2fs_inode_chksum_set(sbi, folio);
 	}
@@ -4161,7 +4161,7 @@ static void do_write_page(struct f2fs_summary *sum, struct f2fs_io_info *fio)
 			__func__, fio->ino, folio->index, type,
 			fio->old_blkaddr, fio->new_blkaddr, err);
 		folio_end_writeback(folio);
-		if (f2fs_in_warm_node_list(folio))
+		if (f2fs_in_warm_node_list(fio->sbi, folio))
 			f2fs_del_fsync_node_entry(fio->sbi, folio);
 		f2fs_bug_on(fio->sbi, !is_set_ckpt_flags(fio->sbi,
 							CP_ERROR_FLAG));

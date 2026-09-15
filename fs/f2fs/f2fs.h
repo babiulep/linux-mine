@@ -2311,9 +2311,10 @@ static inline struct f2fs_checkpoint *F2FS_CKPT(struct f2fs_sb_info *sbi)
 	return (struct f2fs_checkpoint *)(sbi->ckpt);
 }
 
-static inline struct node_footer *F2FS_NODE_FOOTER(const struct folio *folio)
+static inline struct node_footer *F2FS_NODE_FOOTER(struct f2fs_sb_info *sbi,
+						const struct folio *folio)
 {
-	return folio_address(folio) + F2FS_BLKSIZE(F2FS_F_SB(folio)) -
+	return folio_address(folio) + F2FS_BLKSIZE(sbi) -
 		sizeof(struct node_footer);
 }
 
@@ -2327,9 +2328,10 @@ static inline struct f2fs_inode *F2FS_INODE(const struct folio *folio)
 	return &((struct f2fs_node *)folio_address(folio))->i;
 }
 
-static inline __le32 *F2FS_INODE_NIDS(const struct folio *folio)
+static inline __le32 *F2FS_INODE_NIDS(struct f2fs_sb_info *sbi,
+						const struct folio *folio)
 {
-	return folio_address(folio) + F2FS_BLKSIZE(F2FS_F_SB(folio)) -
+	return folio_address(folio) + F2FS_BLKSIZE(sbi) -
 		sizeof(struct node_footer) -
 		SIZE_OF_I_NID;
 }
@@ -2369,14 +2371,14 @@ static inline struct address_space *NODE_MAPPING(struct f2fs_sb_info *sbi)
 	return sbi->node_inode->i_mapping;
 }
 
-static inline bool is_meta_folio(struct folio *folio)
+static inline bool is_meta_folio(struct f2fs_sb_info *sbi, struct folio *folio)
 {
-	return folio->mapping == META_MAPPING(F2FS_F_SB(folio));
+	return folio->mapping == META_MAPPING(sbi);
 }
 
-static inline bool is_node_folio(struct folio *folio)
+static inline bool is_node_folio(struct f2fs_sb_info *sbi, struct folio *folio)
 {
-	return folio->mapping == NODE_MAPPING(F2FS_F_SB(folio));
+	return folio->mapping == NODE_MAPPING(sbi);
 }
 
 static inline bool is_sbi_flag_set(struct f2fs_sb_info *sbi, unsigned int type)
@@ -3305,9 +3307,9 @@ static inline void f2fs_radix_tree_insert(struct radix_tree_root *root,
 		cond_resched();
 }
 
-static inline bool IS_INODE(const struct folio *folio)
+static inline bool IS_INODE(struct f2fs_sb_info *sbi, const struct folio *folio)
 {
-	struct node_footer *footer = F2FS_NODE_FOOTER(folio);
+	struct node_footer *footer = F2FS_NODE_FOOTER(sbi, folio);
 
 	return footer->nid == footer->ino;
 }
@@ -3318,18 +3320,22 @@ static inline int offset_in_addr(struct f2fs_inode *i)
 			(le16_to_cpu(i->i_extra_isize) / sizeof(__le32)) : 0;
 }
 
-static inline __le32 *blkaddr_in_node(const struct folio *folio)
+static inline __le32 *blkaddr_in_node(struct f2fs_sb_info *sbi,
+						const struct folio *folio)
 {
 	struct f2fs_node *node = F2FS_NODE(folio);
 
-	return IS_INODE(folio) ? node->i.i_addr : node->dn.addr;
+	return IS_INODE(sbi, folio) ? node->i.i_addr : node->dn.addr;
 }
 
 static inline int f2fs_has_extra_attr(struct inode *inode);
 static inline unsigned int get_dnode_base(struct inode *inode,
 					struct folio *node_folio)
 {
-	if (!IS_INODE(node_folio))
+	struct f2fs_sb_info *sbi = inode ? F2FS_I_SB(inode) :
+					F2FS_F_SB(node_folio);
+
+	if (!IS_INODE(sbi, node_folio))
 		return 0;
 
 	return inode ? get_extra_isize(inode) :
@@ -3339,7 +3345,10 @@ static inline unsigned int get_dnode_base(struct inode *inode,
 static inline __le32 *get_dnode_addr(struct inode *inode,
 					struct folio *node_folio)
 {
-	return blkaddr_in_node(node_folio) +
+	struct f2fs_sb_info *sbi = inode ? F2FS_I_SB(inode) :
+					F2FS_F_SB(node_folio);
+
+	return blkaddr_in_node(sbi, node_folio) +
 			get_dnode_base(inode, node_folio);
 }
 
@@ -4054,7 +4063,7 @@ enum node_type;
 
 int f2fs_check_nid_range(struct f2fs_sb_info *sbi, nid_t nid);
 bool f2fs_available_free_memory(struct f2fs_sb_info *sbi, int type);
-bool f2fs_in_warm_node_list(struct folio *folio);
+bool f2fs_in_warm_node_list(struct f2fs_sb_info *sbi, struct folio *folio);
 void f2fs_init_fsync_node_info(struct f2fs_sb_info *sbi);
 void f2fs_del_fsync_node_entry(struct f2fs_sb_info *sbi, struct folio *folio);
 void f2fs_reset_fsync_node_info(struct f2fs_sb_info *sbi);
