@@ -534,8 +534,7 @@ struct damon_sysfs_scheme_filter {
 	bool allow;
 	char *memcg_path;
 	struct damon_addr_range addr_range;
-	unsigned long range_min;
-	unsigned long range_max;
+	struct damon_size_range sz_range;
 	int target_idx;
 };
 
@@ -588,10 +587,6 @@ damos_sysfs_filter_type_names[] = {
 	{
 		.type = DAMOS_FILTER_TYPE_TARGET,
 		.name = "target",
-	},
-	{
-		.type = DAMOS_FILTER_TYPE_PROBE_HITS_WSUM,
-		.name = "probe_hits_wsum",
 	},
 };
 
@@ -783,7 +778,7 @@ static ssize_t min_show(struct kobject *kobj,
 	struct damon_sysfs_scheme_filter *filter = container_of(kobj,
 			struct damon_sysfs_scheme_filter, kobj);
 
-	return sysfs_emit(buf, "%lu\n", filter->range_min);
+	return sysfs_emit(buf, "%lu\n", filter->sz_range.min);
 }
 
 static ssize_t min_store(struct kobject *kobj,
@@ -791,7 +786,7 @@ static ssize_t min_store(struct kobject *kobj,
 {
 	struct damon_sysfs_scheme_filter *filter = container_of(kobj,
 			struct damon_sysfs_scheme_filter, kobj);
-	int err = kstrtoul(buf, 0, &filter->range_min);
+	int err = kstrtoul(buf, 0, &filter->sz_range.min);
 
 	return err ? err : count;
 }
@@ -802,7 +797,7 @@ static ssize_t max_show(struct kobject *kobj,
 	struct damon_sysfs_scheme_filter *filter = container_of(kobj,
 			struct damon_sysfs_scheme_filter, kobj);
 
-	return sysfs_emit(buf, "%lu\n", filter->range_max);
+	return sysfs_emit(buf, "%lu\n", filter->sz_range.max);
 }
 
 static ssize_t max_store(struct kobject *kobj,
@@ -810,7 +805,7 @@ static ssize_t max_store(struct kobject *kobj,
 {
 	struct damon_sysfs_scheme_filter *filter = container_of(kobj,
 			struct damon_sysfs_scheme_filter, kobj);
-	int err = kstrtoul(buf, 0, &filter->range_max);
+	int err = kstrtoul(buf, 0, &filter->sz_range.max);
 
 	return err ? err : count;
 }
@@ -1273,10 +1268,6 @@ struct damos_sysfs_qgoal_metric_name damos_sysfs_qgoal_metric_names[] = {
 	{
 		.metric = DAMOS_QUOTA_NODE_ELIGIBLE_MEM_BP,
 		.name = "node_eligible_mem_bp",
-	},
-	{
-		.metric = DAMOS_QUOTA_HUGEPAGE_MEM_BP,
-		.name = "hugepage_mem_bp",
 	},
 };
 
@@ -2840,20 +2831,12 @@ static int damon_sysfs_add_scheme_filters(struct damos *scheme,
 		} else if (filter->type == DAMOS_FILTER_TYPE_TARGET) {
 			filter->target_idx = sysfs_filter->target_idx;
 		} else if (filter->type == DAMOS_FILTER_TYPE_HUGEPAGE_SIZE) {
-			if (sysfs_filter->range_min >
-					sysfs_filter->range_max) {
+			if (sysfs_filter->sz_range.min >
+					sysfs_filter->sz_range.max) {
 				damos_destroy_filter(filter);
 				return -EINVAL;
 			}
-			filter->sz_range.min = sysfs_filter->range_min;
-			filter->sz_range.max = sysfs_filter->range_max;
-		} else if (filter->type == DAMOS_FILTER_TYPE_PROBE_HITS_WSUM) {
-			filter->range_min = sysfs_filter->range_min;
-			filter->range_max = sysfs_filter->range_max;
-			if (filter->range_min > filter->range_max) {
-				damos_destroy_filter(filter);
-				return -EINVAL;
-			}
+			filter->sz_range = sysfs_filter->sz_range;
 		}
 
 		damos_add_filter(scheme, filter);

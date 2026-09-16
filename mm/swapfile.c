@@ -370,6 +370,8 @@ static void discard_swap_cluster(struct swap_info_struct *si,
 	}
 }
 
+#define LATENCY_LIMIT		256
+
 static inline bool cluster_is_empty(struct swap_cluster_info *info)
 {
 	return info->count == 0;
@@ -416,17 +418,6 @@ static void swap_cluster_free_table_folio_rcu_cb(struct rcu_head *head)
 	folio_put(folio);
 }
 
-static void swap_cluster_free_count_table(struct swap_table *table)
-{
-	if (!SWP_TABLE_USE_PAGE) {
-		kmem_cache_free(swap_table_cachep, table);
-		return;
-	}
-
-	call_rcu(&(folio_page(virt_to_folio(table), 0)->rcu_head),
-		 swap_cluster_free_table_folio_rcu_cb);
-}
-
 static void swap_cluster_free_table(struct swap_cluster_info *ci)
 {
 	struct swap_table *table;
@@ -446,7 +437,13 @@ static void swap_cluster_free_table(struct swap_cluster_info *ci)
 		return;
 
 	rcu_assign_pointer(ci->table, NULL);
-	swap_cluster_free_count_table(table);
+	if (!SWP_TABLE_USE_PAGE) {
+		kmem_cache_free(swap_table_cachep, table);
+		return;
+	}
+
+	call_rcu(&(folio_page(virt_to_folio(table), 0)->rcu_head),
+		 swap_cluster_free_table_folio_rcu_cb);
 }
 
 static int swap_cluster_alloc_table(struct swap_cluster_info *ci, gfp_t gfp)
@@ -469,12 +466,14 @@ static int swap_cluster_alloc_table(struct swap_cluster_info *ci, gfp_t gfp)
 	if (!table)
 		return -ENOMEM;
 
+	rcu_assign_pointer(ci->table, table);
+
 #ifdef CONFIG_MEMCG
 	if (!mem_cgroup_disabled()) {
 		VM_WARN_ON_ONCE(ci->memcg_table);
 		ci->memcg_table = kzalloc_obj(*ci->memcg_table, gfp);
 		if (!ci->memcg_table) {
-			swap_cluster_free_count_table(table);
+			swap_cluster_free_table(ci);
 			return -ENOMEM;
 		}
 	}
@@ -485,16 +484,9 @@ static int swap_cluster_alloc_table(struct swap_cluster_info *ci, gfp_t gfp)
 	ci->zero_bitmap = bitmap_zalloc(SWAPFILE_CLUSTER, gfp);
 	if (!ci->zero_bitmap) {
 		swap_cluster_free_table(ci);
-		swap_cluster_free_count_table(table);
 		return -ENOMEM;
 	}
 #endif
-
-	/*
-	 * Make tables visible to cluster_is_usable() after everything is
-	 * ready.
-	 */
-	rcu_assign_pointer(ci->table, table);
 	return 0;
 }
 
@@ -1326,8 +1318,10 @@ static void swap_range_free(struct swap_info_struct *si, unsigned long offset,
 {
 	unsigned long end = offset + nr_entries - 1;
 	void (*swap_slot_free_notify)(struct block_device *, unsigned long);
+	unsigned int i;
 
-	zswap_invalidate(si->type, offset, nr_entries);
+	for (i = 0; i < nr_entries; i++)
+		zswap_invalidate(swp_entry(si->type, offset + i));
 
 	if (si->flags & SWP_BLKDEV)
 		swap_slot_free_notify =
@@ -1510,7 +1504,7 @@ int swap_retry_table_alloc(swp_entry_t entry, gfp_t gfp)
 	unsigned long offset = swp_offset(entry);
 
 	si = get_swap_device(entry);
-	if (IS_ERR_OR_NULL(si))
+	if (!si)
 		return 0;
 
 	ci = __swap_offset_to_cluster(si, offset);
@@ -1523,17 +1517,20 @@ int swap_retry_table_alloc(swp_entry_t entry, gfp_t gfp)
 static void swap_extend_table_try_free(struct swap_cluster_info *ci)
 {
 	unsigned long i;
+	bool can_free = true;
 
 	if (!ci->extend_table)
 		return;
 
 	for (i = 0; i < SWAPFILE_CLUSTER; i++) {
 		if (ci->extend_table[i])
-			return;
+			can_free = false;
 	}
 
-	kfree(ci->extend_table);
-	ci->extend_table = NULL;
+	if (can_free) {
+		kfree(ci->extend_table);
+		ci->extend_table = NULL;
+	}
 }
 
 /* Decrease the swap count of one slot, without freeing it */
@@ -1725,6 +1722,7 @@ restart:
 failed:
 	while (ci_off-- > ci_start)
 		__swap_cluster_put_entry(ci, ci_off);
+	swap_extend_table_try_free(ci);
 	swap_cluster_unlock(ci);
 	return err;
 }
@@ -1737,9 +1735,7 @@ failed:
  * swap cache.
  *
  * Context: Caller needs to hold the folio lock.
- * Return: %0 on success, %-E2BIG if splitting the folio might allow swapout,
- * %-ENOSPC if no global swap space is available, or %-ENOMEM if splitting
- * would not help.
+ * Return: Whether the folio was added to the swap cache.
  */
 int folio_alloc_swap(struct folio *folio)
 {
@@ -1751,11 +1747,11 @@ int folio_alloc_swap(struct folio *folio)
 
 	if (order) {
 		/*
-		 * Reject large allocation when THP_SWAP is disabled. Check below
-		 * whether splitting and retrying can make progress.
+		 * Reject large allocation when THP_SWAP is disabled,
+		 * the caller should split the folio and try again.
 		 */
 		if (!IS_ENABLED(CONFIG_THP_SWAP))
-			goto failed;
+			return -EAGAIN;
 
 		/*
 		 * Allocation size should never exceed cluster size
@@ -1763,7 +1759,7 @@ int folio_alloc_swap(struct folio *folio)
 		 */
 		if (size > SWAPFILE_CLUSTER) {
 			VM_WARN_ON_ONCE(1);
-			goto failed;
+			return -EINVAL;
 		}
 	}
 
@@ -1779,23 +1775,13 @@ again:
 	}
 
 	/* Need to call this even if allocation failed, for MEMCG_SWAP_FAIL. */
-	if (unlikely(mem_cgroup_try_charge_swap(folio))) {
+	if (unlikely(mem_cgroup_try_charge_swap(folio)))
 		swap_cache_del_folio(folio);
-		goto failed;
-	}
 
 	if (unlikely(!folio_test_swapcache(folio)))
-		goto failed;
-
-	return 0;
-
-failed:
-	if (get_nr_swap_pages() <= 0)
-		return -ENOSPC;
-	if (mem_cgroup_get_folio_swap_margin(folio) <= 0)
 		return -ENOMEM;
 
-	return order ? -E2BIG : -ENOMEM;
+	return 0;
 }
 
 /**
@@ -1824,7 +1810,7 @@ int folio_dup_swap(struct folio *folio, struct page *page)
 	VM_WARN_ON_FOLIO(!folio_test_swapcache(folio), folio);
 
 	if (page) {
-		entry = folio_page_swap_entry(folio, page);
+		entry.val += folio_page_idx(folio, page);
 		nr_pages = 1;
 	}
 
@@ -1851,7 +1837,7 @@ void folio_put_swap(struct folio *folio, struct page *page)
 	VM_WARN_ON_FOLIO(!folio_test_swapcache(folio), folio);
 
 	if (page) {
-		entry = folio_page_swap_entry(folio, page);
+		entry.val += folio_page_idx(folio, page);
 		nr_pages = 1;
 	}
 
@@ -1873,10 +1859,7 @@ void folio_put_swap(struct folio *folio, struct page *page)
  * Check whether swap entry is valid in the swap device.  If so,
  * return pointer to swap_info_struct, and keep the swap entry valid
  * via preventing the swap device from being swapoff, until
- * put_swap_device() is called.  Return NULL for an empty entry or a
- * device that is going away, and ERR_PTR(-EIO) if the entry's type
- * names no swap device or its offset is past the end of one. These EIOs
- * are preceded by pr_err().
+ * put_swap_device() is called.  Otherwise return NULL.
  *
  * Notice that swapoff or swapoff+swapon can still happen before the
  * percpu_ref_tryget_live() in get_swap_device() or after the
@@ -1917,14 +1900,12 @@ struct swap_info_struct *get_swap_device(swp_entry_t entry)
 	return si;
 bad_nofile:
 	pr_err_ratelimited("%s: %s%08lx\n", __func__, Bad_file, entry.val);
-	return ERR_PTR(-EIO);
-
 out:
 	return NULL;
 put_out:
 	pr_err_ratelimited("%s: %s%08lx\n", __func__, Bad_offset, entry.val);
 	percpu_ref_put(&si->users);
-	return ERR_PTR(-EIO);
+	return NULL;
 }
 
 /*
@@ -2020,7 +2001,7 @@ int swp_swapcount(swp_entry_t entry)
 	int count;
 
 	si = get_swap_device(entry);
-	if (IS_ERR_OR_NULL(si))
+	if (!si)
 		return 0;
 
 	ci = swap_cluster_lock(si, swp_offset(entry));
@@ -2146,7 +2127,7 @@ void swap_put_entries_direct(swp_entry_t entry, int nr)
 	struct swap_info_struct *si;
 
 	si = get_swap_device(entry);
-	if (WARN_ON_ONCE(IS_ERR_OR_NULL(si)))
+	if (WARN_ON_ONCE(!si))
 		return;
 	if (WARN_ON_ONCE(end_offset > si->max))
 		goto out;
@@ -2728,9 +2709,7 @@ unlock:
 static unsigned int find_next_to_unuse(struct swap_info_struct *si,
 					unsigned int prev)
 {
-	struct swap_cluster_info *ci;
-	unsigned long i, end;
-	unsigned int ci_off;
+	unsigned int i;
 	unsigned long swp_tb;
 
 	/*
@@ -2739,36 +2718,19 @@ static unsigned int find_next_to_unuse(struct swap_info_struct *si,
 	 * hits are okay, and sys_swapoff() has already prevented new
 	 * allocations from this area (while holding swap_lock).
 	 */
-	i = prev + 1;
-	while (i < si->max) {
-		ci = __swap_offset_to_cluster(si, i);
-		end = min_t(unsigned long,
-			    ALIGN_DOWN(i, SWAPFILE_CLUSTER) + SWAPFILE_CLUSTER,
-			    si->max);
-
-		/*
-		 * An empty cluster has no slot in use, so skip it whole.
-		 * A slot is uncounted only after its folio left the swap
-		 * cache, so there is nothing here for try_to_unuse() to act on.
-		 * Count only drops here, so a READ_ONCE() without ci->lock is
-		 * enough, unlike in every other cluster_is_empty() caller.
-		 */
-		if (!READ_ONCE(ci->count)) {
-			i = end;
+	for (i = prev + 1; i < si->max; i++) {
+		swp_tb = swap_table_get(__swap_offset_to_cluster(si, i),
+					i % SWAPFILE_CLUSTER);
+		if (!swp_tb_is_null(swp_tb) && !swp_tb_is_bad(swp_tb))
+			break;
+		if ((i % LATENCY_LIMIT) == 0)
 			cond_resched();
-			continue;
-		}
-
-		ci_off = i % SWAPFILE_CLUSTER;
-		for (; i < end; ci_off++, i++) {
-			swp_tb = swap_table_get(ci, ci_off);
-			if (!swp_tb_is_null(swp_tb) && !swp_tb_is_bad(swp_tb))
-				return i;
-		}
-		cond_resched();
 	}
 
-	return 0;
+	if (i == si->max)
+		i = 0;
+
+	return i;
 }
 
 static int try_to_unuse(unsigned int type)
@@ -2966,7 +2928,7 @@ EXPORT_SYMBOL_GPL(add_swap_extent);
 /*
  * A `swap extent' is a simple thing which maps a contiguous range of pages
  * onto a contiguous range of disk blocks.  A rbtree of swap extents is
- * built at swapon time and is then used at swap_writeout/swap_read_folio
+ * built at swapon time and is then used at swap_writepage/swap_read_folio
  * time for locating where on disk a page belongs.
  *
  * If the swapfile is an S_ISBLK block device, a single extent is installed.
@@ -3759,6 +3721,11 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 
 	maxpages = si->max;
 
+	/* Set up the swap cluster info */
+	error = setup_swap_clusters_info(si, swap_header, maxpages);
+	if (error)
+		goto bad_swap_unlock_inode;
+
 	if (si->bdev && bdev_stable_writes(si->bdev))
 		si->flags |= SWP_STABLE_WRITES;
 
@@ -3771,14 +3738,6 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 		atomic_inc(&nr_rotate_swap);
 		inced_nr_rotate_swap = true;
 	}
-
-	/*
-	 * Set up the swap cluster info after SWP_ flags handling as
-	 * setup_swap_clusters_info() checks SWP_SOLIDSTATE.
-	 */
-	error = setup_swap_clusters_info(si, swap_header, maxpages);
-	if (error)
-		goto bad_swap_unlock_inode;
 
 	if ((swap_flags & SWAP_FLAG_DISCARD) &&
 	    si->bdev && bdev_max_discard_sectors(si->bdev)) {

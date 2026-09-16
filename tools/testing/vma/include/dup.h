@@ -560,6 +560,7 @@ struct vm_area_struct {
 		vma_flags_t flags;
 	};
 
+#ifdef CONFIG_PER_VMA_LOCK
 	/*
 	 * Can only be written (using WRITE_ONCE()) while holding both:
 	 *  - mmap_lock (in write mode)
@@ -575,7 +576,7 @@ struct vm_area_struct {
 	 * slowpath.
 	 */
 	unsigned int vm_lock_seq;
-
+#endif
 	unsigned int __vm_anon_pgoff_lo;
 
 	/*
@@ -609,8 +610,10 @@ struct vm_area_struct {
 #ifdef CONFIG_NUMA_BALANCING
 	struct vma_numab_state *numab_state;	/* NUMA Balancing state */
 #endif
+#ifdef CONFIG_PER_VMA_LOCK
 	/* Unstable RCU readers are allowed to read this. */
 	refcount_t vm_refcnt;
+#endif
 #ifdef CONFIG_64BIT
 	unsigned int __vm_anon_pgoff_hi;
 #endif
@@ -1635,15 +1638,9 @@ static inline pgoff_t linear_anon_page_index(const struct vm_area_struct *vma,
 	const pgoff_t pgoff = __linear_anon_page_index(vma, address);
 
 	VM_WARN_ON_ONCE(!vma_is_cow_mapping(vma));
-	if (vma_is_anonymous(vma))
+	/* Account for MAP_PRIVATE-/dev/zero which is only semi-anonymous. */
+	if (vma_is_anonymous(vma) && !vma->vm_file)
 		VM_WARN_ON_ONCE(pgoff != linear_page_index(vma, address));
 
 	return pgoff;
-}
-
-extern const struct file_operations zero_fops;
-
-static inline bool file_is_dev_zero(const struct file *file)
-{
-	return file && file->f_op == &zero_fops;
 }

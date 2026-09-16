@@ -1097,6 +1097,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_NPCA_PUNCT_BITMAP] =
 		NLA_POLICY_FULL_RANGE(NLA_U32, &nl80211_punct_bitmap_range),
 	[NL80211_ATTR_STA_DUMP_LINK_STATS] = { .type = NLA_FLAG },
+	[NL80211_ATTR_FRAME_NO_STA] = { .type = NLA_FLAG },
 };
 
 /* policy for the key attributes */
@@ -14891,6 +14892,9 @@ static int nl80211_tx_mgmt(struct sk_buff *skb, struct genl_info *info)
 	    !(wdev->valid_links & BIT(params.link_id)))
 		return -EINVAL;
 
+	params.no_sta =
+		nla_get_flag(info->attrs[NL80211_ATTR_FRAME_NO_STA]);
+
 	params.buf = nla_data(info->attrs[NL80211_ATTR_FRAME]);
 	params.len = nla_len(info->attrs[NL80211_ATTR_FRAME]);
 
@@ -18462,6 +18466,7 @@ static int nl80211_set_multicast_to_unicast(struct sk_buff *skb,
 static int nl80211_set_pmk(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct wiphy *wiphy = &rdev->wiphy;
 	struct net_device *dev = info->user_ptr[1];
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct cfg80211_pmk_conf pmk_conf = {};
@@ -18470,7 +18475,9 @@ static int nl80211_set_pmk(struct sk_buff *skb, struct genl_info *info)
 	    wdev->iftype != NL80211_IFTYPE_P2P_CLIENT)
 		return -EOPNOTSUPP;
 
-	if (!wiphy_ext_feature_isset(&rdev->wiphy,
+	if (!wiphy_ext_feature_isset(wiphy,
+				     NL80211_EXT_FEATURE_FAST_ROAM_OFFLOAD) &&
+	    !wiphy_ext_feature_isset(wiphy,
 				     NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_1X))
 		return -EOPNOTSUPP;
 
@@ -18500,6 +18507,7 @@ static int nl80211_set_pmk(struct sk_buff *skb, struct genl_info *info)
 static int nl80211_del_pmk(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct wiphy *wiphy = &rdev->wiphy;
 	struct net_device *dev = info->user_ptr[1];
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	const u8 *aa;
@@ -18508,7 +18516,9 @@ static int nl80211_del_pmk(struct sk_buff *skb, struct genl_info *info)
 	    wdev->iftype != NL80211_IFTYPE_P2P_CLIENT)
 		return -EOPNOTSUPP;
 
-	if (!wiphy_ext_feature_isset(&rdev->wiphy,
+	if (!wiphy_ext_feature_isset(wiphy,
+				     NL80211_EXT_FEATURE_FAST_ROAM_OFFLOAD) &&
+	    !wiphy_ext_feature_isset(wiphy,
 				     NL80211_EXT_FEATURE_4WAY_HANDSHAKE_STA_1X))
 		return -EOPNOTSUPP;
 
@@ -22051,7 +22061,9 @@ int nl80211_send_mgmt(struct cfg80211_registered_device *rdev,
 	    (info->ack_tstamp && nla_put_u64_64bit(msg,
 						   NL80211_ATTR_TX_HW_TIMESTAMP,
 						   info->ack_tstamp,
-						   NL80211_ATTR_PAD)))
+						   NL80211_ATTR_PAD)) ||
+	    (info->no_sta &&
+	     nla_put_flag(msg, NL80211_ATTR_FRAME_NO_STA)))
 		goto nla_put_failure;
 
 	genlmsg_end(msg, hdr);

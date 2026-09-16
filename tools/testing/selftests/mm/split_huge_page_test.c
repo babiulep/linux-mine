@@ -101,6 +101,7 @@ static bool is_backed_by_folio(char *vaddr, int order, int pagemap_fd,
 	return (pfn_flags & folio_tail_flags) != folio_tail_flags;
 fail:
 	ksft_exit_fail_msg("Failed to get folio info\n");
+	return false;
 }
 
 static int check_after_split_folio_orders(char *vaddr_start, size_t len,
@@ -547,6 +548,7 @@ err_out_close:
 err_out_unlink:
 	unlink(testfile);
 	ksft_exit_fail_msg("Failed to create large pagecache folios\n");
+	return -1;
 }
 
 static void split_thp_in_pagecache_to_order_at(size_t fd_size,
@@ -709,4 +711,6 @@ int main(int argc, char **argv)
 	free(expected_orders);
 
 	ksft_finished();
+
+	return 0;
 }

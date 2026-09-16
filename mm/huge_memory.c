@@ -1064,8 +1064,7 @@ int folio_memcg_alloc_deferred(struct folio *folio)
 static int __init thp_shrinker_init(void)
 {
 	deferred_split_shrinker = shrinker_alloc(SHRINKER_NUMA_AWARE |
-						 SHRINKER_MEMCG_AWARE |
-						 SHRINKER_NONSLAB,
+						 SHRINKER_MEMCG_AWARE,
 						 "thp-deferred_split");
 	if (!deferred_split_shrinker)
 		return -ENOMEM;
@@ -1147,7 +1146,6 @@ subsys_initcall(hugepage_init);
 static int __init setup_transparent_hugepage(char *str)
 {
 	int ret = 0;
-
 	if (!str)
 		goto out;
 	if (!strcmp(str, "always")) {
@@ -1554,7 +1552,6 @@ static void set_huge_zero_folio(pgtable_t pgtable, struct mm_struct *mm,
 		struct folio *zero_folio)
 {
 	pmd_t entry;
-
 	entry = folio_mk_pmd(zero_folio, vma->vm_page_prot);
 	entry = pmd_mkspecial(entry);
 	pgtable_trans_huge_deposit(mm, pmd, pgtable);
@@ -2426,10 +2423,6 @@ bool madvise_free_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 	}
 
 	folio = pmd_folio(orig_pmd);
-
-	if (folio_is_zone_device(folio))
-		goto out;
-
 	/*
 	 * If other processes are mapping this folio, we couldn't discard
 	 * the folio unless they all do MADV_FREE so let's skip the folio.
@@ -2479,7 +2472,7 @@ static inline void zap_deposited_table(struct mm_struct *mm, pmd_t *pmd)
 	pgtable_t pgtable;
 
 	pgtable = pgtable_trans_huge_withdraw(mm, pmd);
-	pte_free_defer(mm, pgtable);
+	pte_free(mm, pgtable);
 	mm_dec_nr_ptes(mm);
 }
 
@@ -2529,11 +2522,11 @@ static bool has_deposited_pgtable(struct vm_area_struct *vma, pmd_t pmdval,
 		return true;
 
 	/*
-	 * Huge zero PMDs have a deposited page table only for anonymous VMAs,
-	 * see set_huge_zero_folio().
+	 * Huge zero always deposited except for DAX which handles itself, see
+	 * set_huge_zero_folio().
 	 */
 	if (is_huge_zero_pmd(pmdval))
-		return vma_is_anonymous(vma);
+		return !vma_is_dax(vma);
 
 	/*
 	 * Otherwise, only anonymous folios are deposited, see
@@ -2664,7 +2657,6 @@ bool move_huge_pmd(struct vm_area_struct *vma, unsigned long old_addr,
 
 		if (pmd_move_must_withdraw(new_ptl, old_ptl, vma)) {
 			pgtable_t pgtable;
-
 			pgtable = pgtable_trans_huge_withdraw(mm, old_pmd);
 			pgtable_trans_huge_deposit(mm, new_pmd, pgtable);
 		}
@@ -3763,10 +3755,6 @@ static void __split_folio_to_order(struct folio *folio, int old_order,
 		 */
 		VM_WARN_ON_ONCE_PAGE(new_folio->private, new_head);
 
-		/*
-		 * Not all folio fields are valid during a split, so open-code
-		 * the swap entry rather than using folio_swap_entry().
-		 */
 		if (folio_test_swapcache(folio))
 			new_folio->swap.val = folio->swap.val + i;
 
@@ -3957,8 +3945,9 @@ int folio_check_splittable(struct folio *folio, unsigned int new_order,
 	 * swapcache folio split. Only uniform split to order-0 can be used
 	 * here.
 	 */
-	if ((split_type == SPLIT_TYPE_NON_UNIFORM || new_order) && folio_test_swapcache(folio))
+	if ((split_type == SPLIT_TYPE_NON_UNIFORM || new_order) && folio_test_swapcache(folio)) {
 		return -EINVAL;
+	}
 
 	if (is_huge_zero_folio(folio))
 		return -EINVAL;
@@ -3977,25 +3966,6 @@ static unsigned int folio_cache_ref_count(const struct folio *folio)
 	return folio_nr_pages(folio);
 }
 
-static void folio_reset_partially_mapped(struct folio *folio)
-{
-	/* Folio must be frozen. */
-	VM_WARN_ON_FOLIO(folio_ref_count(folio), folio);
-
-	if (!folio_test_partially_mapped(folio))
-		return;
-
-	/*
-	 * Order-1 folios have no _deferred_list. The flag is only ever set
-	 * on folios that do, so the list can be checked after the flag.
-	 */
-	VM_WARN_ON_FOLIO(!list_empty(&folio->_deferred_list), folio);
-
-	folio_clear_partially_mapped(folio);
-	mod_mthp_stat(folio_order(folio),
-		      MTHP_STAT_NR_ANON_PARTIALLY_MAPPED, -1);
-}
-
 static int __folio_freeze_and_split_unmapped(struct folio *folio, unsigned int new_order,
 					     struct page *split_at, struct xa_state *xas,
 					     struct address_space *mapping, bool do_lru,
@@ -4004,24 +3974,43 @@ static int __folio_freeze_and_split_unmapped(struct folio *folio, unsigned int n
 {
 	struct folio *end_folio = folio_next(folio);
 	struct folio *new_folio, *next;
+	int old_order = folio_order(folio);
+	struct list_lru_one *lru;
+	bool dequeue_deferred;
 	int ret = 0;
 
 	VM_WARN_ON_ONCE(!mapping && end);
+	/*
+	 * If this folio can be on the deferred split queue, lock out
+	 * the shrinker before freezing the ref. If the shrinker sees
+	 * a 0-ref folio, it assumes it beat folio_put() to the list
+	 * lock and must clean up the LRU state - the same dequeue we
+	 * will do below as part of the split.
+	 */
+	dequeue_deferred = folio_test_anon(folio) && old_order > 1;
+	if (dequeue_deferred) {
+		struct mem_cgroup *memcg;
 
+		rcu_read_lock();
+		memcg = folio_memcg(folio);
+		lru = list_lru_lock(&deferred_split_lru,
+				    folio_nid(folio), &memcg);
+	}
 	if (folio_ref_freeze(folio, folio_cache_ref_count(folio) + 1)) {
 		struct swap_cluster_info *ci = NULL;
 		struct lruvec *lruvec;
 
-		/* Take off the deferred split queue while frozen and memcg set */
-		folio_unqueue_deferred_split(folio);
-
-		/*
-		 * deferred_split_scan() takes the folio off the queue before it
-		 * splits it, so the unqueue above finds an empty list and
-		 * leaves PG_partially_mapped set.
-		 * Clear it here: the flag does not survive the split.
-		 */
-		folio_reset_partially_mapped(folio);
+		if (dequeue_deferred) {
+			__list_lru_del(&deferred_split_lru, lru,
+				       &folio->_deferred_list, folio_nid(folio));
+			if (folio_test_partially_mapped(folio)) {
+				folio_clear_partially_mapped(folio);
+				mod_mthp_stat(old_order,
+					MTHP_STAT_NR_ANON_PARTIALLY_MAPPED, -1);
+			}
+			list_lru_unlock(lru);
+			rcu_read_unlock();
+		}
 
 		if (mapping) {
 			int nr = folio_nr_pages(folio);
@@ -4122,6 +4111,10 @@ static int __folio_freeze_and_split_unmapped(struct folio *folio, unsigned int n
 		if (ci)
 			swap_cluster_unlock(ci);
 	} else {
+		if (dequeue_deferred) {
+			list_lru_unlock(lru);
+			rcu_read_unlock();
+		}
 		return -EAGAIN;
 	}
 
@@ -4535,7 +4528,11 @@ bool __folio_unqueue_deferred_split(struct folio *folio)
 	memcg = folio_memcg(folio);
 	lru = list_lru_lock_irqsave(&deferred_split_lru, nid, &memcg, &flags);
 	if (__list_lru_del(&deferred_split_lru, lru, &folio->_deferred_list, nid)) {
-		folio_reset_partially_mapped(folio);
+		if (folio_test_partially_mapped(folio)) {
+			folio_clear_partially_mapped(folio);
+			mod_mthp_stat(folio_order(folio),
+				      MTHP_STAT_NR_ANON_PARTIALLY_MAPPED, -1);
+		}
 		unqueued = true;
 	}
 	list_lru_unlock_irqrestore(lru, &flags);
@@ -4637,11 +4634,22 @@ static enum lru_status deferred_split_isolate(struct list_head *item,
 	struct folio *folio = container_of(item, struct folio, _deferred_list);
 	struct list_head *freeable = cb_arg;
 
-	/* Lost race to folio_put() or the folio is under folio_ref_freeze() */
-	if (!folio_try_get(folio))
-		return LRU_SKIP;
+	if (folio_try_get(folio)) {
+		list_lru_isolate_move(lru, item, freeable);
+		return LRU_REMOVED;
+	}
 
-	list_lru_isolate_move(lru, item, freeable);
+	/*
+	 * We lost race with folio_put(). Read folio state before the
+	 * isolate: folio_unqueue_deferred_split() checks list_empty()
+	 * locklessly, so once removed the folio can be freed any time.
+	 */
+	if (folio_test_partially_mapped(folio)) {
+		folio_clear_partially_mapped(folio);
+		mod_mthp_stat(folio_order(folio),
+			      MTHP_STAT_NR_ANON_PARTIALLY_MAPPED, -1);
+	}
+	list_lru_isolate(lru, item);
 	return LRU_REMOVED;
 }
 

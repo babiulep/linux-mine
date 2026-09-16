@@ -4014,9 +4014,6 @@ static void l2cap_ecred_rsp_defer(struct l2cap_chan *chan, void *data)
 	if (chan->mode != L2CAP_MODE_EXT_FLOWCTL)
 		return;
 
-	if (chan->mode != L2CAP_MODE_EXT_FLOWCTL)
-		return;
-
 	/* Check if channel for outgoing connection or if it wasn't deferred
 	 * since in those cases it must be skipped.
 	 */

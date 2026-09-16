@@ -337,15 +337,21 @@ static void *file_setup_area_common(int nr_hpages, enum file_setup_ops setup)
 		ksft_exit_fail_perror("open()");
 
 	size = nr_hpages * hpage_pmd_size;
-	if (ftruncate(fd, size))
-		ksft_exit_fail_perror("ftruncate()");
+	if (ftruncate(fd, size)) {
+		perror("ftruncate()");
+		exit(EXIT_FAILURE);
+	}
 	p = mmap(BASE_ADDR, size, PROT_READ | PROT_WRITE,
 		MAP_SHARED, fd, 0);
-	if (p != BASE_ADDR)
-		ksft_exit_fail_perror("mmap()");
+	if (p != BASE_ADDR) {
+		perror("mmap()");
+		exit(EXIT_FAILURE);
+	}
 	fill_memory(p, 0, size);
-	if (msync(p, size, MS_SYNC))
-		ksft_exit_fail_perror("msync()");
+	if (msync(p, size, MS_SYNC)) {
+		perror("msync()");
+		exit(EXIT_FAILURE);
+	}
 	close(fd);
 	munmap(p, size);
 	success("OK");
@@ -420,7 +426,7 @@ static bool file_check_huge(void *addr, size_t len, int nr_hpages,
 	case VMA_SHMEM:
 		return check_huge_shmem(addr, len, nr_hpages, hpage_size);
 	default:
-		ksft_exit_fail_msg("Unknown VMA type\n");
+		exit(EXIT_FAILURE);
 		return false;
 	}
 }
@@ -1221,7 +1227,7 @@ static void parse_test_type(int argc, char **argv)
 		return;
 	}
 
-	buf = argv[0];
+	buf = strdup(argv[0]);
 	token = strsep(&buf, ":");
 
 	if (!strcmp(token, "all")) {

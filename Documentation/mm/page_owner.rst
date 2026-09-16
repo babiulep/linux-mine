@@ -199,7 +199,6 @@ Usage
 		-p		Sort by pid.
 		-P		Sort by tgid.
 		-n		Sort by task command name.
-		-M		Sort by module name.
 		-r		Sort by memory release time.
 		-s		Sort by stack trace.
 		-t		Sort by times (default).
@@ -241,10 +240,8 @@ Usage
 					group ID numbers appear in <tgidlist>.
 		--name <cmdlist>	Select by task command name. This selects the blocks whose
 					task command name appear in <cmdlist>.
-		--module <modlist>	Select by module name. This selects the blocks whose
-					module name appear in <modlist>.
 
-		<pidlist>, <tgidlist>, <cmdlist>, <modlist> are single arguments in the form of a comma-separated list,
+		<pidlist>, <tgidlist>, <cmdlist> are single arguments in the form of a comma-separated list,
 		which offers a way to specify individual selecting rules.
 
 
@@ -252,7 +249,6 @@ Usage
 				./page_owner_sort <input> <output> --pid=1
 				./page_owner_sort <input> <output> --tgid=1,2,3
 				./page_owner_sort <input> <output> --name name1,name2
-				./page_owner_sort <input> <output> --module xfs,ext4
 
 STANDARD FORMAT SPECIFIERS
 ==========================
@@ -269,7 +265,6 @@ STANDARD FORMAT SPECIFIERS
 	ft		free_ts		timestamp of the page when it was released
 	at		alloc_ts	timestamp of the page when it was allocated
 	ator		allocator	memory allocator for pages
-	mod		module		kernel module name
 
   For --cull option:
 
@@ -280,7 +275,6 @@ STANDARD FORMAT SPECIFIERS
 	f		free		whether the page has been released or not
 	st		stacktrace	stack trace of the page allocation
 	ator		allocator	memory allocator for pages
-	mod		module		kernel module name
 
 Filtering page_owner output
 ============================

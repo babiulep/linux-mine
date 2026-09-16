@@ -272,10 +272,13 @@ struct stack_map_vma_lock {
 /*
  * Acquire a stable read-side reference on the VMA covering @ip.
  *
- * On NOMMU configurations, returns with the mmap_lock held.  If the MMU
- * is enabled, the per-VMA lock will be held instead.  The lock
- * should be released with stack_map_unlock_vma() which will release the
- * appropriate lock.  Once the lock is released, the VMA may be freed.
+ * With CONFIG_PER_VMA_LOCK=y this returns a VMA with its per-VMA read
+ * lock held and mmap_lock dropped, so the caller may sleep.
+ *
+ * With CONFIG_PER_VMA_LOCK=n it returns a VMA with mmap_lock still
+ * held; the caller must snapshot any fields it needs and pin vm_file
+ * with get_file() before stack_map_unlock_vma() drops mmap_lock, as
+ * the VMA may be split, merged, or freed after that.
  *
  * Returns NULL on failure, in which case no lock is held.
  */
@@ -285,6 +288,7 @@ stack_map_lock_vma(struct stack_map_vma_lock *lock, unsigned long ip)
 	struct mm_struct *mm = lock->mm;
 	struct vm_area_struct *vma;
 
+	/* noop under !CONFIG_PER_VMA_LOCK */
 	vma = lock_vma_under_rcu(mm, ip);
 	if (vma) {
 		lock->vma = vma;
@@ -304,20 +308,21 @@ stack_map_lock_vma(struct stack_map_vma_lock *lock, unsigned long ip)
 		return NULL;
 	}
 
-#ifdef CONFIG_MMU
+#ifdef CONFIG_PER_VMA_LOCK
 	if (!vma_start_read_locked(vma)) {
 		mmap_read_unlock(mm);
 		return NULL;
 	}
 	mmap_read_unlock(mm);
 #endif
+
 	lock->vma = vma;
 	return vma;
 }
 
 static void stack_map_unlock_vma(struct stack_map_vma_lock *lock)
 {
-#ifdef CONFIG_MMU
+#ifdef CONFIG_PER_VMA_LOCK
 	vma_end_read(lock->vma);
 #else
 	mmap_read_unlock(lock->mm);

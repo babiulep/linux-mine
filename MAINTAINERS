@@ -113,7 +113,7 @@ F:	net/6lowpan/
 M:	Johannes Berg <johannes@sipsolutions.net>
 L:	linux-wireless@vger.kernel.org
 S:	Maintained
-W:	https://wireless.wiki.kernel.org/
+W:	https://wireless.docs.kernel.org/en/latest/
 Q:	https://patchwork.kernel.org/project/linux-wireless/list/
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/wireless/wireless.git
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/wireless/wireless-next.git
@@ -4275,13 +4275,13 @@ M:	Nick Kossifidis <mickflemm@gmail.com>
 M:	Luis Chamberlain <mcgrof@kernel.org>
 L:	linux-wireless@vger.kernel.org
 S:	Maintained
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/ath5k
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/ath5k.html
 F:	drivers/net/wireless/ath/ath5k/
 
 ATHEROS ATH6KL WIRELESS DRIVER
 L:	linux-wireless@vger.kernel.org
 S:	Orphan
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/ath6kl
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/ath6kl.html
 F:	drivers/net/wireless/ath/ath6kl/
 
 ATI_REMOTE2 DRIVER
@@ -4569,14 +4569,14 @@ B43 WIRELESS DRIVER
 L:	linux-wireless@vger.kernel.org
 L:	b43-dev@lists.infradead.org
 S:	Orphan
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/b43
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/b43.html
 F:	drivers/net/wireless/broadcom/b43/
 
 B43LEGACY WIRELESS DRIVER
 L:	linux-wireless@vger.kernel.org
 L:	b43-dev@lists.infradead.org
 S:	Orphan
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/b43
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/b43.html
 F:	drivers/net/wireless/broadcom/b43legacy/
 
 BACKLIGHT CLASS/SUBSYSTEM
@@ -5946,7 +5946,7 @@ CARL9170 LINUX COMMUNITY WIRELESS DRIVER
 M:	Christian Lamparter <chunkeey@googlemail.com>
 L:	linux-wireless@vger.kernel.org
 S:	Maintained
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/carl9170
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/carl9170.html
 F:	drivers/net/wireless/ath/carl9170/
 
 CAVIUM I2C DRIVER
@@ -12196,7 +12196,6 @@ F:	Documentation/mm/hugetlbfs_reserv.rst
 F:	Documentation/mm/vmemmap_dedup.rst
 F:	fs/hugetlbfs/
 F:	include/linux/hugetlb.h
-F:	include/linux/vmemmap-optimization.h
 F:	include/trace/events/hugetlbfs.h
 F:	mm/hugetlb.c
 F:	mm/hugetlb_cgroup.c
@@ -13677,7 +13676,7 @@ INTEL WIRELESS WIFI LINK (iwlwifi)
 M:	Miri Korenblit <miriam.rachel.korenblit@intel.com>
 L:	linux-wireless@vger.kernel.org
 S:	Supported
-W:	https://wireless.wiki.kernel.org/en/users/drivers/iwlwifi
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/iwlwifi.html
 T:	git https://git.kernel.org/pub/scm/linux/kernel/git/iwlwifi/iwlwifi-next.git/
 F:	drivers/net/wireless/intel/iwlwifi/
 
@@ -15790,7 +15789,7 @@ MAC80211
 M:	Johannes Berg <johannes@sipsolutions.net>
 L:	linux-wireless@vger.kernel.org
 S:	Maintained
-W:	https://wireless.wiki.kernel.org/
+W:	https://wireless.docs.kernel.org/en/latest/
 Q:	https://patchwork.kernel.org/project/linux-wireless/list/
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/wireless/wireless.git
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/wireless/wireless-next.git
@@ -17430,10 +17429,8 @@ F:	Documentation/ABI/testing/sysfs-kernel-mm-cma
 F:	Documentation/ABI/testing/sysfs-kernel-mm-memory-tiers
 F:	Documentation/ABI/testing/sysfs-kernel-mm-numa
 F:	Documentation/admin-guide/mm/
-F:	Documentation/core-api/memory-allocation.rst
-F:	Documentation/core-api/mm-api.rst
 F:	Documentation/mm/
-F:	mm/char-mem.c
+F:	drivers/char/mem.c
 F:	include/linux/cma.h
 F:	include/linux/dmapool.h
 F:	include/linux/ioremap.h
@@ -17592,7 +17589,6 @@ F:	Documentation/admin-guide/mm/transhuge.rst
 F:	include/linux/huge_mm.h
 F:	include/linux/khugepaged.h
 F:	include/trace/events/huge_memory.h
-F:	mm/collapse.h
 F:	mm/huge_memory.c
 F:	mm/khugepaged.c
 F:	mm/mm_slot.h
@@ -17639,7 +17635,7 @@ L:	linux-mm@kvack.org
 S:	Maintained
 W:	http://www.linux-mm.org
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/akpm/mm
-F:	mm/char-mem.c
+F:	drivers/char/mem.c
 F:	include/trace/events/mmap.h
 F:	fs/proc/task_mmu.c
 F:	fs/proc/task_nommu.c
@@ -19097,7 +19093,7 @@ NETWORKING DRIVERS (WIRELESS)
 M:	Johannes Berg <johannes@sipsolutions.net>
 L:	linux-wireless@vger.kernel.org
 S:	Maintained
-W:	https://wireless.wiki.kernel.org/
+W:	https://wireless.docs.kernel.org/en/latest/
 Q:	https://patchwork.kernel.org/project/linux-wireless/list/
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/wireless/wireless.git
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/wireless/wireless-next.git
@@ -20787,7 +20783,7 @@ P54 WIRELESS DRIVER
 M:	Christian Lamparter <chunkeey@googlemail.com>
 L:	linux-wireless@vger.kernel.org
 S:	Maintained
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/p54
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/p54.html
 F:	Documentation/devicetree/bindings/net/wireless/st,stlc4560.yaml
 F:	drivers/net/wireless/intersil/
 
@@ -22477,7 +22473,7 @@ M:	Jeff Johnson <jjohnson@kernel.org>
 L:	linux-wireless@vger.kernel.org
 L:	ath12k@lists.infradead.org
 S:	Supported
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/ath12k
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/ath12k.html
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/ath/ath.git
 F:	drivers/net/wireless/ath/ath12k/
 N:	ath12k
@@ -22487,7 +22483,7 @@ M:	Jeff Johnson <jjohnson@kernel.org>
 L:	linux-wireless@vger.kernel.org
 L:	ath10k@lists.infradead.org
 S:	Supported
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/ath10k
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/ath10k.html
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/ath/ath.git
 F:	drivers/net/wireless/ath/ath10k/
 N:	ath10k
@@ -22497,8 +22493,8 @@ M:	Jeff Johnson <jjohnson@kernel.org>
 L:	linux-wireless@vger.kernel.org
 L:	ath11k@lists.infradead.org
 S:	Supported
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/ath11k
-B:	https://wireless.wiki.kernel.org/en/users/Drivers/ath11k/bugreport
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/ath11k.html
+B:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/ath11k/bugreport.html
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/ath/ath.git
 F:	drivers/net/wireless/ath/ath11k/
 N:	ath11k
@@ -22507,7 +22503,7 @@ QUALCOMM ATHEROS ATH9K WIRELESS DRIVER
 M:	Toke Høiland-Jørgensen <toke@toke.dk>
 L:	linux-wireless@vger.kernel.org
 S:	Maintained
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/ath9k
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/ath9k.html
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/ath/ath.git
 F:	Documentation/devicetree/bindings/net/wireless/qca,ath9k.yaml
 F:	drivers/net/wireless/ath/ath9k/
@@ -22859,7 +22855,7 @@ M:	Loic Poulain <loic.poulain@oss.qualcomm.com>
 L:	wcn36xx@lists.infradead.org
 L:	linux-wireless@vger.kernel.org
 S:	Supported
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/wcn36xx
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/wcn36xx.html
 F:	drivers/net/wireless/ath/wcn36xx/
 
 QUANTENNA QTNFMAC WIRELESS DRIVER
@@ -23618,7 +23614,7 @@ RFKILL
 M:	Johannes Berg <johannes@sipsolutions.net>
 L:	linux-wireless@vger.kernel.org
 S:	Maintained
-W:	https://wireless.wiki.kernel.org/
+W:	https://wireless.docs.kernel.org/en/latest/
 Q:	https://patchwork.kernel.org/project/linux-wireless/list/
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/wireless/wireless.git
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/wireless/wireless-next.git
@@ -23706,7 +23702,8 @@ F:	drivers/iommu/riscv/
 
 RISC-V MICROCHIP SUPPORT
 M:	Conor Dooley <conor.dooley@microchip.com>
-M:	Daire McNamara <daire.mcnamara@microchip.com>
+R:	Valentina Fernandez <valentina.fernandezalanis@microchip.com>
+R:	Daire McNamara <daire.mcnamara@microchip.com>
 L:	linux-riscv@lists.infradead.org
 S:	Supported
 T:	git https://git.kernel.org/pub/scm/linux/kernel/git/conor/linux.git/ (dts, soc, firmware)
@@ -23788,6 +23785,7 @@ F:	include/linux/mailbox/riscv-rpmi-message.h
 
 RISC-V SPACEMIT SoC Support
 M:	Yixun Lan <dlan@kernel.org>
+R:	Troy Mitchell <troy.mitchell@linux.spacemit.com>
 L:	linux-riscv@lists.infradead.org
 L:	spacemit@lists.linux.dev
 S:	Maintained
@@ -25939,6 +25937,14 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/sound/spacemit,k1-i2s.yaml
 F:	sound/soc/spacemit/k1_i2s.c
 
+SPACEMIT RESET CONTROLLER DRIVER
+M:	Guodong Xu <docular.xu@gmail.com>
+L:	linux-riscv@lists.infradead.org
+L:	spacemit@lists.linux.dev
+S:	Maintained
+F:	drivers/reset/spacemit/
+F:	include/dt-bindings/reset/spacemit,k3-resets.h
+
 SPANISH DOCUMENTATION
 M:	Carlos Bilbao <carlos.bilbao@kernel.org>
 R:	Avadhut Naik <avadhut.naik@amd.com>
@@ -27731,8 +27737,8 @@ F:	drivers/media/platform/ti/vpe/
 TI WILINK WIRELESS DRIVERS
 L:	linux-wireless@vger.kernel.org
 S:	Orphan
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/wl12xx
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/wl1251
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/wl12xx.html
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/wl1251.html
 F:	drivers/net/wireless/ti/
 
 TIMEKEEPING, CLOCKSOURCE CORE, NTP, ALARMTIMER
@@ -29616,7 +29622,7 @@ F:	drivers/hid/hid-wiimote*
 WILOCITY WIL6210 WIRELESS DRIVER
 L:	linux-wireless@vger.kernel.org
 S:	Orphan
-W:	https://wireless.wiki.kernel.org/en/users/Drivers/wil6210
+W:	https://wireless.docs.kernel.org/en/latest/en/users/drivers/wil6210.html
 F:	drivers/net/wireless/ath/wil6210/
 
 WINBOND CIR DRIVER

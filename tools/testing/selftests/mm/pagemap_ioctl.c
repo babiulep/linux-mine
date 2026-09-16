@@ -36,15 +36,15 @@
 
 #define TEST_ITERATIONS 100
 #define PAGEMAP "/proc/self/pagemap"
-static int pagemap_fd;
-static int uffd;
-static size_t page_size;
-static size_t hpage_size;
-static const char *progname;
+int pagemap_fd;
+int uffd;
+size_t page_size;
+size_t hpage_size;
+const char *progname;
 
 #define LEN(region)	((region.end - region.start)/page_size)
 
-static long pagemap_ioctl(void *start, size_t len, void *vec, size_t vec_len, int flag,
+static long pagemap_ioctl(void *start, int len, void *vec, int vec_len, int flag,
 			  int max_pages, long required_mask, long anyof_mask, long excluded_mask,
 			  long return_mask)
 {
@@ -65,7 +65,7 @@ static long pagemap_ioctl(void *start, size_t len, void *vec, size_t vec_len, in
 	return ioctl(pagemap_fd, PAGEMAP_SCAN, &arg);
 }
 
-static long pagemap_ioc(void *start, size_t len, void *vec, size_t vec_len, int flag,
+static long pagemap_ioc(void *start, int len, void *vec, int vec_len, int flag,
 			int max_pages, long required_mask, long anyof_mask, long excluded_mask,
 			long return_mask, long *walk_end)
 {
@@ -92,7 +92,8 @@ static long pagemap_ioc(void *start, size_t len, void *vec, size_t vec_len, int 
 	return ret;
 }
 
-static int init_uffd(void)
+
+int init_uffd(void)
 {
 	struct uffdio_api uffdio_api;
 
@@ -115,7 +116,7 @@ static int init_uffd(void)
 	return 0;
 }
 
-static int wp_init(void *addr, size_t size)
+int wp_init(void *addr, long size)
 {
 	struct uffdio_register uffdio_register;
 	struct uffdio_writeprotect wp;
@@ -139,7 +140,7 @@ static int wp_init(void *addr, size_t size)
 	return 0;
 }
 
-static int wp_free(void *addr, size_t size)
+int wp_free(void *addr, long size)
 {
 	struct uffdio_register uffdio_register;
 
@@ -151,7 +152,7 @@ static int wp_free(void *addr, size_t size)
 	return 0;
 }
 
-static int wp_addr_range(void *addr, size_t size)
+int wp_addr_range(void *addr, int size)
 {
 	if (pagemap_ioctl(addr, size, NULL, 0,
 			  PM_SCAN_WP_MATCHING | PM_SCAN_CHECK_WPASYNC,
@@ -161,7 +162,7 @@ static int wp_addr_range(void *addr, size_t size)
 	return 0;
 }
 
-static void *gethugetlb_mem(size_t size, int *shmid)
+void *gethugetlb_mem(int size, int *shmid)
 {
 	char *mem;
 
@@ -185,10 +186,9 @@ static void *gethugetlb_mem(size_t size, int *shmid)
 	return mem;
 }
 
-static int userfaultfd_tests(void)
+int userfaultfd_tests(void)
 {
-	size_t mem_size, vec_size, num_pages = 16;
-	long written;
+	long mem_size, vec_size, written, num_pages = 16;
 	char *mem, *vec;
 
 	mem_size = num_pages * page_size;
@@ -229,10 +229,9 @@ static int userfaultfd_tests(void)
 	return 0;
 }
 
-static int get_reads(struct page_region *vec, size_t vec_size)
+int get_reads(struct page_region *vec, int vec_size)
 {
-	size_t i;
-	int sum = 0;
+	int i, sum = 0;
 
 	for (i = 0; i < vec_size; i++)
 		sum += LEN(vec[i]);
@@ -240,9 +239,9 @@ static int get_reads(struct page_region *vec, size_t vec_size)
 	return sum;
 }
 
-static int sanity_tests_sd(void)
+int sanity_tests_sd(void)
 {
-	size_t mem_size, vec_size, i, total_pages = 0;
+	unsigned long long mem_size, vec_size, i, total_pages = 0;
 	long ret, ret2, ret3;
 	int num_pages = 1000;
 	int total_writes, total_reads, reads, count;
@@ -332,7 +331,7 @@ static int sanity_tests_sd(void)
 	if (ret < 0)
 		ksft_exit_fail_msg("error %ld %d %s\n", ret, errno, strerror(errno));
 
-	ksft_test_result((size_t)ret == mem_size/(page_size * 2),
+	ksft_test_result((unsigned long long)ret == mem_size/(page_size * 2),
 			 "%s Repeated pattern of written and non-written pages\n", __func__);
 
 	/* 4. Repeated pattern of written and non-written pages in parts */
@@ -683,9 +682,9 @@ static int sanity_tests_sd(void)
 	return 0;
 }
 
-static int base_tests(char *prefix, char *mem, size_t mem_size, int skip)
+int base_tests(char *prefix, char *mem, unsigned long long mem_size, int skip)
 {
-	size_t vec_size;
+	unsigned long long vec_size;
 	int written;
 	struct page_region *vec, *vec2;
 
@@ -788,7 +787,7 @@ static int base_tests(char *prefix, char *mem, size_t mem_size, int skip)
 	return 0;
 }
 
-static void *gethugepage(size_t map_size)
+void *gethugepage(int map_size)
 {
 	int ret;
 	char *map;
@@ -806,13 +805,13 @@ static void *gethugepage(size_t map_size)
 	return map;
 }
 
-static int hpage_unit_tests(void)
+int hpage_unit_tests(void)
 {
 	char *map;
 	int ret, ret2;
 	size_t num_pages = 10;
-	size_t map_size = hpage_size * num_pages;
-	size_t vec_size = map_size/page_size;
+	unsigned long long map_size = hpage_size * num_pages;
+	unsigned long long vec_size = map_size/page_size;
 	struct page_region *vec, *vec2;
 
 	vec = calloc(vec_size, sizeof(struct page_region));
@@ -1000,12 +999,11 @@ static int hpage_unit_tests(void)
 	return 0;
 }
 
-static int unmapped_region_tests(void)
+int unmapped_region_tests(void)
 {
 	void *start = (void *)0x10000000;
-	int written;
-	size_t len = 0x00040000;
-	size_t vec_size = len / page_size;
+	int written, len = 0x00040000;
+	long vec_size = len / page_size;
 	struct page_region *vec = calloc(vec_size, sizeof(struct page_region));
 	if (!vec)
 		ksft_exit_fail_msg("error nomem\n");
@@ -1074,7 +1072,7 @@ static void test_simple(void)
  * with no page table, exercising pagemap_scan_pte_hole(); a base-page range
  * leaves pte_none entries.
  */
-static void unpopulated_written_test(const char *name, char *mem, size_t size,
+static void unpopulated_written_test(const char *name, char *mem, long size,
 				     bool use_thp)
 {
 	long npages = size / page_size, fast = 0, slow = 0, ret;
@@ -1117,7 +1115,7 @@ out:
 
 static void unpopulated_scan_test(void)
 {
-	size_t mem_size = 16 * page_size;
+	long mem_size = 16 * page_size;
 	char *mem;
 
 	mem = mmap(NULL, mem_size, PROT_READ | PROT_WRITE,
@@ -1157,10 +1155,10 @@ static void unpopulated_thp_scan_test(void)
 	munmap(area, 2 * hpage_size);
 }
 
-static int sanity_tests(void)
+int sanity_tests(void)
 {
-	size_t mem_size, vec_size, i, buf_size;
-	long ret, fd, nr_pages;
+	unsigned long long mem_size, vec_size;
+	long ret, fd, i, buf_size, nr_pages;
 	struct page_region *vec;
 	char *mem, *fmem;
 	struct stat sbuf;
@@ -1329,7 +1327,7 @@ static int sanity_tests(void)
 	return 0;
 }
 
-static int mprotect_tests(void)
+int mprotect_tests(void)
 {
 	int ret;
 	char *mem, *mem2;
@@ -1449,7 +1447,7 @@ static ssize_t get_dirty_pages_reset(char *mem, unsigned int count,
 	return cnt;
 }
 
-static void *thread_proc(void *mem)
+void *thread_proc(void *mem)
 {
 	int *m = mem;
 	long curr_faults, faults;
@@ -1489,7 +1487,7 @@ static void *thread_proc(void *mem)
 	return NULL;
 }
 
-static void transact_test(void)
+static void transact_test(int page_size)
 {
 	unsigned int i, count, extra_pages;
 	unsigned int c;
@@ -1582,11 +1580,11 @@ static void transact_test(void)
 			      extra_thread_faults);
 }
 
-static void zeropfn_tests(void)
+void zeropfn_tests(void)
 {
-	size_t mem_size, i;
+	unsigned long long mem_size;
 	struct page_region vec;
-	int ret;
+	int i, ret;
 	char *mmap_mem, *mem;
 
 	/* Test with normal memory */
@@ -1644,17 +1642,14 @@ static void zeropfn_tests(void)
 
 int main(int __attribute__((unused)) argc, char *argv[])
 {
-	int shmid, fd, ret;
-	size_t mem_size, buf_size, i;
+	int shmid, buf_size, fd, i, ret;
+	unsigned long long mem_size;
 	char *mem, *map, *fmem;
 	struct stat sbuf;
 
 	progname = argv[0];
 
 	ksft_print_header();
-
-	page_size = getpagesize();
-	hpage_size = read_pmd_pagesize();
 
 	if (init_uffd())
 		ksft_exit_skip("Failed to initialize userfaultfd\n");
@@ -1663,6 +1658,9 @@ int main(int __attribute__((unused)) argc, char *argv[])
 		ksft_print_msg("HugeTLB test will be skipped\n");
 
 	ksft_set_plan(119);
+
+	page_size = getpagesize();
+	hpage_size = read_pmd_pagesize();
 
 	pagemap_fd = open(PAGEMAP, O_RDONLY);
 	if (pagemap_fd < 0)
@@ -1823,7 +1821,7 @@ int main(int __attribute__((unused)) argc, char *argv[])
 	mprotect_tests();
 
 	/* 13. Transact test */
-	transact_test();
+	transact_test(page_size);
 
 	/* 14. Sanity testing */
 	sanity_tests();
