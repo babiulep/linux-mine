@@ -301,7 +301,7 @@ out:
 	}
 
 	ti->num_flush_bios = 1;
-	ti->flush_supported = true;
+	ti->flush_supported = dc->flush.delay != 0;
 	ti->num_discard_bios = 1;
 	ti->accounts_remapped_io = true;
 	ti->per_io_data_size = sizeof(struct dm_delay_info);

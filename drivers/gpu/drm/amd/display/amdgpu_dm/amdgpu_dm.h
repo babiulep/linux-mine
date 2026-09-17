@@ -1242,10 +1242,10 @@ bool update_planes_and_stream_adapter(struct dc *dc,
 				      struct dc_stream_state *stream,
 				      struct dc_stream_update *stream_update,
 				      struct dc_surface_update *array_of_surface_update);
-int fill_plane_color_attributes(const struct drm_atomic_commit *state,
-				const struct drm_plane_state *plane_state,
-				const enum surface_pixel_format format,
-				enum dc_color_space *color_space);
+int fill_plane_color_attributes(struct drm_atomic_commit *state,
+			    const struct drm_plane_state *plane_state,
+			    const enum surface_pixel_format format,
+			    enum dc_color_space *color_space);
 bool modereset_required(struct drm_crtc_state *crtc_state);
 bool is_scaling_state_different(const struct dm_connector_state *dm_state,
 				const struct dm_connector_state *old_dm_state);
@@ -1305,10 +1305,11 @@ void dm_set_writeback(struct amdgpu_display_manager *dm,
 		      struct drm_connector_state *new_con_state);
 int dm_early_init(struct amdgpu_ip_block *ip_block);
 int fill_dc_plane_info_and_addr(struct amdgpu_device *adev,
-                                struct drm_atomic_commit *state,
+				struct drm_atomic_commit *state,
 				const struct drm_plane_state *plane_state,
 				struct dc_plane_info *plane_info,
-				struct dc_plane_address *address, bool tmz_surface);
+				struct dc_plane_address *address,
+				bool tmz_surface);
 int dm_update_mst_vcpi_slots_for_dsc(struct drm_atomic_commit *state, struct dc_state *dc_state,
 				     struct dsc_mst_fairness_vars *vars);
 void manage_dm_interrupts(struct amdgpu_device *adev, struct amdgpu_crtc *acrtc,
@@ -1323,9 +1324,7 @@ int amdgpu_dm_mode_config_init(struct amdgpu_device *adev);
 int initialize_plane(struct amdgpu_display_manager *dm, struct amdgpu_mode_info *mode_info,
 		     int plane_id, enum drm_plane_type plane_type,
 		     const struct dc_plane_cap *plane_cap);
-int fill_dc_plane_attributes(struct amdgpu_device *adev,
-			     struct drm_atomic_commit *state,
-			     struct dc_plane_state *dc_plane_state,
+int fill_dc_plane_attributes(struct amdgpu_device *adev, struct dc_plane_state *dc_plane_state,
 			     struct drm_plane_state *plane_state,
 			     struct drm_crtc_state *crtc_state);
 #endif

@@ -3839,7 +3839,7 @@ dm_test_plane_info_ctx_alloc(struct kunit *test, struct amdgpu_device *adev,
 
 static int dm_test_fill_plane_info(struct dm_test_plane_info_ctx *ctx)
 {
-	return fill_dc_plane_info_and_addr(ctx->adev, NULL, ctx->plane_state,
+	return fill_dc_plane_info_and_addr(ctx->adev, ctx->plane_state,
 					   &ctx->plane_info, &ctx->address, false);
 }
 
@@ -4715,7 +4715,7 @@ dm_test_plane_attr_ctx_alloc(struct kunit *test, u32 drm_format)
 
 static int dm_test_fill_plane_attr(struct dm_test_plane_attr_ctx *ctx)
 {
-	return fill_dc_plane_attributes(ctx->adev, NULL, ctx->dc_plane,
+	return fill_dc_plane_attributes(ctx->adev, ctx->dc_plane,
 					ctx->plane->plane_state, &ctx->crtc_state->base);
 }
 

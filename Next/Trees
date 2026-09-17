@@ -64,6 +64,7 @@ bpf		https://git.kernel.org/pub/scm/linux/kernel/git/bpf/bpf.git/#master
 ipsec		https://git.kernel.org/pub/scm/linux/kernel/git/klassert/ipsec.git#master
 netfilter	https://git.kernel.org/pub/scm/linux/kernel/git/netfilter/nf.git#main
 ipvs		https://git.kernel.org/pub/scm/linux/kernel/git/horms/ipvs.git#main
+bluetooth-fixes	https://git.kernel.org/pub/scm/linux/kernel/git/bluetooth/bluetooth.git#master
 wireless	https://git.kernel.org/pub/scm/linux/kernel/git/wireless/wireless.git#for-next
 ath		https://git.kernel.org/pub/scm/linux/kernel/git/ath/ath.git#for-current
 iwlwifi		https://git.kernel.org/pub/scm/linux/kernel/git/iwlwifi/iwlwifi-next.git#fixes

@@ -1373,9 +1373,6 @@ int kvm_trylock_all_vcpus(struct kvm *kvm)
 
 	lockdep_assert_held(&kvm->lock);
 
-	if (WARN_ON_ONCE(kvm_is_vcpu_creation_in_progress(kvm)))
-		return -EBUSY;
-
 	kvm_for_each_vcpu(i, vcpu, kvm)
 		if (!mutex_trylock_nest_lock(&vcpu->mutex, &kvm->lock))
 			goto out_unlock;
@@ -1398,9 +1395,6 @@ int kvm_lock_all_vcpus(struct kvm *kvm)
 	int r;
 
 	lockdep_assert_held(&kvm->lock);
-
-	if (WARN_ON_ONCE(kvm_is_vcpu_creation_in_progress(kvm)))
-		return -EBUSY;
 
 	kvm_for_each_vcpu(i, vcpu, kvm) {
 		r = mutex_lock_killable_nest_lock(&vcpu->mutex, &kvm->lock);
@@ -4175,8 +4169,6 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, unsigned long id)
 	struct kvm_vcpu *vcpu;
 	struct page *page;
 
-	guard(mutex)(&kvm->lock);
-
 	/*
 	 * KVM tracks vCPU IDs as 'int', be kind to userspace and reject
 	 * too-large values instead of silently truncating.
@@ -4189,17 +4181,26 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, unsigned long id)
 	if (id >= KVM_MAX_VCPU_IDS)
 		return -EINVAL;
 
-	if (kvm->created_vcpus >= kvm->max_vcpus)
+	mutex_lock(&kvm->lock);
+	if (kvm->created_vcpus >= kvm->max_vcpus) {
+		mutex_unlock(&kvm->lock);
 		return -EINVAL;
+	}
 
-	if (kvm_get_vcpu_by_id(kvm, id))
+	if (test_bit(id, kvm->vcpu_ids)) {
+		mutex_unlock(&kvm->lock);
 		return -EEXIST;
+	}
 
 	r = kvm_arch_vcpu_precreate(kvm, id);
-	if (r)
+	if (r) {
+		mutex_unlock(&kvm->lock);
 		return r;
+	}
 
 	kvm->created_vcpus++;
+	__set_bit(id, kvm->vcpu_ids);
+	mutex_unlock(&kvm->lock);
 
 	vcpu = kmem_cache_zalloc(kvm_vcpu_cache, GFP_KERNEL_ACCOUNT);
 	if (!vcpu) {
@@ -4228,6 +4229,13 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, unsigned long id)
 					 id, kvm->dirty_ring_size);
 		if (r)
 			goto arch_vcpu_destroy;
+	}
+
+	mutex_lock(&kvm->lock);
+
+	if (WARN_ON_ONCE(kvm_get_vcpu_by_id(kvm, id))) {
+		r = -EEXIST;
+		goto unlock_vcpu_destroy;
 	}
 
 	/*
@@ -4263,6 +4271,7 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, unsigned long id)
 	atomic_inc(&kvm->online_vcpus);
 	mutex_unlock(&vcpu->mutex);
 
+	mutex_unlock(&kvm->lock);
 	kvm_arch_vcpu_postcreate(vcpu);
 	kvm_create_vcpu_debugfs(vcpu);
 	return r;
@@ -4273,6 +4282,7 @@ kvm_put_xa_erase:
 	xa_erase(&kvm->vcpu_array, vcpu->vcpu_idx);
 unlock_vcpu_destroy:
 	vcpu->vcpu_idx = -1;
+	mutex_unlock(&kvm->lock);
 	kvm_dirty_ring_free(&vcpu->dirty_ring);
 arch_vcpu_destroy:
 	kvm_arch_vcpu_destroy(vcpu);
@@ -4281,7 +4291,10 @@ vcpu_free_run_page:
 vcpu_free:
 	kmem_cache_free(kvm_vcpu_cache, vcpu);
 vcpu_decrement:
+	mutex_lock(&kvm->lock);
 	kvm->created_vcpus--;
+	__clear_bit(id, kvm->vcpu_ids);
+	mutex_unlock(&kvm->lock);
 	return r;
 }
 

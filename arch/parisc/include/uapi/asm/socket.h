@@ -149,10 +149,6 @@
 
 #define SO_RIGHTS_NOTRUNC	0x4053
 
-#define SO_PASSPIDFD_THREAD	0x4054
-
-#define SO_PEERPIDFD_THREAD	0x4055
-
 #if !defined(__KERNEL__)
 
 #if __BITS_PER_LONG == 64

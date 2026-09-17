@@ -870,12 +870,6 @@ enum {
 	NAU8360_TDM_TXN,
 };
 
-/* DAC Source Path*/
-enum {
-	NAU8360_DAC_SRC_HW1 = 0,
-	NAU8360_DAC_SRC_DSP,
-};
-
 /* PLL Source */
 enum {
 	NAU8360_PLL_MCLK,

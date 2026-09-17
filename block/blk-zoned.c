@@ -2197,6 +2197,8 @@ static int disk_init_revalidate_args(struct gendisk *disk,
 {
 	args->disk = disk;
 	args->nr_zones = disk_get_nr_zones(disk, args->capacity);
+	if (args->nr_zones > UINT_MAX)
+		return -EINVAL;
 
 	/* Cached zone conditions: 1 byte per zone */
 	args->zones_state = kzalloc(args->nr_zones, GFP_NOIO);
@@ -2320,21 +2322,14 @@ static void disk_drop_zone_wplug(struct blk_zone_wplug *zwplug, void *data)
 static int disk_revalidate_capacity(struct gendisk *disk,
 				    struct blk_revalidate_zone_args *args)
 {
-	struct queue_limits *lim = &disk->queue->limits;
-	sector_t zone_sectors = lim->chunk_sectors;
 	unsigned int nr_zones;
 	int ret = -ENODEV;
-
-	/* Checks that the device driver indicated a valid zone size. */
-	if (!zone_sectors || !is_power_of_2(zone_sectors)) {
-		pr_warn("%s: Invalid non power of two zone size (%llu)\n",
-			disk->disk_name, zone_sectors);
-		goto drop_all_zwplugs;
-	}
 
 	args->capacity = get_capacity(disk);
 	nr_zones = disk_get_nr_zones(disk, args->capacity);
 	if (!args->capacity || !nr_zones)
+		goto drop_all_zwplugs;
+	if (args->capacity >= args->nr_zones)
 		goto drop_all_zwplugs;
 
 	/*

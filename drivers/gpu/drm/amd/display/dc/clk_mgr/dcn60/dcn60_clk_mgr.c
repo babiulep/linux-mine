@@ -1701,7 +1701,7 @@ struct clk_mgr_internal *dcn60_clk_mgr_construct(
 		struct dc_context *ctx,
 		struct dccg *dccg)
 {
-	struct dcn60_clk_mgr *clk_mgr60 = kzalloc(sizeof(struct dcn60_clk_mgr), GFP_KERNEL);
+	struct dcn60_clk_mgr *clk_mgr60 = kzalloc_obj(struct dcn60_clk_mgr);
 	struct clk_mgr_internal *clk_mgr;
 
 	if (!clk_mgr60)

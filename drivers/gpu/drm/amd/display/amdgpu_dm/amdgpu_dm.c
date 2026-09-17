@@ -2941,7 +2941,7 @@ STATIC_IFN_KUNIT bool modereset_required(struct drm_crtc_state *crtc_state)
 EXPORT_IF_KUNIT(modereset_required);
 
 STATIC_IFN_KUNIT int
-fill_plane_color_attributes(const struct drm_atomic_commit *state,
+fill_plane_color_attributes(struct drm_atomic_commit *state,
 			    const struct drm_plane_state *plane_state,
 			    const enum surface_pixel_format format,
 			    enum dc_color_space *color_space)
@@ -3108,7 +3108,6 @@ fill_dc_plane_info_and_addr(struct amdgpu_device *adev,
 EXPORT_IF_KUNIT(fill_dc_plane_info_and_addr);
 
 STATIC_IFN_KUNIT int fill_dc_plane_attributes(struct amdgpu_device *adev,
-					      struct drm_atomic_commit *state,
 					      struct dc_plane_state *dc_plane_state,
 					      struct drm_plane_state *plane_state,
 					      struct drm_crtc_state *crtc_state)
@@ -3128,7 +3127,7 @@ STATIC_IFN_KUNIT int fill_dc_plane_attributes(struct amdgpu_device *adev,
 	dc_plane_state->clip_rect = scaling_info.clip_rect;
 	dc_plane_state->scaling_quality = scaling_info.scaling_quality;
 
-	ret = fill_dc_plane_info_and_addr(adev, state, plane_state,
+	ret = fill_dc_plane_info_and_addr(adev, plane_state->state, plane_state,
 					  &plane_info,
 					  &dc_plane_state->address,
 					  afb->tmz_surface);
@@ -6010,7 +6009,7 @@ dm_update_plane_state(struct dc *dc,
 				 plane->base.id, new_plane_crtc->base.id);
 
 		ret = fill_dc_plane_attributes(
-			drm_to_adev(new_plane_crtc->dev), state,
+			drm_to_adev(new_plane_crtc->dev),
 			dc_new_plane_state,
 			new_plane_state,
 			new_crtc_state);

@@ -5,7 +5,6 @@
 #include <linux/types.h>
 #include <linux/mm.h>
 #include <linux/fs.h>
-#include <linux/pid_types.h>
 #include <linux/sched/coredump.h>
 #include <uapi/linux/coredump.h>
 #include <asm/siginfo.h>
@@ -52,8 +51,7 @@ struct coredump_params {
 	int vma_count;
 	size_t vma_data_size;
 	struct core_vma_metadata *vma_meta;
-	/* Dumping thread and its thread-group leader by pid type. */
-	DECLARE_PIDS(pid, PIDTYPE_TGID);
+	struct pid *pid;
 };
 
 extern unsigned int core_file_note_size_limit;
