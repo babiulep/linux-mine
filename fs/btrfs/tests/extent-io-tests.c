@@ -158,7 +158,8 @@ static int test_find_delalloc(u32 sectorsize, u32 nodesize)
 	 */
 	for (pgoff_t index = 0; index < (total_dirty >> PAGE_SHIFT); index++) {
 		folio = __filemap_get_folio(inode->i_mapping, index,
-				FGP_LOCK | FGP_ACCESSED | FGP_CREAT, GFP_KERNEL);
+					    FGP_LOCK | FGP_ACCESSED | FGP_CREAT,
+					    GFP_KERNEL);
 		if (IS_ERR(folio)) {
 			test_err("failed to allocate test folio");
 			ret = PTR_ERR(folio);
@@ -203,8 +204,7 @@ static int test_find_delalloc(u32 sectorsize, u32 nodesize)
 	 *           |--- search ---|
 	 */
 	test_start = SZ_64M;
-	locked_folio = filemap_lock_folio(inode->i_mapping,
-					  test_start >> PAGE_SHIFT);
+	locked_folio = filemap_lock_folio(inode->i_mapping, test_start >> PAGE_SHIFT);
 	if (IS_ERR(locked_folio)) {
 		test_err("couldn't find the locked folio");
 		locked_folio = NULL;
@@ -239,8 +239,7 @@ static int test_find_delalloc(u32 sectorsize, u32 nodesize)
 	 *                    |--- search ---|
 	 */
 	test_start = max_bytes + sectorsize;
-	locked_folio = filemap_lock_folio(inode->i_mapping,
-					  test_start >> PAGE_SHIFT);
+	locked_folio = filemap_lock_folio(inode->i_mapping, test_start >> PAGE_SHIFT);
 	if (IS_ERR(locked_folio)) {
 		test_err("couldn't find the locked folio");
 		locked_folio = NULL;
@@ -290,8 +289,7 @@ static int test_find_delalloc(u32 sectorsize, u32 nodesize)
 	 * Now to test where we run into a folio that is no longer dirty in the
 	 * range we want to find.
 	 */
-	folio = filemap_get_folio(inode->i_mapping,
-				  (max_bytes + SZ_1M) >> PAGE_SHIFT);
+	folio = filemap_get_folio(inode->i_mapping, (max_bytes + SZ_1M) >> PAGE_SHIFT);
 	if (IS_ERR(folio)) {
 		test_err("couldn't find our folio");
 		goto out_bits;

@@ -244,6 +244,7 @@ static inline void vma_close(struct vm_area_struct *vma)
 static inline int mmap_file(struct file *file, struct vm_area_struct *vma)
 {
 	const unsigned long prev_start = vma->vm_start;
+	const unsigned long prev_end = vma->vm_end;
 	const vma_flags_t prev_flags = vma->flags;
 	int err;
 
@@ -263,9 +264,10 @@ static inline int mmap_file(struct file *file, struct vm_area_struct *vma)
 	if (unlikely(err))
 		return err;
 
-	err = mmap_hook_validate(prev_start, &prev_flags, vma);
+	err = mmap_hook_validate(prev_start, prev_end, &prev_flags, vma);
 	if (unlikely(err)) {
 		vma->vm_start = prev_start;
+		vma->vm_end = prev_end;
 		vma_close(vma);
 	}
 

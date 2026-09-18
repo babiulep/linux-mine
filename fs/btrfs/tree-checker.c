@@ -108,13 +108,14 @@ static void file_extent_err(const struct extent_buffer *eb, int slot,
  */
 #define CHECK_FE_ALIGNED(leaf, slot, fi, name, alignment)		      \
 ({									      \
-	if (unlikely(!IS_ALIGNED(btrfs_file_extent_##name((leaf), (fi)),      \
-				 (alignment))))				      \
+	const u64 val = btrfs_file_extent_##name((leaf), (fi));               \
+	const bool not_aligned = !IS_ALIGNED(val, (alignment));		      \
+									      \
+	if (unlikely(not_aligned))			      		      \
 		file_extent_err((leaf), (slot),				      \
 	"invalid %s for file extent, have %llu, should be aligned to %u",     \
-			(#name), btrfs_file_extent_##name((leaf), (fi)),      \
-			(alignment));					      \
-	(!IS_ALIGNED(btrfs_file_extent_##name((leaf), (fi)), (alignment)));   \
+			(#name), val, (alignment));			      \
+	not_aligned;			                                      \
 })
 
 static u64 file_extent_end(struct extent_buffer *leaf,
@@ -1120,9 +1121,9 @@ int btrfs_check_chunk_valid(const struct btrfs_fs_info *fs_info,
 		return -EUCLEAN;
 	}
 
-	if (!remapped &&
-	    !valid_stripe_count(type & BTRFS_BLOCK_GROUP_PROFILE_MASK,
-				num_stripes, sub_stripes)) {
+	if (unlikely(!remapped &&
+		     !valid_stripe_count(type & BTRFS_BLOCK_GROUP_PROFILE_MASK,
+					 num_stripes, sub_stripes))) {
 		chunk_err(fs_info, leaf, chunk, logical,
 			"invalid num_stripes:sub_stripes %u:%u for profile %llu",
 			num_stripes, sub_stripes,

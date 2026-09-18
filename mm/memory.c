@@ -2653,7 +2653,7 @@ int map_discontig_kernel_pages_prepare(struct vm_area_desc *desc)
 		action->map_kernel_discontig.ops;
 
 	/* At minimum need to be able to get pages. */
-	if (WARN_ON_ONCE(!ops->get))
+	if (WARN_ON_ONCE(!ops || !ops->get))
 		return -EINVAL;
 
 	__map_kernel_pages_prepare(desc);

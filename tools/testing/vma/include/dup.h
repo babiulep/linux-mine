@@ -1667,22 +1667,36 @@ static inline bool vma_is_kernel_owned(const struct vm_area_struct *vma)
 	return vma_flags_is_kernel_owned(&vma->flags);
 }
 
+static inline bool vma_flags_is_fixed_mapping(const vma_flags_t *flags)
+{
+	/*
+	 * VMA_PFNMAP_BIT should imply VMA_DONTEXPAND_BIT, but some callers set
+	 * only the former.
+	 */
+	return vma_flags_test_any(flags, VMA_PFNMAP_BIT, VMA_DONTEXPAND_BIT);
+}
+
+static inline bool vma_is_fixed_mapping(const struct vm_area_struct *vma)
+{
+	return vma_flags_is_fixed_mapping(&vma->flags);
+}
+
 static inline bool vma_flags_can_merge(const vma_flags_t *flags)
 {
 	/*
-	 * VMA merging assumes that the properties of a VMA completely describe
-	 * the properties of that VMA.
+	 * VMA merging assumes that a VMA's flags and fields completely describe
+	 * its state.
 	 *
 	 * However, kernel-owned mappings may have established state upon mapping
 	 * not embodied in any attribute of the VMA.
 	 *
-	 * Additionally, PFN maps encode the source PFN of the range in
-	 * vma->vm_pgoff, which may otherwise cause spurious merges.
+	 * Additionally, private (CoW) PFN maps encode the source PFN of the
+	 * range in vma->vm_pgoff, which may otherwise cause spurious merges.
 	 */
 	if (vma_flags_is_kernel_owned(flags))
 		return false;
 	/* VMA explicitly marked as being unmergeable. */
-	if (vma_flags_test(flags, VMA_DONTEXPAND_BIT))
+	if (vma_flags_is_fixed_mapping(flags))
 		return false;
 
 	return true;

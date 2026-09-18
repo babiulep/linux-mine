@@ -2797,15 +2797,15 @@ static int mmap_validate_vma_flags(const vma_flags_t *flags)
 }
 
 /* Check to ensure a driver hasn't done something crazy. */
-static int mmap_validate(unsigned long prev_start,
-			 unsigned long curr_start,
+static int mmap_validate(unsigned long prev_start, unsigned long prev_end,
+			 unsigned long curr_start, unsigned long curr_end,
 			 const vma_flags_t *prev_flags,
 			 const vma_flags_t *curr_flags)
 {
 	bool was_maywrite, is_maywrite;
 
-	/* Drivers cannot alter the address of the VMA. */
-	if (WARN_ON_ONCE(prev_start != curr_start))
+	/* Drivers cannot alter the range of the VMA. */
+	if (WARN_ON_ONCE(prev_start != curr_start || prev_end != curr_end))
 		return -EINVAL;
 
 	was_maywrite = vma_flags_test(prev_flags, VMA_MAYWRITE_BIT);
@@ -2843,7 +2843,8 @@ int mmap_prepare_validate(const struct vm_area_desc *prev_desc,
 	    WARN_ON_ONCE(desc->action.type != MMAP_NOTHING))
 		return -EINVAL;
 
-	return mmap_validate(prev_desc->start, desc->start,
+	return mmap_validate(prev_desc->start, prev_desc->end,
+			     desc->start, desc->end,
 			     &prev_desc->vma_flags, &desc->vma_flags);
 }
 
@@ -2851,19 +2852,22 @@ int mmap_prepare_validate(const struct vm_area_desc *prev_desc,
  * mmap_hook_validate() - Ensure the driver hasn't violated invariants in
  * its f_op->mmap hook.
  * @prev_start: The start of the mapping prior to the mmap hook.
+ * @prev_end: The end of the mapping prior to the mmap hook.
  * @prev_flags: The VMA flags set for the VMA prior to the mmap hook.
  * @vma: The VMA after the hook has been applied.
  *
  * Returns: 0 on success, otherwise an error.
  */
-int mmap_hook_validate(unsigned long prev_start,
+int mmap_hook_validate(unsigned long prev_start, unsigned long prev_end,
 		       const vma_flags_t *prev_flags,
 		       const struct vm_area_struct *vma)
 {
 	const unsigned long start = vma->vm_start;
+	const unsigned long end = vma->vm_end;
 	const vma_flags_t *flags = &vma->flags;
 
-	return mmap_validate(prev_start, start, prev_flags, flags);
+	return mmap_validate(prev_start, prev_end, start, end, prev_flags,
+			     flags);
 }
 
 static int call_action_prepare(struct mmap_state *map,
@@ -2900,15 +2904,9 @@ static int call_mmap_prepare(struct mmap_state *map,
 	if (err)
 		return err;
 
-	/* Update fields permitted to be changed. */
-	map->pgoff = desc->pgoff;
+	/* Update first so file refcount tracked correctly. */
 	if (desc->vm_file != map->vm_file)
 		map->vm_file = desc->vm_file;
-	map->vma_flags = desc->vma_flags;
-	map->page_prot = desc->page_prot;
-	/* User-defined fields. */
-	map->vm_ops = desc->vm_ops;
-	map->vm_private_data = desc->private_data;
 
 	/* It's invalid for mmap_prepare hooks to clear vm_ops. */
 	if (!desc->vm_ops)
@@ -2922,6 +2920,14 @@ static int call_mmap_prepare(struct mmap_state *map,
 	err = mmap_prepare_validate(&prev_desc, desc);
 	if (err)
 		return err;
+
+	/* Update fields permitted to be changed. */
+	map->pgoff = desc->pgoff;
+	map->vma_flags = desc->vma_flags;
+	map->page_prot = desc->page_prot;
+	/* User-defined fields. */
+	map->vm_ops = desc->vm_ops;
+	map->vm_private_data = desc->private_data;
 
 	/*
 	 * MAP_PRIVATE-/dev/zero mappings are an ancient way of getting

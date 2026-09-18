@@ -786,7 +786,7 @@ void vm_area_free(struct vm_area_struct *vma);
 int mmap_prepare_validate(const struct vm_area_desc *prev_desc,
 			  const struct vm_area_desc *desc);
 
-int mmap_hook_validate(unsigned long prev_start,
+int mmap_hook_validate(unsigned long prev_start, unsigned long prev_end,
 		       const vma_flags_t *prev_flags,
 		       const struct vm_area_struct *vma);
 
@@ -851,6 +851,7 @@ static inline int mmap_prepare_validate(const struct vm_area_desc *prev_desc,
 }
 
 static inline int mmap_hook_validate(unsigned long prev_start,
+				     unsigned long prev_end,
 				     const vma_flags_t *prev_flags,
 				     const struct vm_area_struct *vma)
 {

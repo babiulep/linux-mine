@@ -3275,11 +3275,10 @@ struct ctrl_pos {
 };
 
 /*
- * __noipa works around  gcc-16 warning for uninitialized use of
- * pos->refaulted
+ * __noipa works around gcc-16 warning for uninitialized use of pos->refaulted
  */
-static __noipa void read_ctrl_pos(struct lruvec *lruvec, int type, int tier_min,
-			  int tier_max, int gain, struct ctrl_pos *pos)
+static void __noipa read_ctrl_pos(struct lruvec *lruvec, int type, int tier_min,
+				  int tier_max, int gain, struct ctrl_pos *pos)
 {
 	int i;
 	struct lru_gen_folio *lrugen = &lruvec->lrugen;

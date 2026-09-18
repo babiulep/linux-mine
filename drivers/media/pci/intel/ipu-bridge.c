@@ -146,6 +146,13 @@ static const struct dmi_system_id upside_down_sensor_dmi_ids[] = {
 	{
 		.matches = {
 			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
+			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "XPS 14 (Dell 14 Premium) DA14250"),
+		},
+		.driver_data = "OVTI02C1",
+	},
+	{
+		.matches = {
+			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
 			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "XPS 14 9440"),
 		},
 		.driver_data = "OVTI02C1",
@@ -209,6 +216,14 @@ static const struct dmi_system_id upside_down_sensor_dmi_ids[] = {
 			DMI_MATCH(DMI_BOARD_NAME, "21Q7"),
 		},
 		.driver_data = "SONY471A",
+	},
+	{
+		.matches = {
+			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Microsoft Corporation"),
+			DMI_EXACT_MATCH(DMI_PRODUCT_NAME,
+					"Surface Pro for Business 11th Edition with Intel"),
+		},
+		.driver_data = "OVTID858",
 	},
 	{
 		/* Samsung Galaxy Book5 Pro 360 */
