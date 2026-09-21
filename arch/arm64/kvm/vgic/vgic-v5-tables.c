@@ -63,7 +63,6 @@ static DEFINE_XARRAY(vm_info);
 /* Virtual PE Table Entry */
 #define GICV5_VPE_VALID			BIT_ULL(0)
 /* Note that there is no shift for the address by design. */
-#define GICV5_VPED_ADDR_SHIFT		3ULL
 #define GICV5_VPED_ADDR			GENMASK_ULL(55, 3)
 
 /* L2 Interrupt State Table Entry */
@@ -725,7 +724,7 @@ int vgic_v5_vmte_alloc_vpe(struct kvm_vcpu *vcpu)
 	u32 vm_id = vgic_v5_vm_id(vcpu->kvm);
 	u16 vpe_id = vgic_v5_vpe_id(vcpu);
 	struct vgic_v5_vm_info *vmi;
-	vpe_entry tmp, *vpet_base;
+	vpe_entry *vpet_base;
 	void *vped;
 
 	/* Make sure we're not over what the hardware supports */
@@ -751,10 +750,9 @@ int vgic_v5_vmte_alloc_vpe(struct kvm_vcpu *vcpu)
 	vped = (u8 *)vmi->vped_base +
 		(size_t)vcpu->vcpu_idx * vmt_info->vped_size;
 
-	tmp = FIELD_PREP(GICV5_VPED_ADDR, virt_to_phys(vped) >> GICV5_VPED_ADDR_SHIFT);
-
 	scoped_guard(raw_spinlock_irqsave, &vgic_v5_irs_lock) {
-		WRITE_ONCE(vpet_base[vpe_id], cpu_to_le64(tmp));
+		phys_addr_t paddr = virt_to_phys(vped) & GICV5_VPED_ADDR;
+		WRITE_ONCE(vpet_base[vpe_id], cpu_to_le64(paddr));
 		vgic_v5_clean_inval(vpet_base + vpe_id, sizeof(vpe_entry));
 	}
 
@@ -1066,7 +1064,7 @@ static int vgic_v5_alloc_two_level_lpi_ist(struct kvm *kvm, unsigned int id_bits
 		/* Free the L1 IST again */
 		vmi = xa_load(&vm_info, vm_id);
 		kfree(vmi->h_lpi_ist);
-		vmi->h_lpi_ist = 0;
+		vmi->h_lpi_ist = NULL;
 
 		return ret;
 	}
@@ -1459,7 +1457,6 @@ static int vgic_v5_get_lpi_ist_desc(struct kvm *kvm,
 static int vgic_v5_save_linear_ist(const struct vgic_v5_ist_desc *ist,
 				   u32 __user *uaddr, size_t nr_entries)
 {
-	__le32 h_iste;
 	size_t index;
 	int ret;
 
@@ -1468,8 +1465,9 @@ static int vgic_v5_save_linear_ist(const struct vgic_v5_ist_desc *ist,
 
 	for (index = 0; index < nr_entries; index++) {
 		__le32 *h_iste_addr = ist->base + index * ist->iste_size;
+		u32 h_iste;
 
-		h_iste = READ_ONCE(*h_iste_addr);
+		h_iste = le32_to_cpu(READ_ONCE(*h_iste_addr));
 		ret = put_user(h_iste, uaddr);
 		if (ret)
 			return ret;
@@ -1492,7 +1490,6 @@ static int vgic_v5_save_two_level_ist(const struct vgic_v5_ist_desc *ist,
 	struct vgic_v5_two_level_ist_shape shape;
 	size_t h_l1_index, h_l2_index;
 	void *h_l2_ist_base;
-	__le32 h_iste;
 	int ret;
 
 	shape = vgic_v5_two_level_ist_shape(ist);
@@ -1519,8 +1516,8 @@ static int vgic_v5_save_two_level_ist(const struct vgic_v5_ist_desc *ist,
 				    shape.l2_entries * ist->iste_size);
 
 		for (h_l2_index = 0; h_l2_index < shape.l2_entries; h_l2_index++) {
-			h_iste = *(__le32 *)(h_l2_ist_base +
-					     h_l2_index * ist->iste_size);
+			void *h_iste_addr = h_l2_ist_base + h_l2_index * ist->iste_size;
+			u32 h_iste = le32_to_cpu(*(__le32 *)h_iste_addr);
 
 			ret = put_user(h_iste, uaddr);
 			if (ret)
@@ -1712,19 +1709,19 @@ static int vgic_v5_restore_linear_ist(struct kvm *kvm,
 				      u32 __user *uaddr, size_t nr_entries,
 				      u32 intid_type)
 {
-	__le32 h_iste;
 	size_t index;
 	int ret;
 
 	for (index = 0; index < nr_entries; index++) {
 		void *h_iste_addr = ist->base + index * ist->iste_size;
+		u32 h_iste;
 
 		ret = get_user(h_iste, uaddr);
 		if (ret)
 			return ret;
 
 		ret = vgic_v5_restore_ist_entry(kvm, ist, h_iste_addr,
-					h_iste, index, intid_type);
+						cpu_to_le32(h_iste), index, intid_type);
 		if (ret)
 			return ret;
 
@@ -1746,7 +1743,6 @@ static int vgic_v5_restore_two_level_ist(struct kvm *kvm,
 	struct vgic_v5_two_level_ist_shape shape;
 	size_t h_l1_index, h_l2_index;
 	void *h_l2_ist_base;
-	__le32 h_iste;
 	int ret;
 
 	shape = vgic_v5_two_level_ist_shape(ist);
@@ -1773,13 +1769,14 @@ static int vgic_v5_restore_two_level_ist(struct kvm *kvm,
 			void *h_iste_addr = h_l2_ist_base +
 					    h_l2_index * ist->iste_size;
 			u32 intid = h_l1_index * shape.l2_entries + h_l2_index;
+			u32 h_iste;
 
 			ret = get_user(h_iste, uaddr);
 			if (ret)
 				return ret;
 
 			ret = vgic_v5_restore_ist_entry(kvm, ist, h_iste_addr,
-							h_iste, intid,
+							cpu_to_le32(h_iste), intid,
 							intid_type);
 			if (ret)
 				return ret;

@@ -186,9 +186,9 @@ DECLARE_KVM_HOST_HCALL(int, __tracing_enable_event,
 DECLARE_KVM_HOST_HCALL(void, __tracing_write_event,
 	u64, id)
 DECLARE_KVM_HOST_HCALL(void, __vgic_v5_make_resident,
-		       struct vgic_v5_cpu_if *, cpu_if);
+		       struct vgic_v5_cpu_if __kern *, cpu_if);
 DECLARE_KVM_HOST_HCALL(void, __vgic_v5_make_non_resident,
-		       struct vgic_v5_cpu_if *, cpu_if);
+		       struct vgic_v5_cpu_if __kern *, cpu_if);
 DECLARE_KVM_HOST_HCALL(void, __vgic_v3_save_aprs,
 	struct vgic_v3_cpu_if __kern *, cpu_if)
 DECLARE_KVM_HOST_HCALL(void, __vgic_v3_restore_vmcr_aprs,

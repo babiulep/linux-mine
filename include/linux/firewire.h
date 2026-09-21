@@ -329,12 +329,15 @@ struct fw_packet {
 	bool payload_mapped;
 	u32 timestamp;
 
+	// Used to handle the local-to-local packets in the AT request/response contexts.
+	struct list_head link_for_local;
+
 	/*
 	 * This callback is called when the packet transmission has completed.
 	 * For successful transmission, the status code is the ack received
 	 * from the destination.  Otherwise it is one of the juju-specific
 	 * rcodes:  RCODE_SEND_ERROR, _CANCELLED, _BUSY, _GENERATION, _NO_ACK.
-	 * The callback can be called from workqueue and thus must never block.
+	 * The callback is called from a workqueue. It is not preferable to block it so long.
 	 */
 	fw_packet_callback_t callback;
 	int ack;

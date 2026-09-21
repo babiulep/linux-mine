@@ -160,7 +160,7 @@
 		method = "smc";
 	};
 
-	timer {
+	timer: timer {
 		compatible = "arm,armv8-timer";
 		/* Hypervisor Virtual Timer interrupt is not wired to GIC */
 		interrupts =
@@ -175,6 +175,11 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 		ranges = <0x0 0x0 0x0 0x20000000>;
+
+		apm_sram: sram@2039000 {
+			compatible = "samsung,exynos850-acpm-sram";
+			reg = <0x2039000 0x30000>;
+		};
 
 		chipid@10000000 {
 			compatible = "samsung,exynos850-chipid";

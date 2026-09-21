@@ -62,6 +62,7 @@ struct nfsd4_compound_state {
 	struct nfsd4_slot	*slot;
 	int			data_offset;
 	bool                    spo_must_allowed;
+	bool			slot_owned;
 	size_t			iovlen;
 	u32			minorversion;
 	__be32			status;
@@ -800,6 +801,7 @@ bool nfsd4_cache_this_op(struct nfsd4_op *);
  */
 struct svcxdr_tmpbuf {
 	struct svcxdr_tmpbuf *next;
+	void (*release)(void *buf);
 	char buf[];
 };
 

@@ -842,7 +842,6 @@ int amdgpu_dm_crtc_init(struct amdgpu_display_manager *dm,
 	return 0;
 
 error_ism_fini:
-	amdgpu_dm_ism_fini(&acrtc->ism);
 	drm_crtc_cleanup(&acrtc->base);
 fail:
 	kfree(acrtc);

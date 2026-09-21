@@ -2236,8 +2236,13 @@ static unsigned int weighted_interleave_nid(struct mempolicy *pol, pgoff_t ilx)
 
 	/*
 	 * The target was calculated in a separate loop, and a concurrent
-	 * rebind can change the total number of nodes.  Clamp this loop to
-	 * a single pass (nnodes) to keep the walk bounded by node count.
+	 * rebind can change the contents of pol->nodes as we calculate.
+	 * Access is safe, in the worst case we suddenly perceive an empty
+	 * nodemask and return numa_node_id() below - otherwise we may
+	 * simply cause a skew in allocations.
+	 *
+	 * Clamp this loop to a single pass (nnodes) to keep the walk
+	 * bounded by node count.
 	 */
 	while (target && nnodes-- && nid < MAX_NUMNODES) {
 		/* detect system default usage */
@@ -2271,6 +2276,8 @@ static unsigned int interleave_nid(struct mempolicy *pol, pgoff_t ilx)
 		return numa_node_id();
 	target = ilx % nnodes;
 	nid = first_node(pol->nodes);
+
+	/* A concurrent cpuset rebind may cause us to see an empty nodemask */
 	for (i = 0; i < target && nid < MAX_NUMNODES; i++)
 		nid = next_node_in(nid, pol->nodes);
 
