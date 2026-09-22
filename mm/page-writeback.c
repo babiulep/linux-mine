@@ -2705,8 +2705,7 @@ bool filemap_dirty_folio(struct address_space *mapping, struct folio *folio)
 	if (folio_test_set_dirty(folio))
 		return false;
 
-	/* data_race() is used to read attached private locklessly */
-	__folio_mark_dirty(folio, mapping, !data_race(folio_has_attached_private(folio)));
+	__folio_mark_dirty(folio, mapping, !folio_has_attached_private(folio));
 
 	if (mapping->host) {
 		/* !PageAnon && !swapper_space */

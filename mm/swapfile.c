@@ -1887,7 +1887,7 @@ void folio_put_swap(struct folio *folio, struct page *page)
  *   CPU1				CPU2
  *   do_swap_page()
  *     ...				swapoff+swapon
- *     swap_cache_alloc_folio()
+ *     __swap_cache_alloc_folio()
  *       // check swap_map
  *     // verify PTE not changed
  *
@@ -2707,7 +2707,7 @@ static int unuse_mm(struct mm_struct *mm, unsigned int type)
 	if (check_stable_address_space(mm))
 		goto unlock;
 	for_each_vma(vmi, vma) {
-		if (vma->anon_vma && !vma_is_hugetlb(vma)) {
+		if (vma_has_anon_rmap(vma) && !vma_is_hugetlb(vma)) {
 			ret = unuse_vma(vma, type);
 			if (ret)
 				break;

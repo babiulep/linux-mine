@@ -385,17 +385,20 @@ xs_sock_recv_cmsg(struct socket *sock, unsigned int *msg_flags, int flags)
 		if (tls_get_record_type(sock->sk, &u.cmsg) !=
 		    TLS_RECORD_TYPE_ALERT)
 			return -EAGAIN;
-		/* An Alert record carries exactly one two-octet message
-		 * (RFC 8446 Section 5.1). alert_kvec caps the receive at
-		 * two, so the count alone cannot reliably detect an
-		 * oversized record.
+		/* RFC 8446 Section 5.1: a record with an Alert type carries
+		 * exactly one message, and an alert is two octets.
+		 * tls_alert_recv() reads both without checking the length.
+		 * alert_kvec caps the count at two, so a longer record
+		 * fills it as well. kTLS sets MSG_EOR only once the
+		 * record has been drained.
 		 */
 		if (ret != sizeof(alert) || !(msg.msg_flags & MSG_EOR))
 			return -EACCES;
 		iov_iter_revert(&msg.msg_iter, ret);
 		tls_alert_recv(sock->sk, &msg, &level, &description);
 		/* RFC 8446 Section 6: every alert but a closure alert is
-		 * an error alert.
+		 * an error alert, whatever the legacy AlertLevel octet
+		 * says.
 		 */
 		switch (description) {
 		case TLS_ALERT_DESC_CLOSE_NOTIFY:

@@ -1692,10 +1692,7 @@ static void sta_ps_start(struct sta_info *sta)
 			list_del_init(&txqi->schedule_order);
 		spin_unlock(&local->active_txq_lock[txq->ac]);
 
-		if (txq_has_queue(txq))
-			set_bit(tid, &sta->txq_buffered_tids);
-		else
-			clear_bit(tid, &sta->txq_buffered_tids);
+		assign_bit(tid, &sta->txq_buffered_tids, txq_has_queue(txq));
 	}
 
 	sta_info_recalc_tim(sta);
@@ -2477,6 +2474,12 @@ ieee80211_rx_h_defragment(struct ieee80211_rx_data *rx)
 	}
 
 	skb_pull(rx->skb, ieee80211_hdrlen(fc));
+	if (unlikely((u32)entry->extra_len + rx->skb->len > U16_MAX)) {
+		I802_DEBUG_INC(rx->local->rx_handlers_drop_defrag);
+		__skb_queue_purge(&entry->skb_list);
+		return RX_DROP_U_DEFRAG_OVERFLOW;
+	}
+
 	__skb_queue_tail(&entry->skb_list, rx->skb);
 	entry->last_frag = frag;
 	entry->extra_len += rx->skb->len;

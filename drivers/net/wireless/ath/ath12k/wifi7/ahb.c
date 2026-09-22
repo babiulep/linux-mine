@@ -59,7 +59,6 @@ static int ath12k_wifi7_ahb_probe(struct platform_device *pdev)
 	ab->hw_rev = desc->hw_rev;
 	ab->hif.ops = desc->ops;
 	ab_ahb->scm_auth_enabled = desc->auth_enabled;
-	ab_ahb->supports_multipd = desc->supports_multipd;
 	ab_ahb->userpd_id = ATH12K_AHB_USERPD_ID_0;
 	if (!ab_ahb->userpd_id)
 		return -EOPNOTSUPP;

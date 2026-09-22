@@ -3246,9 +3246,8 @@ static inline int folio_expected_ref_count(const struct folio *folio)
 		ref_count += !!data_race(folio->mapping) << order;
 		/*
 		 * One reference from filesystem private data.
-		 * Use data_race() since folio might not be locked.
 		 */
-		ref_count += data_race(folio_has_attached_private(folio));
+		ref_count += folio_has_attached_private(folio);
 	}
 
 	/* One reference per page table mapping. */

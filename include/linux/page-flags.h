@@ -576,7 +576,12 @@ FOLIO_FLAG(swapbacked, FOLIO_HEAD_PAGE)
 
 static __always_inline bool folio_test_private(const struct folio *folio)
 {
-	return folio->private;
+	/*
+	 * data_race() is added for readers without holding the folio lock.
+	 * Only the NULL/non-NULL answer is used and both are valid while
+	 * private is being attached or detached, so the race is benign.
+	 */
+	return data_race(folio->private);
 }
 
 FOLIO_FLAG(private_2, FOLIO_HEAD_PAGE)
@@ -1199,20 +1204,23 @@ static __always_inline void __ClearPageAnonExclusive(struct page *page)
  * @folio: The folio to check.
  *
  * Use this in code that may encounter swapcache or hugetlb folios but only
- * wants to detect attached private data. Swapcache stores swp_entry_t in
- * folio->swap, a union with folio->private, and hugetlb stores its own flags
- * in folio->private; both are excluded.
+ * wants to detect attached private data.
  *
- * NOTE: For swapcache, folio->swap.val PG_swapcache are not set as a whole,
- * so folio_test_swapcache() is not reliable to exclude swapcache.
- * Use folio_test_swapbacked() instead, since it remains set when a folio is
- * added to/removed from swapcache.
- *
- * Return: true if folio->private is set and the folio is neither swapcache
- * nor hugetlb.
+ * Return: true if the folio has private data attached.
  */
 static inline bool folio_has_attached_private(const struct folio *folio)
 {
+	/*
+	 * Swapcache stores swp_entry_t in folio->swap, a union with
+	 * folio->private, and hugetlb stores its own flags in folio->private;
+	 * both are excluded.
+	 *
+	 * NOTE: For swapcache, folio->swap.val PG_swapcache are not set as
+	 * a whole, so folio_test_swapcache() is not reliable to exclude
+	 * swapcache. Use folio_test_swapbacked() instead, since it remains set
+	 * when a folio is added to/removed from swapcache.
+	 */
+
 	return folio_test_private(folio) && !folio_test_swapbacked(folio) &&
 	       !folio_test_hugetlb(folio);
 }

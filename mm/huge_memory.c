@@ -254,12 +254,12 @@ unsigned long __thp_vma_allowable_orders(struct vm_area_struct *vma,
 
 	/*
 	 * THPeligible bit of smaps should show 1 for proper VMAs even
-	 * though anon_vma is not initialized yet.
+	 * though they don't have an anon rmap yet.
 	 *
-	 * Allow page fault since anon_vma may be not initialized until
-	 * the first page fault.
+	 * Allow page fault since the VMA may not have an anon rmap until the
+	 * first page fault.
 	 */
-	if (!vma->anon_vma)
+	if (!vma_has_anon_rmap(vma))
 		return (smaps || in_pf) ? orders : 0;
 
 	return orders;
@@ -2172,7 +2172,7 @@ vm_fault_t do_huge_pmd_wp_page(struct vm_fault *vmf)
 	pmd_t orig_pmd = vmf->orig_pmd;
 
 	vmf->ptl = pmd_lockptr(vma->vm_mm, vmf->pmd);
-	VM_BUG_ON_VMA(!vma->anon_vma, vma);
+	VM_BUG_ON_VMA(!vma_has_anon_rmap(vma), vma);
 
 	if (is_huge_zero_pmd(orig_pmd)) {
 		vm_fault_t ret = do_huge_zero_wp_pmd(vmf);
@@ -4372,7 +4372,7 @@ out:
  * THP pages in the middle of migration, due to allocation issues on either
  * side.
  *
- * anon_vma_lock is not required to be held, mmap_read_lock() or
+ * The anon rmap lock is not required to be held, mmap_read_lock() or
  * mmap_write_lock() should be held. @folio is expected to be locked by the
  * caller. device-private and non device-private folios are supported along
  * with folios that are in the swapcache. @folio should also be unmapped and
@@ -4851,9 +4851,8 @@ static int split_huge_pages_pid(int pid, unsigned long vaddr_start,
 		 * For folios with private, split_huge_page_to_list_to_order()
 		 * will try to drop it before split and then check if the folio
 		 * can be split or not. So skip the check here.
-		 * data_race() is used to read attached private locklessly.
 		 */
-		if (!data_race(folio_has_attached_private(folio)) &&
+		if (!folio_has_attached_private(folio) &&
 		    folio_expected_ref_count(folio) != folio_ref_count(folio))
 			goto next;
 
