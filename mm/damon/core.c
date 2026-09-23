@@ -2342,39 +2342,36 @@ static bool damos_skip_charged_region(struct damon_target *t,
 {
 	struct damos_quota *quota = &s->quota;
 	unsigned long sz_to_skip;
-	bool skip = false;
 
 	/* Skip previously charged regions */
 	if (quota->charge_target_from) {
 		if (t != quota->charge_target_from)
 			return true;
-		if (quota->charge_addr_from &&
-				r->ar.end <= quota->charge_addr_from) {
-			skip = true;
-			goto out;
+		if (r == damon_last_region(t)) {
+			quota->charge_target_from = NULL;
+			quota->charge_addr_from = 0;
+			return true;
 		}
+		if (quota->charge_addr_from &&
+				r->ar.end <= quota->charge_addr_from)
+			return true;
 
 		if (quota->charge_addr_from && r->ar.start <
 				quota->charge_addr_from) {
 			sz_to_skip = ALIGN_DOWN(quota->charge_addr_from -
 					r->ar.start, min_region_sz);
 			if (!sz_to_skip) {
-				if (damon_sz_region(r) <= min_region_sz) {
-					skip = true;
-					goto out;
-				}
+				if (damon_sz_region(r) <= min_region_sz)
+					return true;
 				sz_to_skip = min_region_sz;
 			}
 			damon_split_region_at(t, r, sz_to_skip);
-			skip = true;
+			return true;
 		}
-	}
-out:
-	if (r == damon_last_region(t)) {
 		quota->charge_target_from = NULL;
 		quota->charge_addr_from = 0;
 	}
-	return skip;
+	return false;
 }
 
 static void damos_update_stat(struct damos *s,
@@ -3094,7 +3091,6 @@ static void damos_set_effective_quota(struct damon_ctx *ctx, struct damos *s)
 	struct damos_quota *quota = &s->quota;
 	unsigned long throughput;
 	unsigned long esz = ULONG_MAX;
-	unsigned long esz_time;
 
 	if (!quota->ms && list_empty(&quota->goals)) {
 		quota->esz = quota->sz;
@@ -3115,8 +3111,8 @@ static void damos_set_effective_quota(struct damon_ctx *ctx, struct damos *s)
 					1000000, quota->total_charged_ns);
 		else
 			throughput = PAGE_SIZE * 1024;
-		esz_time = max(throughput * quota->ms, ctx->min_region_sz);
-		esz = min(esz_time, esz);
+		esz = min(throughput * quota->ms, esz);
+		esz = max(ctx->min_region_sz, esz);
 	}
 
 	if (quota->sz && quota->sz < esz)
@@ -3245,15 +3241,8 @@ static void kdamond_apply_schemes(struct damon_ctx *c)
 	max_region_sz = damon_region_sz_limit(c);
 	mutex_lock(&c->walk_control_lock);
 	damon_for_each_target(t, c) {
-		if (c->ops.target_valid && c->ops.target_valid(t) == false) {
-			damon_for_each_scheme(s, c) {
-				if (s->quota.charge_target_from != t)
-					continue;
-				s->quota.charge_target_from = NULL;
-				s->quota.charge_addr_from = 0;
-			}
+		if (c->ops.target_valid && c->ops.target_valid(t) == false)
 			continue;
-		}
 		damos_apply_target(c, t, max_region_sz);
 	}
 

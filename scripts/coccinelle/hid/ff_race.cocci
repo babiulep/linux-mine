@@ -7,19 +7,18 @@
 
 virtual report
 
-@r exists@
+@r@
 identifier probe_fn;
-identifier hdev;
-expression flags;
+expression hdev, flags;
 position p1, p2;
 @@
 
 probe_fn(struct hid_device *hdev, ...) {
-  ... when any
+  <...
   hid_hw_start@p1(hdev, flags)
   ...
-  \(input_ff_create@p2\|input_ff_create_memless@p2\)(...)
-  ... when any
+  \(input_ff_create\|input_ff_create_memless\)@p2(...)
+  ...>
 }
 
 @script:python depends on report@
