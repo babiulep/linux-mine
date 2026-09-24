@@ -55,6 +55,9 @@ static const struct pci_device_id btintel_pcie_table[] = {
 	{ BTINTEL_PCI_DEVICE(0xD346, PCI_ANY_ID) },
 	 /* Scorpious2, Nova Lake-PCD-S */
 	{ BTINTEL_PCI_DEVICE(0x6E74, PCI_ANY_ID) },
+	 /* Draco */
+	{ BTINTEL_PCI_DEVICE(0x2731, PCI_ANY_ID) },
+	{ BTINTEL_PCI_DEVICE(0x2732, PCI_ANY_ID) },
 	{ 0 }
 };
 MODULE_DEVICE_TABLE(pci, btintel_pcie_table);
@@ -2163,7 +2166,7 @@ static int btintel_pcie_recv_frame(struct btintel_pcie_data *data,
 {
 	int ret;
 	u8 pkt_type;
-	u16 plen;
+	u32 plen;
 	u32 pcie_pkt_type;
 	void *pdata;
 	struct hci_dev *hdev = data->hdev;
@@ -2289,6 +2292,7 @@ static void btintel_pcie_read_hwexp(struct btintel_pcie_data *data)
 	case BTINTEL_CNVI_SCP:
 	case BTINTEL_CNVI_SCP2:
 	case BTINTEL_CNVI_SCP2F:
+	case BTINTEL_CNVI_DRACO:
 		break;
 	default:
 		bt_dev_err(data->hdev, "Unsupported cnvi 0x%8.8x", data->dmp_hdr.cnvi_top);
@@ -3235,6 +3239,16 @@ static int btintel_pcie_send_frame(struct hci_dev *hdev,
 	if (test_bit(BTINTEL_PCIE_RECOVERY_IN_PROGRESS, &data->flags))
 		return -ENODEV;
 
+	/* Account for the 4-byte PCIe type header prepended before the
+	 * DMA copy.  Written as a subtraction to avoid wrap-around on
+	 * attacker-controlled skb->len.
+	 */
+	if (skb->len > BTINTEL_PCIE_BUFFER_SIZE - BTINTEL_PCIE_HCI_TYPE_LEN) {
+		bt_dev_err(hdev, "Packet too large: %u > %u", skb->len,
+			   BTINTEL_PCIE_BUFFER_SIZE - BTINTEL_PCIE_HCI_TYPE_LEN);
+		return -EMSGSIZE;
+	}
+
 	/* Due to the fw limitation, the type header of the packet should be
 	 * 4 bytes unlike 1 byte for UART. In UART, the firmware can read
 	 * the first byte to get the packet type and redirect the rest of data
@@ -3447,6 +3461,7 @@ static int btintel_pcie_setup_internal(struct hci_dev *hdev)
 	case 0x20:	/* ScP2 */
 	case 0x21:	/* ScP2 F */
 	case 0x22:	/* BzrIW */
+	case 0x23:	/* DrC */
 		/* Display version information of TLV type */
 		btintel_version_info_tlv(hdev, &ver_tlv);
 

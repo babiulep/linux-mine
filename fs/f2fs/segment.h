@@ -96,6 +96,8 @@ static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 #define GET_SUM_BLKOFF(sbi, segno) (segno % (sbi)->sums_per_block)
 #define SUM_BLK_PAGE_ADDR(sbi, folio, segno)	\
 	(folio_address(folio) + GET_SUM_BLKOFF(sbi, segno) * (sbi)->sum_blocksize)
+#define SUM_BLK_ENTRY_ADDR(sbi, entry, segno)	\
+	(cache_address(entry) + GET_SUM_BLKOFF(sbi, segno) * (sbi)->sum_blocksize)
 
 #define GET_SUM_TYPE(footer) ((footer)->entry_type)
 #define SET_SUM_TYPE(footer, type) ((footer)->entry_type = (type))
@@ -421,8 +423,8 @@ static inline void __seg_info_to_raw_sit(struct seg_entry *se,
 	rs->mtime = cpu_to_le64(se->mtime);
 }
 
-static inline void seg_info_to_sit_folio(struct f2fs_sb_info *sbi,
-				struct folio *folio, unsigned int start)
+static inline void seg_info_to_sit_block(struct f2fs_sb_info *sbi,
+			struct f2fs_cached_block *entry, unsigned int start)
 {
 	struct f2fs_sit_block *raw_sit;
 	struct seg_entry *se;
@@ -431,7 +433,7 @@ static inline void seg_info_to_sit_folio(struct f2fs_sb_info *sbi,
 					(unsigned long)MAIN_SEGS(sbi));
 	int i;
 
-	raw_sit = folio_address(folio);
+	raw_sit = cache_address(entry);
 	memset(raw_sit, 0, F2FS_BLKSIZE(sbi));
 	for (i = 0; i < end - start; i++) {
 		rs = &raw_sit->entries[i];
@@ -654,15 +656,15 @@ static inline void get_additional_blocks_required(struct f2fs_sb_info *sbi,
  */
 static inline int __get_secs_required(struct f2fs_sb_info *sbi)
 {
-	unsigned int total_node_blocks = get_pages(sbi, F2FS_DIRTY_NODES) +
-					get_pages(sbi, F2FS_DIRTY_DENTS) +
-					get_pages(sbi, F2FS_DIRTY_IMETA);
-	unsigned int total_dent_blocks = get_pages(sbi, F2FS_DIRTY_DENTS);
+	unsigned int total_node_blocks = get_nr_caches(sbi, F2FS_DIRTY_NODES) +
+					get_nr_caches(sbi, F2FS_DIRTY_DENTS) +
+					get_nr_caches(sbi, F2FS_DIRTY_IMETA);
+	unsigned int total_dent_blocks = get_nr_caches(sbi, F2FS_DIRTY_DENTS);
 	unsigned int total_data_blocks = 0;
 	bool separate_dent = true;
 
 	if (f2fs_lfs_mode(sbi))
-		total_data_blocks = get_pages(sbi, F2FS_DIRTY_DATA);
+		total_data_blocks = get_nr_caches(sbi, F2FS_DIRTY_DATA);
 
 	/*
 	 * When active_logs != 4, dentry blocks and data blocks can be
@@ -975,13 +977,13 @@ static inline bool sec_usage_check(struct f2fs_sb_info *sbi, unsigned int secno)
 }
 
 /*
- * It is very important to gather dirty pages and write at once, so that we can
+ * It is very important to gather dirty blocks and write at once, so that we can
  * submit a big bio without interfering other data writes.
- * By default, 512 pages for directory data,
- * 512 pages (2MB) * 8 for nodes, and
- * 256 pages * 8 for meta are set.
+ * By default, 512 blocks for directory data,
+ * 512 blocks (2MB) * 8 for nodes, and
+ * 256 blocks * 8 for meta are set.
  */
-static inline int nr_pages_to_skip(struct f2fs_sb_info *sbi, int type)
+static inline int nr_caches_to_skip(struct f2fs_sb_info *sbi, int type)
 {
 	if (bdi_wb_dirty_exceeded(sbi->sb->s_bdi))
 		return 0;
@@ -997,23 +999,24 @@ static inline int nr_pages_to_skip(struct f2fs_sb_info *sbi, int type)
 }
 
 /*
- * When writing pages, it'd better align nr_to_write for segment size.
+ * When writing cache asynchronously, align nr_to_write to BIO_MAX_VECS.
  */
-static inline long nr_pages_to_write(struct f2fs_sb_info *sbi, int type,
-					struct writeback_control *wbc)
+static inline long adjust_flush_cache_number(struct f2fs_sb_info *sbi, int type)
 {
-	long nr_to_write, desired;
+	long nr_to_write;
 
-	if (wbc->sync_mode != WB_SYNC_NONE)
+	switch (type) {
+	case META:
+		nr_to_write = BIO_MAX_VECS;
+		break;
+	case NODE:
+		nr_to_write = BIO_MAX_VECS << 1;
+		break;
+	default:
+		f2fs_bug_on(sbi, 1);
 		return 0;
-
-	nr_to_write = wbc->nr_to_write;
-	desired = BIO_MAX_VECS;
-	if (type == NODE)
-		desired <<= 1;
-
-	wbc->nr_to_write = desired;
-	return desired - nr_to_write;
+	}
+	return nr_to_write;
 }
 
 static inline void wake_up_discard_thread(struct f2fs_sb_info *sbi, bool force)

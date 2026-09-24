@@ -5,6 +5,7 @@
 #include <linux/container_of.h>
 #include <linux/kvm_host.h>
 #include <asm/posted_intr.h>
+#include <asm/vmx.h>
 
 #include "mmu.h"
 #include "vmx_ops.h"
@@ -56,6 +57,8 @@ struct vcpu_vt {
 	u64		msr_host_kernel_gs_base;
 #endif
 };
+
+noinstr void vt_handle_nmi(struct kvm_vcpu *vcpu);
 
 #ifdef CONFIG_KVM_INTEL_TDX
 
@@ -233,6 +236,33 @@ static inline void __vt_deliver_posted_interrupt(struct kvm_vcpu *vcpu,
 	kvm_vcpu_trigger_posted_interrupt(vcpu, POSTED_INTR_VECTOR);
 }
 
-noinstr void vt_handle_nmi(struct kvm_vcpu *vcpu);
+static inline int __vt_handle_notify(struct kvm_vcpu *vcpu,
+				     unsigned long exit_qual)
+{
+	bool context_invalid = exit_qual & NOTIFY_VM_CONTEXT_INVALID;
+
+	++vcpu->stat.notify_window_exits;
+
+	if (vcpu->kvm->arch.notify_vmexit_flags & KVM_X86_NOTIFY_VMEXIT_USER ||
+	    context_invalid) {
+		vcpu->run->exit_reason = KVM_EXIT_NOTIFY;
+		vcpu->run->notify.flags = context_invalid ?
+					  KVM_NOTIFY_CONTEXT_INVALID : 0;
+		return 0;
+	}
+
+	return 1;
+}
+
+static inline int vt_handle_bus_lock_vmexit(struct kvm_vcpu *vcpu)
+{
+	/*
+	 * Hardware may or may not set the BUS_LOCK_DETECTED flag on BUS_LOCK
+	 * VM-Exits. Unconditionally set the flag here and leave the handling
+	 * to .handle_exit() callback.
+	 */
+	to_vt(vcpu)->exit_reason.bus_lock_detected = true;
+	return 1;
+}
 
 #endif /* __KVM_X86_VMX_COMMON_H */

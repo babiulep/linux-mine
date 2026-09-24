@@ -1464,7 +1464,7 @@ EXPORT_SYMBOL(security_path_mknod);
  *
  * Update inode security field after a regular file has been created.
  */
-void security_path_post_mknod(struct mnt_idmap *idmap, struct dentry *dentry)
+void security_path_post_mknod(const struct mnt_idmap *idmap, struct dentry *dentry)
 {
 	if (unlikely(IS_PRIVATE(d_backing_inode(dentry))))
 		return;
@@ -1662,7 +1662,7 @@ int security_path_chroot(const struct path *path)
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_inode_create(struct mnt_idmap *idmap, struct inode *dir,
+int security_inode_create(const struct mnt_idmap *idmap, struct inode *dir,
 			  struct dentry *dentry, umode_t mode)
 {
 	if (unlikely(IS_PRIVATE(dir)))
@@ -1678,7 +1678,7 @@ EXPORT_SYMBOL_GPL(security_inode_create);
  *
  * Update inode security data after a tmpfile has been created.
  */
-void security_inode_post_create_tmpfile(struct mnt_idmap *idmap,
+void security_inode_post_create_tmpfile(const struct mnt_idmap *idmap,
 					struct inode *inode)
 {
 	if (unlikely(IS_PRIVATE(inode)))
@@ -1697,7 +1697,7 @@ void security_inode_post_create_tmpfile(struct mnt_idmap *idmap,
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_inode_link(struct mnt_idmap *idmap, struct dentry *old_dentry,
+int security_inode_link(const struct mnt_idmap *idmap, struct dentry *old_dentry,
 			struct inode *dir, struct dentry *new_dentry)
 {
 	if (unlikely(IS_PRIVATE(d_backing_inode(old_dentry))))
@@ -1732,7 +1732,7 @@ int security_inode_unlink(struct inode *dir, struct dentry *dentry)
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_inode_symlink(struct mnt_idmap *idmap, struct inode *dir,
+int security_inode_symlink(const struct mnt_idmap *idmap, struct inode *dir,
 			   struct dentry *dentry, const char *old_name)
 {
 	if (unlikely(IS_PRIVATE(dir)))
@@ -1752,7 +1752,7 @@ int security_inode_symlink(struct mnt_idmap *idmap, struct inode *dir,
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_inode_mkdir(struct mnt_idmap *idmap, struct inode *dir,
+int security_inode_mkdir(const struct mnt_idmap *idmap, struct inode *dir,
 			 struct dentry *dentry, umode_t mode)
 {
 	if (unlikely(IS_PRIVATE(dir)))
@@ -1792,7 +1792,7 @@ int security_inode_rmdir(struct inode *dir, struct dentry *dentry)
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_inode_mknod(struct mnt_idmap *idmap, struct inode *dir,
+int security_inode_mknod(const struct mnt_idmap *idmap, struct inode *dir,
 			 struct dentry *dentry, umode_t mode, dev_t dev)
 {
 	if (unlikely(IS_PRIVATE(dir)))
@@ -1881,7 +1881,7 @@ int security_inode_follow_link(struct dentry *dentry, struct inode *inode,
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_inode_permission(struct mnt_idmap *idmap, struct inode *inode,
+int security_inode_permission(const struct mnt_idmap *idmap, struct inode *inode,
 			      int mask)
 {
 	if (unlikely(IS_PRIVATE(inode)))
@@ -1902,7 +1902,7 @@ int security_inode_permission(struct mnt_idmap *idmap, struct inode *inode,
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_inode_setattr(struct mnt_idmap *idmap,
+int security_inode_setattr(const struct mnt_idmap *idmap,
 			   struct dentry *dentry, struct iattr *attr)
 {
 	if (unlikely(IS_PRIVATE(d_backing_inode(dentry))))
@@ -1919,7 +1919,7 @@ EXPORT_SYMBOL_GPL(security_inode_setattr);
  *
  * Update inode security field after successful setting file attributes.
  */
-void security_inode_post_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
+void security_inode_post_setattr(const struct mnt_idmap *idmap, struct dentry *dentry,
 				 int ia_valid)
 {
 	if (unlikely(IS_PRIVATE(d_backing_inode(dentry))))
@@ -1968,7 +1968,7 @@ int security_inode_getattr(const struct path *path)
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_inode_setxattr(struct mnt_idmap *idmap,
+int security_inode_setxattr(const struct mnt_idmap *idmap,
 			    struct dentry *dentry, const char *name,
 			    const void *value, size_t size, int flags)
 {
@@ -2000,7 +2000,7 @@ int security_inode_setxattr(struct mnt_idmap *idmap,
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_inode_set_acl(struct mnt_idmap *idmap,
+int security_inode_set_acl(const struct mnt_idmap *idmap,
 			   struct dentry *dentry, const char *acl_name,
 			   struct posix_acl *kacl)
 {
@@ -2037,7 +2037,7 @@ void security_inode_post_set_acl(struct dentry *dentry, const char *acl_name,
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_inode_get_acl(struct mnt_idmap *idmap,
+int security_inode_get_acl(const struct mnt_idmap *idmap,
 			   struct dentry *dentry, const char *acl_name)
 {
 	if (unlikely(IS_PRIVATE(d_backing_inode(dentry))))
@@ -2056,7 +2056,7 @@ int security_inode_get_acl(struct mnt_idmap *idmap,
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_inode_remove_acl(struct mnt_idmap *idmap,
+int security_inode_remove_acl(const struct mnt_idmap *idmap,
 			      struct dentry *dentry, const char *acl_name)
 {
 	if (unlikely(IS_PRIVATE(d_backing_inode(dentry))))
@@ -2073,7 +2073,7 @@ int security_inode_remove_acl(struct mnt_idmap *idmap,
  * Update inode security data after successfully removing posix acls on
  * @dentry in @idmap. The posix acls are identified by @acl_name.
  */
-void security_inode_post_remove_acl(struct mnt_idmap *idmap,
+void security_inode_post_remove_acl(const struct mnt_idmap *idmap,
 				    struct dentry *dentry, const char *acl_name)
 {
 	if (unlikely(IS_PRIVATE(d_backing_inode(dentry))))
@@ -2155,7 +2155,7 @@ int security_inode_listxattr(struct dentry *dentry)
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_inode_removexattr(struct mnt_idmap *idmap,
+int security_inode_removexattr(const struct mnt_idmap *idmap,
 			       struct dentry *dentry, const char *name)
 {
 	int rc;
@@ -2244,7 +2244,7 @@ int security_inode_need_killpriv(struct dentry *dentry)
  * Return: Return 0 on success.  If error is returned, then the operation
  *         causing setuid bit removal is failed.
  */
-int security_inode_killpriv(struct mnt_idmap *idmap,
+int security_inode_killpriv(const struct mnt_idmap *idmap,
 			    struct dentry *dentry)
 {
 	return call_int_hook(inode_killpriv, idmap, dentry);
@@ -2266,7 +2266,7 @@ int security_inode_killpriv(struct mnt_idmap *idmap,
  *
  * Return: Returns size of buffer on success.
  */
-int security_inode_getsecurity(struct mnt_idmap *idmap,
+int security_inode_getsecurity(const struct mnt_idmap *idmap,
 			       struct inode *inode, const char *name,
 			       void **buffer, bool alloc)
 {
@@ -2434,7 +2434,7 @@ int security_kernfs_init_security(struct kernfs_node *kn_dir,
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_file_permission(struct file *file, int mask)
+int security_file_permission(const struct file *file, int mask)
 {
 	return call_int_hook(file_permission, file, mask);
 }

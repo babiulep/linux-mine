@@ -159,15 +159,6 @@ static fastpath_t vt_vcpu_run(struct kvm_vcpu *vcpu, u64 run_flags)
 	return vmx_vcpu_run(vcpu, run_flags);
 }
 
-static int vt_handle_exit(struct kvm_vcpu *vcpu,
-			  enum exit_fastpath_completion fastpath)
-{
-	if (is_td_vcpu(vcpu))
-		return tdx_handle_exit(vcpu, fastpath);
-
-	return vmx_handle_exit(vcpu, fastpath);
-}
-
 static bool vt_unhandleable_emulation_required(struct kvm_vcpu *vcpu)
 {
 	if (is_td_vcpu(vcpu)) {
@@ -879,6 +870,17 @@ static int vt_gmem_max_mapping_level(struct kvm *kvm, kvm_pfn_t pfn,
 #define vt_op_tdx_only(name) NULL
 #endif /* CONFIG_KVM_INTEL_TDX */
 
+noinstr void vt_handle_nmi(struct kvm_vcpu *vcpu)
+{
+	if ((u16)vt_get_exit_reason(vcpu).basic != EXIT_REASON_EXCEPTION_NMI ||
+	    !is_nmi(vt_get_intr_info(vcpu)))
+		return;
+
+	kvm_before_interrupt(vcpu, KVM_HANDLING_NMI);
+	x86_entry_from_kvm(EVENT_TYPE_NMI, NMI_VECTOR);
+	kvm_after_interrupt(vcpu);
+}
+
 static void handle_nm_fault_irqoff(struct kvm_vcpu *vcpu)
 {
 	/*
@@ -947,15 +949,31 @@ static void vt_handle_exit_irqoff(struct kvm_vcpu *vcpu)
 	}
 }
 
-noinstr void vt_handle_nmi(struct kvm_vcpu *vcpu)
+static int vt_handle_exit(struct kvm_vcpu *vcpu,
+			  enum exit_fastpath_completion fastpath)
 {
-	if ((u16)vt_get_exit_reason(vcpu).basic != EXIT_REASON_EXCEPTION_NMI ||
-	    !is_nmi(vt_get_intr_info(vcpu)))
-		return;
+	int ret;
 
-	kvm_before_interrupt(vcpu, KVM_HANDLING_NMI);
-	x86_entry_from_kvm(EVENT_TYPE_NMI, NMI_VECTOR);
-	kvm_after_interrupt(vcpu);
+#ifdef CONFIG_KVM_INTEL_TDX
+	if (is_td_vcpu(vcpu))
+		ret = tdx_handle_exit(vcpu, fastpath);
+	else
+#endif
+		ret = vmx_handle_exit(vcpu, fastpath);
+
+	/*
+	 * Exit to user space when bus lock detected to inform that there is
+	 * a bus lock in guest.
+	 */
+	if (vt_get_exit_reason(vcpu).bus_lock_detected) {
+		if (ret > 0) {
+			vcpu->run->exit_reason = KVM_EXIT_X86_BUS_LOCK;
+			ret = 0;
+		}
+
+		vcpu->run->flags |= KVM_RUN_X86_BUS_LOCK;
+	}
+	return ret;
 }
 
 #define VMX_REQUIRED_APICV_INHIBITS				\
@@ -1031,7 +1049,7 @@ struct kvm_x86_ops vt_x86_ops __initdata = {
 
 	.vcpu_needs_initialization = vt_op_tdx_only(vcpu_needs_initialization),
 	.vcpu_run = vt_op(vcpu_run),
-	.handle_exit = vt_op(handle_exit),
+	.handle_exit = vt_handle_exit,
 	.skip_emulated_instruction = vmx_skip_emulated_instruction,
 	.update_emulated_instruction = vmx_update_emulated_instruction,
 	.unhandleable_emulation_required = vt_op(unhandleable_emulation_required),

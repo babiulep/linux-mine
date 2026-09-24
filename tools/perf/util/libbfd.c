@@ -1,5 +1,19 @@
 // SPDX-License-Identifier: GPL-2.0
 #include "libbfd.h"
+
+#include <errno.h>
+#include <inttypes.h>
+#include <limits.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <fcntl.h>
+#include <pthread.h>
+
+#include <tools/dis-asm-compat.h>
+
 #include "annotate.h"
 #include "bpf-event.h"
 #include "bpf-utils.h"
@@ -11,15 +25,13 @@
 #include "symbol.h"
 #include "symbol_conf.h"
 #include "util.h"
-#include <tools/dis-asm-compat.h>
+
 #ifdef HAVE_LIBBPF_SUPPORT
 #include <bpf/bpf.h>
 #include <bpf/btf.h>
 #include <bpf/libbpf.h>
 #endif
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
+
 #define PACKAGE "perf"
 #include <bfd.h>
 
@@ -39,13 +51,13 @@ struct a2l_data {
 	asymbol **syms;
 };
 
-static bool perf_bfd_lock(void *bfd_mutex)
+static bool perf_bfd_lock(void *bfd_mutex) NO_THREAD_SAFETY_ANALYSIS
 {
 	mutex_lock(bfd_mutex);
 	return true;
 }
 
-static bool perf_bfd_unlock(void *bfd_mutex)
+static bool perf_bfd_unlock(void *bfd_mutex) NO_THREAD_SAFETY_ANALYSIS
 {
 	mutex_unlock(bfd_mutex);
 	return true;
@@ -70,6 +82,23 @@ static void ensure_bfd_init(void)
 	static pthread_once_t bfd_init_once = PTHREAD_ONCE_INIT;
 
 	pthread_once(&bfd_init_once, perf_bfd_init);
+}
+
+/*
+ * Flags from libiberty's demangle.h. bfd.h declares bfd_demangle but not the
+ * flags to pass to it, and demangle.h isn't installed by every binutils
+ * package.
+ */
+#ifndef DMGL_PARAMS
+#define DMGL_PARAMS	(1 << 0)	/* Include function arguments. */
+#define DMGL_ANSI	(1 << 1)	/* Include const, volatile, etc. */
+#endif
+
+char *libbfd__demangle_sym(const char *str, bool params, bool modifiers)
+{
+	int flags = (params ? DMGL_PARAMS : 0) | (modifiers ? DMGL_ANSI : 0);
+
+	return bfd_demangle(/*abfd=*/NULL, str, flags);
 }
 
 static int bfd_error(const char *string)

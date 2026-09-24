@@ -109,7 +109,7 @@ struct mount_kattr {
 	unsigned int lookup_flags;
 	enum mount_kattr_flags_t kflags;
 	struct user_namespace *mnt_userns;
-	struct mnt_idmap *mnt_idmap;
+	const struct mnt_idmap *mnt_idmap;
 };
 
 /* /sys/fs */
@@ -4895,7 +4895,7 @@ static int mount_setattr_prepare(struct mount_kattr *kattr, struct mount *mnt)
 
 static void do_idmap_mount(const struct mount_kattr *kattr, struct mount *mnt)
 {
-	struct mnt_idmap *old_idmap;
+	const struct mnt_idmap *old_idmap;
 
 	if (!kattr->mnt_idmap)
 		return;
@@ -4938,7 +4938,7 @@ static int do_mount_setattr(const struct path *path, struct mount_kattr *kattr)
 		return -EINVAL;
 
 	if (kattr->mnt_userns) {
-		struct mnt_idmap *mnt_idmap;
+		const struct mnt_idmap *mnt_idmap;
 
 		mnt_idmap = alloc_mnt_idmap(kattr->mnt_userns);
 		if (IS_ERR(mnt_idmap))
@@ -5243,7 +5243,7 @@ struct kstatmount {
 	struct statmount __user *buf;
 	size_t bufsize;
 	struct vfsmount *mnt;
-	struct mnt_idmap *idmap;
+	const struct mnt_idmap *idmap;
 	u64 mask;
 	struct path root;
 	struct seq_file seq;
@@ -6298,7 +6298,7 @@ void put_mnt_ns(struct mnt_namespace *ns)
 	guard(namespace_excl)();
 	emptied_ns = ns;
 	guard(mount_writer)();
-	umount_tree(ns->root, UMOUNT_CONNECTED);
+	umount_tree(ns->root, 0);
 }
 
 struct vfsmount *kern_mount(struct file_system_type *type)
