@@ -680,6 +680,7 @@ struct bpf_insn_aux_data {
 	bool nospec_result; /* result is unsafe under speculation, nospec must follow */
 	bool zext_dst; /* this insn zero extends dst reg */
 	bool needs_zext; /* alu op needs to clear upper bits */
+	bool prevent_zext; /* alu op cannot be zext (already used with 64-bit scalars) */
 	bool non_sleepable; /* helper/kfunc may be called from non-sleepable context */
 	bool is_iter_next; /* bpf_iter_<type>_next() kfunc call */
 	bool call_with_percpu_alloc_ptr; /* {this,per}_cpu_ptr() with prog percpu alloc */
@@ -786,6 +787,21 @@ struct bpf_verifier_log *bpf_log_attr_create_vlog(struct bpf_log_attr *attr_log,
 int bpf_log_attr_finalize(struct bpf_log_attr *attr, struct bpf_verifier_log *log);
 
 #define BPF_MAX_SUBPROGS 256
+
+/*
+ * A pointer to a static subprog in the value of a frozen read-only array map:
+ * a 64-bit value that is the offset in bytes of the first instruction of
+ * the subprog in the program.
+ */
+struct bpf_func_ptr {
+	struct bpf_map *map;
+	u32 map_off;		/* offset of the pointer in the value of the map */
+	u32 orig_off;		/* what the map has: the first instruction of the subprog */
+	u32 xlated_off;		/* the same after instructions were patched and removed */
+};
+
+/* the subprog that a bpf_func_ptr pointed to was removed as dead code */
+#define BPF_FUNC_PTR_DELETED ((u32)-1)
 
 struct bpf_subprog_arg_info {
 	enum bpf_arg_type arg_type;
@@ -966,6 +982,20 @@ struct bpf_verifier_env {
 	struct bpf_subprog_info subprog_info[BPF_MAX_SUBPROGS + 2]; /* max + 2 for the fake and exception subprogs */
 	/* subprog indices sorted in topological order: leaves first, callers last */
 	int subprog_topo_order[BPF_MAX_SUBPROGS + 2];
+	/*
+	 * Pointers to static subprogs found in frozen read-only maps of the
+	 * program, see resolve_func_ptrs(). Sorted by map and map_off.
+	 */
+	struct bpf_func_ptr *func_ptrs;
+	u32 func_ptr_cnt;
+	bool has_callx;
+	/*
+	 * Call graph edges created by callx instructions. A bitmap of
+	 * subprog_cnt * subprog_cnt bits, where bit (caller * subprog_cnt + callee)
+	 * is set when the main verification pass sees 'caller' calling 'callee'
+	 * via callx. Allocated when the first such edge is recorded.
+	 */
+	unsigned long *callx_edges;
 	union {
 		struct bpf_idmap idmap_scratch;
 		struct bpf_idset idset_scratch;
@@ -1088,6 +1118,12 @@ static inline bool bpf_pseudo_kfunc_call(const struct bpf_insn *insn)
 {
 	return insn->code == (BPF_JMP | BPF_CALL) &&
 	       insn->src_reg == BPF_PSEUDO_KFUNC_CALL;
+}
+
+/* callx: indirect call of a bpf subprog whose address is in insn->dst_reg */
+static inline bool bpf_is_callx(const struct bpf_insn *insn)
+{
+	return insn->code == (BPF_JMP | BPF_CALL | BPF_X);
 }
 
 __printf(2, 0) void bpf_verifier_vlog(struct bpf_verifier_log *log,
@@ -1321,6 +1357,13 @@ static inline bool bt_is_frame_slot_set(struct backtrack_state *bt, u32 frame, u
 }
 
 bool bpf_map_is_rdonly(const struct bpf_map *map);
+struct bpf_func_ptr *bpf_map_func_ptrs(struct bpf_verifier_env *env,
+				       const struct bpf_map *map, u32 *cnt);
+struct bpf_func_ptr *bpf_map_range_func_ptrs(struct bpf_verifier_env *env,
+					     const struct bpf_map *map,
+					     u64 off, u64 size, u32 *cnt);
+void bpf_adjust_func_ptrs(struct bpf_verifier_env *env, u32 off, u32 len);
+void bpf_adjust_func_ptrs_after_remove(struct bpf_verifier_env *env, u32 off, u32 len);
 int bpf_map_direct_read(struct bpf_map *map, int off, int size, u64 *val,
 			bool is_ldsx);
 

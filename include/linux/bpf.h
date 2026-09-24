@@ -344,7 +344,17 @@ struct bpf_map {
 	s64 __percpu *elem_count;
 	u64 cookie; /* write-once */
 	char *excl_prog_sha;
+	/*
+	 * Which programs use the map, see bpf_map_claim(): 0 - none so far,
+	 * aux of the program - only that one, the same with BPF_MAP_USER_PATCHED
+	 * set - only that one and it stored the addresses of its functions into
+	 * the map, BPF_MAP_USER_MANY - more than one.
+	 */
+	unsigned long user;
 };
+
+#define BPF_MAP_USER_MANY	1UL
+#define BPF_MAP_USER_PATCHED	1UL
 
 static inline const char *btf_field_type_name(enum btf_field_type type)
 {
@@ -1824,7 +1834,6 @@ struct bpf_prog_aux {
 	bool xdp_has_frags;
 	bool exception_cb;
 	bool exception_boundary;
-	bool is_extended; /* true if extended by freplace program */
 	bool jits_use_priv_stack;
 	bool priv_stack_requested;
 	bool changes_pkt_data;
@@ -1836,7 +1845,7 @@ struct bpf_prog_aux {
 		u8 verdict;
 	} sig;
 	u64 prog_array_member_cnt; /* counts how many times as member of prog_array */
-	struct mutex ext_mutex; /* mutex for is_extended and prog_array_member_cnt */
+	struct mutex ext_mutex; /* mutex for freplace_link_cnt and prog_array_member_cnt */
 	struct bpf_arena *arena;
 	void (*recursion_detected)(struct bpf_prog *prog); /* callback if recursion is detected */
 	/* BTF_KIND_FUNC_PROTO for valid attach_btf_id */
@@ -1868,6 +1877,7 @@ struct bpf_prog_aux {
 	char name[BPF_OBJ_NAME_LEN];
 	u64 (*bpf_exception_cb)(u64 cookie, u64 sp, u64 bp, u64, u64);
 	u16 stack_arg_sp_adjust;
+	u16 freplace_link_cnt; /* counts freplace links extending this prog */
 #ifdef CONFIG_SECURITY
 	void *security;
 #endif

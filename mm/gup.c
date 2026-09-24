@@ -1659,10 +1659,6 @@ static __always_inline long __get_user_pages_locked(struct mm_struct *mm,
 	if (!nr_pages)
 		return 0;
 
-	/* See the MMU variant: support the traditional behavior. */
-	if (pages && !(flags & FOLL_PIN))
-		flags |= FOLL_GET;
-
 	/*
 	 * The internal caller expects GUP to manage the lock internally and the
 	 * lock must be released when this returns.
@@ -2007,6 +2003,10 @@ static long __get_user_pages_locked(struct mm_struct *mm, unsigned long start,
 		must_unlock = true;
 		*locked = 1;
 	}
+
+	/* See the MMU variant: support the traditional behavior. */
+	if (pages && !(foll_flags & FOLL_PIN))
+		foll_flags |= FOLL_GET;
 
 	/* calculate required read or write permissions.
 	 * If FOLL_FORCE is set, we only require the "MAY" flags.

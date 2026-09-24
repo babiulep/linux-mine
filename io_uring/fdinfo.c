@@ -155,7 +155,7 @@ static void __io_uring_show_fdinfo(struct io_ring_ctx *ctx, struct seq_file *m)
 	for (i = 0; i < cq_entries; i++) {
 		struct io_uring_cqe *cqe;
 		bool cqe32 = false;
-		bool is_last_cqarray_slot = (cq_head == cq_mask);
+		bool is_last_cqarray_slot = (cq_head & cq_mask) == cq_mask;
 
 		cqe = &r->cqes[(cq_head & cq_mask)];
 		/*

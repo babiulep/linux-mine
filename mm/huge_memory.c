@@ -1059,8 +1059,7 @@ int folio_memcg_alloc_deferred(struct folio *folio)
 static int __init thp_shrinker_init(void)
 {
 	deferred_split_shrinker = shrinker_alloc(SHRINKER_NUMA_AWARE |
-						 SHRINKER_MEMCG_AWARE |
-						 SHRINKER_NONSLAB,
+						 SHRINKER_MEMCG_AWARE,
 						 "thp-deferred_split");
 	if (!deferred_split_shrinker)
 		return -ENOMEM;
@@ -1722,6 +1721,9 @@ vm_fault_t vmf_insert_pfn_pmd(struct vm_fault *vmf, unsigned long pfn,
 	BUG_ON((vma->vm_flags & (VM_PFNMAP|VM_MIXEDMAP)) ==
 						(VM_PFNMAP|VM_MIXEDMAP));
 	BUG_ON((vma->vm_flags & VM_PFNMAP) && vma_is_cow_mapping(vma));
+
+	if (unlikely(is_huge_zero_pfn(pfn)))
+		return VM_FAULT_SIGBUS;
 
 	pfnmap_setup_cachemode_pfn(pfn, &pgprot);
 
@@ -2474,7 +2476,7 @@ static inline void zap_deposited_table(struct mm_struct *mm, pmd_t *pmd)
 	pgtable_t pgtable;
 
 	pgtable = pgtable_trans_huge_withdraw(mm, pmd);
-	pte_free_defer(mm, pgtable);
+	pte_free(mm, pgtable);
 	mm_dec_nr_ptes(mm);
 }
 
@@ -3522,6 +3524,11 @@ void vma_adjust_trans_huge(struct vm_area_struct *vma,
 		split_huge_pmd_if_needed(next, end);
 }
 
+/*
+ * A return value of 0 does not mean that unmapping succeeded. It might
+ * still have failed, but remap_anon_folio() must be called afterwards,
+ * for anon folios.
+ */
 static int unmap_folio(struct folio *folio)
 {
 	enum ttu_flags ttu_flags = TTU_RMAP_LOCKED | TTU_SYNC |
@@ -3539,7 +3546,6 @@ static int unmap_folio(struct folio *folio)
 	/*
 	 * Anon pages need migration entries to preserve them, but file
 	 * pages can simply be left unmapped, then faulted back on demand.
-	 * If that is ever changed (perhaps for mlock), update remap_anon_folio().
 	 */
 	if (folio_test_anon(folio))
 		try_to_migrate(folio, ttu_flags);
@@ -4009,7 +4015,7 @@ static int __folio_freeze_split_anon(struct folio *folio,
 {
 	struct folio *end_folio = folio_next(folio);
 	struct swap_cluster_info *ci = NULL;
-	int old_order = folio_order(folio);
+	const int old_order = folio_order(folio);
 	struct folio *new_folio, *next;
 	struct anon_vma *anon_vma = NULL;
 	enum ttu_flags ttu_flags = 0;
@@ -4032,8 +4038,7 @@ static int __folio_freeze_split_anon(struct folio *folio,
 	 * the reference nor the lock. Anything else needs a reference
 	 * first and folio_ref_freeze() below catches it.
 	 *
-	 * Note a swapped-out THP counts as unmapped here as swap PTEs do
-	 * not contribute mapcount, and they are splittable.
+	 * Note that entirely swapped-out THPs are unmapped but can be split.
 	 */
 	if (folio_mapped(folio)) {
 		anon_vma = folio_get_anon_vma(folio);
@@ -4117,10 +4122,10 @@ static int __folio_freeze_split_file(struct folio *folio,
 		unsigned int new_order, struct page *split_at,
 		struct list_head *list, enum split_type split_type)
 {
+	const long old_nr_pages = folio_nr_pages(folio);
 	struct address_space *mapping = folio->mapping;
 	XA_STATE(xas, &mapping->i_pages, folio->index);
 	struct folio *end_folio = folio_next(folio);
-	long old_nr_pages = folio_nr_pages(folio);
 	struct mem_cgroup *memcg, *old_memcg;
 	struct folio *new_folio, *next;
 	int nr_shmem_dropped = 0;
@@ -4150,7 +4155,7 @@ static int __folio_freeze_split_file(struct folio *folio,
 	mapping_set_update(&xas, mapping);
 
 	if (split_type == SPLIT_TYPE_UNIFORM) {
-		int old_order = folio_order(folio);
+		const int old_order = folio_order(folio);
 
 		xas_set_order(&xas, folio->index, new_order);
 		xas_split_alloc(&xas, folio, old_order, gfp);
@@ -4253,10 +4258,6 @@ static int __folio_freeze_split_file(struct folio *folio,
 	folio_ref_unfreeze(folio, folio_nr_pages(folio) + 1);
 	lruvec_unlock(lruvec);
 fail:
-	/*
-	 * If we want to use try_to_migrate() on file in unmap_folio,
-	 * remember to add remap_anon_folio() and adapt it.
-	 */
 	xas_unlock_irq(&xas);
 fail_mmap_unlock:
 	if (nr_shmem_dropped)

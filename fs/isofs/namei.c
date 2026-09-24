@@ -77,7 +77,7 @@ isofs_find_entry(struct inode *dir, struct dentry *dentry,
 		de = (struct iso_directory_record *)(bh->b_data + offset);
 		/*
 		 * If we are at the end of the block or at its zero-padded
-		 * length, move to the next block.
+		 * tail, move to the next block.
 		 */
 		if (offset >= bufsize || de->length[0] == 0) {
 			brelse(bh);

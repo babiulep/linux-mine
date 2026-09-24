@@ -1494,13 +1494,8 @@ static int build_insn(const struct bpf_verifier_env *env, const struct bpf_insn 
 	case BPF_ALU | BPF_END | BPF_FROM_LE:
 	case BPF_ALU | BPF_END | BPF_FROM_BE:
 	case BPF_ALU64 | BPF_END | BPF_FROM_LE:
-#ifdef CONFIG_CPU_BIG_ENDIAN
-		if (BPF_CLASS(code) == BPF_ALU && BPF_SRC(code) == BPF_FROM_BE)
-			goto emit_bswap_uxt;
-#else /* !CONFIG_CPU_BIG_ENDIAN */
 		if (BPF_CLASS(code) == BPF_ALU && BPF_SRC(code) == BPF_FROM_LE)
 			goto emit_bswap_uxt;
-#endif
 		switch (imm) {
 		case 16:
 			emit(A64_REV16(is64, dst, dst), ctx);
@@ -1791,6 +1786,17 @@ emit_cond_jmp:
 			emit(A64_MOV(1, r0, A64_R(0)), ctx);
 		break;
 	}
+	/* indirect call of a bpf subprog, dst holds its address */
+	case BPF_JMP | BPF_CALL | BPF_X:
+		/*
+		 * It's the same as a direct call of a subprog that is out of
+		 * range of BL: the subprog starts with BTI JC, the arguments
+		 * are in place, and the registers that hold the tail call
+		 * counter and the private stack are callee saved.
+		 */
+		emit(A64_BLR(dst), ctx);
+		emit(A64_MOV(1, bpf2a64[BPF_REG_0], A64_R(0)), ctx);
+		break;
 	/* tail call */
 	case BPF_JMP | BPF_TAIL_CALL:
 		if (emit_bpf_tail_call(ctx))
@@ -2487,6 +2493,11 @@ bool bpf_jit_supports_subprog_tailcalls(void)
 	return true;
 }
 
+bool bpf_jit_supports_callx(void)
+{
+	return true;
+}
+
 static void invoke_bpf_prog(struct jit_ctx *ctx, struct bpf_tramp_node *node,
 			    int bargs_off, int retval_off, int run_ctx_off,
 			    bool save_ret)
@@ -2638,15 +2649,9 @@ static void clear_garbage(struct jit_ctx *ctx, int reg, int effective_bytes)
 {
 	if (effective_bytes) {
 		int garbage_bits = 64 - 8 * effective_bytes;
-#ifdef CONFIG_CPU_BIG_ENDIAN
-		/* garbage bits are at the right end */
-		emit(A64_LSR(1, reg, reg, garbage_bits), ctx);
-		emit(A64_LSL(1, reg, reg, garbage_bits), ctx);
-#else
 		/* garbage bits are at the left end */
 		emit(A64_LSL(1, reg, reg, garbage_bits), ctx);
 		emit(A64_LSR(1, reg, reg, garbage_bits), ctx);
-#endif
 	}
 }
 

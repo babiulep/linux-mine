@@ -320,7 +320,8 @@ static int hfi1_file_mmap(struct file *fp, struct vm_area_struct *vma)
 		memaddr = 0;
 	void *memvirt = NULL;
 	dma_addr_t memdma = 0;
-	u8 subctxt, mapio = 0, is_vmalloc = 0, type;
+	u8 subctxt, mapio = 0, type;
+	u8 is_vmalloc = 0;
 	size_t memdmalen = 0;
 	ssize_t memlen = 0;
 	int ret = 0;
