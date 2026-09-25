@@ -540,8 +540,8 @@ struct cpu_hw_events {
 	/*
 	 * Intel host/guest exclude bits
 	 */
-	u64				intel_ctrl_guest_mask;
-	u64				intel_ctrl_host_mask;
+	u64				intel_ctrl_exclude_host_mask;
+	u64				intel_ctrl_exclude_guest_mask;
 	struct perf_guest_switch_msr	guest_switch_msrs[X86_PMC_IDX_MAX];
 
 	/*
@@ -1226,7 +1226,8 @@ struct x86_pmu {
 	/*
 	 * Intel host/guest support (KVM)
 	 */
-	struct perf_guest_switch_msr *(*guest_get_msrs)(int *nr, void *data);
+	struct perf_guest_switch_msr *(*guest_get_msrs)(int *nr,
+							struct x86_guest_pebs *guest_pebs);
 
 	/*
 	 * Check period value for PERF_EVENT_IOC_PERIOD ioctl.
@@ -1245,7 +1246,7 @@ struct x86_pmu {
 	 * unique capabilities.
 	 */
 	int				num_hybrid_pmus;
-	struct x86_hybrid_pmu		*hybrid_pmu;
+	struct x86_hybrid_pmu		*hybrid_pmu __counted_by_ptr(num_hybrid_pmus);
 	enum intel_cpu_type (*get_hybrid_cpu_type)	(void);
 };
 

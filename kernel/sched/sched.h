@@ -1371,7 +1371,6 @@ struct rq {
 	struct task_struct	*core_pick;
 	struct sched_dl_entity	*core_dl_server;
 	unsigned int		core_enabled;
-	unsigned int		core_sched_seq;
 	struct rb_root		core_tree;
 
 	/* shared state -- careful with sched_core_cpu_deactivate() */
@@ -2536,8 +2535,13 @@ static inline int task_on_rq_migrating(struct task_struct *p)
 #define WF_EXEC			0x02 /* Wakeup after exec; maps to SD_BALANCE_EXEC */
 #define WF_FORK			0x04 /* Wakeup after fork; maps to SD_BALANCE_FORK */
 #define WF_TTWU			0x08 /* Wakeup;            maps to SD_BALANCE_WAKE */
-
-#define WF_SYNC			0x10 /* Waker goes to sleep after wakeup */
+/*
+ * Hint that the caller expects the waker to sleep soon.
+ * Scheduler classes may use it for placement or preemption.
+ * Callers must not rely on it to prevent migration,
+ * preserve CPU locality or make the wakee run next.
+ */
+#define WF_SYNC			0x10
 #define WF_MIGRATED		0x20 /* Internal use, task got migrated */
 #define WF_CURRENT_CPU		0x40 /* Prefer to move the wakee to the current CPU. */
 #define WF_RQ_SELECTED		0x80 /* ->select_task_rq() was called */
@@ -2630,6 +2634,12 @@ struct affinity_context {
 
 extern s64 update_curr_common(struct rq *rq);
 
+enum snt_e {
+	SNT_NORMAL,	/* set_next_task() */
+	SNT_PICK,	/* put_prev_set_next_task(): prev != next */
+	SNT_REPICK,	/* put_prev_set_next_task(): prev == next */
+};
+
 struct sched_class {
 
 #ifdef CONFIG_UCLAMP_TASK
@@ -2687,7 +2697,7 @@ struct sched_class {
 	 * __schedule: rq->lock
 	 */
 	void (*put_prev_task)(struct rq *rq, struct task_struct *p, struct task_struct *next);
-	void (*set_next_task)(struct rq *rq, struct task_struct *p, bool first);
+	void (*set_next_task)(struct rq *rq, struct task_struct *p, enum snt_e type);
 
 	/*
 	 * select_task_rq: p->pi_lock
@@ -2790,7 +2800,7 @@ static inline void put_prev_task(struct rq *rq, struct task_struct *prev)
 
 static inline void set_next_task(struct rq *rq, struct task_struct *next)
 {
-	next->sched_class->set_next_task(rq, next, false);
+	next->sched_class->set_next_task(rq, next, SNT_NORMAL);
 }
 
 static inline void
@@ -2811,11 +2821,13 @@ static inline void put_prev_set_next_task(struct rq *rq,
 
 	__put_prev_set_next_dl_server(rq, prev, next);
 
-	if (next == prev)
+	if (next == prev) {
+		next->sched_class->set_next_task(rq, next, SNT_REPICK);
 		return;
+	}
 
 	prev->sched_class->put_prev_task(rq, prev, next);
-	next->sched_class->set_next_task(rq, next, true);
+	next->sched_class->set_next_task(rq, next, SNT_PICK);
 }
 
 /*
