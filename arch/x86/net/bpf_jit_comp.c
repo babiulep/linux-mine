@@ -2961,6 +2961,18 @@ populate_extable:
 				ip += emit_kfunc_arg_moves(fm, outgoing_arg_base -
 							   outgoing_rsp, &prog);
 			}
+			if (func == (u8 *)arch_bpf_timed_may_goto) {
+				u32 fp = priv_frame_ptr ? X86_REG_R9 : BPF_REG_FP;
+
+				/*
+				 * AX has the offset of count and timestamp
+				 * in the stack. Turn it into a pointer.
+				 * add r10, rbp or add r10, r9
+				 */
+				maybe_emit_mod(&prog, BPF_REG_AX, fp, true);
+				EMIT2(0x01, add_2reg(0xC0, BPF_REG_AX, fp));
+				ip += 3;
+			}
 			if (priv_frame_ptr) {
 				push_r9(&prog);
 				ip += 2;
@@ -4516,6 +4528,18 @@ void *bpf_arch_text_copy(void *dst, void *src, size_t len)
 
 /* Indicate the JIT backend supports mixing bpf2bpf and tailcalls. */
 bool bpf_jit_supports_subprog_tailcalls(void)
+{
+	return true;
+}
+
+/*
+ * Frame sizes are 32-bit immediates in the prologue, epilogue and tail call
+ * sequences, a tail call pops the caller's frame and lands in the target's
+ * prologue before the target allocates its own, and private stacks are
+ * allocated from the program's own depth, so MAX_BPF_STACK_JIT frames need
+ * nothing special.
+ */
+bool bpf_jit_supports_large_stack(void)
 {
 	return true;
 }

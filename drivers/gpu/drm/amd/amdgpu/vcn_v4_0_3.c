@@ -25,6 +25,7 @@
 #include <drm/drm_drv.h>
 
 #include "amdgpu.h"
+#include "amdgpu_ip.h"
 #include "amdgpu_vcn.h"
 #include "amdgpu_pm.h"
 #include "soc15.h"
@@ -1689,7 +1690,8 @@ static int vcn_v4_0_3_reset_jpeg_pre_helper(struct amdgpu_device *adev, int inst
 		/* if Jobs are still pending after timeout,
 		 * We'll handle them in the bottom helper
 		 */
-		amdgpu_fence_wait_polling(ring, wait_seq, adev->video_timeout);
+		amdgpu_fence_wait_polling(ring, wait_seq,
+					  jiffies_to_usecs(adev->video_timeout));
        }
 
 	return 0;

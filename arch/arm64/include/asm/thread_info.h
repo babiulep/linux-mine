@@ -41,6 +41,7 @@ struct thread_info {
 	u64			mpam_partid_pmg;
 #endif
 	u32			cpu;
+	u16			pcpu_gprs;
 };
 
 #define thread_saved_pc(tsk)	\

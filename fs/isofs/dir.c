@@ -119,8 +119,8 @@ static int do_isofs_readdir(struct inode *inode, struct file *file,
 		if (offset >= bufsize || de->length[0] == 0) {
 			brelse(bh);
 			bh = NULL;
-			ctx->pos = round_up(ctx->pos, bufsize);
-			block = ctx->pos >> bufbits;
+			block++;
+			ctx->pos = (loff_t)block << bufbits;
 			offset = 0;
 			continue;
 		}

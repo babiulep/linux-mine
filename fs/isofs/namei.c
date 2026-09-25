@@ -82,8 +82,8 @@ isofs_find_entry(struct inode *dir, struct dentry *dentry,
 		if (offset >= bufsize || de->length[0] == 0) {
 			brelse(bh);
 			bh = NULL;
-			f_pos = round_up(f_pos, bufsize);
-			block = f_pos >> bufbits;
+			block++;
+			f_pos = block << bufbits;
 			offset = 0;
 			continue;
 		}

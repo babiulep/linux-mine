@@ -1227,7 +1227,7 @@ AMD KFD
 M:	Felix Kuehling <Felix.Kuehling@amd.com>
 L:	amd-gfx@lists.freedesktop.org
 S:	Supported
-T:	git https://gitlab.freedesktop.org/agd5f/linux.git
+T:	git https://gitlab.freedesktop.org/drm/amdgpu/kernel.git
 F:	drivers/gpu/drm/amd/amdgpu/amdgpu_amdkfd*.[ch]
 F:	drivers/gpu/drm/amd/amdkfd/
 F:	drivers/gpu/drm/amd/include/cik_structs.h
@@ -3992,10 +3992,14 @@ R:	Mark Rutland <mark.rutland@arm.com>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git
+F:	Documentation/ABI/testing/sysfs-firmware-cca
 F:	Documentation/arch/arm64/
 F:	arch/arm64/
+F:	drivers/firmware/arm_rmm/
 F:	drivers/virt/coco/arm-cca-guest/
 F:	drivers/virt/coco/pkvm-guest/
+F:	include/linux/arm-rsi-cmds.h
+F:	include/linux/arm-smccc-rsi.h
 F:	tools/testing/selftests/arm64/
 X:	arch/arm64/boot/dts/
 X:	arch/arm64/configs/defconfig
@@ -5003,8 +5007,6 @@ BPF [CRYPTO]
 M:	Vadim Fedorenko <vadim.fedorenko@linux.dev>
 L:	bpf@vger.kernel.org
 S:	Maintained
-F:	crypto/bpf_crypto_skcipher.c
-F:	include/linux/bpf_crypto.h
 F:	kernel/bpf/crypto.c
 
 BPF [DOCUMENTATION] (Related to Standardization)
@@ -15709,6 +15711,14 @@ W:	https://ez.analog.com/linux-software-drivers
 F:	Documentation/devicetree/bindings/iio/temperature/adi,ltc2983.yaml
 F:	drivers/iio/temperature/ltc2983.c
 
+LTC3208 LED DRIVER
+M:	Jan Carlo Roleda <jancarlo.roleda@analog.com>
+L:	linux-leds@vger.kernel.org
+S:	Maintained
+W:	https://ez.analog.com/linux-software-drivers
+F:	Documentation/devicetree/bindings/leds/adi,ltc3208.yaml
+F:	drivers/leds/leds-ltc3208.c
+
 LTC3220 LED DRIVER
 M:	Edelweise Escala <edelweise.escala@analog.com>
 L:	linux-leds@vger.kernel.org
@@ -19140,7 +19150,7 @@ F:	net/core/drop_monitor.c
 NETWORKING DRIVERS
 M:	Andrew Lunn <andrew+netdev@lunn.ch>
 M:	"David S. Miller" <davem@davemloft.net>
-M:	Eric Dumazet <edumazet@google.com>
+M:	Eric Dumazet <edumazet@kernel.org>
 M:	Jakub Kicinski <kuba@kernel.org>
 M:	Paolo Abeni <pabeni@redhat.com>
 L:	netdev@vger.kernel.org
@@ -19257,7 +19267,7 @@ K:	struct\s+phy_port|phy_port_
 
 NETWORKING [GENERAL]
 M:	"David S. Miller" <davem@davemloft.net>
-M:	Eric Dumazet <edumazet@google.com>
+M:	Eric Dumazet <edumazet@kernel.org>
 M:	Jakub Kicinski <kuba@kernel.org>
 M:	Paolo Abeni <pabeni@redhat.com>
 R:	Simon Horman <horms@kernel.org>
@@ -19483,7 +19493,7 @@ F:	net/ipv6/seg6*
 F:	tools/testing/selftests/net/srv6*
 
 NETWORKING [TCP]
-M:	Eric Dumazet <edumazet@google.com>
+M:	Eric Dumazet <edumazet@kernel.org>
 M:	Neal Cardwell <ncardwell@google.com>
 R:	Kuniyuki Iwashima <kuniyu@google.com>
 L:	netdev@vger.kernel.org
@@ -19516,7 +19526,7 @@ F:	net/tls/
 F:	tools/testing/selftests/net/tls.c
 
 NETWORKING [SOCKETS]
-M:	Eric Dumazet <edumazet@google.com>
+M:	Eric Dumazet <edumazet@kernel.org>
 M:	Kuniyuki Iwashima <kuniyu@google.com>
 M:	Paolo Abeni <pabeni@redhat.com>
 M:	Willem de Bruijn <willemb@google.com>
@@ -21230,7 +21240,6 @@ M:	Yoshihiro Shimoda <yoshihiro.shimoda.uh@renesas.com>
 L:	linux-pci@vger.kernel.org
 L:	linux-renesas-soc@vger.kernel.org
 S:	Maintained
-F:	Documentation/PCI/controller/rcar-pcie-firmware.rst
 F:	Documentation/devicetree/bindings/pci/*rcar*
 F:	drivers/pci/controller/*rcar*
 F:	drivers/pci/controller/dwc/*rcar*
@@ -22988,7 +22997,7 @@ L:	amd-gfx@lists.freedesktop.org
 S:	Supported
 B:	https://gitlab.freedesktop.org/drm/amd/-/issues
 C:	irc://irc.oftc.net/radeon
-T:	git https://gitlab.freedesktop.org/agd5f/linux.git
+T:	git https://gitlab.freedesktop.org/drm/amdgpu/kernel.git
 F:	Documentation/gpu/amdgpu/
 F:	drivers/gpu/drm/amd/
 F:	drivers/gpu/drm/ci/xfails/amd*
@@ -24142,6 +24151,7 @@ F:	drivers/clk/clk-bd718x7.c
 F:	drivers/gpio/gpio-bd71815.c
 F:	drivers/gpio/gpio-bd71828.c
 F:	drivers/gpio/gpio-bd72720.c
+F:	drivers/gpio/gpio-bd73800.c
 F:	drivers/mfd/rohm-bd71828.c
 F:	drivers/mfd/rohm-bd718x7.c
 F:	drivers/mfd/rohm-bd9576.c
@@ -24161,6 +24171,7 @@ F:	include/linux/mfd/rohm-bd71815.h
 F:	include/linux/mfd/rohm-bd71828.h
 F:	include/linux/mfd/rohm-bd718x7.h
 F:	include/linux/mfd/rohm-bd72720.h
+F:	include/linux/mfd/rohm-bd73800.h
 F:	include/linux/mfd/rohm-bd957x.h
 F:	include/linux/mfd/rohm-bd96801.h
 F:	include/linux/mfd/rohm-bd96802.h
@@ -25080,7 +25091,9 @@ M:	Sudeep Holla <sudeep.holla@kernel.org>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
 F:	drivers/firmware/smccc/
+F:	include/linux/arm-smccc-bus.h
 F:	include/linux/arm-smccc.h
+F:	include/linux/device-id/arm_smccc.h
 
 SECURITY CONTACT
 M:	Security Officers <security@kernel.org>

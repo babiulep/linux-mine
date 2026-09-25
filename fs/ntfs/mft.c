@@ -1352,6 +1352,10 @@ static int ntfs_mft_bitmap_extend_allocation_nolock(struct ntfs_volume *vol)
 	size_t new_rl_count;
 
 	ntfs_debug("Extending mft bitmap allocation.");
+	/* The initial bitmap scan must finish before we lock or change a folio. */
+	if (!NVolFreeClusterKnown(vol))
+		wait_event(vol->free_waitq, NVolFreeClusterKnown(vol));
+
 	mft_ni = NTFS_I(vol->mft_ino);
 	mftbmp_ni = NTFS_I(vol->mftbmp_ino);
 	/*
@@ -1377,6 +1381,11 @@ static int ntfs_mft_bitmap_extend_allocation_nolock(struct ntfs_volume *vol)
 	lcn = rl->lcn + rl->length;
 	ntfs_debug("Last lcn of mft bitmap attribute is 0x%llx.",
 			(long long)lcn);
+	/* There is no adjacent cluster if the last run ends at the volume end. */
+	if (lcn >= vol->nr_clusters) {
+		lcn = -1;
+		goto alloc_cluster;
+	}
 	/*
 	 * Attempt to get the cluster following the last allocated cluster by
 	 * hand as it may be in the MFT zone so the allocator would not give it
@@ -1395,10 +1404,18 @@ static int ntfs_mft_bitmap_extend_allocation_nolock(struct ntfs_volume *vol)
 	folio_lock(folio);
 	b = (u8 *)kmap_local_folio(folio, 0) + (ll & ~PAGE_MASK);
 	tb = 1 << (lcn & 7ull);
-	if (*b != 0xff && !(*b & tb)) {
+	/*
+	 * A page skipped by the initial scan has no free bits recorded.
+	 * Honor that and the space reserved for delayed allocation.
+	 */
+	if (*b != 0xff && !(*b & tb) &&
+	    vol->lcn_empty_bits_per_page[ll >> PAGE_SHIFT] &&
+	    ntfs_available_clusters_count(vol, 1) > 0) {
 		/* Next cluster is free, allocate it. */
 		*b |= tb;
 		folio_mark_dirty(folio);
+		ntfs_dec_free_clusters(vol, 1);
+		ntfs_set_lcn_empty_bits(vol, ll >> PAGE_SHIFT, 1, 1);
 		folio_unlock(folio);
 		kunmap_local(b);
 		folio_put(folio);
@@ -1413,6 +1430,7 @@ static int ntfs_mft_bitmap_extend_allocation_nolock(struct ntfs_volume *vol)
 		kunmap_local(b);
 		folio_put(folio);
 		up_write(&vol->lcnbmp_lock);
+alloc_cluster:
 		/* Allocate a cluster from the DATA_ZONE. */
 		rl2 = ntfs_cluster_alloc(vol, rl[1].vcn, 1, lcn, DATA_ZONE,
 				true, false, false);
@@ -1422,6 +1440,8 @@ static int ntfs_mft_bitmap_extend_allocation_nolock(struct ntfs_volume *vol)
 					"Failed to allocate a cluster for the mft bitmap.");
 			return PTR_ERR(rl2);
 		}
+		/* The adjacent cluster may have become available while unlocked. */
+		status.added_cluster = rl2->lcn == lcn;
 		rl = ntfs_runlists_merge(&mftbmp_ni->runlist, rl2, 0, &new_rl_count);
 		if (IS_ERR(rl)) {
 			up_write(&mftbmp_ni->runlist.lock);
@@ -1436,8 +1456,8 @@ static int ntfs_mft_bitmap_extend_allocation_nolock(struct ntfs_volume *vol)
 		}
 		mftbmp_ni->runlist.rl = rl;
 		mftbmp_ni->runlist.count = new_rl_count;
-		status.added_run = 1;
-		ntfs_debug("Adding one run to mft bitmap.");
+		status.added_run = !status.added_cluster;
+		ntfs_debug("Allocated one cluster for mft bitmap.");
 		/* Find the last run in the new runlist. */
 		for (; rl[1].length; rl++)
 			;

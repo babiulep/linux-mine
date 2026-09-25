@@ -33,6 +33,7 @@
 #include <linux/console.h>
 #include <linux/slab.h>
 #include <linux/iommu.h>
+#include <linux/amd-iommu.h>
 #include <linux/pci.h>
 #include <linux/pci-p2pdma.h>
 #include <linux/apple-gmux.h>
@@ -68,6 +69,7 @@
 #include "amdgpu_vf_error.h"
 
 #include "amdgpu_amdkfd.h"
+#include "amdgpu_ip.h"
 #include "amdgpu_pm.h"
 
 #include "amdgpu_xgmi.h"
@@ -1353,31 +1355,6 @@ static bool amdgpu_device_aspm_support_quirk(struct amdgpu_device *adev)
 #endif
 }
 
-/*
- * Some dGPUs expose their display endpoint below an internal PCIe switch.
- * Use the switch upstream port to query the host-facing link.
- */
-static struct pci_dev *amdgpu_device_get_aspm_pdev(struct amdgpu_device *adev)
-{
-	struct pci_dev *swds, *swus;
-
-	swds = pci_upstream_bridge(adev->pdev);
-	if (!swds ||
-	    (swds->vendor != PCI_VENDOR_ID_ATI &&
-	     swds->vendor != PCI_VENDOR_ID_AMD) ||
-	    pci_pcie_type(swds) != PCI_EXP_TYPE_DOWNSTREAM)
-		return adev->pdev;
-
-	swus = pci_upstream_bridge(swds);
-	if (!swus ||
-	    (swus->vendor != PCI_VENDOR_ID_ATI &&
-	     swus->vendor != PCI_VENDOR_ID_AMD) ||
-	    pci_pcie_type(swus) != PCI_EXP_TYPE_UPSTREAM)
-		return adev->pdev;
-
-	return swus;
-}
-
 /**
  * amdgpu_device_should_use_aspm - check if the device should program ASPM
  *
@@ -1413,7 +1390,7 @@ bool amdgpu_device_should_use_aspm(struct amdgpu_device *adev)
 	 * the immediate upstream bridge. Use SWUS for dGPUs with an
 	 * internal switch so that this is the host-facing link.
 	 */
-	aspm_pdev = amdgpu_device_get_aspm_pdev(adev);
+	aspm_pdev = adev->link_dev;
 	parent = pci_upstream_bridge(aspm_pdev);
 	if (!parent) {
 		dev_dbg(adev->dev, "ASPM: no upstream PCIe link for %s\n",
@@ -1968,15 +1945,26 @@ static void amdgpu_uid_fini(struct amdgpu_device *adev)
 
 static void amdgpu_device_init_pcie_links(struct amdgpu_device *adev)
 {
+	struct pci_dev *swds, *swus;
+
 	adev->link_dev = adev->pdev;
 	adev->link_partner = pci_upstream_bridge(adev->link_dev);
 
-	/* Skip upstream/downstream switches internal to the dGPU. */
-	while (adev->link_partner &&
-	       adev->link_partner->vendor == PCI_VENDOR_ID_ATI) {
-		adev->link_dev = adev->link_partner;
-		adev->link_partner = pci_upstream_bridge(adev->link_dev);
-	}
+	/* Skip an upstream/downstream switch internal to the dGPU. */
+	swds = adev->link_partner;
+	if (!swds || swds->vendor != PCI_VENDOR_ID_ATI ||
+	    pci_pcie_type(swds) != PCI_EXP_TYPE_DOWNSTREAM)
+		return;
+
+	swus = pci_upstream_bridge(swds);
+	if (!swus ||
+	    (swus->vendor != PCI_VENDOR_ID_ATI &&
+	     swus->vendor != PCI_VENDOR_ID_AMD) ||
+	    pci_pcie_type(swus) != PCI_EXP_TYPE_UPSTREAM)
+		return;
+
+	adev->link_dev = swus;
+	adev->link_partner = pci_upstream_bridge(swus);
 }
 
 /**
@@ -3767,6 +3755,28 @@ amdgpu_device_should_register_switcheroo(struct amdgpu_device *adev, bool px)
 		       apple_gmux_detect(NULL, NULL)));
 }
 
+static inline bool amdgpu_device_identity(struct amdgpu_device *adev)
+{
+	struct pci_dev *pdev = adev->pdev;
+	struct iommu_domain *domain = iommu_get_domain_for_dev(&pdev->dev);
+
+	if (!domain)
+		return false;
+
+	return domain->type == IOMMU_DOMAIN_IDENTITY;
+}
+
+static bool amdgpu_device_use_perfopt(struct amdgpu_device *adev)
+{
+	if (amdgpu_iommu_perfopt == 0)
+		return false;
+
+	if (!(adev->flags & AMD_IS_APU))
+		return false;
+
+	return amdgpu_device_identity(adev);
+}
+
 /**
  * amdgpu_device_init - initialize the driver
  *
@@ -3855,6 +3865,7 @@ int amdgpu_device_init(struct amdgpu_device *adev,
 
 	spin_lock_init(&adev->irq.lock);
 
+	amdgpu_ip_map_init(adev);
 	amdgpu_early_init_rlc_reg_funcs(adev);
 	amdgpu_device_init_apu_flags(adev);
 
@@ -3975,6 +3986,16 @@ int amdgpu_device_init(struct amdgpu_device *adev,
 	if (r)
 		return r;
 
+	if (amdgpu_device_use_perfopt(adev)) {
+		int perfopt_ret = amd_iommu_enable_perfopt(pdev);
+
+		/* Optional optimization; a failure to arm it must not abort probe. */
+		if (perfopt_ret)
+			dev_warn(adev->dev,
+				 "Failed to enable IOMMU PerfOpt (%d); continuing without it\n",
+				 perfopt_ret);
+	}
+
 	/*
 	 * No need to remove conflicting FBs for non-display class devices.
 	 * This prevents the sysfb from being freed accidently.
@@ -4018,24 +4039,21 @@ int amdgpu_device_init(struct amdgpu_device *adev,
 	}
 
 	/* enable PCIE atomic ops */
-	if (amdgpu_sriov_vf(adev)) {
-		if (adev->virt.fw_reserve.p_pf2vf)
-			adev->have_atomics_support = ((struct amd_sriov_msg_pf2vf_info *)
-						      adev->virt.fw_reserve.p_pf2vf)->pcie_atomic_ops_support_flags ==
-				(PCI_EXP_DEVCAP2_ATOMIC_COMP32 | PCI_EXP_DEVCAP2_ATOMIC_COMP64);
-	/* APUs w/ gfx9 onwards doesn't reply on PCIe atomics, rather it is a
-	 * internal path natively support atomics, set have_atomics_support to true.
-	 */
-	} else if ((adev->flags & AMD_IS_APU &&
-		   amdgpu_ip_version(adev, GC_HWIP, 0) > IP_VERSION(9, 0, 0)) ||
-		   (adev->gmc.xgmi.connected_to_cpu &&
-		   amdgpu_ip_version(adev, GC_HWIP, 0) >= IP_VERSION(12, 1, 0))) {
-		adev->have_atomics_support = true;
-	} else {
-		adev->have_atomics_support =
-			!pci_enable_atomic_ops_to_root(adev->pdev,
-					  PCI_EXP_DEVCAP2_ATOMIC_COMP32 |
-					  PCI_EXP_DEVCAP2_ATOMIC_COMP64);
+	if (!amdgpu_sriov_vf(adev)) {
+		/* APUs w/ gfx9 onwards doesn't reply on PCIe atomics, rather it is a
+		 * internal path natively support atomics, set have_atomics_support to true.
+		 */
+		if ((adev->flags & AMD_IS_APU &&
+		     amdgpu_ip_version(adev, GC_HWIP, 0) > IP_VERSION(9, 0, 0)) ||
+		    (adev->gmc.xgmi.connected_to_cpu &&
+		     amdgpu_ip_version(adev, GC_HWIP, 0) >= IP_VERSION(12, 1, 0))) {
+			adev->have_atomics_support = true;
+		} else {
+			adev->have_atomics_support =
+				!pci_enable_atomic_ops_to_root(adev->pdev,
+						  PCI_EXP_DEVCAP2_ATOMIC_COMP32 |
+						  PCI_EXP_DEVCAP2_ATOMIC_COMP64);
+		}
 	}
 
 	if (!adev->have_atomics_support)
@@ -4343,6 +4361,9 @@ void amdgpu_device_fini_hw(struct amdgpu_device *adev)
 		ttm_device_clear_dma_mappings(&adev->mman.bdev);
 
 	amdgpu_gart_dummy_page_fini(adev);
+
+	if (amdgpu_device_use_perfopt(adev))
+		amd_iommu_disable_perfopt(adev->pdev);
 
 	if (pci_dev_is_disconnected(adev->pdev))
 		amdgpu_device_unmap_mmio(adev);
@@ -4706,6 +4727,20 @@ int amdgpu_device_resume(struct drm_device *dev, bool notify_clients)
 
 	if (dev->switch_power_state == DRM_SWITCH_POWER_OFF)
 		return 0;
+
+	if (amdgpu_device_use_perfopt(adev)) {
+		int perfopt_ret = amd_iommu_enable_perfopt(adev->pdev);
+
+		/*
+		 * Must not return on failure: a bare return would leak the
+		 * SR-IOV VF exclusive-mode acquisition taken above (released
+		 * via the exit: path).
+		 */
+		if (perfopt_ret)
+			dev_warn(adev->dev,
+				 "Failed to enable IOMMU PerfOpt (%d); continuing without it\n",
+				 perfopt_ret);
+	}
 
 	if (adev->in_s0ix)
 		amdgpu_dpm_gfx_state_change(adev, sGpuChangeState_D0Entry);
@@ -6434,16 +6469,10 @@ static void amdgpu_device_cache_switch_state(struct amdgpu_device *adev)
 	struct pci_dev *swus, *swds;
 	int r;
 
+	swus = adev->link_dev != adev->pdev ? adev->link_dev : NULL;
+	if (!swus)
+		return;
 	swds = pci_upstream_bridge(adev->pdev);
-	if (!swds || swds->vendor != PCI_VENDOR_ID_ATI ||
-	    pci_pcie_type(swds) != PCI_EXP_TYPE_DOWNSTREAM)
-		return;
-	swus = pci_upstream_bridge(swds);
-	if (!swus ||
-	    (swus->vendor != PCI_VENDOR_ID_ATI &&
-	     swus->vendor != PCI_VENDOR_ID_AMD) ||
-	    pci_pcie_type(swus) != PCI_EXP_TYPE_UPSTREAM)
-		return;
 
 	/* If already saved, return */
 	if (adev->pcie_reset_ctx.swus)

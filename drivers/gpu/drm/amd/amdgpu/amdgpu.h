@@ -79,7 +79,7 @@
 #include "amdgpu_umsch_mm.h"
 #include "amdgpu_gmc.h"
 #include "amdgpu_gfx.h"
-#include "amdgpu_sdma.h"
+#include "amdgpu_sdma_types.h"
 #include "amdgpu_lsdma.h"
 #include "amdgpu_nbio.h"
 #include "amdgpu_reg_access.h"
@@ -157,6 +157,7 @@ struct amdgpu_watchdog_timer {
  * Modules parameters.
  */
 extern int amdgpu_modeset;
+extern int amdgpu_iommu_perfopt;
 extern unsigned int amdgpu_vram_limit;
 extern int amdgpu_vis_vram_limit;
 extern int amdgpu_gart_size;
