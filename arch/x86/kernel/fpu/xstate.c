@@ -589,11 +589,12 @@ static bool __init check_xstate_against_struct(int nr)
 
 unsigned int xstate_calculate_size(u64 xfeatures, bool compacted)
 {
-	unsigned int topmost = fls64(xfeatures) -  1;
-	unsigned int offset, i;
+	unsigned int topmost, offset, i;
 
-	if (topmost <= XFEATURE_SSE)
+	if (!(xfeatures & ~XFEATURE_MASK_FPSSE))
 		return sizeof(struct xregs_state);
+
+	topmost = fls64(xfeatures) -  1;
 
 	if (compacted) {
 		offset = xfeature_get_offset(xfeatures, topmost);
@@ -809,11 +810,6 @@ void __init fpu__init_system_xstate(unsigned int legacy_size)
 	u64 xfeatures;
 	int err;
 	int i;
-
-	if (!boot_cpu_has(X86_FEATURE_FPU)) {
-		pr_info("x86/fpu: No FPU detected\n");
-		return;
-	}
 
 	if (!boot_cpu_has(X86_FEATURE_XSAVE)) {
 		pr_info("x86/fpu: x87 FPU will use %s\n",
