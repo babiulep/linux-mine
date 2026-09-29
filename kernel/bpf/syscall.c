@@ -2461,6 +2461,21 @@ static void __bpf_prog_put_rcu(struct rcu_head *rcu)
 	bpf_prog_free(aux->prog);
 }
 
+/*
+ * Progs called from a trampoline can also be reached by a task that was
+ * preempted in the trampoline before the prog's enter helper took its RCU
+ * read lock, wait for those first.
+ */
+static void __bpf_prog_put_rcu_tasks(struct rcu_head *rcu)
+{
+	struct bpf_prog *prog = container_of(rcu, struct bpf_prog_aux, rcu)->prog;
+
+	if (prog->sleepable)
+		call_rcu_tasks_trace(rcu, __bpf_prog_put_rcu);
+	else
+		call_rcu(rcu, __bpf_prog_put_rcu);
+}
+
 static void __bpf_prog_put_noref(struct bpf_prog *prog, bool deferred)
 {
 	bpf_prog_kallsyms_del_all(prog);
@@ -2473,7 +2488,9 @@ static void __bpf_prog_put_noref(struct bpf_prog *prog, bool deferred)
 		btf_put(prog->aux->attach_btf);
 
 	if (deferred) {
-		if (prog->sleepable)
+		if (IS_ENABLED(CONFIG_TASKS_RCU) && prog->aux->tramp_linked)
+			call_rcu_tasks(&prog->aux->rcu, __bpf_prog_put_rcu_tasks);
+		else if (prog->sleepable)
 			call_rcu_tasks_trace(&prog->aux->rcu, __bpf_prog_put_rcu);
 		else
 			call_rcu(&prog->aux->rcu, __bpf_prog_put_rcu);
@@ -3079,6 +3096,10 @@ static int bpf_prog_load(union bpf_attr *attr, bpfptr_t uattr, struct bpf_log_at
 
 	prog->aux->user = get_current_user();
 	prog->len = attr->insn_cnt;
+
+	err = bpf_prog_stream_init(prog, GFP_USER);
+	if (err)
+		goto free_prog;
 
 	err = -EFAULT;
 	if (copy_from_bpfptr(prog->insns,
@@ -6316,6 +6337,28 @@ put_prog:
 	return ret;
 }
 
+#define BPF_PROG_STREAM_OPEN_LAST_FIELD prog_stream_open.flags
+
+static int prog_stream_open(union bpf_attr *attr)
+{
+	struct bpf_prog *prog;
+	u32 flags = attr->prog_stream_open.flags;
+	int ret;
+
+	if (CHECK_ATTR(BPF_PROG_STREAM_OPEN))
+		return -EINVAL;
+	if (flags & ~BPF_F_STREAM_NONBLOCK)
+		return -EINVAL;
+
+	prog = bpf_prog_get(attr->prog_stream_open.prog_fd);
+	if (IS_ERR(prog))
+		return PTR_ERR(prog);
+
+	ret = bpf_prog_stream_new_fd(prog, attr->prog_stream_open.stream_id, flags);
+	bpf_prog_put(prog);
+	return ret;
+}
+
 static int __sys_bpf(enum bpf_cmd cmd, bpfptr_t uattr, unsigned int size,
 		     bpfptr_t uattr_common, unsigned int size_common)
 {
@@ -6487,6 +6530,9 @@ static int __sys_bpf(enum bpf_cmd cmd, bpfptr_t uattr, unsigned int size,
 		break;
 	case BPF_PROG_ASSOC_STRUCT_OPS:
 		err = prog_assoc_struct_ops(&attr);
+		break;
+	case BPF_PROG_STREAM_OPEN:
+		err = prog_stream_open(&attr);
 		break;
 	default:
 		err = -EINVAL;

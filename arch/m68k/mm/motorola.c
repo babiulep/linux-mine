@@ -181,7 +181,7 @@ static void *add_pointer_table(struct mm_struct *mm, int type)
 	new = PD_PTABLE(pt_addr);
 
 	PD_MARKBITS(new) = ptable_mask(type) - 1;
-	scoped_guard(spinlock_irqsave, &ptable_lock)
+	scoped_guard(spinlock_bh, &ptable_lock)
 		list_add(new, &ptable_list[type]);
 
 	return (pmd_t *)pt_addr;
@@ -191,16 +191,15 @@ void *get_pointer_table(struct mm_struct *mm, int type)
 {
 	unsigned int tmp, off;
 	unsigned long mask;
-	unsigned long flags;
 	ptable_desc *dp;
 	void *ret;
 
-	spin_lock_irqsave(&ptable_lock, flags);
+	spin_lock_bh(&ptable_lock);
 	dp = ptable_list[type].next;
 	mask = list_empty(&ptable_list[type]) ? 0 : PD_MARKBITS(dp);
 
 	if (mask == 0) {
-		spin_unlock_irqrestore(&ptable_lock, flags);
+		spin_unlock_bh(&ptable_lock);
 		return add_pointer_table(mm, type);
 	}
 
@@ -213,7 +212,7 @@ void *get_pointer_table(struct mm_struct *mm, int type)
 	}
 
 	ret = ptdesc_address(PD_PTDESC(dp)) + off;
-	spin_unlock_irqrestore(&ptable_lock, flags);
+	spin_unlock_bh(&ptable_lock);
 	return ret;
 }
 
@@ -223,9 +222,8 @@ int free_pointer_table(void *table, int type)
 	unsigned long ptable = (unsigned long)table;
 	unsigned long pt_addr = ptable & PAGE_MASK;
 	unsigned int mask = 1U << ((ptable - pt_addr)/ptable_size(type));
-	unsigned long flags;
 
-	spin_lock_irqsave(&ptable_lock, flags);
+	spin_lock_bh(&ptable_lock);
 
 	dp = PD_PTABLE(pt_addr);
 	if (PD_MARKBITS (dp) & mask)
@@ -236,7 +234,7 @@ int free_pointer_table(void *table, int type)
 	if (PD_MARKBITS(dp) == ptable_mask(type)) {
 		/* all tables in ptdesc are free, free ptdesc */
 		list_del(dp);
-		spin_unlock_irqrestore(&ptable_lock, flags);
+		spin_unlock_bh(&ptable_lock);
 
 		mmu_page_dtor((void *)pt_addr);
 		pagetable_dtor_free(virt_to_ptdesc((void *)pt_addr));
@@ -249,7 +247,7 @@ int free_pointer_table(void *table, int type)
 		list_move(dp, &ptable_list[type]);
 	}
 
-	spin_unlock_irqrestore(&ptable_lock, flags);
+	spin_unlock_bh(&ptable_lock);
 	return 0;
 }
 

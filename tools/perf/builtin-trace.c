@@ -104,7 +104,7 @@
 /*
  * strtoul: Go from a string to a value, i.e. for msr: MSR_FS_BASE to 0xc0000100
  *
- * We have to explicitely mark the direction of the flow of data, if from the
+ * We have to explicitly mark the direction of the flow of data, if from the
  * kernel to user space or the other way around, since the BPF collector we
  * have so far copies only from user to kernel space, mark the arguments that
  * go that direction, so that we don´t end up collecting the previous contents
@@ -2138,7 +2138,7 @@ out:
 
 static void trace__symbols__exit(struct trace *trace)
 {
-	machine__exit(trace->host);
+	machine__delete(trace->host);
 	trace->host = NULL;
 
 	perf_env__exit(&trace->host_env);
@@ -2391,7 +2391,7 @@ static int syscall__read_info(struct syscall *sc, struct trace *trace)
 	snprintf(tp_name, sizeof(tp_name), "sys_enter_%s", sc->name);
 	sc->tp_format = trace_event__tp_format("syscalls", tp_name);
 
-	if (IS_ERR(sc->tp_format) && sc->fmt && sc->fmt->alias) {
+	if (!sc->tp_format && sc->fmt && sc->fmt->alias) {
 		snprintf(tp_name, sizeof(tp_name), "sys_enter_%s", sc->fmt->alias);
 		sc->tp_format = trace_event__tp_format("syscalls", tp_name);
 	}
@@ -2400,11 +2400,9 @@ static int syscall__read_info(struct syscall *sc, struct trace *trace)
 	 * Fails to read trace point format via sysfs node, so the trace point
 	 * doesn't exist.  Set the 'nonexistent' flag as true.
 	 */
-	if (IS_ERR(sc->tp_format)) {
+	if (!sc->tp_format) {
 		sc->nonexistent = true;
-		err = PTR_ERR(sc->tp_format);
-		sc->tp_format = NULL;
-		return err;
+		return -errno;
 	}
 
 	/*
@@ -2687,7 +2685,7 @@ static size_t syscall__scnprintf_args(struct syscall *sc, char *bf, size_t size,
 			printed += syscall_arg_fmt__scnprintf_val(&sc->arg_fmt[arg.idx],
 								  bf + printed, size - printed, &arg, val);
 		}
-	} else if (IS_ERR(sc->tp_format)) {
+	} else if (!sc->tp_format) {
 		/*
 		 * If we managed to read the tracepoint /format file, then we
 		 * may end up not having any args, like with gettid(), so only

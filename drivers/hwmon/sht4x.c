@@ -75,7 +75,7 @@ enum sht4x_chips {
 struct sht4x_data {
 	struct i2c_client	*client;
 	enum sht4x_chips	chip_id;
-	unsigned long		heating_complete;	/* in jiffies */
+	u64			heating_complete;	/* in jiffies */
 	bool			data_pending;
 	u32			heater_power;	/* in milli-watts */
 	u32			heater_time;	/* in milli-seconds */
@@ -102,16 +102,16 @@ static int sht4x_read_values(struct sht4x_data *data)
 	u8 raw_data[SHT4X_RESPONSE_LENGTH];
 	size_t response_length = data->chip_id == sts4x ?
 				 STS4X_RESPONSE_LENGTH : SHT4X_RESPONSE_LENGTH;
-	unsigned long curr_jiffies;
 
 	if (data->chip_id != sts4x) {
-		curr_jiffies = jiffies;
-		if (time_before(curr_jiffies, data->heating_complete))
+		u64 curr_jiffies = get_jiffies_64();
+
+		if (time_before64(curr_jiffies, data->heating_complete))
 			msleep(jiffies_to_msecs(data->heating_complete - curr_jiffies));
 	}
 
 	if (data->data_pending &&
-	    time_before(jiffies, data->heating_complete + data->update_interval)) {
+	    time_before64(get_jiffies_64(), data->heating_complete + data->update_interval)) {
 		data->data_pending = false;
 	} else {
 		next_update = data->last_updated +
@@ -258,7 +258,7 @@ static ssize_t heater_enable_show(struct device *dev,
 {
 	struct sht4x_data *data = dev_get_drvdata(dev);
 
-	return sysfs_emit(buf, "%u\n", time_before(jiffies, data->heating_complete));
+	return sysfs_emit(buf, "%u\n", time_before64(get_jiffies_64(), data->heating_complete));
 }
 
 static ssize_t heater_enable_store(struct device *dev,
@@ -300,14 +300,14 @@ static ssize_t heater_enable_store(struct device *dev,
 
 	guard(hwmon_lock)(dev);
 
-	if (time_before(jiffies, data->heating_complete))
+	if (time_before64(get_jiffies_64(), data->heating_complete))
 		return -EBUSY;
 
 	ret = i2c_master_send(data->client, &cmd, SHT4X_CMD_LEN);
 	if (ret < 0)
 		return ret;
 
-	data->heating_complete = jiffies + msecs_to_jiffies(heating_time_bound);
+	data->heating_complete = get_jiffies_64() + msecs_to_jiffies(heating_time_bound);
 	data->data_pending = true;
 	return count;
 }
@@ -431,7 +431,7 @@ static int sht4x_probe(struct i2c_client *client)
 	data->chip_id = (uintptr_t)i2c_get_match_data(client);
 	data->update_interval = SHT4X_MIN_POLL_INTERVAL;
 	data->client = client;
-	data->heating_complete = jiffies;
+	data->heating_complete = get_jiffies_64();
 	if (data->chip_id != sts4x) {
 		data->heater_power = 200;
 		data->heater_time = 1000;

@@ -34,7 +34,7 @@ struct netfs_io_request *netfs_alloc_request(struct address_space *mapping,
 
 		rreq = mempool_alloc(mempool, gfp);
 	} else {
-		rreq = mempool->alloc(gfp, mempool->pool_data);
+		rreq = mempool_alloc_noreserve(mempool, gfp);
 		if (!rreq)
 			return ERR_PTR(-ENOMEM);
 	}
@@ -44,6 +44,7 @@ struct netfs_io_request *netfs_alloc_request(struct address_space *mapping,
 	rreq->gfp		= gfp;
 	rreq->start		= start;
 	rreq->collected_to	= start;
+	rreq->cache_coll_to	= start;
 	rreq->cleaned_to	= start;
 	rreq->len		= len;
 	rreq->progress_at	= 0;
@@ -215,7 +216,7 @@ struct netfs_io_subrequest *netfs_alloc_subrequest(struct netfs_io_request *rreq
 	struct kmem_cache *cache = mempool->pool_data;
 
 	if (rreq->gfp == GFP_KERNEL)
-		subreq = mempool->alloc(rreq->gfp, mempool->pool_data);
+		subreq = mempool_alloc_noreserve(mempool, rreq->gfp);
 	else
 		subreq = mempool_alloc(mempool, rreq->gfp);
 	if (!subreq)

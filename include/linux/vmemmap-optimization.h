@@ -14,6 +14,23 @@
 #include <linux/mmdebug.h>
 #include <linux/mmzone.h>
 
+/*
+ * HugeTLB Vmemmap Optimization (HVO) requires struct pages of the head page to
+ * be naturally aligned with regard to the folio size.
+ *
+ * HVO which is only active if the size of struct page is a power of 2.
+ */
+#define MAX_FOLIO_VMEMMAP_ALIGN					\
+	(IS_ENABLED(CONFIG_VMEMMAP_OPTIMIZATION) &&		\
+	 is_power_of_2(sizeof(struct page)) ?			\
+	 MAX_FOLIO_NR_PAGES * sizeof(struct page) : 0)
+
+/* The number of retained vmemmap pages with HVO enabled. */
+#define VMEMMAP_OPTIMIZATION_PAGES		1
+#define VMEMMAP_OPTIMIZATION_NR_STRUCT_PAGES	\
+	(VMEMMAP_OPTIMIZATION_PAGES * PAGE_SIZE / sizeof(struct page))
+#define VMEMMAP_OPTIMIZATION_MIN_ORDER		(ilog2(VMEMMAP_OPTIMIZATION_NR_STRUCT_PAGES) + 1)
+
 #ifdef CONFIG_VMEMMAP_OPTIMIZATION
 static inline unsigned int section_compound_order(const struct mem_section *section)
 {
@@ -44,6 +61,8 @@ static inline unsigned int pfn_to_section_compound_order(unsigned long pfn)
 {
 	return section_compound_order(__pfn_to_section(pfn));
 }
+
+struct page *vmemmap_shared_tail_page(unsigned int order, struct zone *zone);
 #else
 static inline unsigned int section_compound_order(const struct mem_section *section)
 {
@@ -63,6 +82,12 @@ static inline void section_set_compound_order_range(unsigned long pfn,
 static inline unsigned int pfn_to_section_compound_order(unsigned long pfn)
 {
 	return 0;
+}
+
+static inline struct page *vmemmap_shared_tail_page(unsigned int order,
+						    struct zone *zone)
+{
+	return NULL;
 }
 #endif /* CONFIG_VMEMMAP_OPTIMIZATION */
 
@@ -87,8 +112,4 @@ static inline bool vmemmap_optimizable_order(unsigned int order)
 
 	return order >= VMEMMAP_OPTIMIZATION_MIN_ORDER;
 }
-
-#ifdef CONFIG_SPARSEMEM_VMEMMAP
-struct page *vmemmap_shared_tail_page(unsigned int order, struct zone *zone);
-#endif /* CONFIG_SPARSEMEM_VMEMMAP */
 #endif /* _LINUX_VMEMMAP_OPTIMIZATION_H */

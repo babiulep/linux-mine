@@ -2452,8 +2452,7 @@ static bool __purge_vmap_area_lazy(unsigned long start, unsigned long end,
 static void reclaim_and_purge_vmap_areas(void)
 
 {
-	if (!mutex_trylock(&vmap_purge_lock))
-		return;
+	mutex_lock(&vmap_purge_lock);
 	purge_fragmented_blocks_allcpus();
 	__purge_vmap_area_lazy(ULONG_MAX, 0, true);
 	mutex_unlock(&vmap_purge_lock);
@@ -5136,9 +5135,14 @@ retry:
 
 		ret = va_clip(&free_vmap_area_root,
 			&free_vmap_area_list, va, start, size);
-		if (WARN_ON_ONCE(unlikely(ret)))
-			/* It is a BUG(), but trigger recovery instead. */
+		if (unlikely(ret)) {
+			/*
+			 * -ENOMEM from the GFP_NOWAIT fallback is expected.
+			 * Anything else is a BUG(), but trigger recovery instead.
+			 */
+			WARN_ON_ONCE(ret != -ENOMEM);
 			goto recovery;
+		}
 
 		/* Allocated area. */
 		va = vas[area];
@@ -5549,20 +5553,10 @@ vmap_node_shrink_scan(struct shrinker *shrink, struct shrink_control *sc)
 {
 	struct vmap_node *vn;
 
-	/*
-	 * This shrinker is invoked from direct reclaim where memory
-	 * pressure is already high.  Blocking on vmap_purge_lock here
-	 * can deadlock the system: the lock holder may be blocked in
-	 * flush_work() waiting for a worker that is stuck in this same
-	 * reclaim path trying to acquire the same lock.  Use trylock
-	 * to avoid this; skipping a pool decay cycle is harmless.
-	 */
-	if (!mutex_trylock(&vmap_purge_lock))
-		return SHRINK_STOP;
+	guard(mutex)(&vmap_purge_lock);
 	for_each_vmap_node(vn)
 		decay_va_pool_node(vn, true);
 
-	mutex_unlock(&vmap_purge_lock);
 	return SHRINK_STOP;
 }
 

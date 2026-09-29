@@ -314,27 +314,17 @@ static bool pte_none_or_zero(pte_t pte)
 static unsigned int collapse_max_ptes_none(struct collapse_control *cc,
 		struct vm_area_struct *vma, unsigned int order)
 {
-	const unsigned int max_ptes_none = cc->policy.max_ptes_none;
+	unsigned int max_ptes_none;
 
 	if (vma && userfaultfd_armed(vma))
 		return 0;
-	/* The limit as given, at the PMD order and wherever it is not capped */
-	if (is_pmd_order(order) || !cc->policy.strict_sub_pmd)
-		return max_ptes_none;
-	/*
-	 * for mTHP collapse with the sysctl value set to COLLAPSE_MAX_PTES_LIMIT,
-	 * scale the maximum number of PTEs to the order of the collapse.
-	 */
+	if (is_pmd_order(order))
+		return cc->policy.pmd.max_ptes_none;
+
+	/* Below PMD order: all but one PTE of the window, or none */
+	max_ptes_none = cc->policy.sub_pmd.max_ptes_none;
 	if (max_ptes_none == COLLAPSE_MAX_PTES_LIMIT)
 		return (1 << order) - 1;
-	/*
-	 * For mTHP collapse of values other than 0 or COLLAPSE_MAX_PTES_LIMIT,
-	 * emit a warning and return 0.
-	 */
-	if (max_ptes_none)
-		pr_warn_once("mTHP collapse does not support max_ptes_none"
-		     " values other than 0 or %u, defaulting to 0.\n",
-		     COLLAPSE_MAX_PTES_LIMIT);
 	return 0;
 }
 
@@ -350,13 +340,9 @@ static unsigned int collapse_max_ptes_none(struct collapse_control *cc,
 static unsigned int collapse_max_ptes_shared(struct collapse_control *cc,
 		unsigned int order)
 {
-	/*
-	 * A sub-PMD window held to the strict rule takes no shared page at all:
-	 * an mTHP is not worth the CoW-breaking.
-	 */
-	if (!is_pmd_order(order) && cc->policy.strict_sub_pmd)
-		return 0;
-	return cc->policy.max_ptes_shared;
+	if (is_pmd_order(order))
+		return cc->policy.pmd.max_ptes_shared;
+	return cc->policy.sub_pmd.max_ptes_shared;
 }
 
 /**
@@ -371,13 +357,9 @@ static unsigned int collapse_max_ptes_shared(struct collapse_control *cc,
 static unsigned int collapse_max_ptes_swap(struct collapse_control *cc,
 		unsigned int order)
 {
-	/*
-	 * A sub-PMD window held to the strict rule takes nothing non-present:
-	 * reading pages back to build an mTHP is not worth the latency.
-	 */
-	if (!is_pmd_order(order) && cc->policy.strict_sub_pmd)
-		return 0;
-	return cc->policy.max_ptes_swap;
+	if (is_pmd_order(order))
+		return cc->policy.pmd.max_ptes_swap;
+	return cc->policy.sub_pmd.max_ptes_swap;
 }
 
 int hugepage_madvise(struct vm_area_struct *vma,
@@ -494,9 +476,16 @@ void __khugepaged_enter(struct mm_struct *mm)
 		wake_up_interruptible(&khugepaged_wait);
 }
 
-/*
- * Check what orders are possible based on the vma and collapse type.
- * This is used to determine if mTHP collapse is a viable option.
+/**
+ * collapse_possible_orders - which orders a VMA may collapse to
+ * @vma: the VMA
+ * @vm_flags: its flags, passed separately where they are about to change
+ * @tva_flags: who is asking, as thp_vma_allowable_orders() spells it
+ *
+ * khugepaged may collapse anonymous memory to any enabled order; everything
+ * else collapses to PMD order only.
+ *
+ * Return: the orders as a bitmask, zero when the VMA may not collapse at all.
  */
 unsigned long collapse_possible_orders(struct vm_area_struct *vma,
 		vm_flags_t vm_flags, enum tva_type tva_flags)
@@ -658,7 +647,7 @@ static enum scan_result __collapse_huge_page_isolate(struct vm_area_struct *vma,
 		 * If the vma has the VM_DROPPABLE flag, the collapse will
 		 * preserve the lazyfree property without needing to skip.
 		 */
-		if (cc->policy.skip_lazyfree && !(vma->vm_flags & VM_DROPPABLE) &&
+		if (cc->policy.anon_skip_lazyfree && !(vma->vm_flags & VM_DROPPABLE) &&
 		    folio_test_lazyfree(folio) && !pte_dirty(pteval)) {
 			result = SCAN_PAGE_LAZYFREE;
 			goto out;
@@ -747,12 +736,12 @@ static enum scan_result __collapse_huge_page_isolate(struct vm_area_struct *vma,
 		if (folio_test_large(folio))
 			list_add_tail(&folio->lru, compound_pagelist);
 next:
-		if (cc->policy.require_referenced &&
+		if (cc->policy.anon_require_referenced &&
 		    folio_pte_referenced(folio, vma, addr, pteval))
 			referenced++;
 	}
 
-	if (unlikely(cc->policy.require_referenced && !referenced)) {
+	if (unlikely(cc->policy.anon_require_referenced && !referenced)) {
 		result = SCAN_LACK_REFERENCED_PAGE;
 	} else {
 		result = SCAN_SUCCEED;
@@ -957,14 +946,28 @@ static inline gfp_t alloc_hugepage_khugepaged_gfpmask(void)
 /* khugepaged collapses on its own initiative, so it obeys its own settings */
 static void collapse_policy_khugepaged(struct collapse_policy *p)
 {
-	p->max_ptes_none = READ_ONCE(khugepaged_max_ptes_none);
-	p->max_ptes_swap = READ_ONCE(khugepaged_max_ptes_swap);
-	p->max_ptes_shared = READ_ONCE(khugepaged_max_ptes_shared);
-	p->strict_sub_pmd = true;
-	p->skip_lazyfree = true;
-	p->require_referenced = true;
-	p->install_pmd = false;
-	p->writeback_dirty = false;
+	p->pmd.max_ptes_none = READ_ONCE(khugepaged_max_ptes_none);
+	p->pmd.max_ptes_swap = READ_ONCE(khugepaged_max_ptes_swap);
+	p->pmd.max_ptes_shared = READ_ONCE(khugepaged_max_ptes_shared);
+
+	/*
+	 * A sub-PMD window takes no swapped-out and no shared PTE: reading
+	 * pages back or breaking CoW is not worth it for an mTHP.  Empty PTEs
+	 * it takes all or nothing, since anything in between would let one
+	 * collapse feed the next.
+	 */
+	p->sub_pmd.max_ptes_none = p->pmd.max_ptes_none;
+	if (p->sub_pmd.max_ptes_none &&
+	    p->sub_pmd.max_ptes_none != COLLAPSE_MAX_PTES_LIMIT)
+		pr_warn_once("mTHP collapse does not support max_ptes_none values other than 0 or %u, defaulting to 0.\n",
+			     COLLAPSE_MAX_PTES_LIMIT);
+	p->sub_pmd.max_ptes_swap = 0;
+	p->sub_pmd.max_ptes_shared = 0;
+
+	p->anon_skip_lazyfree = true;
+	p->anon_require_referenced = true;
+	p->file_install_pmd = false;
+	p->file_writeback_dirty = false;
 	p->gfp = alloc_hugepage_khugepaged_gfpmask();
 	p->tva_type = TVA_KHUGEPAGED;
 }
@@ -995,11 +998,20 @@ static int collapse_find_target_node(struct collapse_control *cc)
 }
 #endif
 
-/*
- * Find the VMA at @address again once mmap_lock has been given up and taken
- * back, and check it still allows a collapse of @order there.  The VMA has to
- * span the whole PMD whatever @order is; with @expect_anon it also has to be
- * anonymous and have an anon_vma.  *@vmap is the VMA found, if any.
+/**
+ * collapse_vma_revalidate - look a VMA up again after mmap_lock was dropped
+ * @mm: the mm
+ * @address: an address within the PTE table being collapsed
+ * @expect_anon: the collapse started on an anonymous VMA
+ * @vmap: the VMA found, if any
+ * @cc: the control, for the policy that says who is asking
+ * @order: the order the collapse is going for
+ *
+ * Called with mmap_lock held, for reading or writing, once it has been given up
+ * and taken back.  The VMA has to span the whole PMD whatever @order is; with
+ * @expect_anon it also has to be anonymous and have an anon_vma.
+ *
+ * Return: SCAN_SUCCEED, or why a collapse of @order at @address is off.
  */
 enum scan_result collapse_vma_revalidate(struct mm_struct *mm, unsigned long address,
 		bool expect_anon, struct vm_area_struct **vmap,
@@ -1216,7 +1228,7 @@ static enum scan_result alloc_charge_folio(struct folio **foliop, struct mm_stru
 	return SCAN_SUCCEED;
 }
 
-static pgtable_t alloc_deposit_pte(struct mm_struct *mm)
+static pgtable_t alloc_deposit_pte_table(struct mm_struct *mm)
 {
 	/*
 	 * khugepaged is run from a kernel thread, so need to manually set the
@@ -1266,7 +1278,7 @@ static enum scan_result collapse_huge_page(struct mm_struct *mm,
 	}
 
 	if (is_pmd_order(order)) {
-		pgtable = alloc_deposit_pte(mm);
+		pgtable = alloc_deposit_pte_table(mm);
 		if (!pgtable) {
 			result = SCAN_ALLOC_HUGE_PAGE_FAIL;
 			goto out_nolock;
@@ -1667,7 +1679,7 @@ static enum scan_result collapse_scan_anon_pmd(struct vm_area_struct *vma,
 		 * If the vma has the VM_DROPPABLE flag, the collapse will
 		 * preserve the lazyfree property without needing to skip.
 		 */
-		if (cc->policy.skip_lazyfree && !(vma->vm_flags & VM_DROPPABLE) &&
+		if (cc->policy.anon_skip_lazyfree && !(vma->vm_flags & VM_DROPPABLE) &&
 		    folio_test_lazyfree(folio) && !pte_dirty(pteval)) {
 			result = SCAN_PAGE_LAZYFREE;
 			failed_pfn = folio_pfn(folio);
@@ -1733,11 +1745,11 @@ static enum scan_result collapse_scan_anon_pmd(struct vm_area_struct *vma,
 			goto out_unmap;
 		}
 
-		if (cc->policy.require_referenced &&
+		if (cc->policy.anon_require_referenced &&
 		    folio_pte_referenced(folio, vma, addr, pteval))
 			referenced++;
 	}
-	if (cc->policy.require_referenced &&
+	if (cc->policy.anon_require_referenced &&
 	    (!referenced ||
 	     (unmapped && referenced < HPAGE_PMD_NR / 2))) {
 		result = SCAN_LACK_REFERENCED_PAGE;
@@ -2595,7 +2607,7 @@ immap_locked:
 	 * caller that wants the PMD mapped now is told to go and do that.
 	 */
 	retract_page_tables(mapping, start);
-	if (cc->policy.install_pmd)
+	if (cc->policy.file_install_pmd)
 		result = SCAN_PTE_MAPPED_HUGEPAGE;
 	folio_unlock(new_folio);
 
@@ -2752,44 +2764,34 @@ static enum scan_result collapse_scan_file(struct mm_struct *mm,
 	return result;
 }
 
-/* Set up a control before its first scan; cc->policy is the caller's to fill */
+/**
+ * collapse_control_init - set up a control before its first scan
+ * @cc: the control the caller carries across its scans
+ *
+ * cc->policy is the caller's to fill.
+ */
 void collapse_control_init(struct collapse_control *cc)
 {
 	cc->progress = 0;
 	cc->scan_file = NULL;
 }
 
-/* A scan that took a file reference should have been run */
-static void collapse_put_scan_file(struct collapse_control *cc)
-{
-	if (WARN_ON_ONCE(cc->scan_file)) {
-		fput(cc->scan_file);
-		cc->scan_file = NULL;
-	}
-}
-
-/*
- * Done with a control.  A scan that found something has to have been run by
- * then: the file side takes a reference on the file while it still has the
- * VMA to take it from, and the run is what gives it back.
- */
-void collapse_control_release(struct collapse_control *cc)
-{
-	collapse_put_scan_file(cc);
-}
-
-/*
- * Scan the PTE table of @vma at @addr for a collapse candidate.  @addr is
- * aligned to the table; @orders is what the caller allows there.
+/**
+ * collapse_scan_pmd - scan one PTE table for a collapse candidate
+ * @vma: the VMA the table belongs to
+ * @addr: start of the table, PMD aligned
+ * @cc: the caller's control
+ * @orders: the orders the caller allows for @vma
  *
- * Called with mmap_lock held for reading and returns with it still held.  It
- * only reads, and almost every table it is offered has nothing to collapse,
- * so a caller walks a whole VMA under the one lock it took to get there.
+ * Called with mmap_lock held for reading and returns with it still held.
+ * Almost every table it is offered has nothing to collapse, so a caller walks
+ * a whole VMA under the one lock it took to get there.
  *
- * SCAN_SUCCEED means there is something to collapse.  SCAN_PTE_MAPPED_HUGEPAGE
- * means the page cache already holds the PMD folio and only the PTE table is
- * left to retract.  Both are work for collapse_run_pmd(), which is handed
- * what the scan returned; anything else is why there is nothing to do.
+ * Return: SCAN_SUCCEED when there is something to collapse;
+ * SCAN_PTE_MAPPED_HUGEPAGE when the page cache already holds the PMD folio and
+ * only the PTE table is left to retract.  Both are work for collapse_run_pmd(),
+ * which is handed what the scan returned.  Anything else is why there is
+ * nothing to do.
  */
 enum scan_result collapse_scan_pmd(struct vm_area_struct *vma,
 		unsigned long addr, struct collapse_control *cc,
@@ -2800,7 +2802,10 @@ enum scan_result collapse_scan_pmd(struct vm_area_struct *vma,
 
 	mmap_assert_locked(vma->vm_mm);
 	/* Whatever the last scan found has to have been run by now */
-	collapse_put_scan_file(cc);
+	if (WARN_ON_ONCE(cc->scan_file)) {
+		fput(cc->scan_file);
+		cc->scan_file = NULL;
+	}
 
 	if (vma_is_anonymous(vma))
 		return collapse_scan_anon_pmd(vma, addr, cc, orders);
@@ -2823,15 +2828,20 @@ enum scan_result collapse_scan_pmd(struct vm_area_struct *vma,
 	return result;
 }
 
-/*
- * Collapse the table a scan found work in.  @result is what the scan
- * returned.
+/**
+ * collapse_run_pmd - collapse the table a scan found work in
+ * @mm: the mm
+ * @addr: start of the table, as given to the scan
+ * @result: what the scan returned
+ * @cc: the control the scan ran with
  *
  * Called without mmap_lock and returns without it, taking what it needs in
  * between: what it does -- allocate, isolate, copy, flush -- is slow enough
  * that a writer would wait behind it.  The caller gives the lock up first,
  * and with it the VMA and anything derived under it.  The run revalidates for
  * itself rather than trusting what the scan saw.
+ *
+ * Return: what the collapse made of the table.
  */
 enum scan_result collapse_run_pmd(struct mm_struct *mm, unsigned long addr,
 		enum scan_result result, struct collapse_control *cc)
@@ -2848,12 +2858,12 @@ enum scan_result collapse_run_pmd(struct mm_struct *mm, unsigned long addr,
 
 	/* The scan found the PMD folio in place: nothing to collapse */
 	if (result == SCAN_PTE_MAPPED_HUGEPAGE)
-		goto retract;
+		goto put;
 retry:
 	result = collapse_file(mm, addr, file, pgoff, cc);
 
 	/* Dirty pages are worth a writeback and one more try, if asked for */
-	if (cc->policy.writeback_dirty && result == SCAN_PAGE_DIRTY_OR_WRITEBACK &&
+	if (cc->policy.file_writeback_dirty && result == SCAN_PAGE_DIRTY_OR_WRITEBACK &&
 	    !triggered_wb && mapping_can_writeback(file->f_mapping)) {
 		const loff_t lstart = (loff_t)pgoff << PAGE_SHIFT;
 		const loff_t lend = lstart + HPAGE_PMD_SIZE - 1;
@@ -2862,7 +2872,7 @@ retry:
 		triggered_wb = true;
 		goto retry;
 	}
-retract:
+put:
 	fput(file);
 
 	/*
@@ -2875,7 +2885,7 @@ retract:
 			result = SCAN_ANY_PROCESS;
 		else
 			result = try_collapse_pte_mapped_thp(mm, addr,
-							cc->policy.install_pmd);
+							cc->policy.file_install_pmd);
 		if (result == SCAN_PMD_MAPPED)
 			result = SCAN_SUCCEED;
 		mmap_read_unlock(mm);
@@ -2931,7 +2941,7 @@ static void collapse_scan_mm_slot(unsigned int progress_max,
 		}
 		/* One mask for the whole VMA */
 		orders = collapse_possible_orders(vma, vma->vm_flags,
-						  cc->policy.tva_type);
+						  TVA_KHUGEPAGED);
 		if (!orders) {
 			cc->progress++;
 			continue;
@@ -3035,7 +3045,6 @@ static void khugepaged_do_scan(struct collapse_control *cc)
 	lru_add_drain_all();
 
 	collapse_control_init(cc);
-	/* One policy for the whole pass, so every table is treated the same */
 	collapse_policy_khugepaged(&cc->policy);
 
 	while (true) {
@@ -3068,8 +3077,6 @@ static void khugepaged_do_scan(struct collapse_control *cc)
 			khugepaged_alloc_sleep();
 		}
 	}
-
-	collapse_control_release(cc);
 }
 
 static bool khugepaged_should_wakeup(void)

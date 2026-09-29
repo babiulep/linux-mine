@@ -37,8 +37,8 @@ default_fd_limit=$(ulimit -Sn)
 min_fd_limit=$(($(getconf _NPROCESSORS_ONLN) * 16))
 
 cleanup() {
-  rm -f "${perfdata}"
-  rm -f "${perfdata}".old
+  rm -rf "${perfdata}"
+  rm -rf "${perfdata}".old
   rm -f "${script_output}"
   perf_record_cleanup
 
@@ -535,7 +535,7 @@ test_leader_sampling() {
     err=1
     return
   fi
-  perf script -i "${perfdata}" | grep brstack > $script_output
+  perf script -i "${perfdata}" -F period,ip,sym | grep brstack > $script_output
   # Check if the two instruction counts are equal in each record.
   # However, the throttling code doesn't consider event grouping. During throttling, only the
   # leader is stopped, causing the slave's counts significantly higher. To temporarily solve this,
@@ -547,12 +547,15 @@ test_leader_sampling() {
   tolerance_rate=0.8
   while IFS= read -r line
   do
-    cycles=$(echo $line | awk '{for(i=1;i<=NF;i++) if($i=="cycles:") print $(i-1)}')
-    if [ $(($index%2)) -ne 0 ] && [ ${cycles}x != ${prev_cycles}x ]
+    cycles=$(echo $line | awk '{ print $1 }')
+    if [ $(($index%2)) -ne 0 ]
     then
-      invalid_counts=$(($invalid_counts+1))
-    else
-      valid_counts=$(($valid_counts+1))
+      if (( $(bc <<< "scale=4; r = ${cycles} / ${prev_cycles}; r >= 0.99 && r <= 1.01") ))
+      then
+        valid_counts=$(($valid_counts+1))
+      else
+        invalid_counts=$(($invalid_counts+1))
+      fi
     fi
     index=$(($index+1))
     prev_cycles=$cycles

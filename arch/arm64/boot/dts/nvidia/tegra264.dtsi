@@ -16,6 +16,25 @@
 	#address-cells = <2>;
 	#size-cells = <2>;
 
+	aliases {
+		i2c0 = &i2c0;
+		i2c1 = &i2c1;
+		i2c2 = &i2c2;
+		i2c3 = &i2c3;
+		i2c4 = &i2c4;
+		i2c5 = &{/bpmp/i2c};
+		i2c6 = &i2c6;
+		i2c7 = &i2c7;
+		i2c8 = &i2c8;
+		i2c9 = &i2c9;
+		i2c10 = &i2c10;
+		i2c11 = &i2c11;
+		i2c12 = &i2c12;
+		i2c14 = &i2c14;
+		i2c15 = &i2c15;
+		i2c16 = &i2c16;
+	};
+
 	reserved-memory {
 		#address-cells = <2>;
 		#size-cells = <2>;
@@ -41,6 +60,13 @@
 			compatible = "nvidia,tegra234-misc";
 			reg = <0x0 0x00100000 0x0 0x0f000>,
 			      <0x0 0x0c140000 0x0 0x10000>;
+		};
+
+		fuse@1000000 {
+			compatible = "nvidia,tegra264-efuse";
+			reg = <0x0 0x1000000 0x0 0x20000>;
+			clocks = <&bpmp TEGRA264_CLK_FUSE>;
+			clock-names = "fuse";
 		};
 
 		timer@8000000 {
@@ -3311,6 +3337,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x0 0x0c600000 0x0 0x10000>;
 			interrupts = <GIC_SPI 532 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_AON_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLAON>;
@@ -3326,6 +3354,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x0 0x0c610000 0x0 0x10000>;
 			interrupts = <GIC_SPI 533 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_AON_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLAON>;
@@ -3623,6 +3653,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x00 0x0c410000 0x0 0x10000>;
 			interrupts = <GIC_SPI 128 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_TOP_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLP_OUT0>;
@@ -3638,6 +3670,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x00 0x0c420000 0x0 0x10000>;
 			interrupts = <GIC_SPI 129 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_TOP_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLP_OUT0>;
@@ -3653,6 +3687,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x00 0x0c430000 0x0 0x10000>;
 			interrupts = <GIC_SPI 130 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_TOP_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLP_OUT0>;
@@ -3728,6 +3764,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x00 0x0c630000 0x0 0x10000>;
 			interrupts = <GIC_SPI 131 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_TOP_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLP_OUT0>;
@@ -3743,6 +3781,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x00 0x0c640000 0x0 0x10000>;
 			interrupts = <GIC_SPI 132 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_TOP_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLP_OUT0>;
@@ -3758,6 +3798,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x00 0x0c650000 0x0 0x10000>;
 			interrupts = <GIC_SPI 135 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_TOP_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLP_OUT0>;
@@ -3773,6 +3815,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x00 0x0c670000 0x0 0x10000>;
 			interrupts = <GIC_SPI 136 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_TOP_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLP_OUT0>;
@@ -3788,6 +3832,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x00 0x0c680000 0x0 0x10000>;
 			interrupts = <GIC_SPI 126 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_TOP_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLP_OUT0>;
@@ -3803,6 +3849,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x00 0x0c690000 0x0 0x10000>;
 			interrupts = <GIC_SPI 137 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_TOP_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLP_OUT0>;
@@ -3818,6 +3866,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x00 0x0c6a0000 0x0 0x10000>;
 			interrupts = <GIC_SPI 127 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_TOP_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLP_OUT0>;
@@ -3833,6 +3883,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x00 0x0c6b0000 0x0 0x10000>;
 			interrupts = <GIC_SPI 138 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_TOP_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLP_OUT0>;
@@ -3848,6 +3900,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x00 0x0c6c0000 0x0 0x10000>;
 			interrupts = <GIC_SPI 133 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_TOP_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLP_OUT0>;
@@ -3863,6 +3917,8 @@
 			compatible = "nvidia,tegra264-i2c";
 			reg = <0x00 0x0c6d0000 0x0 0x10000>;
 			interrupts = <GIC_SPI 134 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			clock-frequency = <400000>;
 			clocks = <&bpmp TEGRA264_CLK_TOP_I2C>,
 				 <&bpmp TEGRA264_CLK_PLLP_OUT0>;

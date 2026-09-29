@@ -660,7 +660,6 @@ struct bpf_insn_aux_data {
 		/* remember the offset of node field within type to rewrite */
 		u64 insert_off;
 	};
-	struct bpf_iarray *jt;	/* jump table for gotox or bpf_tailcall call instruction */
 	struct btf_struct_meta *kptr_struct_meta;
 	u64 map_key_state; /* constant (32 bit) key tracking for maps */
 	int ctx_field_size; /* the ctx field size for load insn, maybe 0 */
@@ -815,7 +814,12 @@ struct bpf_subprog_info {
 	u32 start; /* insn idx of function entry point */
 	u32 linfo_idx; /* The idx to the main_prog->aux->linfo */
 	u32 postorder_start; /* The idx to the env->cfg.insn_postorder */
-	u32 exit_idx; /* Index of one of the BPF_EXIT instructions in this subprogram */
+	/*
+	 * Index of one of the BPF_EXIT instructions in this subprogram, or
+	 * U32_MAX when it has none.
+	 */
+	u32 exit_idx;
+	struct bpf_iarray *jt; /* jump table shared by all gotox of this subprogram */
 	u16 stack_depth; /* max. stack depth used by this function */
 	u16 stack_extra;
 	u32 insns_total;
@@ -972,6 +976,7 @@ struct bpf_verifier_env {
 	const struct bpf_line_info *prev_linfo;
 	struct bpf_verifier_log log;
 	struct bpf_diag *diag;
+	struct bpf_func_proto bpf_subprog_scratch;
 	struct bpf_subprog_info subprog_info[BPF_MAX_SUBPROGS + 2]; /* max + 2 for the fake and exception subprogs */
 	/* subprog indices sorted in topological order: leaves first, callers last */
 	int subprog_topo_order[BPF_MAX_SUBPROGS + 2];
@@ -1004,6 +1009,8 @@ struct bpf_verifier_env {
 		int cur_stack;
 		/* current position in the insn_postorder vector */
 		int cur_postorder;
+		u32 gotox_edges;
+		bool subprog_jts_ready;
 	} cfg;
 	struct backtrack_state bt;
 	struct bpf_jmp_history_entry *cur_hist_ent;
@@ -1582,6 +1589,7 @@ bool bpf_is_throw_kfunc(struct bpf_insn *insn);
 int bpf_compute_const_regs(struct bpf_verifier_env *env);
 int bpf_prune_dead_branches(struct bpf_verifier_env *env);
 int bpf_check_cfg(struct bpf_verifier_env *env);
+void bpf_free_subprog_jts(struct bpf_verifier_env *env);
 int bpf_compute_postorder(struct bpf_verifier_env *env);
 int bpf_compute_scc(struct bpf_verifier_env *env);
 
@@ -1638,6 +1646,7 @@ struct bpf_call_arg_meta {
 	struct btf *btf;
 	u32 func_id;
 	const struct bpf_func_proto *fn;
+	const struct btf_type *func_proto;
 	u8 release_regno;
 	u32 ret_btf_id;
 	u32 subprogno;
@@ -1647,10 +1656,12 @@ struct bpf_call_arg_meta {
 	struct ret_mem_desc ret_mem;
 	struct arg_raw_mem_desc arg_raw_mem;
 
+	/* Only set by subprog */
+	bool subprog_may_change_pkt;
+
 	/* Only set by kfunc */
 	bool r0_rdonly;
 	u32 kfunc_flags;
-	const struct btf_type *func_proto;
 	const char *func_name;
 	struct arg_constant_desc arg_constant;
 
@@ -1800,7 +1811,6 @@ struct bpf_kfunc_desc_tab {
 };
 
 /* Functions exported from verifier.c, used by fixups.c */
-void bpf_clear_insn_aux_data(struct bpf_verifier_env *env, int start, int len);
 void bpf_mark_subprog_exc_cb(struct bpf_verifier_env *env, int subprog);
 bool bpf_allow_tail_call_in_subprogs(struct bpf_verifier_env *env);
 bool bpf_verifier_inlines_helper_call(struct bpf_verifier_env *env, s32 imm);

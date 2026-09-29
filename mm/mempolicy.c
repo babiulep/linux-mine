@@ -668,7 +668,7 @@ static inline bool queue_folio_required(struct folio *folio,
 }
 
 static void queue_folios_pmd(pmd_t *pmd, unsigned long addr,
-			     struct mm_walk *walk)
+		struct mm_walk *walk)
 {
 	struct folio *folio;
 	struct queue_pages *qp = walk->private;
@@ -680,12 +680,7 @@ static void queue_folios_pmd(pmd_t *pmd, unsigned long addr,
 		return;
 	}
 	folio = vm_normal_folio_pmd(walk->vma, addr, pmdval);
-	if (!folio) {
-		if (is_huge_zero_pmd(pmdval))
-			walk->action = ACTION_CONTINUE;
-		return;
-	}
-	if (folio_is_zone_device(folio))
+	if (!folio || folio_is_zone_device(folio))
 		return;
 	if (!queue_folio_required(folio, qp))
 		return;

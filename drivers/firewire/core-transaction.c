@@ -135,21 +135,16 @@ int fw_cancel_transaction(struct fw_card *card,
 	if (card->driver->cancel_packet(card, &transaction->packet) == 0)
 		return 0;
 
+	u32 curr_cycle_time = 0;
+
+	// Timestamping on behalf of hardware.
+	(void)fw_card_read_cycle_time(card, &curr_cycle_time);
+	tstamp = cycle_time_to_ohci_tstamp(curr_cycle_time);
+
 	/*
 	 * If the request packet has already been sent, we need to see
 	 * if the transaction is still pending and remove it in that case.
 	 */
-
-	if (transaction->packet.ack == 0) {
-		// The timestamp is reused since it was just read now.
-		tstamp = transaction->packet.timestamp;
-	} else {
-		u32 curr_cycle_time = 0;
-
-		(void)fw_card_read_cycle_time(card, &curr_cycle_time);
-		tstamp = cycle_time_to_ohci_tstamp(curr_cycle_time);
-	}
-
 	return close_transaction(transaction, card, RCODE_CANCELLED, tstamp);
 }
 EXPORT_SYMBOL(fw_cancel_transaction);
@@ -645,16 +640,14 @@ static int put_address_handler(struct fw_address_handler *handler)
  *
  * When a request is received that falls within the specified address range, the specified callback
  * is invoked.  The parameters passed to the callback give the details of the particular request.
- * The callback is invoked in the workqueue context in most cases. However, if the request is
- * initiated by the local node, the callback is invoked in the initiator's context.
- *
- * To be called in process context.
- * Return value:  0 on success, non-zero otherwise.
  *
  * The start offset of the handler's address region is determined by
  * fw_core_add_address_handler() and is returned in handler->offset.
  *
  * Address allocations are exclusive, except for the FCP registers.
+ *
+ * Context: Process context.
+ * Returns: 0 on success, non-zero otherwise.
  */
 int fw_core_add_address_handler(struct fw_address_handler *handler,
 				const struct fw_address_region *region)
@@ -901,8 +894,8 @@ static struct fw_request *allocate_request(struct fw_card *card,
 		return NULL;
 	}
 
-	request = kmalloc(sizeof(*request) + length, GFP_ATOMIC);
-	if (request == NULL)
+	request = kzalloc_flex(*request, data, DIV_ROUND_UP(length, sizeof(u32)));
+	if (!request)
 		return NULL;
 	kref_init(&request->kref);
 

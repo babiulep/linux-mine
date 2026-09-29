@@ -47,7 +47,9 @@ struct pci_dev_ser {
  * struct pci_ser - PCI Subsystem Live Update State
  *
  * This struct tracks state about all devices that are being preserved across
- * a Live Update for the next kernel.
+ * a Live Update for the next kernel. It contains only state owned by the PCI
+ * core; the state a driver needs to resume its device is preserved separately
+ * by that driver.
  *
  * @version: The version of the "pci" FLB struct. This field must never be
  *           deleted, moved, or resized, as the kernel depends on always being

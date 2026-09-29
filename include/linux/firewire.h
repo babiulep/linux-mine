@@ -224,7 +224,7 @@ struct fw_device {
 	struct mutex client_list_mutex;
 	struct list_head client_list;
 
-	const u32 *config_rom;
+	const u32 *config_rom __counted_by_ptr(config_rom_length);
 	size_t config_rom_length;
 	int config_rom_retries;
 	unsigned is_local:1;
@@ -298,17 +298,25 @@ union fw_transaction_callback {
 	fw_transaction_callback_with_tstamp_t with_tstamp;
 };
 
-/*
- * This callback handles an inbound request subaction. If the request subaction is initiated from
- * the local node (e.g. by unit driver), the execution context depends on the initiator and is
- * unspecified. Otherwise, it runs in workqueue context.
+/**
+ * typedef fw_address_callback_t - Function to handle the request of the asynchronous transaction.
+ * @card: the card instance which receives the request
+ * @request: the request instance.
+ * @tcode: the transaction code
+ * @destination: the destination node ID
+ * @source: the source node ID
+ * @generation: the bus generation in which the request was sent
+ * @offset: the destination offset in source node.
+ * @data: the request content if available.
+ * @length: the length of data.
+ * @callback_data: the data registered with this function.
  *
- * The callback should not initiate outbound request subactions directly.
- * Otherwise there is a danger of recursion of inbound and outbound
- * transactions from and to the local node.
+ * This callback handles an inbound request subaction.
  *
  * The callback is responsible that fw_send_response() is called on the @request, except for FCP
  * registers for which the core takes care of that.
+ *
+ * Context: Process context.
  */
 typedef void (*fw_address_callback_t)(struct fw_card *card,
 				      struct fw_request *request,
@@ -323,7 +331,7 @@ struct fw_packet {
 	int generation;
 	u32 header[4];
 	size_t header_length;
-	void *payload;
+	void *payload __counted_by_ptr(payload_length);
 	size_t payload_length;
 	dma_addr_t payload_bus;
 	bool payload_mapped;

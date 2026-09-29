@@ -74,8 +74,6 @@ static int efivarfs_show_options(struct seq_file *m, struct dentry *root)
 	if (!gid_eq(opts->gid, GLOBAL_ROOT_GID))
 		seq_printf(m, ",gid=%u",
 				from_kgid_munged(&init_user_ns, opts->gid));
-	if (opts->nostatfs)
-		seq_puts(m, ",nostatfs");
 	return 0;
 }
 
@@ -84,19 +82,13 @@ static int efivarfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	const u32 attr = EFI_VARIABLE_NON_VOLATILE |
 			 EFI_VARIABLE_BOOTSERVICE_ACCESS |
 			 EFI_VARIABLE_RUNTIME_ACCESS;
-	struct efivarfs_fs_info *sfi = dentry->d_sb->s_fs_info;
 	u64 storage_space, remaining_space, max_variable_size;
 	u64 id = huge_encode_dev(dentry->d_sb->s_dev);
 	efi_status_t status;
 
-	/*
-	 * Some UEFI firmware does not implement QueryVariableInfo(); the
-	 * nostatfs mount option also disables this (preempt-disabled,
-	 * potentially slow) call entirely, reporting zero used/available.
-	 */
+	/* Some UEFI firmware does not implement QueryVariableInfo() */
 	storage_space = remaining_space = 0;
-	if (!sfi->mount_opts.nostatfs &&
-	    efi_rt_services_supported(EFI_RT_SUPPORTED_QUERY_VARIABLE_INFO)) {
+	if (efi_rt_services_supported(EFI_RT_SUPPORTED_QUERY_VARIABLE_INFO)) {
 		static DEFINE_RATELIMIT_STATE(_rs, 2 * HZ, 5);
 		static u64 storage, remaining;
 		static DEFINE_SPINLOCK(lock);
@@ -331,13 +323,12 @@ static int efivarfs_callback(efi_char16_t *name16, efi_guid_t vendor,
 }
 
 enum {
-	Opt_uid, Opt_gid, Opt_nostatfs,
+	Opt_uid, Opt_gid,
 };
 
 static const struct fs_parameter_spec efivarfs_parameters[] = {
 	fsparam_uid("uid", Opt_uid),
 	fsparam_gid("gid", Opt_gid),
-	fsparam_flag("nostatfs", Opt_nostatfs),
 	{},
 };
 
@@ -358,9 +349,6 @@ static int efivarfs_parse_param(struct fs_context *fc, struct fs_parameter *para
 		break;
 	case Opt_gid:
 		opts->gid = result.gid;
-		break;
-	case Opt_nostatfs:
-		opts->nostatfs = true;
 		break;
 	default:
 		return -EINVAL;
@@ -538,8 +526,6 @@ static int efivarfs_init_fs_context(struct fs_context *fc)
 
 	sfi->mount_opts.uid = GLOBAL_ROOT_UID;
 	sfi->mount_opts.gid = GLOBAL_ROOT_GID;
-	/* QueryVariableInfo() stalls the CPU; default nostatfs on PREEMPT_RT. */
-	sfi->mount_opts.nostatfs = IS_ENABLED(CONFIG_PREEMPT_RT);
 
 	fc->s_fs_info = sfi;
 	fc->ops = &efivarfs_context_ops;

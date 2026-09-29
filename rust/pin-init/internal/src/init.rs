@@ -44,9 +44,6 @@ pub(crate) enum InitExprKind {
 
 struct InitTupleField {
     attrs: Vec<Attribute>,
-    /// `<-` is not valid in constructor syntax; it is parsed anyway so that it can be rejected
-    /// with a proper diagnostic instead of a parse error.
-    left_arrow_token: Option<Token![<-]>,
     value: Expr,
 }
 
@@ -83,20 +80,6 @@ impl InitExprTuple {
                 .collect(),
             rest: None,
         }
-    }
-
-    fn validate(&self, dcx: &mut DiagCtxt) -> Result<(), ErrorGuaranteed> {
-        let mut result = Ok(());
-        for field in &self.fields {
-            if let Some(left_arrow_token) = &field.left_arrow_token {
-                result = Err(dcx.error(
-                    left_arrow_token,
-                    "`<-` is not supported in tuple constructor syntax; name the fields by index \
-                     instead, e.g. `Type { 0 <- initializer, 1: value }`",
-                ));
-            }
-        }
-        result
     }
 }
 
@@ -153,8 +136,6 @@ pub(crate) fn expand_with_cfg(
 ) -> Result<TokenStream, ErrorGuaranteed> {
     let initializer = match initializer.kind {
         InitExprKind::Tuple(expr) => {
-            expr.validate(dcx)?;
-
             let mut initializer = Initializer {
                 attrs: initializer.attrs,
                 this: initializer.this,
@@ -269,18 +250,17 @@ fn expand(
         },
         |(_, err)| Box::new(err),
     );
-    let (has_data_trait, get_data, init_from_closure) = if pinned {
+    let (get_pin_data, init_from_closure) = if pinned {
         (
-            format_ident!("HasPinData"),
-            format_ident!("__pin_data"),
+            Some(
+                quote_spanned! { path.span().resolved_at(Span::mixed_site()) =>
+                    let data = ::pin_init::__internal::HasPinData::__pin_data(data);
+                },
+            ),
             format_ident!("pin_init_from_closure"),
         )
     } else {
-        (
-            format_ident!("HasInitData"),
-            format_ident!("__init_data"),
-            format_ident!("init_from_closure"),
-        )
+        (None, format_ident!("init_from_closure"))
     };
     let init_kind = get_init_kind(rest, dcx);
     let zeroable_check = match init_kind {
@@ -312,13 +292,15 @@ fn expand(
     let field_check = make_field_check(&fields, init_kind, &path);
     Ok(quote_spanned! { Span::mixed_site() => {
         // Get the data about fields from the supplied type.
-        // SAFETY: TODO
-        let data = unsafe {
-            use ::pin_init::__internal::#has_data_trait;
+        let data = {
+            use ::pin_init::__internal::HasInitData;
             // Can't use `<#path as #has_data_trait>::#get_data`, since the user is able to omit
             // generics (which need to be present with that syntax).
-            #path::#get_data()
+            #path::__init_data()
         };
+
+        #get_pin_data
+
         // Ensure that `data` really is of type `data` and help with type inference:
         let init = data.__make_closure::<_, #error>(
             move |slot| {
@@ -578,9 +560,20 @@ impl InitExprTuple {
         let paren_token = parenthesized!(content in input);
         let mut fields = Punctuated::new();
         while !content.is_empty() {
+            let attrs = content.call(Attribute::parse_outer)?;
+
+            if let Some(left_arrow_token) = content.parse::<Option<Token![<-]>>()? {
+                DiagCtxt::current(|dcx| {
+                    dcx.error(
+                        left_arrow_token,
+                        "`<-` is not supported in tuple constructor syntax; name the fields by \
+                        index instead, e.g. `Type { 0 <- initializer, 1: value }`",
+                    )
+                });
+            }
+
             fields.push_value(InitTupleField {
-                attrs: content.call(Attribute::parse_outer)?,
-                left_arrow_token: content.parse()?,
+                attrs,
                 value: content.parse()?,
             });
             if content.is_empty() {
@@ -757,13 +750,8 @@ impl ToTokens for InitExprTuple {
 
 impl ToTokens for InitTupleField {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let Self {
-            attrs,
-            left_arrow_token,
-            value,
-        } = self;
+        let Self { attrs, value } = self;
         tokens.append_all(attrs);
-        left_arrow_token.to_tokens(tokens);
         value.to_tokens(tokens);
     }
 }

@@ -2304,7 +2304,7 @@ int perf_event__synthesize_extra_attr(const struct perf_tool *tool, struct evlis
 		if (has_scale(evsel)) {
 			err = perf_event__synthesize_event_update_scale(tool, evsel, process);
 			if (err < 0) {
-				pr_err("Couldn't synthesize evsel evsel.\n");
+				pr_err("Couldn't synthesize evsel.\n");
 				return err;
 			}
 		}
@@ -2814,6 +2814,8 @@ static union perf_event *__synthesize_schedstat_domain(struct io *io, __u16 vers
 	size = sizeof(*ds);
 	size = PERF_ALIGN(size, sizeof(u64));
 	event = zalloc(size);
+	if (!event)
+		return NULL;
 
 	ds = &event->schedstat_domain;
 	ds->header.type = PERF_RECORD_SCHEDSTAT_DOMAIN;

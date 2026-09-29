@@ -555,6 +555,7 @@ struct evsel *evsel__clone(struct evsel *orig)
 	evsel->core.system_wide = orig->core.system_wide;
 	evsel->core.requires_cpu = orig->core.requires_cpu;
 	evsel->core.is_pmu_core = orig->core.is_pmu_core;
+	evsel->core.is_pmu_uncore = orig->core.is_pmu_uncore;
 
 	if (orig->name) {
 		evsel->name = strdup(orig->name);
@@ -720,10 +721,7 @@ struct tep_event *evsel__tp_format(struct evsel *evsel)
 	else
 		tp_format = trace_event__tp_format(evsel->tp_sys, evsel->tp_name);
 
-	if (IS_ERR(tp_format)) {
-		int err = -PTR_ERR(tp_format);
-
-		errno = err;
+	if (!tp_format) {
 		pr_err("Error getting tracepoint format '%s': %m\n",
 			evsel__name(evsel));
 		return NULL;

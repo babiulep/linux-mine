@@ -911,16 +911,18 @@ bool madvise_dontneed_free_valid_vma(struct madvise_behavior *madv_behavior)
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 
 /* MADV_COLLAPSE was asked for explicitly, so it is not held to those */
-static void collapse_policy_forced(struct collapse_policy *p)
+static void collapse_policy_madvise(struct collapse_policy *p)
 {
-	p->max_ptes_none = HPAGE_PMD_NR;
-	p->max_ptes_swap = HPAGE_PMD_NR;
-	p->max_ptes_shared = HPAGE_PMD_NR;
-	p->strict_sub_pmd = false;
-	p->skip_lazyfree = false;
-	p->require_referenced = false;
-	p->install_pmd = true;
-	p->writeback_dirty = true;
+	p->pmd.max_ptes_none = HPAGE_PMD_NR;
+	p->pmd.max_ptes_swap = HPAGE_PMD_NR;
+	p->pmd.max_ptes_shared = HPAGE_PMD_NR;
+	/* Never read: MADV_COLLAPSE collapses to PMD order only */
+	p->sub_pmd = p->pmd;
+
+	p->anon_skip_lazyfree = false;
+	p->anon_require_referenced = false;
+	p->file_install_pmd = true;
+	p->file_writeback_dirty = true;
 	p->gfp = GFP_TRANSHUGE;
 	p->tva_type = TVA_FORCED_COLLAPSE;
 }
@@ -985,7 +987,7 @@ static int madvise_collapse(struct madvise_behavior *madv_behavior)
 	if (!cc)
 		return -ENOMEM;
 	collapse_control_init(cc);
-	collapse_policy_forced(&cc->policy);
+	collapse_policy_madvise(&cc->policy);
 
 	lru_add_drain_all();
 
@@ -1011,7 +1013,7 @@ static int madvise_collapse(struct madvise_behavior *madv_behavior)
 			vma = found;
 			hend = min(hend, vma->vm_end & HPAGE_PMD_MASK);
 			orders = collapse_possible_orders(vma, vma->vm_flags,
-							  cc->policy.tva_type);
+							  TVA_FORCED_COLLAPSE);
 		}
 
 		result = collapse_scan_pmd(vma, addr, cc, orders);
@@ -1057,7 +1059,6 @@ out:
 		mmap_read_lock(mm);
 out_locked:
 	mmap_assert_locked(mm);
-	collapse_control_release(cc);
 	kfree(cc);
 
 	return thps == ((hend - hstart) >> HPAGE_PMD_SHIFT) ? 0

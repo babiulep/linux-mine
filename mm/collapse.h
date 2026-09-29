@@ -45,27 +45,37 @@ enum scan_result {
 	SCAN_PAGE_DIRTY_OR_WRITEBACK,
 };
 
-/* What a collapse is allowed to do, decided by the caller that asks for it */
-struct collapse_policy {
-	/* Limits, stated per PMD; HPAGE_PMD_NR means "no limit" */
+/* How many PTEs of a window may be missing, swapped out or shared */
+struct collapse_limits {
+	/* Counted over a PMD-sized window; HPAGE_PMD_NR means "no limit" */
 	unsigned int max_ptes_none;
 	unsigned int max_ptes_swap;
 	unsigned int max_ptes_shared;
+};
 
-	/* Take no swapped-out or shared PTE into a sub-PMD collapse */
-	bool strict_sub_pmd;
+/* What a collapse is allowed to do, decided by the caller that asks for it */
+struct collapse_policy {
+	/* Limits for a PMD-sized window */
+	struct collapse_limits pmd;
+
+	/*
+	 * Limits for a smaller window.  Its max_ptes_none is either 0 or
+	 * COLLAPSE_MAX_PTES_LIMIT, the latter meaning all but one PTE of the
+	 * window whatever its order; any other value counts as 0.
+	 */
+	struct collapse_limits sub_pmd;
 
 	/* Leave clean lazyfree folios to reclaim rather than collapse them */
-	bool skip_lazyfree;
+	bool anon_skip_lazyfree;
 
-	/* Refuse a range with no sign of use */
-	bool require_referenced;
+	/* Refuse an anonymous range with no sign of use */
+	bool anon_require_referenced;
 
 	/* Map the PMD over a file collapse instead of leaving it to a fault */
-	bool install_pmd;
+	bool file_install_pmd;
 
 	/* Write dirty pages back and retry once instead of refusing them */
-	bool writeback_dirty;
+	bool file_writeback_dirty;
 
 	/* How hard to try for a destination folio */
 	gfp_t gfp;
@@ -115,14 +125,13 @@ unsigned long collapse_possible_orders(struct vm_area_struct *vma,
  *     collapse_control_init(cc)              once, before the first table
  *     collapse_scan_pmd(vma, addr, ...)      per table
  *     collapse_run_pmd(mm, addr, result, cc) when a scan found work
- *     collapse_control_release(cc)           once, when done with the control
  *
  * The caller holds mmap_lock for reading over the scan and passes an address
  * within @vma, aligned to the PTE table to scan.
  *
- * The scan returns with that lock still held.  It only reads, and almost every
- * table it is offered has nothing to collapse, so a caller walks a whole VMA
- * under the one lock it took to get there.  SCAN_SUCCEED means there is
+ * The scan returns with that lock still held.  Almost every table it is
+ * offered has nothing to collapse, so a caller walks a whole VMA under the one
+ * lock it took to get there.  SCAN_SUCCEED means there is
  * something to collapse.  SCAN_PTE_MAPPED_HUGEPAGE means the page cache
  * already holds the PMD folio and only the PTE table is left to retract.
  * Both are work for the run, which is handed what the scan returned; anything
@@ -140,7 +149,6 @@ unsigned long collapse_possible_orders(struct vm_area_struct *vma,
  * gives it back.
  */
 void collapse_control_init(struct collapse_control *cc);
-void collapse_control_release(struct collapse_control *cc);
 enum scan_result collapse_scan_pmd(struct vm_area_struct *vma,
 		unsigned long addr, struct collapse_control *cc,
 		unsigned long orders);

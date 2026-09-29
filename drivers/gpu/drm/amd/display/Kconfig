@@ -70,7 +70,6 @@ config DRM_AMD_DC_KUNIT_TEST
 	depends on DRM_AMD_DC && KUNIT && DEBUG_FS
 	select DRM_KUNIT_TEST_HELPERS
 	default KUNIT_ALL_TESTS
-	depends on BROKEN
 	help
 	  This option enables KUnit tests for the AMD Display Core driver.
 	  These tests validate core functionality like CRC source parsing,

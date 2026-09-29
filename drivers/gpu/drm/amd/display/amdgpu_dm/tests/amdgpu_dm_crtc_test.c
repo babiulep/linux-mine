@@ -1601,6 +1601,8 @@ static void dm_test_crtc_duplicate_state_null_state_returns_null(struct kunit *t
 	KUNIT_EXPECT_NULL(test, amdgpu_dm_crtc_duplicate_state(crtc));
 }
 
+/* Tests for amdgpu_dm_crtc_destroy() */
+
 /**
  * dm_test_crtc_destroy_cleans_up_and_frees - Test destroy tears down the CRTC
  * @test: The KUnit test context
