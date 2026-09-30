@@ -15,7 +15,7 @@
 #include "iwl-trans.h"
 #include "iwl-drv.h"
 #include "iwl-prph.h"
-#include "gen1_2/internal.h"
+#include "internal.h"
 
 #define _IS_A(cfg, _struct) __builtin_types_compatible_p(typeof(cfg),	\
 							 struct _struct)
@@ -1188,17 +1188,22 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		return -EIO;
 	}
 
-	return iwl_pci_gen1_2_probe(pdev, ent, mac_cfg, hw_base, hw_rev);
+	return _iwl_pci_probe(pdev, ent, mac_cfg, hw_base, hw_rev);
 }
 
 static void iwl_pci_remove(struct pci_dev *pdev)
 {
 	struct iwl_trans *trans = pci_get_drvdata(pdev);
+	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
 
 	if (!trans)
 		return;
 
-	iwl_pcie_gen1_2_remove(trans);
+	cancel_delayed_work_sync(&trans_pcie->me_recheck_wk);
+
+	iwl_drv_stop(trans->drv);
+
+	iwl_trans_pcie_free(trans);
 }
 
 #ifdef CONFIG_PM_SLEEP

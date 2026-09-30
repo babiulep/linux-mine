@@ -431,10 +431,10 @@ static int sht4x_probe(struct i2c_client *client)
 	data->chip_id = (uintptr_t)i2c_get_match_data(client);
 	data->update_interval = SHT4X_MIN_POLL_INTERVAL;
 	data->client = client;
-	data->heating_complete = get_jiffies_64();
 	if (data->chip_id != sts4x) {
 		data->heater_power = 200;
 		data->heater_time = 1000;
+		data->heating_complete = get_jiffies_64();
 		groups = sht4x_groups;
 	}
 

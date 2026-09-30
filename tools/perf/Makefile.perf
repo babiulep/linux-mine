@@ -442,7 +442,8 @@ PYTHON_EXTBUILD_LIB := $(PYTHON_EXTBUILD)lib/
 PYTHON_EXTBUILD_TMP := $(PYTHON_EXTBUILD)tmp/
 export PYTHON_EXTBUILD_LIB PYTHON_EXTBUILD_TMP
 
-python-clean := $(call QUIET_CLEAN, python) $(RM) -r $(PYTHON_EXTBUILD) $(OUTPUT)python/perf*.so
+# Put Python bytecode in output directory
+export PYTHONPYCACHEPREFIX := $(OUTPUT)/__pycache__
 
 ifneq ($(quiet),)
 python_setup_quiet=--quiet
@@ -941,7 +942,9 @@ install-build-deps:
 	$(Q)$(SHELL) $(srctree)/tools/perf/scripts/install-build-deps.sh $(INSTALL_BUILD_DEPS_ARGS)
 
 install-python_ext:
-	$(PYTHON_WORD) util/setup.py $(python_setup_quiet) install --root='/$(DESTDIR_SQ)'
+	$(PYTHON_WORD) util/setup.py $(python_setup_quiet) \
+		$(if $(OUTPUT),egg_info --egg-base $(OUTPUT)) \
+		install --root='/$(DESTDIR_SQ)'
 
 # 'make install-doc' should call 'make -C Documentation install'
 $(INSTALL_DOC_TARGETS):
@@ -950,7 +953,12 @@ $(INSTALL_DOC_TARGETS):
 ### Cleaning rules
 
 python-clean:
-	$(python-clean)
+	$(call QUIET_CLEAN, python) $(RM) -r $(PYTHON_EXTBUILD) $(OUTPUT)__pycache__ \
+		$(OUTPUT)python/perf*.so
+	@if [ "$(abspath python/perf.pyi)" != "$(abspath $(OUTPUT)python/perf.pyi)" ]; \
+	then \
+		$(RM) $(OUTPUT)python/perf.pyi; \
+	fi
 
 $(LIBAPI_OUTPUT) $(LIBBPF_OUTPUT) $(LIBPERF_OUTPUT) $(LIBSUBCMD_OUTPUT) $(LIBSYMBOL_OUTPUT):
 	$(Q)$(MKDIR) -p $@
@@ -985,7 +993,7 @@ clean:: $(LIBAPI)-clean $(LIBBPF)-clean $(LIBSUBCMD)-clean $(LIBSYMBOL)-clean $(
 		-name '*.mypy_log' -delete -o -name '*.pylint_log' -delete
 	$(Q)$(RM) $(OUTPUT).config-detected
 	$(call QUIET_CLEAN, core-progs) $(RM) $(ALL_PROGRAMS) perf perf-read-vdso32 \
-		perf-read-vdsox32 $(OUTPUT)$(LIBJVMTI).so
+		perf-read-vdsox32 $(OUTPUT)$(LIBJVMTI).so $(OUTPUT)libperf-gtk.so
 	$(call QUIET_CLEAN, core-gen)   $(RM)  *.spec *.pyc *.pyo */*.pyc */*.pyo \
 		TAGS tags cscope* $(OUTPUT)PERF-VERSION-FILE \
 		$(OUTPUT)FEATURE-DUMP $(OUTPUT)util/*-bison* $(OUTPUT)util/*-flex* \

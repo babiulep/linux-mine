@@ -590,8 +590,8 @@ char *dso__filename_with_chroot(const struct dso *dso, const char *filename)
 	return filename_with_chroot(nsinfo__pid(dso__nsinfo_const(dso)), filename);
 }
 
-static char *dso__get_filename(struct dso *dso, const char *root_dir,
-			       bool *decomp)
+char *dso__get_filename(struct dso *dso, const char *root_dir, bool *decomp,
+			enum dso_binary_type type)
 {
 	char *name = malloc(PATH_MAX);
 
@@ -600,8 +600,7 @@ static char *dso__get_filename(struct dso *dso, const char *root_dir,
 	if (name == NULL)
 		return NULL;
 
-	if (dso__read_binary_type_filename(dso, dso__binary_type(dso),
-					    root_dir, name, PATH_MAX))
+	if (dso__read_binary_type_filename(dso, type, root_dir, name, PATH_MAX))
 		goto out;
 
 	if (!is_regular_file(name)) {
@@ -662,6 +661,14 @@ out:
 	return NULL;
 }
 
+void dso__put_filename(struct dso *dso __maybe_unused, char *filename, bool decomp)
+{
+	if (decomp)
+		unlink(filename);
+
+	free(filename);
+}
+
 static int __open_dso(struct dso *dso, struct machine *machine)
 	EXCLUSIVE_LOCKS_REQUIRED(_dso__data_open_lock)
 {
@@ -671,7 +678,8 @@ static int __open_dso(struct dso *dso, struct machine *machine)
 
 	mutex_lock(dso__lock(dso));
 
-	name = dso__get_filename(dso, machine ? machine->root_dir : "", &decomp);
+	name = dso__get_filename(dso, machine ? machine->root_dir : "", &decomp,
+				 dso__binary_type(dso));
 	if (name) {
 		fd = do_open(name);
 	} else {
@@ -680,11 +688,8 @@ static int __open_dso(struct dso *dso, struct machine *machine)
 		fd = -errno;
 	}
 
-	if (decomp)
-		unlink(name);
-
+	dso__put_filename(dso, name, decomp);
 	mutex_unlock(dso__lock(dso));
-	free(name);
 	return fd;
 }
 
@@ -1721,6 +1726,7 @@ struct dso *dso__new_id(const char *name, const struct dso_id *id)
 		dso->data.status = DSO_DATA_STATUS_UNKNOWN;
 		dso->symtab_type = DSO_BINARY_TYPE__NOT_FOUND;
 		dso->binary_type = DSO_BINARY_TYPE__NOT_FOUND;
+		dso->dbginfo_type = DSO_BINARY_TYPE__NOT_FOUND;
 		dso->is_64_bit = (sizeof(void *) == 8);
 		dso->loaded = 0;
 		dso->rel = 0;
@@ -2080,21 +2086,11 @@ const u8 *dso__read_symbol(struct dso *dso, const char *symfs_filename,
 
 struct debuginfo *dso__debuginfo(struct dso *dso)
 {
-	char *name;
-	bool decomp = false;
-	struct debuginfo *dinfo = NULL;
+	struct debuginfo *dinfo;
 
 	mutex_lock(dso__lock(dso));
-
-	name = dso__get_filename(dso, "", &decomp);
-	if (name)
-		dinfo = debuginfo__new(name);
-
-	if (decomp)
-		unlink(name);
-
+	dinfo = debuginfo__new(dso);
 	mutex_unlock(dso__lock(dso));
-	free(name);
 	return dinfo;
 }
 
@@ -2106,4 +2102,56 @@ void dso__set_symsrc_filename(struct dso *dso, char *val)
 	dso__free_a2l_libbfd(dso);
 	dso__set_has_srcline(dso, true);
 	dso__set_a2l_fails(dso, 0);
+}
+
+void dso__find_dbginfo_type(struct dso *dso)
+{
+	static const enum dso_binary_type dbginfo_types[] = {
+		DSO_BINARY_TYPE__FEDORA_DEBUGINFO,
+		DSO_BINARY_TYPE__UBUNTU_DEBUGINFO,
+		DSO_BINARY_TYPE__MIXEDUP_UBUNTU_DEBUGINFO,
+		DSO_BINARY_TYPE__OPENEMBEDDED_DEBUGINFO,
+		DSO_BINARY_TYPE__BUILDID_DEBUGINFO,
+		DSO_BINARY_TYPE__SYSTEM_PATH_DSO,
+		DSO_BINARY_TYPE__NOT_FOUND,
+	};
+	const enum dso_binary_type *type;
+	char *path;
+	bool found, decomp = false;
+
+	if (dso__dbginfo_type(dso) != DSO_BINARY_TYPE__NOT_FOUND)
+		return;
+
+	if (dso__debuginfo_searched(dso))
+		return;
+	dso__set_debuginfo_searched(dso);
+
+	/* Maybe debug info is in the same file with the symbol table */
+	path = dso__get_filename(dso, "", &decomp, dso__symtab_type(dso));
+	if (path) {
+		found = filename__has_section(path, ".debug_info") ||
+			filename__has_section(path, ".zdebug_info");
+
+		dso__put_filename(dso, path, decomp);
+		if (found) {
+			dso__set_dbginfo_type(dso, dso__symtab_type(dso));
+			return;
+		}
+	}
+
+	/* Otherwise check distro debug locations */
+	for (type = dbginfo_types; *type != DSO_BINARY_TYPE__NOT_FOUND; type++) {
+		path = dso__get_filename(dso, "", &decomp, *type);
+		if (path == NULL)
+			continue;
+
+		found = filename__has_section(path, ".debug_info") ||
+			filename__has_section(path, ".zdebug_info");
+
+		dso__put_filename(dso, path, decomp);
+		if (found)
+			break;
+	}
+
+	dso__set_dbginfo_type(dso, *type);
 }

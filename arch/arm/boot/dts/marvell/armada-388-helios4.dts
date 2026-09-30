@@ -141,10 +141,12 @@
 	usb2_phy: usb2-phy {
 		compatible = "usb-nop-xceiv";
 		vbus-supply = <&reg_5p0v_usb>;
+		#phy-cells = <0>;
 	};
 
 	usb3_phy: usb3-phy {
 		compatible = "usb-nop-xceiv";
+		#phy-cells = <0>;
 	};
 
 	soc {
@@ -158,14 +160,7 @@
 				 *  6-USB3 power
 				 */
 				expander0: gpio-expander@20 {
-					/*
-					 * This is how it should be:
-					 * compatible = "onnn,pca9655",
-					 *	 "nxp,pca9555";
-					 * but you can't do this because of
-					 * the way I2C works.
-					 */
-					compatible = "nxp,pca9555";
+					compatible = "onnn,pca9655";
 					gpio-controller;
 					#gpio-cells = <2>;
 					reg = <0x20>;
@@ -198,7 +193,7 @@
 				};
 
 				temp_sensor: temp@4c {
-					compatible = "ti,lm75";
+					compatible = "national,lm75";
 					reg = <0x4c>;
 					vs-supply = <&reg_3p3v>;
 				};

@@ -265,12 +265,12 @@ static void tpm_nsc_remove(struct device *dev)
 	release_region(priv->base, 2);
 }
 
-static DEFINE_SIMPLE_DEV_PM_OPS(tpm_nsc_pm, tpm_pm_suspend, tpm_pm_resume);
+static SIMPLE_DEV_PM_OPS(tpm_nsc_pm, tpm_pm_suspend, tpm_pm_resume);
 
 static struct platform_driver nsc_drv = {
 	.driver          = {
 		.name    = "tpm_nsc",
-		.pm      = pm_sleep_ptr(&tpm_nsc_pm),
+		.pm      = &tpm_nsc_pm,
 	},
 };
 

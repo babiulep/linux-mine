@@ -637,12 +637,13 @@ static struct skcipher_alg skcipher_algs[] = {
 		.decrypt = crypto_aes_cbc_decrypt,
 	},
 #endif
-#if IS_ENABLED(CONFIG_CRYPTO_CTS) && \
 	/*
-	 * Skip registering this when it might block a "better" implementation
-	 * from being instantiated via the "cts" template wrapping an arch-
-	 * optimized "cbc(aes)" that hasn't yet been migrated into the library.
-	 */ \
+	 * Don't register library-based "cts(cbc(aes))" on architectures where
+	 * it might block a "better" implementation from being instantiated via
+	 * the "cts" template.  These exclusions are temporary and will go away
+	 * as the arch-optimized AES code is migrated into the library.
+	 */
+#if IS_ENABLED(CONFIG_CRYPTO_CTS) && \
 	!(IS_ENABLED(CONFIG_ARM) || \
 	  IS_ENABLED(CONFIG_ARM64) || \
 	  IS_ENABLED(CONFIG_PPC) || \
@@ -697,7 +698,13 @@ static struct skcipher_alg skcipher_algs[] = {
 		.decrypt = crypto_aes_xctr_crypt,
 	},
 #endif
-#if IS_ENABLED(CONFIG_CRYPTO_XTS)
+	/*
+	 * Don't register library-based "xts(aes)" on architectures where it
+	 * might block a "better" implementation from being instantiated via the
+	 * "xts" template.  This exclusion is temporary and will go away when
+	 * the library AES-XTS is optimized for SPARC.
+	 */
+#if IS_ENABLED(CONFIG_CRYPTO_XTS) && !IS_ENABLED(CONFIG_SPARC)
 	{
 		.base.cra_name = "xts(aes)",
 		.base.cra_driver_name = "xts-aes-lib",
@@ -990,12 +997,14 @@ static __maybe_unused int crypto_aes_ccm_decrypt(struct aead_request *req)
 }
 
 static struct aead_alg aead_algs[] = {
-#if IS_ENABLED(CONFIG_CRYPTO_GCM) && \
 	/*
-	 * Skip registering these when they might block "better" implementations
-	 * from being instantiated via the corresponding templates using
-	 * arch-optimized code that hasn't yet been migrated into the library.
-	 */ \
+	 * Don't register library-based "gcm(aes)" and "rfc4106(gcm(aes))" on
+	 * architectures where they might block a "better" implementation from
+	 * being instantiated via the "gcm" and "rfc4106" templates.  These
+	 * exclusions are temporary and will go away as the arch-optimized AES
+	 * code is migrated into the library.
+	 */
+#if IS_ENABLED(CONFIG_CRYPTO_GCM) && \
 	!(IS_ENABLED(CONFIG_ARM) || \
 	  IS_ENABLED(CONFIG_ARM64) || \
 	  IS_ENABLED(CONFIG_PPC) || \
@@ -1033,12 +1042,13 @@ static struct aead_alg aead_algs[] = {
 		.chunksize = AES_BLOCK_SIZE,
 	},
 #endif /* CONFIG_CRYPTO_GCM */
-#if IS_ENABLED(CONFIG_CRYPTO_CCM) && \
 	/*
-	 * Skip registering this when it might block a "better" implementation
-	 * from being instantiated via the "ccm" template wrapping an arch-
-	 * optimized "ctr(aes)" that hasn't yet been migrated into the library.
-	 */ \
+	 * Don't register library-based "ccm(aes)" on architectures where it
+	 * might block a "better" implementation from being instantiated via the
+	 * "ccm" template.  These exclusions are temporary and will go away as
+	 * the arch-optimized AES code is migrated into the library.
+	 */
+#if IS_ENABLED(CONFIG_CRYPTO_CCM) && \
 	!(IS_ENABLED(CONFIG_ARM) || \
 	  IS_ENABLED(CONFIG_ARM64) || \
 	  IS_ENABLED(CONFIG_PPC) || \

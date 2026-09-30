@@ -110,8 +110,9 @@ int ionic_create_cq_common(struct ionic_vcq *vcq,
 		if (rc)
 			goto err_qdesc;
 
-		cq->umem = ib_umem_get_va(&dev->ibdev, req_cq->addr,
-					  req_cq->size, IB_ACCESS_LOCAL_WRITE);
+		cq->umem = ib_umem_get_cq_buf_or_va(&dev->ibdev, NULL,
+						    req_cq->addr, req_cq->size,
+						    IB_ACCESS_LOCAL_WRITE);
 		if (IS_ERR(cq->umem)) {
 			rc = PTR_ERR(cq->umem);
 			goto err_qdesc;
@@ -2350,7 +2351,7 @@ int ionic_create_qp(struct ib_qp *ibqp, struct ib_qp_init_attr *attr,
 						    &resp.sq_cmb_offset);
 			if (!qp->mmap_sq_cmb) {
 				rc = -ENOMEM;
-				goto err_mmap_sq;
+				goto err_qp_cmd;
 			}
 
 			resp.sq_cmb = qp->sq_cmb;
@@ -2387,7 +2388,7 @@ int ionic_create_qp(struct ib_qp *ibqp, struct ib_qp_init_attr *attr,
 						    &resp.rq_cmb_offset);
 			if (!qp->mmap_rq_cmb) {
 				rc = -ENOMEM;
-				goto err_mmap_rq;
+				goto err_qp_cmd;
 			}
 
 			resp.rq_cmb = qp->rq_cmb;
@@ -2395,7 +2396,7 @@ int ionic_create_qp(struct ib_qp *ibqp, struct ib_qp_init_attr *attr,
 
 		rc = ib_respond_udata(udata, resp);
 		if (rc)
-			goto err_resp;
+			goto err_qp_cmd;
 	}
 
 	ionic_pgtbl_unbuf(dev, &rq_buf);
@@ -2413,7 +2414,7 @@ int ionic_create_qp(struct ib_qp *ibqp, struct ib_qp_init_attr *attr,
 		else
 			rc = xa_err(entry);
 
-		goto err_resp;
+		goto err_qp_cmd;
 	}
 
 	if (qp->has_sq) {
@@ -2444,13 +2445,7 @@ int ionic_create_qp(struct ib_qp *ibqp, struct ib_qp_init_attr *attr,
 
 	return 0;
 
-err_resp:
-	if (udata && (qp->rq_cmb & IONIC_CMB_ENABLE))
-		rdma_user_mmap_entry_remove(qp->mmap_rq_cmb);
-err_mmap_rq:
-	if (udata && (qp->sq_cmb & IONIC_CMB_ENABLE))
-		rdma_user_mmap_entry_remove(qp->mmap_sq_cmb);
-err_mmap_sq:
+err_qp_cmd:
 	ionic_destroy_qp_cmd(dev, qp->qpid);
 err_cmd:
 	ionic_pgtbl_unbuf(dev, &rq_buf);

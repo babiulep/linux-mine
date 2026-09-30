@@ -126,6 +126,7 @@ obj-$(CONFIG_COMMON_CLK_XGENE)		+= clk-xgene.o
 # please keep this section sorted lexicographically by directory path name
 obj-y					+= actions/
 obj-y					+= analogbits/
+obj-y					+= anlogic/
 obj-y					+= aspeed/
 obj-$(CONFIG_COMMON_CLK_AT91)		+= at91/
 obj-$(CONFIG_ARCH_ARTPEC)		+= axis/
@@ -144,7 +145,7 @@ obj-y					+= mediatek/
 obj-$(CONFIG_ARCH_MESON)		+= meson/
 obj-y					+= microchip/
 ifeq ($(CONFIG_COMMON_CLK), y)
-obj-$(CONFIG_ARCH_MMP)			+= mmp/
+obj-$(CONFIG_COMMON_CLK_MMP)		+= mmp/
 endif
 obj-y					+= mstar/
 obj-y					+= mvebu/

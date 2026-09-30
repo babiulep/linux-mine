@@ -113,7 +113,7 @@ static void vt_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 	vmx_vcpu_load(vcpu, cpu);
 }
 
-static void vt_update_cpu_dirty_logging(struct kvm_vcpu *vcpu)
+static void vt_update_cpu_dirty_logging(struct kvm_vcpu *vcpu, bool enable)
 {
 	/*
 	 * Basic TDX does not support feature PML. KVM does not enable PML in
@@ -122,7 +122,7 @@ static void vt_update_cpu_dirty_logging(struct kvm_vcpu *vcpu)
 	if (WARN_ON_ONCE(is_td_vcpu(vcpu)))
 		return;
 
-	vmx_update_cpu_dirty_logging(vcpu);
+	vmx_update_cpu_dirty_logging(vcpu, enable);
 }
 
 static void vt_prepare_switch_to_guest(struct kvm_vcpu *vcpu)
@@ -539,12 +539,12 @@ static void vt_flush_tlb_current(struct kvm_vcpu *vcpu)
 	vmx_flush_tlb_current(vcpu);
 }
 
-static void vt_flush_tlb_gva(struct kvm_vcpu *vcpu, gva_t addr, bool *full)
+static void vt_flush_tlb_gva(struct kvm_vcpu *vcpu, gva_t addr)
 {
 	if (is_td_vcpu(vcpu))
 		return;
 
-	vmx_flush_tlb_gva(vcpu, addr, full);
+	vmx_flush_tlb_gva(vcpu, addr);
 }
 
 static void vt_flush_tlb_guest(struct kvm_vcpu *vcpu)
@@ -595,6 +595,18 @@ static void vt_set_nmi_mask(struct kvm_vcpu *vcpu, bool masked)
 		return;
 
 	vmx_set_nmi_mask(vcpu, masked);
+}
+
+static void vt_clear_hlt(struct kvm_vcpu *vcpu)
+{
+	/*
+	 * TDX doesn't support disabling HLT-exiting, and KVM can't access a
+	 * TD's VMCS, so there is never any hardware halted state to clear.
+	 */
+	if (is_td_vcpu(vcpu))
+		return;
+
+	vmx_clear_hlt(vcpu);
 }
 
 static void vt_enable_nmi_window(struct kvm_vcpu *vcpu)
@@ -1064,6 +1076,7 @@ struct kvm_x86_ops vt_x86_ops __initdata = {
 	.nmi_allowed = vt_op(nmi_allowed),
 	.get_nmi_mask = vt_op(get_nmi_mask),
 	.set_nmi_mask = vt_op(set_nmi_mask),
+	.clear_hlt = vt_op(clear_hlt),
 	.enable_nmi_window = vt_op(enable_nmi_window),
 	.enable_irq_window = vt_op(enable_irq_window),
 	.update_cr8_intercept = vt_op(update_cr8_intercept),

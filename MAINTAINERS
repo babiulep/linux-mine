@@ -2051,6 +2051,15 @@ M:	Jiaxun Yang <jiaxun.yang@flygoat.com>
 S:	Supported
 F:	drivers/rtc/rtc-goldfish.c
 
+ANLOGIC DR1V90 CRU DRIVER
+M:	Junhui Liu <junhui.liu@pigmoral.tech>
+S:	Maintained
+F:	Documentation/devicetree/bindings/clock/anlogic,dr1v90-cru.yaml
+F:	drivers/clk/anlogic/cru?dr1*
+F:	drivers/reset/reset-dr1v90.c
+F:	include/dt-bindings/clock/anlogic,dr1v90-cru.h
+F:	include/dt-bindings/reset/anlogic,dr1v90-cru.h
+
 AOA (Apple Onboard Audio) ALSA DRIVER
 M:	Johannes Berg <johannes@sipsolutions.net>
 L:	linuxppc-dev@lists.ozlabs.org
@@ -4393,6 +4402,13 @@ S:	Maintained
 F:	drivers/net/ieee802154/at86rf230.h
 F:	drivers/net/ieee802154/atusb.c
 F:	drivers/net/ieee802154/atusb.h
+
+AUDIENT EVO MIXER DRIVER
+M:	Christian Ruppert <arc@gmx.li>
+L:	linux-sound@vger.kernel.org
+S:	Maintained
+F:	sound/usb/mixer_evo.c
+F:	sound/usb/mixer_evo.h
 
 AUDIT SUBSYSTEM
 M:	Paul Moore <paul@paul-moore.com>
@@ -9602,6 +9618,11 @@ L:	linux-edac@vger.kernel.org
 S:	Orphan
 F:	drivers/edac/i3000_edac.c
 
+EDAC-I3200
+L:	linux-edac@vger.kernel.org
+S:	Orphan
+F:	drivers/edac/i3200_edac.c
+
 EDAC-I5000
 L:	linux-edac@vger.kernel.org
 S:	Maintained
@@ -14355,6 +14376,7 @@ F:	scripts/basic/
 F:	scripts/clang-tools/
 F:	scripts/container
 F:	scripts/dummy-tools/
+F:	scripts/gen_init*
 F:	scripts/include/
 F:	scripts/install.sh
 F:	scripts/mk*
@@ -21743,7 +21765,7 @@ F:	tools/lib/perf/
 F:	tools/perf/
 
 PERFORMANCE EVENTS TOOLING ARM64
-R:	John Garry <john.g.garry@oracle.com>
+R:	John Garry <john.garry@linux.dev>
 R:	Will Deacon <will@kernel.org>
 R:	James Clark <james.clark@linaro.org>
 R:	Mike Leach <mike.leach@arm.com>
@@ -23972,11 +23994,12 @@ N:	spacemit
 K:	spacemit
 
 RISC-V TENSTORRENT SoC SUPPORT
-M:	Drew Fustini <dfustini@oss.tenstorrent.com>
+M:	Drew Fustini <fustini@kernel.org>
 M:	Joel Stanley <jms@oss.tenstorrent.com>
+M:	Anirudh Srinivasan <asrinivasan@oss.tenstorrent.com>
 L:	linux-riscv@lists.infradead.org
 S:	Maintained
-T:	git https://github.com/tenstorrent/linux.git
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/tenstorrent/linux.git
 F:	Documentation/devicetree/bindings/clock/tenstorrent,atlantis-prcm-rcpu.yaml
 F:	Documentation/devicetree/bindings/riscv/tenstorrent.yaml
 F:	arch/riscv/boot/dts/tenstorrent/
@@ -29856,6 +29879,13 @@ WISTRON LAPTOP BUTTON DRIVER
 M:	Miloslav Trmac <mitr@volny.cz>
 S:	Maintained
 F:	drivers/input/misc/wistron_btns.c
+
+WIZNET W5100 ETHERNET DRIVER
+M:	Arthur Crepin Leblond <arthur@marmottus.net>
+L:	netdev@vger.kernel.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/net/wiznet,w5100.yaml
+F:	drivers/net/ethernet/wiznet/
 
 WMI BINARY MOF DRIVER
 M:	Armin Wolf <W_Armin@gmx.de>

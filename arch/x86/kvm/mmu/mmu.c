@@ -868,11 +868,12 @@ void untrack_possible_nx_huge_page(struct kvm *kvm, struct kvm_mmu_page *sp,
 	list_del_init(&sp->possible_nx_huge_page_link);
 }
 
-static void unaccount_nx_huge_page(struct kvm *kvm, struct kvm_mmu_page *sp)
+static void unaccount_nx_huge_page(struct kvm *kvm, struct kvm_mmu_page *sp,
+				    enum kvm_mmu_type mmu_type)
 {
 	sp->nx_huge_page_disallowed = false;
 
-	untrack_possible_nx_huge_page(kvm, sp, KVM_SHADOW_MMU);
+	untrack_possible_nx_huge_page(kvm, sp, mmu_type);
 }
 
 static struct kvm_memory_slot *gfn_to_memslot_dirty_bitmap(struct kvm_vcpu *vcpu,
@@ -2839,7 +2840,7 @@ static bool __kvm_mmu_prepare_zap_page(struct kvm *kvm,
 	}
 
 	if (sp->nx_huge_page_disallowed)
-		unaccount_nx_huge_page(kvm, sp);
+		unaccount_nx_huge_page(kvm, sp, KVM_SHADOW_MMU);
 
 	sp->role.invalid = 1;
 
@@ -3587,8 +3588,8 @@ static int direct_map(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
 					     fault->req_level >= it.level);
 	}
 
-	if (WARN_ON_ONCE(it.level != fault->goal_level))
-		return -EFAULT;
+	if (KVM_BUG_ON(it.level != fault->goal_level, vcpu->kvm))
+		return -EIO;
 
 	ret = mmu_set_spte(vcpu, fault->slot, it.sptep, access,
 			   base_gfn, fault->pfn, fault);
@@ -3626,6 +3627,7 @@ static int kvm_handle_error_pfn(struct kvm_vcpu *vcpu, struct kvm_page_fault *fa
 		return RET_PF_RETRY;
 	}
 
+	kvm_mmu_prepare_memory_fault_exit(vcpu, fault);
 	return -EFAULT;
 }
 
@@ -4951,8 +4953,8 @@ int kvm_handle_page_fault(struct kvm_vcpu *vcpu, u64 error_code,
 
 #ifndef CONFIG_X86_64
 	/* A 64-bit CR2 should be impossible on 32-bit KVM. */
-	if (WARN_ON_ONCE(fault_address >> 32))
-		return -EFAULT;
+	if (KVM_BUG_ON(fault_address >> 32, vcpu->kvm))
+		return -EIO;
 #endif
 	/*
 	 * Legacy #PF exception only have a 32-bit error code.  Simply drop the
@@ -6672,8 +6674,8 @@ int noinline kvm_mmu_page_fault(struct kvm_vcpu *vcpu, gpa_t cr2_or_gpa, u64 err
 
 	r = RET_PF_INVALID;
 	if (unlikely(error_code & PFERR_RSVD_MASK)) {
-		if (WARN_ON_ONCE(error_code & PFERR_PRIVATE_ACCESS))
-			return -EFAULT;
+		if (KVM_BUG_ON(error_code & PFERR_PRIVATE_ACCESS, vcpu->kvm))
+			return -EIO;
 
 		r = handle_mmio_page_fault(vcpu, cr2_or_gpa, direct);
 		if (r == RET_PF_EMULATE)
@@ -6715,6 +6717,9 @@ int noinline kvm_mmu_page_fault(struct kvm_vcpu *vcpu, gpa_t cr2_or_gpa, u64 err
 		return r;
 
 emulate:
+	if (error_code & PFERR_WRITE_MASK)
+		emulation_type |= EMULTYPE_PF_WRITE;
+
 	return x86_emulate_instruction(vcpu, cr2_or_gpa, emulation_type, insn,
 				       insn_len);
 }
@@ -6787,7 +6792,7 @@ void kvm_mmu_invalidate_addr(struct kvm_vcpu *vcpu, struct kvm_pagewalk *w,
 		if (is_noncanonical_invlpg_address(addr, vcpu))
 			return;
 
-		kvm_x86_call(flush_tlb_gva)(vcpu, addr, NULL);
+		kvm_x86_call(flush_tlb_gva)(vcpu, addr);
 
 		if (tdp_enabled)
 			return;
@@ -8070,7 +8075,7 @@ static void kvm_recover_nx_huge_pages(struct kvm *kvm,
 		WARN_ON_ONCE(!sp->nx_huge_page_disallowed);
 		WARN_ON_ONCE(!sp->role.direct);
 
-		unaccount_nx_huge_page(kvm, sp);
+		unaccount_nx_huge_page(kvm, sp, mmu_type);
 
 		if (is_tdp_mmu)
 			spin_unlock(tdp_mmu_pages_lock);
