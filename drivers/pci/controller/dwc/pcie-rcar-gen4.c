@@ -133,17 +133,17 @@ static int rcar_gen4_pcie_speed_change(struct dw_pcie *dw)
 	u32 val;
 	int i;
 
-	val = dw_pcie_readl_dbi(dw, PCIE_LINK_WIDTH_SPEED_CONTROL);
-	val &= ~PORT_LOGIC_SPEED_CHANGE;
-	dw_pcie_writel_dbi(dw, PCIE_LINK_WIDTH_SPEED_CONTROL, val);
+	val = dw_pcie_readl_dbi(dw, LINK_WIDTH_SPEED_CTRL);
+	val &= ~SPEED_CHANGE;
+	dw_pcie_writel_dbi(dw, LINK_WIDTH_SPEED_CTRL, val);
 
-	val = dw_pcie_readl_dbi(dw, PCIE_LINK_WIDTH_SPEED_CONTROL);
-	val |= PORT_LOGIC_SPEED_CHANGE;
-	dw_pcie_writel_dbi(dw, PCIE_LINK_WIDTH_SPEED_CONTROL, val);
+	val = dw_pcie_readl_dbi(dw, LINK_WIDTH_SPEED_CTRL);
+	val |= SPEED_CHANGE;
+	dw_pcie_writel_dbi(dw, LINK_WIDTH_SPEED_CTRL, val);
 
 	for (i = 0; i < RCAR_NUM_SPEED_CHANGE_RETRIES; i++) {
-		val = dw_pcie_readl_dbi(dw, PCIE_LINK_WIDTH_SPEED_CONTROL);
-		if (!(val & PORT_LOGIC_SPEED_CHANGE))
+		val = dw_pcie_readl_dbi(dw, LINK_WIDTH_SPEED_CTRL);
+		if (!(val & SPEED_CHANGE))
 			return 0;
 		usleep_range(10000, 11000);
 	}
@@ -304,11 +304,11 @@ static int rcar_gen4_v4h_v4m_pcie_init(struct rcar_gen4_pcie *rcar)
 		return ret;
 
 	/* R-Car V4H and V4M specific additional initialization. */
-	val = dw_pcie_readl_dbi(dw, PCIE_PORT_LANE_SKEW);
+	val = dw_pcie_readl_dbi(dw, PORT_LANE_SKEW);
 	val &= ~PORT_LANE_SKEW_INSERT_MASK;
 	if (dw->num_lanes < 4)
 		val |= BIT(6);
-	dw_pcie_writel_dbi(dw, PCIE_PORT_LANE_SKEW, val);
+	dw_pcie_writel_dbi(dw, PORT_LANE_SKEW, val);
 
 	val = readl(rcar->base + PCIEPWRMNGCTRL);
 	val |= APP_CLK_REQ_N | APP_CLK_PM_EN;
@@ -335,11 +335,11 @@ static int rcar_gen5_pcie_init(struct rcar_gen4_pcie *rcar)
 
 	dw_pcie_dbi_ro_wr_en(dw);
 
-	val = dw_pcie_readl_dbi(dw, PCIE_PORT_LANE_SKEW);
+	val = dw_pcie_readl_dbi(dw, PORT_LANE_SKEW);
 	val &= ~PORT_LANE_SKEW_INSERT_MASK;
 	if (dw->num_lanes < 8)
 		val |= BIT(6);
-	dw_pcie_writel_dbi(dw, PCIE_PORT_LANE_SKEW, val);
+	dw_pcie_writel_dbi(dw, PORT_LANE_SKEW, val);
 
 	val = dw_pcie_readl_dbi(dw, MSICAP0);
 	FIELD_MODIFY(MSICAP0_MMESCAP_MASK, &val, 4);
@@ -1016,9 +1016,9 @@ static int rcar_gen4_pcie_ltssm_control(struct rcar_gen4_pcie *rcar, bool enable
 		return 0;
 	}
 
-	val = dw_pcie_readl_dbi(dw, PCIE_PORT_FORCE);
-	val |= PORT_FORCE_DO_DESKEW_FOR_SRIS;
-	dw_pcie_writel_dbi(dw, PCIE_PORT_FORCE, val);
+	val = dw_pcie_readl_dbi(dw, PORT_FORCE_LINK);
+	val |= PORT_FORCE_LINK_DDFS;
+	dw_pcie_writel_dbi(dw, PORT_FORCE_LINK, val);
 
 	val = readl(rcar->base + PCIEMSR0);
 	val |= APP_SRIS_MODE;

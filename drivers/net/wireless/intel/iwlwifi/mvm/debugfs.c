@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
 /*
- * Copyright (C) 2012-2014, 2018-2023, 2025 Intel Corporation
+ * Copyright (C) 2012-2014, 2018-2023, 2025-2026 Intel Corporation
  * Copyright (C) 2013-2015 Intel Mobile Communications GmbH
  * Copyright (C) 2016-2017 Intel Deutschland GmbH
  */
@@ -13,7 +13,7 @@
 
 #include "mvm.h"
 #include "sta.h"
-#include "iwl-io.h"
+#include "iwl-trans.h"
 #include "debugfs.h"
 #include "iwl-modparams.h"
 #include "iwl-drv.h"
@@ -1548,7 +1548,7 @@ iwl_dbgfs_prph_reg_read(struct file *file,
 
 	pos += scnprintf(buf + pos, bufsz - pos, "Reg 0x%x: (0x%x)\n",
 		mvm->dbgfs_prph_reg_addr,
-		iwl_read_prph(mvm->trans, mvm->dbgfs_prph_reg_addr));
+		iwl_trans_read_prph(mvm->trans, mvm->dbgfs_prph_reg_addr));
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, pos);
 }
@@ -1569,7 +1569,7 @@ iwl_dbgfs_prph_reg_write(struct iwl_mvm *mvm, char *buf,
 	if (args != 2)
 		return -EINVAL;
 
-	iwl_write_prph(mvm->trans, mvm->dbgfs_prph_reg_addr, value);
+	iwl_trans_write_prph(mvm->trans, mvm->dbgfs_prph_reg_addr, value);
 
 out:
 	return count;

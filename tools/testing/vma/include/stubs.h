@@ -267,7 +267,15 @@ static inline void mapping_rmap_tree_remove(struct vm_area_struct *vma,
 {
 }
 
-static inline void mapping_rmap_tree_update_inplace(struct vm_area_struct *vma)
+static inline void mapping_rmap_tree_pre_update(struct vm_area_struct *vma,
+						struct address_space *mapping,
+						bool pgoff_unchanged)
+{
+}
+
+static inline void mapping_rmap_tree_post_update(struct vm_area_struct *vma,
+						 struct address_space *mapping,
+						 bool pgoff_unchanged)
 {
 }
 
@@ -285,7 +293,13 @@ static inline void anon_rmap_tree_remove(struct anon_vma_chain *avc,
 {
 }
 
-static inline void anon_rmap_tree_update_inplace(struct anon_vma_chain *avc)
+static inline void anon_rmap_tree_pre_update_vma(struct vm_area_struct *vma,
+						 bool anon_pgoff_unchanged)
+{
+}
+
+static inline void anon_rmap_tree_post_update_vma(struct vm_area_struct *vma,
+						  bool anon_pgoff_unchanged)
 {
 }
 

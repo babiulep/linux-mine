@@ -361,6 +361,12 @@ void synchronize_srcu_atomic(struct srcu_struct *ssp)
 
 	srcu_lock_sync(&ssp->dep_map);
 
+	RCU_LOCKDEP_WARN(lockdep_is_held(ssp),
+			 "Illegal synchronize_srcu_atomic() in same-type SRCU read-side critical section");
+
+	if (rcu_scheduler_active == RCU_SCHEDULER_INACTIVE)
+		return;
+
 	if (IS_ENABLED(CONFIG_PREEMPTION))
 		synchronize_rcu(); // Needed for RCU Tasks Trace to imply RCU grace period.
 				   // And in Tiny RCU, it is near zero cost and doesn't block.
@@ -395,7 +401,7 @@ void synchronize_srcu_atomic(struct srcu_struct *ssp)
 		cond_resched_tasks_rcu_qs();
 		preempt_disable();
 	}
-	ssp->srcu_atomic_gp_flag = 1;
+	ssp->srcu_atomic_gp_flag = 1;  // Acquire SRCU grace-period "lock".
 	preempt_enable();
 
 	// We get here if a reader has been lazily preempted.
@@ -418,6 +424,7 @@ void synchronize_srcu_atomic(struct srcu_struct *ssp)
 	// Finally, flip the index again for poll_state_synchronize_srcu().
 	WRITE_ONCE(ssp->srcu_idx, ssp->srcu_idx + 1);
 	WARN_ON_ONCE(!poll_state_synchronize_srcu(ssp, srcu_state));
+	ssp->srcu_atomic_gp_flag = 0; // Release SRCU grace-period "lock".
 }
 EXPORT_SYMBOL_GPL(synchronize_srcu_atomic);
 

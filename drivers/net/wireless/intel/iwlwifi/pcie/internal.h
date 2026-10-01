@@ -18,11 +18,21 @@
 #include "iwl-fh.h"
 #include "iwl-csr.h"
 #include "iwl-trans.h"
+#include "iwl-devtrace.h"
 #include "iwl-debug.h"
-#include "iwl-io.h"
 #include "iwl-op-mode.h"
 #include "iwl-drv.h"
 #include "iwl-context-info.h"
+
+/* transport-specific register accessors (bus implementation) */
+void iwl_trans_pcie_write8(struct iwl_trans *trans, u32 ofs, u8 val);
+void iwl_trans_pcie_write32(struct iwl_trans *trans, u32 ofs, u32 val);
+u32 iwl_trans_pcie_read32(struct iwl_trans *trans, u32 ofs);
+u32 iwl_trans_pcie_read_prph(struct iwl_trans *trans, u32 reg);
+void iwl_pcie_write_prph_no_grab(struct iwl_trans *trans, u32 addr, u32 val);
+
+/* bus-specific transport operations table */
+extern const struct iwl_trans_ops iwl_trans_pcie_ops;
 
 /*
  * RX related structures and functions
@@ -593,7 +603,7 @@ static inline void iwl_pcie_clear_irq(struct iwl_trans *trans, int queue)
 	 * write 1 clear (W1C) register, meaning that it's being clear
 	 * by writing 1 to the bit.
 	 */
-	iwl_write32(trans, CSR_MSIX_AUTOMASK_ST_AD, BIT(queue));
+	iwl_trans_pcie_write32(trans, CSR_MSIX_AUTOMASK_ST_AD, BIT(queue));
 }
 
 static inline struct iwl_trans *
@@ -889,18 +899,18 @@ static inline void _iwl_disable_interrupts(struct iwl_trans *trans)
 	clear_bit(STATUS_INT_ENABLED, &trans->status);
 	if (!trans_pcie->msix_enabled) {
 		/* disable interrupts from uCode/NIC to host */
-		iwl_write32(trans, CSR_INT_MASK, 0x00000000);
+		iwl_trans_pcie_write32(trans, CSR_INT_MASK, 0x00000000);
 
 		/* acknowledge/clear/reset any interrupts still pending
 		 * from uCode or flow handler (Rx/Tx DMA) */
-		iwl_write32(trans, CSR_INT, 0xffffffff);
-		iwl_write32(trans, CSR_FH_INT_STATUS, 0xffffffff);
+		iwl_trans_pcie_write32(trans, CSR_INT, 0xffffffff);
+		iwl_trans_pcie_write32(trans, CSR_FH_INT_STATUS, 0xffffffff);
 	} else {
 		/* disable all the interrupt we might use */
-		iwl_write32(trans, CSR_MSIX_FH_INT_MASK_AD,
-			    trans_pcie->fh_init_mask);
-		iwl_write32(trans, CSR_MSIX_HW_INT_MASK_AD,
-			    trans_pcie->hw_init_mask);
+		iwl_trans_pcie_write32(trans, CSR_MSIX_FH_INT_MASK_AD,
+				       trans_pcie->fh_init_mask);
+		iwl_trans_pcie_write32(trans, CSR_MSIX_HW_INT_MASK_AD,
+				       trans_pcie->hw_init_mask);
 		trans_pcie->fh_mask = 0;
 		trans_pcie->hw_mask = 0;
 	}
@@ -958,7 +968,7 @@ static inline void _iwl_enable_interrupts(struct iwl_trans *trans)
 	set_bit(STATUS_INT_ENABLED, &trans->status);
 	if (!trans_pcie->msix_enabled) {
 		trans_pcie->inta_mask = CSR_INI_SET_MASK;
-		iwl_write32(trans, CSR_INT_MASK, trans_pcie->inta_mask);
+		iwl_trans_pcie_write32(trans, CSR_INT_MASK, trans_pcie->inta_mask);
 	} else {
 		/*
 		 * fh/hw_mask keeps all the unmasked causes.
@@ -966,10 +976,10 @@ static inline void _iwl_enable_interrupts(struct iwl_trans *trans)
 		 */
 		trans_pcie->hw_mask = trans_pcie->hw_init_mask;
 		trans_pcie->fh_mask = trans_pcie->fh_init_mask;
-		iwl_write32(trans, CSR_MSIX_FH_INT_MASK_AD,
-			    ~trans_pcie->fh_mask);
-		iwl_write32(trans, CSR_MSIX_HW_INT_MASK_AD,
-			    ~trans_pcie->hw_mask);
+		iwl_trans_pcie_write32(trans, CSR_MSIX_FH_INT_MASK_AD,
+				       ~trans_pcie->fh_mask);
+		iwl_trans_pcie_write32(trans, CSR_MSIX_HW_INT_MASK_AD,
+				       ~trans_pcie->hw_mask);
 	}
 }
 
@@ -985,7 +995,7 @@ static inline void iwl_enable_hw_int_msk_msix(struct iwl_trans *trans, u32 msk)
 {
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
 
-	iwl_write32(trans, CSR_MSIX_HW_INT_MASK_AD, ~msk);
+	iwl_trans_pcie_write32(trans, CSR_MSIX_HW_INT_MASK_AD, ~msk);
 	trans_pcie->hw_mask = msk;
 }
 
@@ -993,7 +1003,7 @@ static inline void iwl_enable_fh_int_msk_msix(struct iwl_trans *trans, u32 msk)
 {
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
 
-	iwl_write32(trans, CSR_MSIX_FH_INT_MASK_AD, ~msk);
+	iwl_trans_pcie_write32(trans, CSR_MSIX_FH_INT_MASK_AD, ~msk);
 	trans_pcie->fh_mask = msk;
 }
 
@@ -1004,10 +1014,10 @@ static inline void iwl_enable_fw_load_int(struct iwl_trans *trans)
 	IWL_DEBUG_ISR(trans, "Enabling FW load interrupt\n");
 	if (!trans_pcie->msix_enabled) {
 		trans_pcie->inta_mask = CSR_INT_BIT_FH_TX;
-		iwl_write32(trans, CSR_INT_MASK, trans_pcie->inta_mask);
+		iwl_trans_pcie_write32(trans, CSR_INT_MASK, trans_pcie->inta_mask);
 	} else {
-		iwl_write32(trans, CSR_MSIX_HW_INT_MASK_AD,
-			    trans_pcie->hw_init_mask);
+		iwl_trans_pcie_write32(trans, CSR_MSIX_HW_INT_MASK_AD,
+				       trans_pcie->hw_init_mask);
 		iwl_enable_fh_int_msk_msix(trans,
 					   MSIX_FH_INT_CAUSES_D2S_CH0_NUM);
 	}
@@ -1034,7 +1044,7 @@ static inline void iwl_enable_fw_load_int_ctx_info(struct iwl_trans *trans,
 		else
 			trans_pcie->inta_mask =  CSR_INT_BIT_ALIVE |
 						 CSR_INT_BIT_FH_RX;
-		iwl_write32(trans, CSR_INT_MASK, trans_pcie->inta_mask);
+		iwl_trans_pcie_write32(trans, CSR_INT_MASK, trans_pcie->inta_mask);
 	} else {
 		u32 val = top_reset ? MSIX_HW_INT_CAUSES_REG_RESET_DONE
 				    : MSIX_HW_INT_CAUSES_REG_ALIVE;
@@ -1081,10 +1091,10 @@ static inline void iwl_enable_rfkill_int(struct iwl_trans *trans)
 	IWL_DEBUG_ISR(trans, "Enabling rfkill interrupt\n");
 	if (!trans_pcie->msix_enabled) {
 		trans_pcie->inta_mask = CSR_INT_BIT_RF_KILL;
-		iwl_write32(trans, CSR_INT_MASK, trans_pcie->inta_mask);
+		iwl_trans_pcie_write32(trans, CSR_INT_MASK, trans_pcie->inta_mask);
 	} else {
-		iwl_write32(trans, CSR_MSIX_FH_INT_MASK_AD,
-			    trans_pcie->fh_init_mask);
+		iwl_trans_pcie_write32(trans, CSR_MSIX_FH_INT_MASK_AD,
+				       trans_pcie->fh_init_mask);
 		trans_pcie->fh_mask = 0;
 		iwl_enable_hw_int_msk_msix(trans,
 					   MSIX_HW_INT_CAUSES_REG_RF_KILL);
@@ -1096,8 +1106,8 @@ static inline void iwl_enable_rfkill_int(struct iwl_trans *trans)
 		 * when we power down the device we need set the bit to allow it
 		 * to wake up the PCI-E bus for RF-kill interrupts.
 		 */
-		iwl_set_bit(trans, CSR_GP_CNTRL,
-			    CSR_GP_CNTRL_REG_FLAG_RFKILL_WAKE_L1A_EN);
+		iwl_trans_set_bit(trans, CSR_GP_CNTRL,
+				  CSR_GP_CNTRL_REG_FLAG_RFKILL_WAKE_L1A_EN);
 	}
 }
 
@@ -1112,7 +1122,7 @@ static inline bool iwl_is_rfkill_set(struct iwl_trans *trans)
 	if (trans_pcie->debug_rfkill == 1)
 		return true;
 
-	return !(iwl_read32(trans, CSR_GP_CNTRL) &
+	return !(iwl_trans_pcie_read32(trans, CSR_GP_CNTRL) &
 		CSR_GP_CNTRL_REG_FLAG_HW_RF_KILL_SW);
 }
 
@@ -1136,16 +1146,12 @@ void iwl_trans_pcie_op_mode_enter(struct iwl_trans *trans);
 int _iwl_trans_pcie_start_hw(struct iwl_trans *trans);
 int iwl_trans_pcie_start_hw(struct iwl_trans *trans);
 void iwl_trans_pcie_op_mode_leave(struct iwl_trans *trans);
-void iwl_trans_pcie_write8(struct iwl_trans *trans, u32 ofs, u8 val);
-void iwl_trans_pcie_write32(struct iwl_trans *trans, u32 ofs, u32 val);
-u32 iwl_trans_pcie_read32(struct iwl_trans *trans, u32 ofs);
-u32 iwl_trans_pcie_read_prph(struct iwl_trans *trans, u32 reg);
-void iwl_trans_pcie_write_prph(struct iwl_trans *trans, u32 addr, u32 val);
 int iwl_trans_pcie_read_mem(struct iwl_trans *trans, u32 addr,
 			    void *buf, int dwords);
 int iwl_trans_pcie_read_mem_no_grab(struct iwl_trans *trans, u32 addr,
 				    void *buf, u32 dwords);
 int iwl_trans_pcie_sw_reset(struct iwl_trans *trans, bool retake_ownership);
+void iwl_trans_pcie_fw_reset_handshake(struct iwl_trans *trans);
 struct iwl_trans_dump_data *
 iwl_trans_pcie_dump_data(struct iwl_trans *trans, u32 dump_mask,
 			 const struct iwl_dump_sanitize_ops *sanitize_ops,

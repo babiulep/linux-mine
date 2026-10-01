@@ -16,7 +16,7 @@
 #include "iwl-modparams.h"
 #include "iwl-nvm-parse.h"
 #include "iwl-prph.h"
-#include "iwl-io.h"
+#include "iwl-trans.h"
 #include "iwl-csr.h"
 #include "fw/api/nvm-reg.h"
 #include "fw/api/commands.h"
@@ -106,8 +106,6 @@ static const u16 iwl_unii9_nvm_channels[] = {
 #define IWL_NVM_NUM_CHANNELS_EXT	51
 #define IWL_NVM_NUM_CHANNELS_UHB	110
 #define IWL_NVM_NUM_CHANNELS_UNII9	ARRAY_SIZE(iwl_unii9_nvm_channels)
-#define NUM_2GHZ_CHANNELS		14
-#define NUM_5GHZ_CHANNELS		37
 #define FIRST_2GHZ_HT_MINUS		5
 #define LAST_2GHZ_HT_PLUS		9
 #define N_HW_ADDR_MASK			0xF
@@ -280,7 +278,7 @@ static inline void iwl_nvm_print_channel_flags(struct device *dev, u32 level,
 		      CHECK_AND_PRINT_I(40MHZ),
 		      CHECK_AND_PRINT_I(80MHZ),
 		      CHECK_AND_PRINT_I(160MHZ),
-		      CHECK_AND_PRINT_I(DC_HIGH),
+		      CHECK_AND_PRINT_I(320MHZ),
 		      CHECK_AND_PRINT_I(VLP),
 		      CHECK_AND_PRINT_I(AFC));
 #undef CHECK_AND_PRINT_I
@@ -1312,10 +1310,10 @@ static void iwl_flip_hw_address(__le32 mac_addr0, __le32 mac_addr1, u8 *dest)
 static void iwl_set_hw_address_from_csr(struct iwl_trans *trans,
 					struct iwl_nvm_data *data)
 {
-	__le32 mac_addr0 = cpu_to_le32(iwl_read32(trans,
-						  CSR_MAC_ADDR0_STRAP(trans)));
-	__le32 mac_addr1 = cpu_to_le32(iwl_read32(trans,
-						  CSR_MAC_ADDR1_STRAP(trans)));
+	__le32 mac_addr0 = cpu_to_le32(iwl_trans_read32(trans,
+							CSR_MAC_ADDR0_STRAP(trans)));
+	__le32 mac_addr1 = cpu_to_le32(iwl_trans_read32(trans,
+							CSR_MAC_ADDR1_STRAP(trans)));
 
 	iwl_flip_hw_address(mac_addr0, mac_addr1, data->hw_addr);
 	/*
@@ -1325,8 +1323,8 @@ static void iwl_set_hw_address_from_csr(struct iwl_trans *trans,
 	if (is_valid_ether_addr(data->hw_addr))
 		return;
 
-	mac_addr0 = cpu_to_le32(iwl_read32(trans, CSR_MAC_ADDR0_OTP(trans)));
-	mac_addr1 = cpu_to_le32(iwl_read32(trans, CSR_MAC_ADDR1_OTP(trans)));
+	mac_addr0 = cpu_to_le32(iwl_trans_read32(trans, CSR_MAC_ADDR0_OTP(trans)));
+	mac_addr1 = cpu_to_le32(iwl_trans_read32(trans, CSR_MAC_ADDR1_OTP(trans)));
 
 	iwl_flip_hw_address(mac_addr0, mac_addr1, data->hw_addr);
 }
@@ -1367,10 +1365,10 @@ static void iwl_set_hw_address_family_8000(struct iwl_trans *trans,
 
 	if (nvm_hw) {
 		/* read the mac address from WFMP registers */
-		__le32 mac_addr0 = cpu_to_le32(iwl_trans_read_prph(trans,
-						WFMP_MAC_ADDR_0));
-		__le32 mac_addr1 = cpu_to_le32(iwl_trans_read_prph(trans,
-						WFMP_MAC_ADDR_1));
+		__le32 mac_addr0 = cpu_to_le32(iwl_trans_read_prph_no_grab(trans,
+									   WFMP_MAC_ADDR_0));
+		__le32 mac_addr1 = cpu_to_le32(iwl_trans_read_prph_no_grab(trans,
+									   WFMP_MAC_ADDR_1));
 
 		iwl_flip_hw_address(mac_addr0, mac_addr1, data->hw_addr);
 
@@ -1410,7 +1408,7 @@ static int iwl_set_hw_address(struct iwl_trans *trans,
 
 	if (!trans->csme_own)
 		IWL_INFO(trans, "base HW address: %pM, OTP minor version: 0x%x\n",
-			 data->hw_addr, iwl_read_prph(trans, REG_OTP_MINOR));
+			 data->hw_addr, iwl_trans_read_prph(trans, REG_OTP_MINOR));
 
 	return 0;
 }
@@ -1631,6 +1629,8 @@ u32 iwl_nvm_get_regdom_bw_flags(const u16 *nvm_chan,
 		flags |= NL80211_RRF_NO_80MHZ;
 	if (!(nvm_flags & NVM_CHANNEL_160MHZ))
 		flags |= NL80211_RRF_NO_160MHZ;
+	if (!(nvm_flags & NVM_CHANNEL_320MHZ))
+		flags |= NL80211_RRF_NO_320MHZ;
 
 	if (!(nvm_flags & NVM_CHANNEL_ACTIVE))
 		flags |= NL80211_RRF_NO_IR;

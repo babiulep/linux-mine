@@ -240,10 +240,11 @@
 			bias-disable;
 			drive-push-pull;
 			slew-rate = <3>;
+			st,io-sync = "data on both edges";
 		};
 		pins2 {
 			pinmux = <STM32_PINMUX('F', 8, AF10)>, /* ETH_RGMII_CLK125 */
-				 <STM32_PINMUX('F', 7, AF10)>; /* ETH_MDC */
+				 <STM32_PINMUX('F', 7, AF10)>; /* ETH_RGMII_GTX_CLK */
 			bias-disable;
 			drive-push-pull;
 			slew-rate = <3>;
@@ -255,6 +256,7 @@
 				 <STM32_PINMUX('C', 11, AF10)>, /* ETH_RGMII_RXD3 */
 				 <STM32_PINMUX('C', 3, AF10)>; /* ETH_RGMII_RX_CTL */
 			bias-disable;
+			st,io-sync = "data on both edges";
 		};
 		pins4 {
 			pinmux = <STM32_PINMUX('F', 6, AF10)>; /* ETH_RGMII_RX_CLK */
@@ -674,26 +676,6 @@
 	};
 
 	/omit-if-no-ref/
-	sdmmc1_b4_pins_b: sdmmc1-b4-1 {
-		pins1 {
-			pinmux = <STM32_PINMUX('E', 4, AF10)>, /* SDMMC1_D0 */
-				 <STM32_PINMUX('E', 5, AF10)>, /* SDMMC1_D1 */
-				 <STM32_PINMUX('E', 0, AF10)>, /* SDMMC1_D2 */
-				 <STM32_PINMUX('E', 1, AF10)>, /* SDMMC1_D3 */
-				 <STM32_PINMUX('E', 2, AF10)>; /* SDMMC1_CMD */
-			slew-rate = <1>;
-			drive-push-pull;
-			bias-disable;
-		};
-		pins2 {
-			pinmux = <STM32_PINMUX('E', 3, AF10)>; /* SDMMC1_CK */
-			slew-rate = <2>;
-			drive-push-pull;
-			bias-disable;
-		};
-	};
-
-	/omit-if-no-ref/
 	sdmmc1_b4_od_pins_a: sdmmc1-b4-od-0 {
 		pins1 {
 			pinmux = <STM32_PINMUX('E', 4, AF10)>, /* SDMMC1_D0 */
@@ -713,31 +695,6 @@
 		pins3 {
 			pinmux = <STM32_PINMUX('E', 2, AF10)>; /* SDMMC1_CMD */
 			slew-rate = <2>;
-			drive-open-drain;
-			bias-disable;
-		};
-	};
-
-	/omit-if-no-ref/
-	sdmmc1_b4_od_pins_b: sdmmc1-b4-od-1 {
-		pins1 {
-			pinmux = <STM32_PINMUX('E', 4, AF10)>, /* SDMMC1_D0 */
-				 <STM32_PINMUX('E', 5, AF10)>, /* SDMMC1_D1 */
-				 <STM32_PINMUX('E', 0, AF10)>, /* SDMMC1_D2 */
-				 <STM32_PINMUX('E', 1, AF10)>; /* SDMMC1_D3 */
-			slew-rate = <1>;
-			drive-push-pull;
-			bias-disable;
-		};
-		pins2 {
-			pinmux = <STM32_PINMUX('E', 3, AF10)>; /* SDMMC1_CK */
-			slew-rate = <2>;
-			drive-push-pull;
-			bias-disable;
-		};
-		pins3 {
-			pinmux = <STM32_PINMUX('E', 2, AF10)>; /* SDMMC1_CMD */
-			slew-rate = <1>;
 			drive-open-drain;
 			bias-disable;
 		};

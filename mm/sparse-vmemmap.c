@@ -170,10 +170,14 @@ static void * __meminit vmemmap_alloc_block_zero(unsigned long size, int node)
 #ifdef CONFIG_VMEMMAP_OPTIMIZATION
 #define VMEMMAP_OPTIMIZATION_NR_ORDERS	(MAX_FOLIO_ORDER - VMEMMAP_OPTIMIZATION_MIN_ORDER + 1)
 
-static __ref struct page **vmemmap_tails_alloc(struct zone *zone)
+static __ref struct page **vmemmap_tails(struct zone *zone)
 {
-	struct page **pages;
-	const size_t size = array_size(VMEMMAP_OPTIMIZATION_NR_ORDERS, sizeof(*pages));
+	const size_t size = array_size(VMEMMAP_OPTIMIZATION_NR_ORDERS,
+				       sizeof(*zone->vmemmap_tails));
+	struct page **pages = READ_ONCE(zone->vmemmap_tails);
+
+	if (pages)
+		return pages;
 
 	pages = slab_is_available() ? kzalloc_objs(*pages, VMEMMAP_OPTIMIZATION_NR_ORDERS) :
 		memblock_alloc(size, __alignof__(*pages));
@@ -193,19 +197,19 @@ static __ref struct page **vmemmap_tails_alloc(struct zone *zone)
 
 struct page __ref *vmemmap_shared_tail_page(unsigned int order, struct zone *zone)
 {
-	void *addr;
-	struct page *page, **pages;
 	const unsigned int idx = order - VMEMMAP_OPTIMIZATION_MIN_ORDER;
+	struct page *page, **pages;
+	void *addr;
 
 	if (WARN_ON_ONCE(idx >= VMEMMAP_OPTIMIZATION_NR_ORDERS))
 		return NULL;
 
-	pages = READ_ONCE(zone->vmemmap_tails) ? : vmemmap_tails_alloc(zone);
+	pages = vmemmap_tails(zone);
 	if (!pages)
 		return NULL;
 
 	page = READ_ONCE(pages[idx]);
-	if (likely(page))
+	if (page)
 		return page;
 
 	addr = vmemmap_alloc_block(PAGE_SIZE, zone_to_nid(zone));
@@ -218,9 +222,9 @@ struct page __ref *vmemmap_shared_tail_page(unsigned int order, struct zone *zon
 		atomic_set(&page->_mapcount, -1);
 		set_page_node(page, zone_to_nid(zone));
 		set_page_zone(page, zone_idx(zone));
-		prep_compound_tail(page, NULL, order);
 		if (zone_is_zone_device(zone))
 			__SetPageReserved(page);
+		prep_compound_tail(page, NULL, order);
 	}
 
 	page = virt_to_page(addr);
@@ -528,12 +532,12 @@ static int __meminit vmemmap_populate_compound_pages(unsigned long start_pfn,
 						     unsigned long end, int node,
 						     struct dev_pagemap *pgmap)
 {
+	const unsigned long flags = VMEMMAP_POPULATE_DAX;
+	const unsigned int order = pfn_to_section_compound_order(start_pfn);
 	unsigned long size, addr;
 	pte_t *pte;
-	int rc;
-	unsigned long flags = VMEMMAP_POPULATE_DAX;
 	struct page *page;
-	unsigned int order = pfn_to_section_compound_order(start_pfn);
+	int rc;
 
 	page = vmemmap_shared_tail_page(order, device_zone(node));
 	if (!page)
@@ -891,8 +895,10 @@ int __meminit sparse_add_section(int nid, unsigned long start_pfn,
 
 	ms = __nr_to_section(section_nr);
 	/*
-	 * Poison uninitialized struct pages in order to catch invalid flags
-	 * combinations.
+	 * Poison uninitialized struct pages to catch invalid flag combinations.
+	 *
+	 * Tail struct pages in a vmemmap-optimized section are initialized and
+	 * shared during vmemmap population, so they must not be overwritten here.
 	 */
 	if (!section_vmemmap_optimizable(ms))
 		page_init_poison(memmap, sizeof(struct page) * nr_pages);

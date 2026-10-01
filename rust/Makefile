@@ -100,6 +100,7 @@ zerocopy-envs := \
 proc_macro2-cfgs := \
     feature="proc-macro" \
     wrap_proc_macro \
+    proc_macro_span \
     $(if $(call rustc-min-version,108800),proc_macro_span_file proc_macro_span_location)
 
 proc_macro2-flags := \
@@ -727,11 +728,6 @@ endef
 # versions are calculated for the helpers too.
 $(obj)/helpers/helpers.o: $(src)/helpers/helpers.c $(recordmcount_source) FORCE
 	+$(call if_changed_rule,rust_cc_library)
-
-# The exported symbol lists are generated from the crates' objects.
-$(obj)/exports.o: $(obj)/exports_core_generated.h \
-    $(obj)/exports_bindings_generated.h $(obj)/exports_kernel_generated.h \
-    $(if $(CONFIG_RUST_INLINE_HELPERS),,$(obj)/exports_helpers_generated.h)
 
 # Disable symbol versioning for exports.o to avoid conflicts with the actual
 # symbol versions generated from Rust objects.

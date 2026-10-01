@@ -1915,6 +1915,8 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 
 	xe_assert(xe, !vm->preempt.num_exec_queues);
 
+	trace_xe_vm_close_and_put(vm);
+
 	xe_vm_close(vm);
 	if (xe_vm_in_preempt_fence_mode(vm)) {
 		mutex_lock(&xe->rebind_resume_lock);
@@ -1992,6 +1994,8 @@ void xe_vm_close_and_put(struct xe_vm *vm)
 
 		xe_assert(xe, xe->info.has_asid);
 		xe_assert(xe, !(vm->flags & XE_VM_FLAG_MIGRATION));
+
+		trace_xe_vm_asid_release(vm);
 
 		lookup = xa_erase(&xe->usm.asid_to_vm, vm->usm.asid);
 		xe_assert(xe, lookup == vm);
@@ -2566,6 +2570,11 @@ alloc_next_range:
 						  dpagemap, &valid_pages)) {
 				xe_svm_range_debug(svm_range, "PREFETCH - RANGE IS VALID");
 				xe_assert(vm->xe, valid_pages);
+
+				if (dpagemap)
+					xe_svm_range_prefetch_lru_bump(vm, vma, svm_range,
+								       dpagemap);
+
 				need_put = true;
 				goto check_next_range;
 			}
@@ -3242,6 +3251,7 @@ static int prefetch_ranges(struct xe_vm *vm, struct xe_vma_ops *vops,
 	ctx.devmem_possible = devmem_possible;
 	ctx.check_pages_threshold = devmem_possible ? SZ_64K : 0;
 	ctx.device_private_page_owner = xe_svm_private_page_owner(vm, !dpagemap);
+	ctx.devmem_fn = xe_svm_devmem_lru_bump;
 
 	skip_threads =  op->prefetch_range.ranges_count == 1 ||
 		(!dpagemap && !(vops->flags &
@@ -3575,8 +3585,6 @@ static struct dma_fence *ops_execute(struct xe_vm *vm,
 
 err_out:
 	xe_pt_update_ops_abort(xe, vops);
-	while (current_fence)
-		dma_fence_put(fences[--current_fence]);
 	kfree(fences);
 	kfree(cf);
 

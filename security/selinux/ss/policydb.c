@@ -707,6 +707,64 @@ static int sens_cat_index_check(void *key, void *datum, void *datap)
 	return 0;
 }
 
+static int role_index_check(void *key, void *datum, void *datap)
+{
+	const struct policydb *p = datap;
+	const struct role_datum *role = datum;
+	struct ebitmap_node *node;
+	u32 bit;
+
+	ebitmap_for_each_positive_bit(&role->dominates, node, bit) {
+		if (!policydb_role_isvalid(p, bit + 1)) {
+			pr_err("SELinux:  role %s declares dominance on undefined role %u\n",
+			       (const char *)key, bit + 1);
+			return -EINVAL;
+		}
+	}
+
+	ebitmap_for_each_positive_bit(&role->types, node, bit) {
+		if (!policydb_type_isvalid(p, bit + 1)) {
+			pr_err("SELinux:  role %s authorizes undefined type %u\n",
+			       (const char *)key, bit + 1);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+static int user_index_check(void *key, void *datum, void *datap)
+{
+	const struct policydb *p = datap;
+	const struct user_datum *usr = datum;
+	struct ebitmap_node *node;
+	u32 bit;
+
+	ebitmap_for_each_positive_bit(&usr->roles, node, bit) {
+		if (!policydb_role_isvalid(p, bit + 1)) {
+			pr_err("SELinux:  user %s authorizes undefined role %u\n",
+			       (const char *)key, bit + 1);
+			return -EINVAL;
+		}
+	}
+
+	if (p->mls_enabled) {
+		if (!mls_range_isvalid(p, &usr->range)) {
+			pr_err("SELinux:  user %s has an invalid MLS range\n",
+			       (const char *)key);
+			return -EINVAL;
+		}
+
+		if (!mls_level_isvalid(p, &usr->dfltlevel)) {
+			pr_err("SELinux:  user %s has an invalid MLS default level\n",
+			       (const char *)key);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
 /* clang-format off */
 static int (*const index_f[SYM_NUM])(void *key, void *datum, void *datap) = {
 	common_index,
@@ -760,8 +818,9 @@ static inline void symtab_hash_eval(struct symtab *s)
  */
 static int policydb_index(struct policydb *p)
 {
+	struct ebitmap_node *node;
 	int i, rc;
-	u32 v;
+	u32 bit, v;
 
 	if (p->mls_enabled)
 		pr_debug(
@@ -834,6 +893,31 @@ static int policydb_index(struct policydb *p)
 		rc = hashtab_map(&p->p_levels.table, sens_cat_index_check, p);
 		if (rc)
 			goto out;
+	}
+
+	rc = hashtab_map(&p->p_roles.table, role_index_check, p);
+	if (rc)
+		goto out;
+
+	rc = hashtab_map(&p->p_users.table, user_index_check, p);
+	if (rc)
+		goto out;
+
+	ebitmap_for_each_positive_bit(&p->permissive_map, node, bit) {
+		if (!policydb_simpletype_isvalid(p, bit)) {
+			pr_err("SELinux:  permissive map refers to invalid type %u\n",
+			       bit);
+			rc = -EINVAL;
+			goto out;
+		}
+	}
+	ebitmap_for_each_positive_bit(&p->neveraudit_map, node, bit) {
+		if (!policydb_simpletype_isvalid(p, bit)) {
+			pr_err("SELinux:  neveraudit map refers to invalid type %u\n",
+			       bit);
+			rc = -EINVAL;
+			goto out;
+		}
 	}
 
 	rc = 0;

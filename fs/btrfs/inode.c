@@ -9588,9 +9588,9 @@ int btrfs_encoded_read_regular_fill_pages(struct btrfs_inode *inode,
 
 	if (uring_ctx) {
 		if (refcount_dec_and_test(&priv->pending_refs)) {
-			int err = blk_status_to_errno(READ_ONCE(priv->status));
+			int error = blk_status_to_errno(READ_ONCE(priv->status));
 
-			btrfs_uring_read_extent_endio(uring_ctx, err);
+			btrfs_uring_read_extent_endio(uring_ctx, error);
 			kfree(priv);
 		}
 
