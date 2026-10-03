@@ -55,8 +55,8 @@ config FUSE_VDAX
 	  option, answer Y.
 
 config FUSE_DAX
-    bool
-    transitional
+	bool
+	transitional
 
 config FUSE_PASSTHROUGH
 	bool "FUSE passthrough operations support"

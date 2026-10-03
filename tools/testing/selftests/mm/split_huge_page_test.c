@@ -110,14 +110,11 @@ static char *allocate_zero_filled_hugepage(size_t len)
 
 static void disable_khugepaged(void *addr, size_t len)
 {
-	/*
-	 * Disables khugepaged from collapsing THPs in range, existing THP
-	 * pages remain.
-	 */
+	/* Disables khugepaged from collapsing pages in range into THPs */
 	if (!madvise(addr, len, MADV_NOHUGEPAGE))
 		return;
 
-	ksft_exit_fail_msg("MADV_NOHUGEPAGE failed, err=%d\n", errno);
+	ksft_exit_fail_perror("MADV_NOHUGEPAGE failed");
 }
 
 static void verify_rss_anon_split_huge_page_all_zeroes(char *one_page, int nr_hpages, size_t len)

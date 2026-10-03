@@ -351,13 +351,13 @@ err_out:
 	return entry;
 }
 
-static bool check_large_folios(int pagemap_fd, int kpageflags_fd,
-		void *addr, size_t len, int nr_hpages,
+static bool check_large_folios(void *addr, size_t len, int nr_hpages,
 		uint64_t hpage_size)
 {
 	int order = 0, pagesize = getpagesize();
 	unsigned int nr_pages = hpage_size / pagesize;
 	int orders[MAX_NR_ORDERS], status;
+	int pagemap_fd, kpageflags_fd;
 	bool ret = false;
 
 	if (!nr_pages)
@@ -368,6 +368,15 @@ static bool check_large_folios(int pagemap_fd, int kpageflags_fd,
 		ksft_exit_fail_msg("invalid order\n");
 
 	memset(orders, 0, sizeof(int) * MAX_NR_ORDERS);
+	pagemap_fd = open(PAGEMAP_PATH, O_RDONLY);
+	if (pagemap_fd == -1)
+		ksft_exit_fail_msg("read pagemap fail\n");
+
+	kpageflags_fd = open(KPAGEFLAGS_PATH, O_RDONLY);
+	if (kpageflags_fd == -1) {
+		close(pagemap_fd);
+		ksft_exit_fail_msg("read kpageflags fail\n");
+	}
 
 	status = gather_folio_orders(addr, len, pagemap_fd,
 			kpageflags_fd, orders, MAX_NR_ORDERS);
@@ -378,38 +387,53 @@ static bool check_large_folios(int pagemap_fd, int kpageflags_fd,
 		ret = true;
 
 out:
+	close(pagemap_fd);
+	close(kpageflags_fd);
 	return ret;
 }
 
-enum check_huge_type {
-	CHECK_HUGE_ANON,
-	CHECK_HUGE_FILE,
+enum check_type {
+	CHECK_TYPE_ANON,
+	CHECK_TYPE_FILE,
 };
 
-static bool check_huge_type(uint64_t categories, enum check_huge_type type)
+static bool __check_type(void *addr, size_t len, uint64_t page_size,
+		enum check_type type)
 {
-	const bool file = categories & PAGE_IS_FILE;
+	bool ret = false;
+	int pagemap_fd;
+	char *start = addr;
+	char *end = start + len;
+	uint64_t categories;
 
-	switch (type) {
-	case CHECK_HUGE_ANON:
-		return !file;
-	case CHECK_HUGE_FILE:
-		return file;
+	pagemap_fd = open(PAGEMAP_PATH, O_RDONLY);
+	if (pagemap_fd < 0)
+		ksft_exit_fail_perror("open pagemap");
+
+	for (; start < end; start += page_size) {
+		categories = pagemap_scan_get_categories(pagemap_fd, start);
+		if ((categories & PAGE_IS_PRESENT) != PAGE_IS_PRESENT)
+			continue;
+
+		if ((type == CHECK_TYPE_FILE) != !!(categories & PAGE_IS_FILE))
+			goto out;
 	}
 
-	return false;
+	ret = true;
+
+out:
+	close(pagemap_fd);
+	return ret;
 }
 
 static bool __check_huge(void *addr, size_t len, int nr_hpages,
-		uint64_t hpage_size, enum check_huge_type type)
+		uint64_t hpage_size)
 {
 	bool ret = false;
-	int pagemap_fd, kpageflags_fd;
+	int pagemap_fd;
 	int nr_pmd_mappings = 0;
-	uint64_t pmd_pagesize, scan_mapping_size;
+	uint64_t pmd_pagesize;
 	uint64_t categories;
-	unsigned long pfn;
-	bool check_pmd_mapping, allow_nonpresent;
 	char *start = addr;
 	char *end = start + len;
 
@@ -417,57 +441,49 @@ static bool __check_huge(void *addr, size_t len, int nr_hpages,
 	if (!pmd_pagesize)
 		ksft_exit_fail_msg("reading PMD pagesize failed\n");
 
-	check_pmd_mapping = hpage_size == pmd_pagesize;
-	scan_mapping_size = (nr_hpages > 0) ? hpage_size : psize();
-	/* Some mTHP tests check a partially populated PMD-sized range. */
-	allow_nonpresent = (uint64_t)nr_hpages * hpage_size < len;
-
 	pagemap_fd = open(PAGEMAP_PATH, O_RDONLY);
 	if (pagemap_fd < 0)
-		ksft_exit_fail_msg("open pagemap fail\n");
+		ksft_exit_fail_perror("open pagemap");
 
-	kpageflags_fd = open(KPAGEFLAGS_PATH, O_RDONLY);
-	if (kpageflags_fd < 0)
-		ksft_exit_fail_msg("open kpageflags fail\n");
-
-	if (!check_pmd_mapping &&
-	    !check_large_folios(pagemap_fd, kpageflags_fd,
-				addr, len, nr_hpages, hpage_size))
+	if (hpage_size != pmd_pagesize) {
+		ret = check_large_folios(addr, len, nr_hpages, hpage_size);
 		goto out;
-
-	for (; start < end; start += scan_mapping_size) {
-		categories = pagemap_scan_get_categories(pagemap_fd, start);
-		pfn = pagemap_get_pfn(pagemap_fd, start);
-		if (pfn == -1UL) {
-			if (!allow_nonpresent)
-				goto out;
-			else
-				continue;
-		}
-		if (check_pmd_mapping && (categories & PAGE_IS_HUGE))
-			nr_pmd_mappings++;
-		if (!check_huge_type(categories, type))
-			goto out;
 	}
 
-	if (check_pmd_mapping && (nr_pmd_mappings != nr_hpages))
+	for (; start < end; start += hpage_size) {
+		categories = pagemap_scan_get_categories(pagemap_fd, start);
+		if (categories & PAGE_IS_HUGE)
+			nr_pmd_mappings++;
+	}
+
+	if (nr_pmd_mappings != nr_hpages)
 		goto out;
+
 	ret = true;
 
 out:
 	close(pagemap_fd);
-	close(kpageflags_fd);
 	return ret;
 }
 
 bool check_huge_anon(void *addr, size_t len, int nr_hpages, uint64_t hpage_size)
 {
-	return __check_huge(addr, len, nr_hpages, hpage_size, CHECK_HUGE_ANON);
+	const uint64_t scan_mapping_size = (nr_hpages > 0) ? hpage_size : psize();
+
+	if (!__check_huge(addr, len, nr_hpages, hpage_size))
+		return false;
+
+	return __check_type(addr, len, scan_mapping_size, CHECK_TYPE_ANON);
 }
 
 bool check_huge_file(void *addr, size_t len, int nr_hpages, uint64_t hpage_size)
 {
-	return __check_huge(addr, len, nr_hpages, hpage_size, CHECK_HUGE_FILE);
+	const uint64_t scan_mapping_size = (nr_hpages > 0) ? hpage_size : psize();
+
+	if (!__check_huge(addr, len, nr_hpages, hpage_size))
+		return false;
+
+	return __check_type(addr, len, scan_mapping_size, CHECK_TYPE_FILE);
 }
 
 int64_t allocate_transhuge(void *ptr, int pagemap_fd)

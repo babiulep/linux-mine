@@ -1299,7 +1299,7 @@ void do_sve_acc(unsigned long esr, struct pt_regs *regs)
 		return;
 	}
 
-	sve_alloc(current, true);
+	sve_alloc(current, false);
 	if (!current->thread.sve_state) {
 		force_sig(SIGKILL);
 		return;
@@ -1324,6 +1324,7 @@ void do_sve_acc(unsigned long esr, struct pt_regs *regs)
 		sve_flush_live();
 		fpsimd_bind_task_to_cpu();
 	} else {
+		memset(current->thread.sve_state, 0, sve_state_size(current));
 		fpsimd_to_sve(current);
 		current->thread.fp_type = FP_STATE_SVE;
 		fpsimd_flush_task_state(current);

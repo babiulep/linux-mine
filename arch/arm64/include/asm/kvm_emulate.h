@@ -367,16 +367,6 @@ static __always_inline u64 kvm_vcpu_get_esr(const struct kvm_vcpu *vcpu)
 	return vcpu->arch.fault.esr_el2;
 }
 
-static __always_inline bool esr_abt_is_s1ptw(unsigned long esr)
-{
-	return esr & ESR_ELx_S1PTW;
-}
-
-static __always_inline bool esr_abt_is_exec_fault(unsigned long esr)
-{
-	return esr_trap_is_iabt(esr) && !esr_abt_is_s1ptw(esr);
-}
-
 static inline bool guest_hyp_wfx_traps_enabled(const struct kvm_vcpu *vcpu)
 {
 	u64 esr = kvm_vcpu_get_esr(vcpu);
@@ -421,6 +411,11 @@ static inline u64 kvm_vcpu_get_disr(const struct kvm_vcpu *vcpu)
 }
 
 #if ARM64_S390_COMMON == 1
+static __always_inline bool esr_abt_is_s1ptw(unsigned long esr)
+{
+	return esr & ESR_ELx_S1PTW;
+}
+
 static inline u32 kvm_vcpu_hvc_get_imm(const struct kvm_vcpu *vcpu)
 {
 	return kvm_vcpu_get_esr(vcpu) & ESR_ELx_xVC_IMM_MASK;
@@ -489,6 +484,11 @@ static __always_inline u8 kvm_vcpu_trap_get_fault(const struct kvm_vcpu *vcpu)
 }
 
 #endif /* ARM64_S390_COMMON == 1 */
+
+static __always_inline bool esr_abt_is_exec_fault(unsigned long esr)
+{
+	return esr_trap_is_iabt(esr) && !esr_abt_is_s1ptw(esr);
+}
 
 static inline
 bool kvm_vcpu_trap_is_permission_fault(const struct kvm_vcpu *vcpu)

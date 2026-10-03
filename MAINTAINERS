@@ -2798,14 +2798,6 @@ F:	Documentation/devicetree/bindings/arm/axiado.yaml
 F:	arch/arm64/boot/dts/axiado/
 N:	axiado
 
-ARM/AXM LSI SOC
-M:	Krzysztof Kozlowski <krzk@kernel.org>
-L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
-S:	Odd Fixes
-F:	Documentation/devicetree/bindings/arm/axxia.yaml
-F:	arch/arm/boot/dts/intel/axm/
-F:	arch/arm/mach-axxia/
-
 ARM/BITMAIN ARCHITECTURE
 M:	Manivannan Sadhasivam <mani@kernel.org>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
@@ -2974,14 +2966,6 @@ S:	Maintained
 T:	git git://git.berlios.de/gemini-board
 F:	arch/arm/mm/*-fa*
 
-ARM/FOOTBRIDGE ARCHITECTURE
-M:	Russell King <linux@armlinux.org.uk>
-L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
-S:	Maintained
-W:	http://www.armlinux.org.uk/
-F:	arch/arm/include/asm/hardware/dec21285.h
-F:	arch/arm/mach-footbridge/
-
 ARM/FREESCALE IMX / MXC / LAYERSCAPE ARM ARCHITECTURE
 M:	Frank Li <Frank.Li@nxp.com>
 M:	Sascha Hauer <s.hauer@pengutronix.de>
@@ -3027,14 +3011,6 @@ F:	arch/arm/boot/dts/hisilicon/
 F:	arch/arm/mach-hisi/
 F:	arch/arm64/boot/dts/hisilicon/
 
-ARM/HP JORNADA 7XX MACHINE SUPPORT
-M:	Kristoffer Ericson <kristoffer.ericson@gmail.com>
-S:	Maintained
-W:	www.jlime.com
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/kristoffer/linux-hpc.git
-F:	arch/arm/mach-sa1100/include/mach/jornada720.h
-F:	arch/arm/mach-sa1100/jornada720.c
-
 ARM/HPE GXP ARCHITECTURE
 M:	Jean-Marie Verdun <verdun@hpe.com>
 M:	Nick Hawkins <nick.hawkins@hpe.com>
@@ -3062,7 +3038,7 @@ F:	arch/arm/boot/dts/ti/omap/omap3-igep*
 
 ARM/INTEL IXP4XX ARM ARCHITECTURE
 M:	Linus Walleij <linusw@kernel.org>
-M:	Imre Kaloz <kaloz@openwrt.org>
+M:	Imre Kaloz <kaloz@kernel.org>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
 F:	Documentation/devicetree/bindings/arm/intel-ixp4xx.yaml
@@ -3104,18 +3080,6 @@ L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
 F:	arch/arm64/boot/dts/lg/
 
-ARM/LPC18XX ARCHITECTURE
-M:	Vladimir Zapolskiy <vz@mleia.com>
-L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
-S:	Maintained
-F:	Documentation/devicetree/bindings/i2c/nxp,lpc1788-i2c.yaml
-F:	arch/arm/boot/dts/nxp/lpc/lpc43*
-F:	drivers/i2c/busses/i2c-lpc2k.c
-F:	drivers/memory/pl172.c
-F:	drivers/mtd/spi-nor/controllers/nxp-spifi.c
-F:	drivers/rtc/rtc-lpc24xx.c
-N:	lpc18xx
-
 ARM/LPC32XX SOC SUPPORT
 M:	Vladimir Zapolskiy <vz@mleia.com>
 M:	Piotr Wojtaszczyk <piotr.wojtaszczyk@timesys.com>
@@ -3152,10 +3116,7 @@ F:	Documentation/devicetree/bindings/arm/marvell/marvell,orion5x.yaml
 F:	Documentation/devicetree/bindings/soc/dove/
 F:	arch/arm/boot/dts/marvell/dove*
 F:	arch/arm/boot/dts/marvell/orion5x*
-F:	arch/arm/mach-dove/
-F:	arch/arm/mach-mv78xx0/
 F:	arch/arm/mach-orion5x/
-F:	arch/arm/plat-orion/
 F:	drivers/bus/mvebu-mbus.c
 F:	drivers/soc/dove/
 
@@ -3264,6 +3225,7 @@ M:	UNGLinuxDriver@microchip.com
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Supported
 F:	arch/arm64/boot/dts/microchip/sparx*
+F:	drivers/net/ethernet/microchip/fdma/
 F:	drivers/net/ethernet/microchip/vcap/
 F:	drivers/pinctrl/pinctrl-microchip-sgpio.c
 N:	sparx5
@@ -3427,13 +3389,6 @@ R:	s32@nxp.com
 S:	Maintained
 F:	Documentation/devicetree/bindings/net/nxp,s32-dwmac.yaml
 F:	drivers/net/ethernet/stmicro/stmmac/dwmac-s32.c
-
-ARM/Orion SoC/Technologic Systems TS-78xx platform support
-M:	Alexander Clouter <alex@digriz.org.uk>
-L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
-S:	Maintained
-W:	http://www.digriz.org.uk/ts78xx/kernel
-F:	arch/arm/mach-orion5x/ts78xx-*
 
 ARM/QUALCOMM CHROMEBOOK SUPPORT
 R:	cros-qcom-dts-watchers@chromium.org
@@ -3953,8 +3908,15 @@ L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Odd fixes
 F:	Documentation/arch/arm/zte/
 F:	Documentation/devicetree/bindings/arm/zte.yaml
+F:	Documentation/devicetree/bindings/clock/zte,zx297520v3-lspcrm.yaml
+F:	Documentation/devicetree/bindings/clock/zte,zx297520v3-matrixcrm.yaml
+F:	Documentation/devicetree/bindings/clock/zte,zx297520v3-topcrm.yaml
 F:	arch/arm/boot/dts/zte/
 F:	arch/arm/mach-zte/
+F:	drivers/clk/zte/
+F:	include/dt-bindings/clock/zte,zx297520v3-clk.h
+F:	include/dt-bindings/phy/zte,zx297520v3-topcrm.h
+F:	include/dt-bindings/reset/zte,zx297520v3-reset.h
 
 ARM/ZYNQ ARCHITECTURE
 M:	Michal Simek <michal.simek@amd.com>
@@ -4008,7 +3970,9 @@ F:	arch/arm64/
 F:	drivers/firmware/arm_rmm/
 F:	drivers/virt/coco/arm-cca-guest/
 F:	drivers/virt/coco/pkvm-guest/
+F:	include/linux/arm-rmi-cmds.h
 F:	include/linux/arm-rsi-cmds.h
+F:	include/linux/arm-smccc-rmi.h
 F:	include/linux/arm-smccc-rsi.h
 F:	tools/testing/selftests/arm64/
 X:	arch/arm64/boot/dts/
@@ -8494,6 +8458,13 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/display/panel/novatek,nt37801.yaml
 F:	drivers/gpu/drm/panel/panel-novatek-nt37801.c
 
+DRM DRIVER FOR NOVATEK NT51021 PANELS
+M:	Ryan Brue <ryanbrue.dev@gmail.com>
+M:	Nickolay Goppen <setotau@mainlining.org>
+S:	Maintained
+F:	Documentation/devicetree/bindings/display/panel/novatek,nt51021.yaml
+F:	drivers/gpu/drm/panel/panel-novatek-nt51021.c
+
 DRM DRIVER FOR NVIDIA GEFORCE/QUADRO GPUS
 M:	Lyude Paul <lyude@redhat.com>
 M:	Danilo Krummrich <dakr@kernel.org>
@@ -8582,6 +8553,12 @@ M:	Robert Chiras <robert.chiras@nxp.com>
 S:	Maintained
 F:	Documentation/devicetree/bindings/display/panel/raydium,rm67191.yaml
 F:	drivers/gpu/drm/panel/panel-raydium-rm67191.c
+
+DRM DRIVER FOR RAYDIUM RM69220 PANELS
+M:	Alexander Koskovich <akoskovich@pm.me>
+S:	Maintained
+F:	Documentation/devicetree/bindings/display/panel/raydium,rm69220.yaml
+F:	drivers/gpu/drm/panel/panel-raydium-rm69220.c
 
 DRM DRIVER FOR SAMSUNG DB7430 PANELS
 M:	Linus Walleij <linusw@kernel.org>
@@ -11105,6 +11082,7 @@ M:	Peter Oberparleiter <oberpar@linux.ibm.com>
 S:	Maintained
 F:	Documentation/dev-tools/gcov.rst
 F:	kernel/gcov/
+F:	scripts/Makefile.gcov
 
 GDB KERNEL DEBUGGING HELPER SCRIPTS
 M:	Jan Kiszka <jan.kiszka@siemens.com>
@@ -11515,13 +11493,6 @@ GREYBUS LOOPBACK DRIVER
 M:	Bryan O'Donoghue <pure.logic@nexus-software.ie>
 S:	Maintained
 F:	drivers/staging/greybus/loopback.c
-
-GREYBUS PLATFORM DRIVERS
-M:	Vaibhav Hiremath <hvaibhav.linux@gmail.com>
-S:	Maintained
-F:	drivers/staging/greybus/arche-apb-ctrl.c
-F:	drivers/staging/greybus/arche-platform.c
-F:	drivers/staging/greybus/arche_platform.h
 
 GREYBUS SDIO/GPIO/SPI PROTOCOLS DRIVERS
 M:	Rui Miguel Silva <rmfrfs@gmail.com>
@@ -13479,6 +13450,8 @@ INTEL IPU6 INPUT SYSTEM DRIVER
 M:	Sakari Ailus <sakari.ailus@linux.intel.com>
 R:	Antti Laakso <antti.laakso@linux.intel.com>
 R:	"Sapre, Sarang" <sarang.sapre@intel.com>
+R:	Divyamani Tripathi <divyamani.tripathi@intel.com>
+R:	Manik Bajpai <manik.bajpai@intel.com>
 L:	linux-media@vger.kernel.org
 S:	Maintained
 T:	git git://linuxtv.org/media.git
@@ -18768,7 +18741,9 @@ M:	James Morse <james.morse@arm.com>
 M:	Ben Horgan <ben.horgan@arm.com>
 R:	Reinette Chatre <reinette.chatre@intel.com>
 R:	Fenghua Yu <fenghuay@nvidia.com>
+L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
+F:	Documentation/arch/arm64/mpam.rst
 F:	drivers/resctrl/mpam_*
 F:	drivers/resctrl/test_mpam_*
 F:	include/linux/arm_mpam.h
@@ -20273,7 +20248,6 @@ M:	Jarkko Nikula <jarkko.nikula@bitmer.com>
 L:	linux-sound@vger.kernel.org
 L:	linux-omap@vger.kernel.org
 S:	Maintained
-F:	sound/soc/ti/n810.c
 F:	sound/soc/ti/omap*
 F:	sound/soc/ti/rx51.c
 F:	sound/soc/ti/sdma-pcm.*
@@ -20313,7 +20287,6 @@ M:	Roger Quadros <rogerq@kernel.org>
 M:	Tony Lindgren <tony@atomide.com>
 L:	linux-omap@vger.kernel.org
 S:	Maintained
-F:	arch/arm/mach-omap2/*gpmc*
 F:	drivers/memory/omap-gpmc.c
 
 OMAP GPIO DRIVER
@@ -20516,6 +20489,13 @@ S:	Maintained
 T:	git git://linuxtv.org/media.git
 F:	Documentation/devicetree/bindings/media/i2c/ovti,ov02e10.yaml
 F:	drivers/media/i2c/ov02e10.c
+
+OMNIVISION OV05C10 SENSOR DRIVER
+M:	Sakari Ailus <sakari.ailus@linux.intel.com>
+R:	Antti Laakso <antti.laakso@linux.intel.com>
+L:	linux-media@vger.kernel.org
+S:	Maintained
+F:	drivers/media/i2c/ov05c10.c
 
 OMNIVISION OV08D10 SENSOR DRIVER
 M:	Jimmy Su <jimmy.su@intel.com>
@@ -23008,6 +22988,7 @@ QUALCOMM PINCTRL DRIVERS
 M:	Bartosz Golaszewski <brgl@kernel.org>
 L:	linux-arm-msm@vger.kernel.org
 S:	Supported
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/brgl/linux.git
 F:	Documentation/devicetree/bindings/pinctrl/qcom,*.yaml
 F:	drivers/pinctrl/qcom/
 
@@ -24043,7 +24024,7 @@ M:	Fu Wei <wefu@redhat.com>
 L:	linux-riscv@lists.infradead.org
 S:	Maintained
 Q:	https://patchwork.kernel.org/project/riscv-thead/list/
-T:	git https://github.com/pdp7/linux.git
+T:	git https://git.kernel.org/pub/scm/linux/kernel/git/fustini/linux.git
 F:	Documentation/devicetree/bindings/clock/thead,th1520-clk-ap.yaml
 F:	Documentation/devicetree/bindings/firmware/thead,th1520-aon.yaml
 F:	Documentation/devicetree/bindings/mailbox/thead,th1520-mbox.yaml
@@ -24823,6 +24804,13 @@ S:	Maintained
 T:	git git://linuxtv.org/media_tree.git
 F:	Documentation/devicetree/bindings/media/i2c/samsung,s5kjn1.yaml
 F:	drivers/media/i2c/s5kjn1.c
+
+SAMSUNG S5KJN5 CAMERA DRIVER
+M:	Wenmeng Liu <wenmeng.liu@oss.qualcomm.com>
+L:	linux-media@vger.kernel.org
+S:	Supported
+F:	Documentation/devicetree/bindings/media/i2c/samsung,s5kjn5.yaml
+F:	drivers/media/i2c/s5kjn5.c
 
 SAMSUNG S5P Security SubSystem (SSS) DRIVER
 M:	Krzysztof Kozlowski <krzk@kernel.org>
@@ -28137,6 +28125,13 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/media/i2c/toshiba,tc358743.yaml
 F:	drivers/media/i2c/tc358743*
 F:	include/media/i2c/tc358743.h
+
+TOSHIBA TC9564 PCI DRIVER
+M:	Alex Elder <elder@kernel.org>
+M:	Daniel Thompson <danielt@kernel.org>
+S:	Maintained
+F:	Documentation/devicetree/bindings/misc/pci1179,0220.yaml
+F:	drivers/misc/tc9564-pci.c
 
 TOSHIBA WMI HOTKEYS DRIVER
 M:	Azael Avalos <coproscefalo@gmail.com>

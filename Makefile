@@ -302,7 +302,7 @@ no-dot-config-targets := $(clean-targets) \
 			 run-command
 no-sync-config-targets := $(no-dot-config-targets) %install modules_sign kernelrelease \
 			  image_name
-single-targets := %.a %.i %.ko %.lds %.ll %.lst %.mod %.o %.rsi %.s %/
+single-targets := %.a %.i %.ko %.lds %.ll %.lst %.mod %.o %.rsi %.s %.header-check %/
 
 config-build	:=
 mixed-build	:=
@@ -1181,27 +1181,6 @@ endif
 # Ensure compilers do not transform certain loops into calls to wcslen()
 KBUILD_CFLAGS += -fno-builtin-wcslen
 
-CFLAGS_GCOV	:= -fprofile-arcs -ftest-coverage
-ifdef CONFIG_CC_IS_GCC
-CFLAGS_GCOV	+= -fno-tree-loop-im
-# Use atomic counter updates to avoid concurrent-access crashes in GCOV.
-# Only enable if -fprofile-update=prefer-atomic does not introduce new
-# undefined symbols (e.g. libatomic calls that the kernel cannot link).
-CFLAGS_GCOV	+= $(call try-run,\
-	echo 'long long x; void f(void){x++;}' | \
-	$(CC) $(KBUILD_CPPFLAGS) $(KBUILD_CFLAGS) -w -fprofile-arcs \
-	-ftest-coverage -x c - -c -o "$$TMP.base" && \
-	echo 'long long x; void f(void){x++;}' | \
-	$(CC) $(KBUILD_CPPFLAGS) $(KBUILD_CFLAGS) -w -fprofile-arcs \
-	-ftest-coverage -fprofile-update=prefer-atomic \
-	-x c - -c -o "$$TMP" && \
-	$(NM) "$$TMP.base" | grep ' U ' > "$$TMP.ubase" || true ; \
-	$(NM) "$$TMP" | grep ' U ' > "$$TMP.utest" || true ; \
-	cmp -s "$$TMP.ubase" "$$TMP.utest",\
-	-fprofile-update=prefer-atomic)
-endif
-export CFLAGS_GCOV
-
 # change __FILE__ to the relative path to the source directory
 ifdef building_out_of_srctree
 CFLAGS_PREFIX_MAP := -fmacro-prefix-map=$(srcroot)/=
@@ -1222,6 +1201,7 @@ include-$(CONFIG_KCSAN)		+= scripts/Makefile.kcsan
 include-$(CONFIG_KMSAN)		+= scripts/Makefile.kmsan
 include-$(CONFIG_UBSAN)		+= scripts/Makefile.ubsan
 include-$(CONFIG_KCOV)		+= scripts/Makefile.kcov
+include-$(CONFIG_GCOV_KERNEL)	+= scripts/Makefile.gcov
 include-$(CONFIG_RANDSTRUCT)	+= scripts/Makefile.randstruct
 include-$(CONFIG_KSTACK_ERASE)	+= scripts/Makefile.kstack_erase
 include-$(CONFIG_AUTOFDO_CLANG)	+= scripts/Makefile.autofdo
@@ -1548,6 +1528,26 @@ scripts_unifdef: scripts_basic
 PHONY += scripts_gen_packed_field_checks
 scripts_gen_packed_field_checks: scripts_basic
 	$(Q)$(MAKE) $(build)=scripts scripts/gen_packed_field_checks
+
+# ---------------------------------------------------------------------------
+# Header check
+
+# Check the headers in HEADER_CHECK=(headers|dirs)
+PHONY += headercheck
+
+ifneq ($(HEADER_CHECK),)
+
+header-check-dirs := $(filter-out %.h,$(HEADER_CHECK))
+header-check-files := $(filter %.h,$(HEADER_CHECK)) $(if $(header-check-dirs),$(shell cd $(srctree) && find $(header-check-dirs) -name '*.h' 2>/dev/null))
+header-check-targets := $(patsubst %.h,%.header-check,$(sort $(header-check-files)))
+
+headercheck:
+	$(if $(header-check-targets),,$(error $@ found no headers in HEADER_CHECK="$(HEADER_CHECK)"))
+	$(Q)$(MAKE) $(header-check-targets)
+else
+headercheck:
+	$(error $@ requires HEADER_CHECK=(headers|dirs))
+endif
 
 # ---------------------------------------------------------------------------
 # Install
@@ -1895,6 +1895,8 @@ help:
 	@echo  '  versioncheck      - Sanity check on version.h usage'
 	@echo  '  includecheck      - Check for duplicate included header files'
 	@echo  '  headerdep         - Detect inclusion cycles in headers'
+	@echo  '  headercheck       - Check headers in HEADER_CHECK=(headers|dirs) are'
+	@echo  '                      self-contained, have header guards, and pass kernel-doc.'
 	@echo  '  coccicheck        - Check with Coccinelle'
 	@echo  '  kconfig-sym-check - Check for dangling Kconfig symbol references'
 	@echo  '  clang-analyzer    - Check with clang static analyzer'
@@ -2260,6 +2262,7 @@ clean: $(clean-dirs)
 		-o -name '*.ll' \
 		-o -name '*.gcno' \
 		-o -name '*.long-type-*.txt' \
+		-o -name '*.header-check' \
 		\) -type f -print \
 		-o -name '.tmp_*' -print \
 		| xargs rm -rf
