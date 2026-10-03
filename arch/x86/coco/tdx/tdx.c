@@ -251,7 +251,6 @@ static void disable_sept_ve(u64 td_attr)
 	tdg_vm_wr(TDCS_TD_CTLS, TD_CTLS_PENDING_VE_DISABLE,
 		  TD_CTLS_PENDING_VE_DISABLE);
 }
-EXPORT_SYMBOL_FOR_MODULES(tdx_get_max_quote_size, "tdx-guest");
 
 /*
  * TDX 1.0 generates a #VE when accessing topology-related CPUID leafs (0xB and
