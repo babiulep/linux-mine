@@ -1196,6 +1196,7 @@ static void __resched_curr(struct rq *rq, int tif)
 {
 	struct task_struct *curr = rq->curr;
 	struct thread_info *cti = task_thread_info(curr);
+	bool need_ipi;
 	int cpu;
 
 	lockdep_assert_rq_held(rq);
@@ -1212,15 +1213,17 @@ static void __resched_curr(struct rq *rq, int tif)
 
 	cpu = cpu_of(rq);
 
-	trace_sched_set_need_resched_tp(curr, cpu, tif);
 	if (cpu == smp_processor_id()) {
 		set_ti_thread_flag(cti, tif);
 		if (tif == TIF_NEED_RESCHED)
 			set_preempt_need_resched();
+		trace_sched_set_need_resched_tp(curr, cpu, tif);
 		return;
 	}
 
-	if (set_nr_and_not_polling(cti, tif)) {
+	need_ipi = set_nr_and_not_polling(cti, tif);
+	trace_sched_set_need_resched_tp(curr, cpu, tif);
+	if (need_ipi) {
 		if (tif == TIF_NEED_RESCHED)
 			smp_send_reschedule(cpu);
 	} else {
@@ -11307,10 +11310,10 @@ static int sched_non_preferred_cpu_push_stop(void *arg)
 		 * safely bail out.
 		 */
 		cpu = select_fallback_rq(rq->cpu, p);
+		context_unsafe_alias(rq);
 		rq_lock(rq, &rf);
 		rq->npc_push_work_pending = false;
 		update_rq_clock(rq);
-		context_unsafe_alias(rq);
 
 		if (task_rq(p) == rq && task_on_rq_queued(p)) {
 			struct rq *dest_rq = __migrate_task(rq, &rf, p, cpu);
