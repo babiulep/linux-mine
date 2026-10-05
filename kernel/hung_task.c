@@ -276,8 +276,8 @@ static void hung_task_info(struct task_struct *t, unsigned long timeout,
 		sched_show_task(t);
 		debug_show_blocker(t, timeout);
 
-		if (!hung_task_warnings_budget)
-			pr_info("hung_task: further per-task details suppressed until warning budget is reset or panic is triggered (see sysctl kernel.hung_task_warnings)\n");
+		if (!hung_task_warnings_budget && !hung_task_call_panic)
+			pr_info("hung_task: further per-task details suppressed until warning budget is reset (see sysctl kernel.hung_task_warnings)\n");
 	}
 
 	touch_nmi_watchdog();

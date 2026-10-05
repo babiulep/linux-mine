@@ -52,6 +52,7 @@
 #include "srccode.h"
 #include "srcline.h"
 #include "strbuf.h"
+#include "strlist.h"
 #include "symbol.h"
 #include "stat.h"
 #include "header.h"
@@ -69,16 +70,6 @@
 PyMODINIT_FUNC PyInit_perf(void);
 
 static PyObject *pyrf_evsel__from_evsel(struct evsel *evsel);
-
-#define member_def(type, member, ptype, help) \
-	{ #member, ptype, \
-	  offsetof(struct pyrf_event, event) + offsetof(struct type, member), \
-	  0, help }
-
-#define sample_member_def(name, member, ptype, help) \
-	{ #name, ptype, \
-	  offsetof(struct pyrf_event, sample) + offsetof(struct perf_sample, member), \
-	  0, help }
 
 #define CHECK_INITIALIZED(ptr, msg) \
 	do { \
@@ -98,23 +89,101 @@ static PyObject *pyrf_evsel__from_evsel(struct evsel *evsel);
 
 struct pyrf_event {
 	PyObject_HEAD
-	/** @sample: The parsed sample from the event. */
-	struct perf_sample sample;
+	/** @sample: The parsed sample, pointing to @sample_storage or a borrowed sample. */
+	struct perf_sample *sample;
+	/** @sample_storage: Storage for @sample when owned by this object. */
+	struct perf_sample sample_storage;
+	/** @evsel: The evsel associated with the event. */
+	struct evsel *evsel;
 	/** @machine: The machine associated with the sample/event. */
 	struct machine *machine;
 	/** @al: The address location from machine__resolve, lazily computed. */
 	struct addr_location al;
 	/** @al_resolved: True when machine__resolve been called. */
 	bool al_resolved;
-	/** @callchain: Resolved callchain, eagerly computed if requested. */
+	/** @callchain: Resolved callchain, lazily computed. */
 	PyObject *callchain;
 	/** @brstack: Resolved branch stack, eagerly computed if requested. */
 	PyObject *brstack;
-	/** @event: The underlying perf_event that may be in a file or ring buffer. */
-	union perf_event event;
+	/** @event: The underlying perf_event, pointing to @event_copy or a borrowed event. */
+	const union perf_event *event;
+	/** @event_copy: Copy of @event when owned by this object. */
+	union perf_event *event_copy;
 };
 
+static const union perf_event zero_event;
+
+static PyObject *pyrf_event__get_member(PyObject *self, void *closure)
+{
+	struct pyrf_event *pevent = (void *)self;
+	const union perf_event *event = pevent->event ?: &zero_event;
+
+	return PyMember_GetOne((const char *)event, closure);
+}
+
+static PyObject *pyrf_event__get_sample_member(PyObject *self, void *closure)
+{
+	struct pyrf_event *pevent = (void *)self;
+	const struct perf_sample *sample = pevent->sample ?: &pevent->sample_storage;
+
+	return PyMember_GetOne((const char *)sample, closure);
+}
+
+#define named_member_def(field, type, member, ptype, help) \
+	{ .name = #field, .get = pyrf_event__get_member, .doc = help, \
+	  .closure = &(struct PyMemberDef){ #field, ptype, \
+					    offsetof(struct type, member), READONLY, help } }
+
+#define member_def(type, member, ptype, help) \
+	named_member_def(member, type, member, ptype, help)
+
+struct pyrf_string_member {
+	size_t offset;
+	size_t maxlen;
+};
+
+static size_t pyrf_event__str_len(const struct pyrf_event *pevent, size_t offset, size_t maxlen)
+{
+	const char *base = (const char *)(pevent->event ?: &zero_event);
+	size_t event_size = pevent->event ? pevent->event->header.size : 0;
+
+	if (event_size <= offset)
+		return 0;
+	return strnlen(base + offset, min(event_size - offset, maxlen));
+}
+
+static PyObject *pyrf_event__get_string_member(PyObject *self, void *closure)
+{
+	struct pyrf_event *pevent = (void *)self;
+	const struct pyrf_string_member *sm = closure;
+	const char *base = (const char *)(pevent->event ?: &zero_event);
+
+	return PyUnicode_FromStringAndSize(base + sm->offset,
+					   pyrf_event__str_len(pevent, sm->offset, sm->maxlen));
+}
+
+#define string_member_def(type, member, help) \
+	{ .name = #member, .get = pyrf_event__get_string_member, .doc = help, \
+	  .closure = &(struct pyrf_string_member){ offsetof(struct type, member), \
+						   sizeof(((struct type *)0)->member) } }
+
+#define sample_member_def(field, member, ptype, help) \
+	{ .name = #field, .get = pyrf_event__get_sample_member, .doc = help, \
+	  .closure = &(struct PyMemberDef){ #field, ptype, \
+					    offsetof(struct perf_sample, member), READONLY, help } }
+
+static PyObject *pyrf_event__get_evsel(PyObject *self, void *closure __maybe_unused)
+{
+	struct pyrf_event *pevent = (void *)self;
+
+	if (!pevent->sample || !pevent->sample->evsel)
+		Py_RETURN_NONE;
+
+	return pyrf_evsel__from_evsel(pevent->sample->evsel);
+}
+
 #define sample_members \
+	{ .name = "evsel", .get = pyrf_event__get_evsel, .doc = "tracking event." },	 \
 	sample_member_def(sample_pid, pid, T_INT, "event pid"),			 \
 	sample_member_def(sample_tid, tid, T_INT, "event tid"),			 \
 	sample_member_def(sample_time, time, T_ULONGLONG, "event timestamp"),		 \
@@ -125,39 +194,21 @@ struct pyrf_event {
 	sample_member_def(sample_period, period, T_ULONGLONG, "event period"),		 \
 	sample_member_def(sample_cpu, cpu, T_UINT, "event cpu"),
 
-static PyObject *pyrf_event__get_evsel(PyObject *self, void *closure __maybe_unused)
-{
-	struct pyrf_event *pevent = (void *)self;
-
-	if (!pevent->sample.evsel)
-		Py_RETURN_NONE;
-
-	return pyrf_evsel__from_evsel(pevent->sample.evsel);
-}
-
-static PyGetSetDef pyrf_event__getset[] = {
-	{
-		.name = "evsel",
-		.get = pyrf_event__get_evsel,
-		.set = NULL,
-		.doc = "tracking event.",
-	},
-	{ .name = NULL, },
-};
-
 static void pyrf_event__delete(struct pyrf_event *pevent)
 {
 	if (pevent->al_resolved)
 		addr_location__exit(&pevent->al);
 	Py_XDECREF(pevent->callchain);
 	Py_XDECREF(pevent->brstack);
-	perf_sample__exit(&pevent->sample);
+	perf_sample__exit(&pevent->sample_storage);
+	evsel__put(pevent->evsel);
+	free(pevent->event_copy);
 	Py_TYPE(pevent)->tp_free((PyObject *)pevent);
 }
 
 static const char pyrf_mmap_event__doc[] = PyDoc_STR("perf mmap event object.");
 
-static PyMemberDef pyrf_mmap_event__members[] = {
+static PyGetSetDef pyrf_mmap_event__getset[] = {
 	sample_members
 	member_def(perf_event_header, type, T_UINT, "event type"),
 	member_def(perf_event_header, misc, T_USHORT, "event misc"),
@@ -166,7 +217,7 @@ static PyMemberDef pyrf_mmap_event__members[] = {
 	member_def(perf_record_mmap, start, T_ULONGLONG, "start of the map"),
 	member_def(perf_record_mmap, len, T_ULONGLONG, "map length"),
 	member_def(perf_record_mmap, pgoff, T_ULONGLONG, "page offset"),
-	member_def(perf_record_mmap, filename, T_STRING_INPLACE, "backing store"),
+	string_member_def(perf_record_mmap, filename, "backing store"),
 	{ .name = NULL, },
 };
 
@@ -174,13 +225,15 @@ static PyObject *pyrf_mmap_event__repr(const struct pyrf_event *pevent)
 {
 	PyObject *ret;
 	char *s;
+	int fn_len = pyrf_event__str_len(pevent, offsetof(struct perf_record_mmap, filename),
+					 sizeof(pevent->event->mmap.filename));
 
 	if (asprintf(&s, "{ type: mmap, pid: %u, tid: %u, start: %#" PRI_lx64 ", "
 			 "length: %#" PRI_lx64 ", offset: %#" PRI_lx64 ", "
-			 "filename: %s }",
-		     pevent->event.mmap.pid, pevent->event.mmap.tid,
-		     pevent->event.mmap.start, pevent->event.mmap.len,
-		     pevent->event.mmap.pgoff, pevent->event.mmap.filename) < 0) {
+			 "filename: %.*s }",
+		     pevent->event->mmap.pid, pevent->event->mmap.tid,
+		     pevent->event->mmap.start, pevent->event->mmap.len,
+		     pevent->event->mmap.pgoff, fn_len, pevent->event->mmap.filename) < 0) {
 		ret = PyErr_NoMemory();
 	} else {
 		ret = PyUnicode_FromString(s);
@@ -196,8 +249,7 @@ static PyTypeObject pyrf_mmap_event__type = {
 	.tp_dealloc	= (destructor)pyrf_event__delete,
 	.tp_flags	= Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
 	.tp_doc		= pyrf_mmap_event__doc,
-	.tp_members	= pyrf_mmap_event__members,
-	.tp_getset	= pyrf_event__getset,
+	.tp_getset	= pyrf_mmap_event__getset,
 	.tp_repr	= (reprfunc)pyrf_mmap_event__repr,
 };
 
@@ -207,64 +259,69 @@ static PyObject *pyrf_mmap2_event__get_maj(PyObject *self, void *closure __maybe
 {
 	struct pyrf_event *pevent = (void *)self;
 
-	if (pevent->event.header.misc & PERF_RECORD_MISC_MMAP_BUILD_ID)
+	if (pevent->event->header.misc & PERF_RECORD_MISC_MMAP_BUILD_ID)
 		Py_RETURN_NONE;
 
-	return PyLong_FromUnsignedLong(pevent->event.mmap2.maj);
+	return PyLong_FromUnsignedLong(pevent->event->mmap2.maj);
 }
 
 static PyObject *pyrf_mmap2_event__get_min(PyObject *self, void *closure __maybe_unused)
 {
 	struct pyrf_event *pevent = (void *)self;
 
-	if (pevent->event.header.misc & PERF_RECORD_MISC_MMAP_BUILD_ID)
+	if (pevent->event->header.misc & PERF_RECORD_MISC_MMAP_BUILD_ID)
 		Py_RETURN_NONE;
 
-	return PyLong_FromUnsignedLong(pevent->event.mmap2.min);
+	return PyLong_FromUnsignedLong(pevent->event->mmap2.min);
 }
 
 static PyObject *pyrf_mmap2_event__get_ino(PyObject *self, void *closure __maybe_unused)
 {
 	struct pyrf_event *pevent = (void *)self;
 
-	if (pevent->event.header.misc & PERF_RECORD_MISC_MMAP_BUILD_ID)
+	if (pevent->event->header.misc & PERF_RECORD_MISC_MMAP_BUILD_ID)
 		Py_RETURN_NONE;
 
-	return PyLong_FromUnsignedLongLong(pevent->event.mmap2.ino);
+	return PyLong_FromUnsignedLongLong(pevent->event->mmap2.ino);
 }
 
 static PyObject *pyrf_mmap2_event__get_ino_generation(PyObject *self, void *closure __maybe_unused)
 {
 	struct pyrf_event *pevent = (void *)self;
 
-	if (pevent->event.header.misc & PERF_RECORD_MISC_MMAP_BUILD_ID)
+	if (pevent->event->header.misc & PERF_RECORD_MISC_MMAP_BUILD_ID)
 		Py_RETURN_NONE;
 
-	return PyLong_FromUnsignedLongLong(pevent->event.mmap2.ino_generation);
+	return PyLong_FromUnsignedLongLong(pevent->event->mmap2.ino_generation);
 }
 
 static PyObject *pyrf_mmap2_event__get_build_id(PyObject *self, void *closure __maybe_unused)
 {
 	struct pyrf_event *pevent = (void *)self;
 
-	if (!(pevent->event.header.misc & PERF_RECORD_MISC_MMAP_BUILD_ID))
+	if (!(pevent->event->header.misc & PERF_RECORD_MISC_MMAP_BUILD_ID))
 		Py_RETURN_NONE;
 
-	int size = pevent->event.mmap2.build_id_size;
+	int size = pevent->event->mmap2.build_id_size;
 
 	if (size > 20)
 		size = 20;
 
-	return PyBytes_FromStringAndSize((const char *)pevent->event.mmap2.build_id, size);
+	return PyBytes_FromStringAndSize((const char *)pevent->event->mmap2.build_id, size);
 }
 
 static PyGetSetDef pyrf_mmap2_event__getset[] = {
-	{
-		.name = "evsel",
-		.get = pyrf_event__get_evsel,
-		.set = NULL,
-		.doc = "tracking event.",
-	},
+	sample_members
+	member_def(perf_event_header, type, T_UINT, "event type"),
+	member_def(perf_event_header, misc, T_USHORT, "event misc"),
+	member_def(perf_record_mmap2, pid, T_UINT, "event pid"),
+	member_def(perf_record_mmap2, tid, T_UINT, "event tid"),
+	member_def(perf_record_mmap2, start, T_ULONGLONG, "start of the map"),
+	member_def(perf_record_mmap2, len, T_ULONGLONG, "map length"),
+	member_def(perf_record_mmap2, pgoff, T_ULONGLONG, "page offset"),
+	member_def(perf_record_mmap2, prot, T_UINT, "protection"),
+	member_def(perf_record_mmap2, flags, T_UINT, "flags"),
+	string_member_def(perf_record_mmap2, filename, "backing store"),
 	{
 		.name = "maj",
 		.get = pyrf_mmap2_event__get_maj,
@@ -298,31 +355,18 @@ static PyGetSetDef pyrf_mmap2_event__getset[] = {
 	{ .name = NULL, },
 };
 
-static PyMemberDef pyrf_mmap2_event__members[] = {
-	sample_members
-	member_def(perf_event_header, type, T_UINT, "event type"),
-	member_def(perf_event_header, misc, T_USHORT, "event misc"),
-	member_def(perf_record_mmap2, pid, T_UINT, "event pid"),
-	member_def(perf_record_mmap2, tid, T_UINT, "event tid"),
-	member_def(perf_record_mmap2, start, T_ULONGLONG, "start of the map"),
-	member_def(perf_record_mmap2, len, T_ULONGLONG, "map length"),
-	member_def(perf_record_mmap2, pgoff, T_ULONGLONG, "page offset"),
-	member_def(perf_record_mmap2, prot, T_UINT, "protection"),
-	member_def(perf_record_mmap2, flags, T_UINT, "flags"),
-	member_def(perf_record_mmap2, filename, T_STRING_INPLACE, "backing store"),
-	{ .name = NULL, },
-};
-
 static PyObject *pyrf_mmap2_event__repr(const struct pyrf_event *pevent)
 {
 	PyObject *ret;
 	char *s;
+	int fn_len = pyrf_event__str_len(pevent, offsetof(struct perf_record_mmap2, filename),
+					 sizeof(pevent->event->mmap2.filename));
 
-	if (asprintf(&s, "{ type: mmap2, pid: %u, tid: %u, start: %#" PRI_lx64 ", length: %#" PRI_lx64 ", offset: %#" PRI_lx64 ", flags: %#x, prot: %#x, filename: %s }",
-		     pevent->event.mmap2.pid, pevent->event.mmap2.tid,
-		     pevent->event.mmap2.start, pevent->event.mmap2.len,
-		     pevent->event.mmap2.pgoff, pevent->event.mmap2.flags,
-		     pevent->event.mmap2.prot, pevent->event.mmap2.filename) < 0)
+	if (asprintf(&s, "{ type: mmap2, pid: %u, tid: %u, start: %#" PRI_lx64 ", length: %#" PRI_lx64 ", offset: %#" PRI_lx64 ", flags: %#x, prot: %#x, filename: %.*s }",
+		     pevent->event->mmap2.pid, pevent->event->mmap2.tid,
+		     pevent->event->mmap2.start, pevent->event->mmap2.len,
+		     pevent->event->mmap2.pgoff, pevent->event->mmap2.flags,
+		     pevent->event->mmap2.prot, fn_len, pevent->event->mmap2.filename) < 0)
 		return PyErr_NoMemory();
 
 	ret = PyUnicode_FromString(s);
@@ -337,14 +381,13 @@ static PyTypeObject pyrf_mmap2_event__type = {
 	.tp_dealloc	= (destructor)pyrf_event__delete,
 	.tp_flags	= Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
 	.tp_doc		= pyrf_mmap2_event__doc,
-	.tp_members	= pyrf_mmap2_event__members,
 	.tp_getset	= pyrf_mmap2_event__getset,
 	.tp_repr	= (reprfunc)pyrf_mmap2_event__repr,
 };
 
 static const char pyrf_task_event__doc[] = PyDoc_STR("perf task (fork/exit) event object.");
 
-static PyMemberDef pyrf_task_event__members[] = {
+static PyGetSetDef pyrf_task_event__getset[] = {
 	sample_members
 	member_def(perf_event_header, type, T_UINT, "event type"),
 	member_def(perf_record_fork, pid, T_UINT, "event pid"),
@@ -359,12 +402,12 @@ static PyObject *pyrf_task_event__repr(const struct pyrf_event *pevent)
 {
 	return PyUnicode_FromFormat("{ type: %s, pid: %u, ppid: %u, tid: %u, "
 				   "ptid: %u, time: %" PRI_lu64 "}",
-				   pevent->event.header.type == PERF_RECORD_FORK ? "fork" : "exit",
-				   pevent->event.fork.pid,
-				   pevent->event.fork.ppid,
-				   pevent->event.fork.tid,
-				   pevent->event.fork.ptid,
-				   pevent->event.fork.time);
+				   pevent->event->header.type == PERF_RECORD_FORK ? "fork" : "exit",
+				   pevent->event->fork.pid,
+				   pevent->event->fork.ppid,
+				   pevent->event->fork.tid,
+				   pevent->event->fork.ptid,
+				   pevent->event->fork.time);
 }
 
 static PyTypeObject pyrf_task_event__type = {
@@ -374,28 +417,36 @@ static PyTypeObject pyrf_task_event__type = {
 	.tp_dealloc	= (destructor)pyrf_event__delete,
 	.tp_flags	= Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
 	.tp_doc		= pyrf_task_event__doc,
-	.tp_members	= pyrf_task_event__members,
-	.tp_getset	= pyrf_event__getset,
+	.tp_getset	= pyrf_task_event__getset,
 	.tp_repr	= (reprfunc)pyrf_task_event__repr,
 };
 
 static const char pyrf_comm_event__doc[] = PyDoc_STR("perf comm event object.");
 
-static PyMemberDef pyrf_comm_event__members[] = {
+static PyGetSetDef pyrf_comm_event__getset[] = {
 	sample_members
 	member_def(perf_event_header, type, T_UINT, "event type"),
 	member_def(perf_record_comm, pid, T_UINT, "event pid"),
 	member_def(perf_record_comm, tid, T_UINT, "event tid"),
-	member_def(perf_record_comm, comm, T_STRING_INPLACE, "process name"),
+	string_member_def(perf_record_comm, comm, "process name"),
 	{ .name = NULL, },
 };
 
 static PyObject *pyrf_comm_event__repr(const struct pyrf_event *pevent)
 {
-	return PyUnicode_FromFormat("{ type: comm, pid: %u, tid: %u, comm: %s }",
-				   pevent->event.comm.pid,
-				   pevent->event.comm.tid,
-				   pevent->event.comm.comm);
+	PyObject *ret;
+	char *s;
+	int comm_len = pyrf_event__str_len(pevent, offsetof(struct perf_record_comm, comm),
+					   sizeof(pevent->event->comm.comm));
+
+	if (asprintf(&s, "{ type: comm, pid: %u, tid: %u, comm: %.*s }",
+		     pevent->event->comm.pid, pevent->event->comm.tid,
+		     comm_len, pevent->event->comm.comm) < 0)
+		return PyErr_NoMemory();
+
+	ret = PyUnicode_FromString(s);
+	free(s);
+	return ret;
 }
 
 static PyTypeObject pyrf_comm_event__type = {
@@ -405,14 +456,13 @@ static PyTypeObject pyrf_comm_event__type = {
 	.tp_dealloc	= (destructor)pyrf_event__delete,
 	.tp_flags	= Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
 	.tp_doc		= pyrf_comm_event__doc,
-	.tp_members	= pyrf_comm_event__members,
-	.tp_getset	= pyrf_event__getset,
+	.tp_getset	= pyrf_comm_event__getset,
 	.tp_repr	= (reprfunc)pyrf_comm_event__repr,
 };
 
 static const char pyrf_throttle_event__doc[] = PyDoc_STR("perf throttle event object.");
 
-static PyMemberDef pyrf_throttle_event__members[] = {
+static PyGetSetDef pyrf_throttle_event__getset[] = {
 	sample_members
 	member_def(perf_event_header, type, T_UINT, "event type"),
 	member_def(perf_record_throttle, time, T_ULONGLONG, "timestamp"),
@@ -424,11 +474,11 @@ static PyMemberDef pyrf_throttle_event__members[] = {
 static PyObject *pyrf_throttle_event__repr(const struct pyrf_event *pevent)
 {
 	const struct perf_record_throttle *te = (const struct perf_record_throttle *)
-		(&pevent->event.header + 1);
+		(&pevent->event->header + 1);
 
 	return PyUnicode_FromFormat("{ type: %sthrottle, time: %" PRI_lu64 ", id: %" PRI_lu64
 				   ", stream_id: %" PRI_lu64 " }",
-				   pevent->event.header.type == PERF_RECORD_THROTTLE ? "" : "un",
+				   pevent->event->header.type == PERF_RECORD_THROTTLE ? "" : "un",
 				   te->time, te->id, te->stream_id);
 }
 
@@ -439,14 +489,13 @@ static PyTypeObject pyrf_throttle_event__type = {
 	.tp_dealloc	= (destructor)pyrf_event__delete,
 	.tp_flags	= Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
 	.tp_doc		= pyrf_throttle_event__doc,
-	.tp_members	= pyrf_throttle_event__members,
-	.tp_getset	= pyrf_event__getset,
+	.tp_getset	= pyrf_throttle_event__getset,
 	.tp_repr	= (reprfunc)pyrf_throttle_event__repr,
 };
 
 static const char pyrf_lost_event__doc[] = PyDoc_STR("perf lost event object.");
 
-static PyMemberDef pyrf_lost_event__members[] = {
+static PyGetSetDef pyrf_lost_event__getset[] = {
 	sample_members
 	member_def(perf_event_header, type, T_UINT, "event type"),
 	member_def(perf_record_lost, id, T_ULONGLONG, "event id"),
@@ -461,7 +510,7 @@ static PyObject *pyrf_lost_event__repr(const struct pyrf_event *pevent)
 
 	if (asprintf(&s, "{ type: lost, id: %#" PRI_lx64 ", "
 			 "lost: %#" PRI_lx64 " }",
-		     pevent->event.lost.id, pevent->event.lost.lost) < 0) {
+		     pevent->event->lost.id, pevent->event->lost.lost) < 0) {
 		ret = PyErr_NoMemory();
 	} else {
 		ret = PyUnicode_FromString(s);
@@ -477,14 +526,13 @@ static PyTypeObject pyrf_lost_event__type = {
 	.tp_dealloc	= (destructor)pyrf_event__delete,
 	.tp_flags	= Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
 	.tp_doc		= pyrf_lost_event__doc,
-	.tp_members	= pyrf_lost_event__members,
-	.tp_getset	= pyrf_event__getset,
+	.tp_getset	= pyrf_lost_event__getset,
 	.tp_repr	= (reprfunc)pyrf_lost_event__repr,
 };
 
 static const char pyrf_stat_event__doc[] = PyDoc_STR("perf stat event object.");
 
-static PyMemberDef pyrf_stat_event__members[] = {
+static PyGetSetDef pyrf_stat_event__getset[] = {
 	sample_members
 	member_def(perf_event_header, type, T_UINT, "event type"),
 	member_def(perf_record_stat, id, T_ULONGLONG, "event id"),
@@ -498,14 +546,16 @@ static PyMemberDef pyrf_stat_event__members[] = {
 
 static PyObject *pyrf_stat_event__repr(const struct pyrf_event *pevent)
 {
+	const union perf_event *event = pevent->event ?: &zero_event;
+
 	return PyUnicode_FromFormat(
 		"{ type: stat, id: %llu, cpu: %u, thread: %u, val: %llu, ena: %llu, run: %llu }",
-		pevent->event.stat.id,
-		pevent->event.stat.cpu,
-		pevent->event.stat.thread,
-		pevent->event.stat.val,
-		pevent->event.stat.ena,
-		pevent->event.stat.run);
+		event->stat.id,
+		event->stat.cpu,
+		event->stat.thread,
+		event->stat.val,
+		event->stat.ena,
+		event->stat.run);
 }
 
 static PyTypeObject pyrf_stat_event__type = {
@@ -516,28 +566,27 @@ static PyTypeObject pyrf_stat_event__type = {
 	.tp_dealloc	= (destructor)pyrf_event__delete,
 	.tp_flags	= Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
 	.tp_doc		= pyrf_stat_event__doc,
-	.tp_members	= pyrf_stat_event__members,
-	.tp_getset	= pyrf_event__getset,
+	.tp_getset	= pyrf_stat_event__getset,
 	.tp_repr	= (reprfunc)pyrf_stat_event__repr,
 };
 
 static const char pyrf_stat_round_event__doc[] = PyDoc_STR("perf stat round event object.");
 
-static PyMemberDef pyrf_stat_round_event__members[] = {
+static PyGetSetDef pyrf_stat_round_event__getset[] = {
 	sample_members
 	member_def(perf_event_header, type, T_UINT, "event type"),
-	{ .name = "stat_round_type", .type = T_ULONGLONG,
-	  .offset = offsetof(struct pyrf_event, event) + offsetof(struct perf_record_stat_round, type),
-	  .doc = "round type" },
+	named_member_def(stat_round_type, perf_record_stat_round, type, T_ULONGLONG, "round type"),
 	member_def(perf_record_stat_round, time, T_ULONGLONG, "round time"),
 	{ .name = NULL, },
 };
 
 static PyObject *pyrf_stat_round_event__repr(const struct pyrf_event *pevent)
 {
+	const union perf_event *event = pevent->event ?: &zero_event;
+
 	return PyUnicode_FromFormat("{ type: stat_round, type: %llu, time: %llu }",
-				   pevent->event.stat_round.type,
-				   pevent->event.stat_round.time);
+				   event->stat_round.type,
+				   event->stat_round.time);
 }
 
 static PyTypeObject pyrf_stat_round_event__type = {
@@ -548,14 +597,13 @@ static PyTypeObject pyrf_stat_round_event__type = {
 	.tp_dealloc	= (destructor)pyrf_event__delete,
 	.tp_flags	= Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
 	.tp_doc		= pyrf_stat_round_event__doc,
-	.tp_members	= pyrf_stat_round_event__members,
-	.tp_getset	= pyrf_event__getset,
+	.tp_getset	= pyrf_stat_round_event__getset,
 	.tp_repr	= (reprfunc)pyrf_stat_round_event__repr,
 };
 
 static const char pyrf_read_event__doc[] = PyDoc_STR("perf read event object.");
 
-static PyMemberDef pyrf_read_event__members[] = {
+static PyGetSetDef pyrf_read_event__getset[] = {
 	sample_members
 	member_def(perf_event_header, type, T_UINT, "event type"),
 	member_def(perf_record_read, pid, T_UINT, "event pid"),
@@ -566,8 +614,8 @@ static PyMemberDef pyrf_read_event__members[] = {
 static PyObject *pyrf_read_event__repr(const struct pyrf_event *pevent)
 {
 	return PyUnicode_FromFormat("{ type: read, pid: %u, tid: %u }",
-				   pevent->event.read.pid,
-				   pevent->event.read.tid);
+				   pevent->event->read.pid,
+				   pevent->event->read.tid);
 	/*
  	 * FIXME: return the array of read values,
  	 * making this method useful ;-)
@@ -581,26 +629,11 @@ static PyTypeObject pyrf_read_event__type = {
 	.tp_dealloc	= (destructor)pyrf_event__delete,
 	.tp_flags	= Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
 	.tp_doc		= pyrf_read_event__doc,
-	.tp_members	= pyrf_read_event__members,
-	.tp_getset	= pyrf_event__getset,
+	.tp_getset	= pyrf_read_event__getset,
 	.tp_repr	= (reprfunc)pyrf_read_event__repr,
 };
 
 static const char pyrf_sample_event__doc[] = PyDoc_STR("perf sample event object.");
-
-static PyMemberDef pyrf_sample_event__members[] = {
-	sample_members
-	sample_member_def(sample_ip, ip, T_ULONGLONG, "event ip"),
-	sample_member_def(sample_addr, addr, T_ULONGLONG, "event addr"),
-	sample_member_def(sample_phys_addr, phys_addr, T_ULONGLONG, "event physical addr"),
-	sample_member_def(sample_weight, weight, T_ULONGLONG, "event weight"),
-	sample_member_def(sample_data_src, data_src, T_ULONGLONG, "event data source"),
-	sample_member_def(sample_insn_count, insn_cnt, T_ULONGLONG, "event instruction count"),
-	sample_member_def(sample_cyc_count, cyc_cnt, T_ULONGLONG, "event cycle count"),
-	sample_member_def(flags, flags, T_UINT, "event flags"),
-	member_def(perf_event_header, type, T_UINT, "event type"),
-	{ .name = NULL, },
-};
 
 static PyObject *pyrf_sample_event__repr(const struct pyrf_event *pevent)
 {
@@ -619,16 +652,18 @@ static PyObject *pyrf_sample_event__repr(const struct pyrf_event *pevent)
 #ifdef HAVE_LIBTRACEEVENT
 static bool is_tracepoint(const struct pyrf_event *pevent)
 {
-	if (!pevent->sample.evsel)
+	struct evsel *evsel = pevent->sample->evsel ?: pevent->evsel;
+
+	if (!evsel)
 		return false;
-	return pevent->sample.evsel->core.attr.type == PERF_TYPE_TRACEPOINT;
+	return evsel->core.attr.type == PERF_TYPE_TRACEPOINT;
 }
 
 static PyObject*
 tracepoint_field(const struct pyrf_event *pe, struct tep_format_field *field)
 {
 	struct tep_handle *pevent = field->event->tep;
-	void *data = pe->sample.raw_data;
+	void *data = pe->sample->raw_data;
 	PyObject *ret = NULL;
 	unsigned long long val;
 	unsigned int offset, len;
@@ -668,7 +703,7 @@ tracepoint_field(const struct pyrf_event *pe, struct tep_format_field *field)
 static PyObject*
 get_tracepoint_field(struct pyrf_event *pevent, PyObject *attr_name)
 {
-	struct evsel *evsel = pevent->sample.evsel;
+	struct evsel *evsel = pevent->sample->evsel ?: pevent->evsel;
 	struct tep_event *tp_format = evsel__tp_format(evsel);
 	struct tep_format_field *field;
 
@@ -693,28 +728,19 @@ get_tracepoint_field(struct pyrf_event *pevent, PyObject *attr_name)
 
 static int pyrf_sample_event__resolve_al(struct pyrf_event *pevent)
 {
-	struct evsel *evsel = pevent->sample.evsel;
-	struct evlist *evlist = evsel ? evsel->evlist : NULL;
-	struct perf_session *session = evlist ? evlist__session(evlist) : NULL;
-	struct machine *machine;
-
 	if (pevent->al_resolved)
 		return 0;
 
-	if (!session)
+	/*
+	 * Use pevent->machine, which pyrf_event__new() initializes while the
+	 * session callback is active and pyrf_event__copy() clears after
+	 * resolving pevent->al if a reference is retained beyond the callback.
+	 */
+	if (!pevent->machine)
 		return -1;
 
-	/*
-	 * Use pevent->machine, which pyrf_event__new() initializes either from
-	 * the machine resolved by perf_session (machines__find_for_cpumode(),
-	 * preserving DEFAULT_GUEST_KERNEL_ID == 0 for default guests) or via
-	 * sample.machine_pid when pyrf_event__new() is called with a NULL
-	 * machine.
-	 */
-	machine = pevent->machine ? pevent->machine : &session->machines.host;
-
 	addr_location__init(&pevent->al);
-	if (machine__resolve(machine, &pevent->al, &pevent->sample) < 0) {
+	if (machine__resolve(pevent->machine, &pevent->al, pevent->sample) < 0) {
 		addr_location__exit(&pevent->al);
 		return -1;
 	}
@@ -819,17 +845,17 @@ static PyObject *pyrf_sample_event__get_sym_end(struct pyrf_event *pevent,
 static PyObject *pyrf_sample_event__get_raw_buf(struct pyrf_event *pevent,
 						void *closure __maybe_unused)
 {
-	if (pevent->event.header.type != PERF_RECORD_SAMPLE)
+	if (pevent->event->header.type != PERF_RECORD_SAMPLE)
 		Py_RETURN_NONE;
 
-	return PyBytes_FromStringAndSize((const char *)pevent->sample.raw_data,
-					 pevent->sample.raw_size);
+	return PyBytes_FromStringAndSize((const char *)pevent->sample->raw_data,
+					 pevent->sample->raw_size);
 }
 
 static PyObject *pyrf_sample_event__srccode(PyObject *self, PyObject *args)
 {
 	struct pyrf_event *pevent = (void *)self;
-	u64 addr = pevent->sample.ip;
+	u64 addr = pevent->sample->ip;
 	char *srcfile = NULL;
 	char *srccode = NULL;
 	unsigned int line = 0;
@@ -838,8 +864,8 @@ static PyObject *pyrf_sample_event__srccode(PyObject *self, PyObject *args)
 	struct addr_location al;
 
 	/*
-	 * addr defaults to pevent->sample.ip when omitted, and when
-	 * addr != pevent->sample.ip a local addr_location is resolved so
+	 * addr defaults to pevent->sample->ip when omitted, and when
+	 * addr != pevent->sample->ip a local addr_location is resolved so
 	 * callers can inspect callchain/branch addresses without mutating
 	 * the sample's cached pevent->al.
 	 */
@@ -849,9 +875,9 @@ static PyObject *pyrf_sample_event__srccode(PyObject *self, PyObject *args)
 	if (pyrf_sample_event__resolve_al(pevent) < 0)
 		Py_RETURN_NONE;
 
-	if (addr != pevent->sample.ip) {
+	if (addr != pevent->sample->ip) {
 		addr_location__init(&al);
-		thread__find_symbol_fb(pevent->al.thread, pevent->sample.cpumode, addr, &al);
+		thread__find_symbol_fb(pevent->al.thread, pevent->sample->cpumode, addr, &al);
 	} else {
 		addr_location__init(&al);
 		al.thread = thread__get(pevent->al.thread);
@@ -890,29 +916,21 @@ static PyObject *pyrf_sample_event__srccode(PyObject *self, PyObject *args)
 static PyObject *pyrf_sample_event__insn(PyObject *self, PyObject *args __maybe_unused)
 {
 	struct pyrf_event *pevent = (void *)self;
-	struct thread *thread;
-	struct machine *machine;
 
-	if (pyrf_sample_event__resolve_al(pevent) < 0)
+	if (pevent->sample->ip && !pevent->sample->insn_len) {
+		if (pyrf_sample_event__resolve_al(pevent) < 0 ||
+		    !pevent->al.thread || !pevent->machine)
+			Py_RETURN_NONE;
+
+		perf_sample__fetch_insn(pevent->sample, pevent->al.thread,
+					pevent->machine);
+	}
+
+	if (!pevent->sample->insn_len)
 		Py_RETURN_NONE;
 
-	thread = pevent->al.thread;
-
-	if (!thread || !thread__maps(thread))
-		Py_RETURN_NONE;
-
-	machine = maps__machine(thread__maps(thread));
-	if (!machine)
-		Py_RETURN_NONE;
-
-	if (pevent->sample.ip && !pevent->sample.insn_len)
-		perf_sample__fetch_insn(&pevent->sample, thread, machine);
-
-	if (!pevent->sample.insn_len)
-		Py_RETURN_NONE;
-
-	return PyBytes_FromStringAndSize((const char *)pevent->sample.insn,
-					 pevent->sample.insn_len);
+	return PyBytes_FromStringAndSize((const char *)pevent->sample->insn,
+					 pevent->sample->insn_len);
 }
 
 struct pyrf_callchain_node {
@@ -1063,9 +1081,52 @@ static PyTypeObject pyrf_callchain__type = {
 	.tp_as_sequence	= &pyrf_callchain__sequence_methods,
 };
 
+static int pyrf_sample_event__resolve_callchain(struct pyrf_event *pevent)
+{
+	struct callchain_cursor *cursor;
+	struct pyrf_callchain *pchain;
+	struct callchain_cursor_node *node;
+
+	if (pevent->callchain || !pevent->sample->callchain || !pevent->machine)
+		return 0;
+
+	if (pyrf_sample_event__resolve_al(pevent) < 0)
+		return 0;
+
+	cursor = get_tls_callchain_cursor();
+	if (thread__resolve_callchain(pevent->al.thread, cursor, pevent->sample,
+				      NULL, NULL, PERF_MAX_STACK_DEPTH) != 0)
+		return 0;
+
+	callchain_cursor_commit(cursor);
+	pchain = PyObject_New(struct pyrf_callchain, &pyrf_callchain__type);
+	if (!pchain)
+		return -ENOMEM;
+
+	pchain->nr_frames = cursor->nr;
+	pchain->frames = calloc(pchain->nr_frames, sizeof(*pchain->frames));
+	if (!pchain->frames) {
+		Py_DECREF(pchain);
+		PyErr_NoMemory();
+		return -ENOMEM;
+	}
+	for (u64 i = 0; i < pchain->nr_frames; i++) {
+		node = callchain_cursor_current(cursor);
+		pchain->frames[i].ip = node->ip;
+		pchain->frames[i].map = map__get(node->ms.map);
+		pchain->frames[i].sym = node->ms.sym;
+		callchain_cursor_advance(cursor);
+	}
+	pevent->callchain = (PyObject *)pchain;
+	return 0;
+}
+
 static PyObject *pyrf_sample_event__get_callchain(PyObject *self, void *closure __maybe_unused)
 {
 	struct pyrf_event *pevent = (void *)self;
+
+	if (pyrf_sample_event__resolve_callchain(pevent) < 0)
+		return NULL;
 
 	if (!pevent->callchain)
 		Py_RETURN_NONE;
@@ -1242,8 +1303,8 @@ static int pyrf_sample_event__resolve_addr_al(struct pyrf_event *pevent,
 	if (pyrf_sample_event__resolve_al(pevent) < 0 || !pevent->al.thread)
 		return -1;
 
-	thread__find_symbol_fb(pevent->al.thread, pevent->sample.cpumode,
-			       pevent->sample.addr, addr_al);
+	thread__find_symbol_fb(pevent->al.thread, pevent->sample->cpumode,
+			       pevent->sample->addr, addr_al);
 	return 0;
 }
 
@@ -1295,23 +1356,32 @@ static PyObject *pyrf_sample_event__get_addr_sym_offset(struct pyrf_event *peven
 static PyObject *pyrf_sample_event__get_branch_type(struct pyrf_event *pevent,
 						    void *closure __maybe_unused)
 {
-	return PyLong_FromUnsignedLong(pevent->sample.flags & PERF_BRANCH_MASK);
+	return PyLong_FromUnsignedLong(pevent->sample->flags & PERF_BRANCH_MASK);
 }
 
 static PyObject *pyrf_sample_event__get_in_tx(struct pyrf_event *pevent,
 					      void *closure __maybe_unused)
 {
-	return PyLong_FromUnsignedLong(!!(pevent->sample.flags & PERF_IP_FLAG_IN_TX));
+	return PyLong_FromUnsignedLong(!!(pevent->sample->flags & PERF_IP_FLAG_IN_TX));
 }
 
 static PyObject *pyrf_sample_event__get_transaction(struct pyrf_event *pevent,
 						    void *closure __maybe_unused)
 {
-	return PyLong_FromUnsignedLongLong(pevent->sample.transaction);
+	return PyLong_FromUnsignedLongLong(pevent->sample->transaction);
 }
 
 static PyGetSetDef pyrf_sample_event__getset[] = {
-
+	sample_members
+	sample_member_def(sample_ip, ip, T_ULONGLONG, "event ip"),
+	sample_member_def(sample_addr, addr, T_ULONGLONG, "event addr"),
+	sample_member_def(sample_phys_addr, phys_addr, T_ULONGLONG, "event physical addr"),
+	sample_member_def(sample_weight, weight, T_ULONGLONG, "event weight"),
+	sample_member_def(sample_data_src, data_src, T_ULONGLONG, "event data source"),
+	sample_member_def(sample_insn_count, insn_cnt, T_ULONGLONG, "event instruction count"),
+	sample_member_def(sample_cyc_count, cyc_cnt, T_ULONGLONG, "event cycle count"),
+	sample_member_def(flags, flags, T_UINT, "event flags"),
+	member_def(perf_event_header, type, T_UINT, "event type"),
 	{
 		.name = "addr_dso",
 		.get = (getter)pyrf_sample_event__get_addr_dso,
@@ -1360,12 +1430,6 @@ static PyGetSetDef pyrf_sample_event__getset[] = {
 		.get = (getter)pyrf_sample_event__get_raw_buf,
 		.set = NULL,
 		.doc = "event raw buffer.",
-	},
-	{
-		.name = "evsel",
-		.get = pyrf_event__get_evsel,
-		.set = NULL,
-		.doc = "tracking event.",
 	},
 	{
 		.name = "dso",
@@ -1453,7 +1517,6 @@ static PyTypeObject pyrf_sample_event__type = {
 	.tp_dealloc	= (destructor)pyrf_event__delete,
 	.tp_flags	= Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
 	.tp_doc		= pyrf_sample_event__doc,
-	.tp_members	= pyrf_sample_event__members,
 	.tp_getset	= pyrf_sample_event__getset,
 	.tp_methods	= pyrf_sample_event__methods,
 	.tp_repr	= (reprfunc)pyrf_sample_event__repr,
@@ -1462,36 +1525,26 @@ static PyTypeObject pyrf_sample_event__type = {
 
 static const char pyrf_context_switch_event__doc[] = PyDoc_STR("perf context_switch event object.");
 
-static PyMemberDef pyrf_context_switch_event__members[] = {
-	sample_members
-	member_def(perf_event_header, type, T_UINT, "event type"),
-	member_def(perf_event_header, misc, T_USHORT, "event misc"),
-	{ .name = NULL, },
-};
-
 static PyObject *pyrf_context_switch_event__get_next_prev_pid(const struct pyrf_event *pevent,
 							      void *closure __maybe_unused)
 {
-	if (pevent->event.header.type == PERF_RECORD_SWITCH_CPU_WIDE)
-		return PyLong_FromUnsignedLong(pevent->event.context_switch.next_prev_pid);
+	if (pevent->event->header.type == PERF_RECORD_SWITCH_CPU_WIDE)
+		return PyLong_FromUnsignedLong(pevent->event->context_switch.next_prev_pid);
 	Py_RETURN_NONE;
 }
 
 static PyObject *pyrf_context_switch_event__get_next_prev_tid(const struct pyrf_event *pevent,
 							      void *closure __maybe_unused)
 {
-	if (pevent->event.header.type == PERF_RECORD_SWITCH_CPU_WIDE)
-		return PyLong_FromUnsignedLong(pevent->event.context_switch.next_prev_tid);
+	if (pevent->event->header.type == PERF_RECORD_SWITCH_CPU_WIDE)
+		return PyLong_FromUnsignedLong(pevent->event->context_switch.next_prev_tid);
 	Py_RETURN_NONE;
 }
 
 static PyGetSetDef pyrf_context_switch_event__getset[] = {
-	{
-		.name = "evsel",
-		.get = pyrf_event__get_evsel,
-		.set = NULL,
-		.doc = "tracking event.",
-	},
+	sample_members
+	member_def(perf_event_header, type, T_UINT, "event type"),
+	member_def(perf_event_header, misc, T_USHORT, "event misc"),
 	{
 		.name = "next_prev_pid",
 		.get = (getter)pyrf_context_switch_event__get_next_prev_pid,
@@ -1513,15 +1566,15 @@ static PyObject *pyrf_context_switch_event__repr(const struct pyrf_event *pevent
 	char *s;
 	int res;
 
-	if (pevent->event.header.type == PERF_RECORD_SWITCH_CPU_WIDE) {
+	if (pevent->event->header.type == PERF_RECORD_SWITCH_CPU_WIDE) {
 		res = asprintf(&s,
 			"{ type: context_switch, next_prev_pid: %u, next_prev_tid: %u, switch_out: %u }",
-			pevent->event.context_switch.next_prev_pid,
-			pevent->event.context_switch.next_prev_tid,
-			!!(pevent->event.header.misc & PERF_RECORD_MISC_SWITCH_OUT));
+			pevent->event->context_switch.next_prev_pid,
+			pevent->event->context_switch.next_prev_tid,
+			!!(pevent->event->header.misc & PERF_RECORD_MISC_SWITCH_OUT));
 	} else {
 		res = asprintf(&s, "{ type: context_switch, switch_out: %u }",
-			       !!(pevent->event.header.misc & PERF_RECORD_MISC_SWITCH_OUT));
+			       !!(pevent->event->header.misc & PERF_RECORD_MISC_SWITCH_OUT));
 	}
 	if (res < 0) {
 		ret = PyErr_NoMemory();
@@ -1539,7 +1592,6 @@ static PyTypeObject pyrf_context_switch_event__type = {
 	.tp_dealloc	= (destructor)pyrf_event__delete,
 	.tp_flags	= Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
 	.tp_doc		= pyrf_context_switch_event__doc,
-	.tp_members	= pyrf_context_switch_event__members,
 	.tp_getset	= pyrf_context_switch_event__getset,
 	.tp_repr	= (reprfunc)pyrf_context_switch_event__repr,
 };
@@ -1614,15 +1666,120 @@ static PyTypeObject *pyrf_event__type[] = {
 	[PERF_RECORD_STAT_ROUND] = &pyrf_stat_round_event__type,
 };
 
+static int pyrf_event__copy(struct pyrf_event *pevent)
+{
+	const union perf_event *orig_event = pevent->event;
+	const struct perf_sample *orig_sample = pevent->sample;
+	size_t copy_size = orig_event->header.size;
+	int err = -EINVAL;
+
+	/*
+	 * If a session callback retained a reference to pevent, resolve its
+	 * address location and callchain now while pevent->machine is still
+	 * live and thread->maps reflects the point in time of the sample.
+	 */
+	if (pevent->machine && pevent->evsel) {
+		pyrf_sample_event__resolve_al(pevent);
+		if (pyrf_sample_event__resolve_callchain(pevent) < 0) {
+			pevent->machine = NULL;
+			if (!pevent->event_copy) {
+				pevent->event = &zero_event;
+				pevent->sample = &pevent->sample_storage;
+			}
+			return -ENOMEM;
+		}
+	}
+	pevent->machine = NULL;
+
+	if (pevent->event_copy)
+		return 0;
+
+	/*
+	 * Clear borrowed pointers immediately so that even if copying fails,
+	 * pevent does not retain dangling pointers to the caller's stack,
+	 * ring buffer, or session.
+	 */
+	pevent->event = &zero_event;
+	pevent->sample = &pevent->sample_storage;
+
+	/*
+	 * Allocate an extra zero byte so string fields such as mmap/mmap2
+	 * filenames or comm strings are always NUL-terminated.
+	 */
+	pevent->event_copy = calloc(1, copy_size + 1);
+	if (!pevent->event_copy) {
+		PyErr_NoMemory();
+		return -ENOMEM;
+	}
+
+	memcpy(pevent->event_copy, orig_event, copy_size);
+	pevent->event = pevent->event_copy;
+
+	if (pevent->evsel) {
+		bool needs_swap = pevent->evsel->needs_swap;
+
+		pevent->evsel->needs_swap = false;
+		err = evsel__parse_sample(pevent->evsel, pevent->event_copy,
+					  &pevent->sample_storage);
+		pevent->evsel->needs_swap = needs_swap;
+	}
+
+	if (err == 0) {
+		if (orig_sample != &pevent->sample_storage) {
+			if (orig_sample->id)
+				pevent->sample_storage.id = orig_sample->id;
+			if (orig_sample->period)
+				pevent->sample_storage.period = orig_sample->period;
+			if (orig_sample->machine_pid)
+				pevent->sample_storage.machine_pid =
+					orig_sample->machine_pid;
+			if (orig_sample->vcpu != (u32)-1)
+				pevent->sample_storage.vcpu = orig_sample->vcpu;
+			if (orig_sample->insn_len && !pevent->sample_storage.insn_len) {
+				memcpy(pevent->sample_storage.insn, orig_sample->insn,
+				       sizeof(pevent->sample_storage.insn));
+				pevent->sample_storage.insn_len = orig_sample->insn_len;
+			}
+		}
+		pevent->sample = &pevent->sample_storage;
+	} else if (orig_sample != &pevent->sample_storage) {
+		/*
+		 * Synthesized events (e.g. Intel PT itrace) or events without
+		 * an evsel may not have raw sample buffers for
+		 * evsel__parse_sample(); copy the scalar fields from the
+		 * borrowed sample.
+		 */
+		perf_sample__exit(&pevent->sample_storage);
+		pevent->sample_storage = *orig_sample;
+		if (pevent->sample_storage.evsel)
+			pevent->sample_storage.evsel =
+				evsel__get(pevent->sample_storage.evsel);
+		pevent->sample_storage.callchain = NULL;
+		pevent->sample_storage.merged_callchain = false;
+		pevent->sample_storage.raw_data = NULL;
+		pevent->sample_storage.raw_size = 0;
+		pevent->sample_storage.branch_stack = NULL;
+		pevent->sample_storage.user_regs = NULL;
+		pevent->sample_storage.intr_regs = NULL;
+		pevent->sample_storage.user_stack.size = 0;
+		pevent->sample_storage.user_stack.data = NULL;
+		pevent->sample_storage.aux_sample.size = 0;
+		pevent->sample_storage.aux_sample.data = NULL;
+		pevent->sample = &pevent->sample_storage;
+	} else if (pevent->evsel) {
+		PyErr_Format(PyExc_OSError, "perf: can't parse sample, err=%d", err);
+		return err;
+	}
+	return 0;
+}
+
 static PyObject *pyrf_event__new(const union perf_event *event, struct evsel *evsel,
 				 struct perf_session *session, struct machine *machine,
 				 struct perf_sample *sample_arg)
 {
 	struct pyrf_event *pevent;
 	struct perf_sample *sample;
-	int err;
 	u32 min_size;
-	bool needs_swap;
 
 	if (event->header.type >= ARRAY_SIZE(pyrf_event__type) ||
 	    pyrf_event__type[event->header.type] == NULL) {
@@ -1635,128 +1792,58 @@ static PyObject *pyrf_event__new(const union perf_event *event, struct evsel *ev
 				    event->header.size, event->header.type);
 	}
 
-	size_t copy_size = event->header.size;
-
-	if (copy_size > sizeof(pevent->event)) {
-		return PyErr_Format(PyExc_TypeError, "Unexpected event size: %zd < %zu",
-				    sizeof(pevent->event), copy_size);
+	if (event->header.size > sizeof(union perf_event)) {
+		return PyErr_Format(PyExc_TypeError, "Unexpected event size: %zu < %u",
+				    sizeof(union perf_event), event->header.size);
 	}
 
 	pevent = PyObject_New(struct pyrf_event, pyrf_event__type[event->header.type]);
 	if (pevent == NULL)
 		return PyErr_NoMemory();
 
-	/* Copy the event for memory safety and initialize variables. */
-	memcpy(&pevent->event, event, copy_size);
-	if (copy_size < sizeof(pevent->event))
-		memset((char *)&pevent->event + copy_size, 0, sizeof(pevent->event) - copy_size);
-
-	if (event->header.type == PERF_RECORD_MMAP2)
-		pevent->event.mmap2.filename[sizeof(pevent->event.mmap2.filename) - 1] = '\0';
-
-	perf_sample__init(&pevent->sample, /*all=*/true);
-	pevent->machine = machine;
+	perf_sample__init(&pevent->sample_storage, /*all=*/true);
+	pevent->sample = sample_arg ?: &pevent->sample_storage;
+	pevent->evsel = evsel ? evsel__get(evsel) : NULL;
+	pevent->machine = NULL;
 	pevent->callchain = NULL;
 	pevent->brstack = NULL;
 	pevent->al_resolved = false;
 	addr_location__init(&pevent->al);
+	pevent->event = event;
+	pevent->event_copy = NULL;
 
-	if (!evsel) {
-		if (!pevent->machine && session)
-			pevent->machine = &session->machines.host;
+	/*
+	 * When called outside a session callback (e.g. pyrf_evlist__read_on_cpu)
+	 * or without a pre-parsed sample for an evsel, copy the event and parse
+	 * its sample into sample_storage immediately.
+	 */
+	if ((!session || (evsel && !sample_arg)) && pyrf_event__copy(pevent) < 0) {
+		Py_DECREF(pevent);
+		return NULL;
+	}
+
+	if (!evsel)
 		return (PyObject *)pevent;
-	}
 
-	/* Parse the sample again so that pointers are within the copied event. */
-	needs_swap = evsel->needs_swap;
-
-	evsel->needs_swap = false;
-	err = evsel__parse_sample(evsel, &pevent->event, &pevent->sample);
-	evsel->needs_swap = needs_swap;
-	if (err < 0) {
-		/*
-		 * Synthesized events (e.g. Intel PT itrace) may not have raw sample
-		 * buffers for evsel__parse_sample(); use the pre-parsed sample_arg.
-		 */
-		if (sample_arg) {
-			perf_sample__exit(&pevent->sample);
-			pevent->sample = *sample_arg;
-			if (pevent->sample.evsel)
-				pevent->sample.evsel = evsel__get(pevent->sample.evsel);
-			pevent->sample.merged_callchain = false;
-
-			pevent->sample.user_regs = NULL;
-			pevent->sample.intr_regs = NULL;
-			pevent->sample.raw_data = NULL;
-			pevent->sample.raw_size = 0;
-		} else {
-			Py_DECREF(pevent);
-			return PyErr_Format(PyExc_OSError,
-					    "perf: can't parse sample, err=%d", err);
-		}
-	}
-	if (session && session->evlist && perf_guest && pevent->sample.id) {
-		struct perf_sample_id *sid = evlist__id2sid(session->evlist, pevent->sample.id);
+	sample = pevent->sample;
+	if (session && session->evlist && perf_guest && sample->id) {
+		struct perf_sample_id *sid = evlist__id2sid(session->evlist, sample->id);
 
 		if (sid) {
-			pevent->sample.machine_pid = sid->machine_pid;
-			pevent->sample.vcpu = sid->vcpu.cpu;
+			sample->machine_pid = sid->machine_pid;
+			sample->vcpu = sid->vcpu.cpu;
 		}
 	}
 	if (!machine && session) {
-		machine = pevent->sample.machine_pid ?
-			machines__find(&session->machines, pevent->sample.machine_pid) :
+		machine = sample->machine_pid ?
+			machines__find(&session->machines, sample->machine_pid) :
 			&session->machines.host;
 		if (!machine)
 			machine = &session->machines.host;
 	}
 	pevent->machine = machine;
-	if (machine && machine->pid > 0 && !pevent->sample.machine_pid)
-		pevent->sample.machine_pid = machine->pid;
-	sample = &pevent->sample;
-	if (machine && sample->callchain) {
-		struct addr_location al;
-		struct callchain_cursor *cursor;
-		u64 i;
-		struct pyrf_callchain *pchain;
-
-		addr_location__init(&al);
-		if (machine__resolve(machine, &al, sample) >= 0) {
-			cursor = get_tls_callchain_cursor();
-			if (thread__resolve_callchain(al.thread, cursor, sample,
-						      NULL, NULL, PERF_MAX_STACK_DEPTH) == 0) {
-				callchain_cursor_commit(cursor);
-
-				pchain = PyObject_New(struct pyrf_callchain, &pyrf_callchain__type);
-				if (!pchain) {
-					addr_location__exit(&al);
-					Py_DECREF(pevent);
-					return NULL;
-				}
-				pchain->nr_frames = cursor->nr;
-				pchain->frames = calloc(pchain->nr_frames,
-							sizeof(*pchain->frames));
-				if (!pchain->frames) {
-					Py_DECREF(pchain);
-					addr_location__exit(&al);
-					Py_DECREF(pevent);
-					return PyErr_NoMemory();
-				}
-				struct callchain_cursor_node *node;
-
-				for (i = 0; i < pchain->nr_frames; i++) {
-					node = callchain_cursor_current(cursor);
-					pchain->frames[i].ip = node->ip;
-					pchain->frames[i].map =
-						map__get(node->ms.map);
-					pchain->frames[i].sym = node->ms.sym;
-					callchain_cursor_advance(cursor);
-				}
-				pevent->callchain = (PyObject *)pchain;
-			}
-			addr_location__exit(&al);
-		}
-	}
+	if (machine && machine->pid > 0 && !sample->machine_pid)
+		sample->machine_pid = machine->pid;
 	if (sample->branch_stack) {
 		struct branch_stack *bs = sample->branch_stack;
 		struct branch_entry *entries = perf_sample__branch_entries(sample);
@@ -4018,16 +4105,38 @@ static void pyrf_thread__delete(struct pyrf_thread *pthread)
 static PyObject *pyrf_thread__comm(PyObject *obj)
 {
 	struct pyrf_thread *pthread = (void *)obj;
-	const char *str;
+	struct thread *thread = pthread->thread;
+	bool has_comm = false;
+	char *str = NULL;
+	PyObject *ret;
 
-	CHECK_INITIALIZED(pthread->thread, "perf.thread");
+	CHECK_INITIALIZED(thread, "perf.thread");
 
-	str = thread__comm_str(pthread->thread);
+	/*
+	 * Copy the comm string under comm_lock so a concurrent PERF_RECORD_COMM
+	 * in perf_session__process_events() (which runs with the GIL released)
+	 * cannot free the old comm_str via comm__override() while it is being
+	 * read, and drop comm_lock before calling into the Python allocator.
+	 */
+	down_read(thread__comm_lock(thread));
+	if (!list_empty(thread__comm_list(thread))) {
+		const struct comm *comm;
 
-	if (!str)
+		comm = list_first_entry(thread__comm_list(thread), struct comm, list);
+		if (comm && comm__str(comm)) {
+			has_comm = true;
+			str = strdup(comm__str(comm));
+		}
+	}
+	up_read(thread__comm_lock(thread));
+
+	if (!has_comm)
 		Py_RETURN_NONE;
-
-	return PyUnicode_FromString(str);
+	if (!str)
+		return PyErr_NoMemory();
+	ret = PyUnicode_FromString(str);
+	free(str);
+	return ret;
 }
 
 static PyMethodDef pyrf_thread__methods[] = {
@@ -4120,6 +4229,13 @@ struct pyrf_session {
 	 */
 	u64 call_return_last_db_id;
 	u64 sample_last_db_id;
+	/**
+	 * @callback_raised: A python callback raised an exception and requested
+	 * that event processing stops, see pyrf_session__callback_raised().
+	 */
+	bool callback_raised;
+	unsigned int callback_depth;
+	unsigned long callback_thread;
 	char *vmlinux_name;
 	char *kallsyms_name;
 	char *symfs;
@@ -4439,14 +4555,62 @@ static PyObject *pyrf_call_return__new(struct call_return *cr)
 	return (PyObject *)pevent;
 }
 
-static int pyrf_session__call_return_process(struct call_return *cr,
-					     u64 *parent_db_id,
-					     void *data)
+/*
+ * Number of times a python callback has requested that event processing
+ * stops, see pyrf_session__callback_raised().
+ */
+static unsigned int pyrf_session__stop_requests;
+
+/*
+ * A python callback raised an exception.
+ *
+ * Returning an error to the session code would cause reader__read_event() to
+ * print a "processing failed for event of type: ..." error to stderr. This is
+ * noise, and in the case of a TUI corrupts the display, when a callback raises
+ * to deliberately stop processing (e.g. cancelling a background load) and the
+ * error message is redundant with the python exception that is raised anyway.
+ *
+ * Instead request that event processing stops by setting session_done and
+ * return success. The exception remains pending (PyErr_Occurred()) and
+ * pyrf_session__find_thread_events() returns NULL so python raises it.
+ *
+ * Note, session_done is a process-global rather than per-session. Were
+ * multiple sessions processing events concurrently in different python
+ * threads then an exception in one would stop all of them. Only the session
+ * whose callback raised clears session_done, and the other sessions detect
+ * the stop request, using pyrf_session__stop_requests, and raise an error
+ * rather than silently dropping events.
+ */
+static int pyrf_session__callback_raised(struct pyrf_session *psession)
 {
-	struct pyrf_session *psession = data;
+	psession->callback_raised = true;
+	pyrf_session__stop_requests++;
+	session_done = 1;
+	return 0;
+}
+
+/*
+ * session_done stops the reader loops, the ordered_events and deferred sample
+ * flushes, and auxtrace__flush_events(), but some callbacks may still happen
+ * after a callback has raised. For example, a single sample may generate
+ * multiple call_return callbacks, and perf_session__flush_thread_stacks()
+ * delivers call returns for the remaining stack entries (skipping it would
+ * only defer those callbacks until the threads are deleted). Calling into
+ * python with an exception pending is an error, and the events would be
+ * discarded anyway, so callbacks check this and skip calling python.
+ */
+static bool pyrf_session__exception_pending(void)
+{
+	return PyErr_Occurred() != NULL;
+}
+
+static int __pyrf_session__call_return_process(struct call_return *cr,
+					       u64 *parent_db_id,
+					       struct pyrf_session *psession)
+{
 	PyObject *pyevent, *ret;
 
-	if (!psession->call_return)
+	if (!psession->call_return || pyrf_session__exception_pending())
 		return 0;
 
 	if (!cr->db_id)
@@ -4463,22 +4627,90 @@ static int pyrf_session__call_return_process(struct call_return *cr,
 		return -1;
 
 	ret = PyObject_CallFunctionObjArgs(psession->call_return, pyevent, NULL);
-	if (!ret) {
-		Py_DECREF(pyevent);
-		return -1;
-	}
-	Py_DECREF(ret);
 	Py_DECREF(pyevent);
+	if (!ret)
+		return pyrf_session__callback_raised(psession);
+	Py_DECREF(ret);
 	return 0;
 }
 
-static int pyrf_session_tool__sample(const struct perf_tool *tool,
-				     union perf_event *event,
-				     struct perf_sample *sample,
-				     struct machine *machine)
+static PyGILState_STATE pyrf_session__callback_enter(struct pyrf_session *psession)
+{
+	PyGILState_STATE gstate = PyGILState_Ensure();
+
+	psession->callback_thread = PyThread_get_thread_ident();
+	psession->callback_depth++;
+	return gstate;
+}
+
+static void pyrf_session__callback_leave(struct pyrf_session *psession,
+					 PyGILState_STATE gstate)
+{
+	psession->callback_depth--;
+	PyGILState_Release(gstate);
+}
+
+/*
+ * Call returns may be processed during a sample callback, or when thread
+ * stacks are flushed, so acquire the GIL, see pyrf_session_tool__sample().
+ */
+static int pyrf_session__call_return_process(struct call_return *cr,
+					     u64 *parent_db_id,
+					     void *data)
+{
+	struct pyrf_session *psession = data;
+	PyGILState_STATE gstate = pyrf_session__callback_enter(psession);
+	int ret = __pyrf_session__call_return_process(cr, parent_db_id, psession);
+
+	pyrf_session__callback_leave(psession, gstate);
+	return ret;
+}
+
+static int pyrf_session__call_event(struct pyrf_session *psession, PyObject *callback,
+				    PyObject *pyevent, const char *extra_arg, bool has_extra_arg)
+{
+	PyObject *ret;
+	int err = 0;
+
+	if (has_extra_arg)
+		ret = PyObject_CallFunction(callback, "Oz", pyevent, extra_arg);
+	else
+		ret = PyObject_CallFunctionObjArgs(callback, pyevent, NULL);
+
+	Py_XDECREF(ret);
+	if (Py_REFCNT(pyevent) > 1) {
+		PyObject *exc_type = NULL, *exc_value = NULL, *exc_tb = NULL;
+
+		/*
+		 * The Python callback retained a reference to the event
+		 * beyond the callback's return (or in an exception frame);
+		 * copy the underlying event and sample before process_events
+		 * reuses or unmaps its buffer.
+		 */
+		if (!ret)
+			PyErr_Fetch(&exc_type, &exc_value, &exc_tb);
+		err = pyrf_event__copy((struct pyrf_event *)pyevent);
+		if (!ret) {
+			PyErr_Clear();
+			PyErr_Restore(exc_type, exc_value, exc_tb);
+		}
+	}
+	Py_DECREF(pyevent);
+	if (!ret || err < 0)
+		return pyrf_session__callback_raised(psession);
+	return 0;
+}
+
+static int __pyrf_session_tool__sample(const struct perf_tool *tool,
+				       union perf_event *event,
+				       struct perf_sample *sample,
+				       struct machine *machine)
 {
 	struct pyrf_session *psession = container_of(tool, struct pyrf_session, tool);
 	u64 sample_db_id = ++psession->sample_last_db_id;
+
+	if (pyrf_session__exception_pending())
+		return 0;
 
 	if (psession->crp) {
 		struct addr_location al, addr_al;
@@ -4510,35 +4742,44 @@ static int pyrf_session_tool__sample(const struct perf_tool *tool,
 
 		addr_location__exit(&addr_al);
 		addr_location__exit(&al);
+
+		/* A call_return callback may have raised. */
+		if (pyrf_session__exception_pending())
+			return 0;
 	}
 
 	if (psession->sample) {
 		PyObject *pyevent = pyrf_event__new(event, sample->evsel,
 						    psession->session,
 						    machine, sample);
-		PyObject *ret;
 
 		if (pyevent == NULL)
 			return -ENOMEM;
 
-		ret = PyObject_CallFunction(psession->sample, "O", pyevent);
-		Py_DECREF(pyevent);
-		if (!ret)
-			return -1;
-		Py_DECREF(ret);
+		return pyrf_session__call_event(psession, psession->sample, pyevent,
+						/*extra_arg=*/NULL, /*has_extra_arg=*/false);
 	}
 	return 0;
 }
 
-static int pyrf_session_tool__context_switch(const struct perf_tool *tool,
-					     union perf_event *event,
-					     struct perf_sample *sample,
-					     struct machine *machine)
+static int __pyrf_session_tool__context_switch(const struct perf_tool *tool,
+					       union perf_event *event,
+					       struct perf_sample *sample,
+					       struct machine *machine)
 {
 	struct pyrf_session *psession = container_of(tool, struct pyrf_session, tool);
-	PyObject *pyevent = pyrf_event__new(event, sample->evsel, psession->session, machine, NULL);
-	PyObject *ret;
+	PyObject *pyevent;
 
+	if (pyrf_session__exception_pending()) {
+		/*
+		 * Skip calling python, but keep the machine's thread state
+		 * consistent as perf_event__process_switch() would have been
+		 * called had no python callback been registered.
+		 */
+		return perf_event__process_switch(tool, event, sample, machine);
+	}
+
+	pyevent = pyrf_event__new(event, sample->evsel, psession->session, machine, sample);
 	if (perf_event__process_switch(tool, event, sample, machine) < 0) {
 		Py_XDECREF(pyevent);
 		return -1;
@@ -4547,14 +4788,102 @@ static int pyrf_session_tool__context_switch(const struct perf_tool *tool,
 	if (pyevent == NULL)
 		return -ENOMEM;
 
-	ret = PyObject_CallFunction(psession->context_switch, "O", pyevent);
-	if (!ret) {
-		Py_DECREF(pyevent);
-		return -1;
+	return pyrf_session__call_event(psession, psession->context_switch, pyevent,
+					/*extra_arg=*/NULL, /*has_extra_arg=*/false);
+}
+
+static int __pyrf_session_tool__stat(const struct perf_tool *tool,
+				     struct perf_session *session,
+				     union perf_event *event)
+{
+	struct pyrf_session *psession = container_of(tool, struct pyrf_session, tool);
+	struct evsel *evsel = evlist__id2evsel(session->evlist, event->stat.id);
+	const char *name = evsel ? evsel__name(evsel) : "unknown";
+	PyObject *pyevent;
+
+	if (pyrf_session__exception_pending())
+		return 0;
+
+	pyevent = pyrf_event__new(event, /*evsel=*/NULL, psession->session,
+				  /*machine=*/NULL, NULL);
+	if (pyevent == NULL)
+		return -ENOMEM;
+
+	return pyrf_session__call_event(psession, psession->stat, pyevent,
+					name, /*has_extra_arg=*/true);
+}
+
+static int __pyrf_session_tool__stat_round(const struct perf_tool *tool,
+					   struct perf_session *session __maybe_unused,
+					   union perf_event *event)
+{
+	struct pyrf_session *psession = container_of(tool, struct pyrf_session, tool);
+	PyObject *pyevent;
+
+	if (pyrf_session__exception_pending())
+		return 0;
+
+	pyevent = pyrf_event__new(event, /*evsel=*/NULL, psession->session,
+				  /*machine=*/NULL, NULL);
+	if (pyevent == NULL)
+		return -ENOMEM;
+
+	return pyrf_session__call_event(psession, psession->stat, pyevent,
+					/*extra_arg=*/NULL, /*has_extra_arg=*/true);
+}
+
+/*
+ * The session currently inside perf_session__new() or
+ * perf_session__process_events() with the GIL released. Because symbol_conf
+ * and session_done are process-globals and perf_session is not thread-safe,
+ * only one session may be active at a time. Modified with the GIL held.
+ */
+static struct pyrf_session *pyrf_session__active;
+
+static bool pyrf_session__check_not_busy(struct pyrf_session *psession)
+{
+	if (pyrf_session__active == psession &&
+	    (!psession->callback_depth ||
+	     psession->callback_thread != PyThread_get_thread_ident())) {
+		PyErr_SetString(PyExc_RuntimeError,
+				"perf.session is busy processing events in another thread");
+		return false;
 	}
-	Py_DECREF(ret);
-	Py_DECREF(pyevent);
-	return 0;
+	return true;
+}
+
+/*
+ * The GIL is released while events are processed, see
+ * pyrf_session__find_thread_events(), so that other python threads can run,
+ * such as a UI thread while a session reads from a pipe that may block. The
+ * tool callbacks that use python acquire the GIL, PyGILState_Ensure() is
+ * reentrant so nested callbacks, like call returns during a sample, work.
+ */
+
+static int pyrf_session_tool__sample(const struct perf_tool *tool,
+				     union perf_event *event,
+				     struct perf_sample *sample,
+				     struct machine *machine)
+{
+	struct pyrf_session *psession = container_of(tool, struct pyrf_session, tool);
+	PyGILState_STATE gstate = pyrf_session__callback_enter(psession);
+	int ret = __pyrf_session_tool__sample(tool, event, sample, machine);
+
+	pyrf_session__callback_leave(psession, gstate);
+	return ret;
+}
+
+static int pyrf_session_tool__context_switch(const struct perf_tool *tool,
+					     union perf_event *event,
+					     struct perf_sample *sample,
+					     struct machine *machine)
+{
+	struct pyrf_session *psession = container_of(tool, struct pyrf_session, tool);
+	PyGILState_STATE gstate = pyrf_session__callback_enter(psession);
+	int ret = __pyrf_session_tool__context_switch(tool, event, sample, machine);
+
+	pyrf_session__callback_leave(psession, gstate);
+	return ret;
 }
 
 static int pyrf_session_tool__stat(const struct perf_tool *tool,
@@ -4562,45 +4891,23 @@ static int pyrf_session_tool__stat(const struct perf_tool *tool,
 				   union perf_event *event)
 {
 	struct pyrf_session *psession = container_of(tool, struct pyrf_session, tool);
-	struct evsel *evsel = evlist__id2evsel(session->evlist, event->stat.id);
-	PyObject *pyevent = pyrf_event__new(event, /*evsel=*/NULL, psession->session,
-					    /*machine=*/NULL, NULL);
-	const char *name = evsel ? evsel__name(evsel) : "unknown";
-	PyObject *ret;
+	PyGILState_STATE gstate = pyrf_session__callback_enter(psession);
+	int ret = __pyrf_session_tool__stat(tool, session, event);
 
-	if (pyevent == NULL)
-		return -ENOMEM;
-
-	ret = PyObject_CallFunction(psession->stat, "Oz", pyevent, name);
-	if (!ret) {
-		Py_DECREF(pyevent);
-		return -1;
-	}
-	Py_DECREF(ret);
-	Py_DECREF(pyevent);
-	return 0;
+	pyrf_session__callback_leave(psession, gstate);
+	return ret;
 }
 
 static int pyrf_session_tool__stat_round(const struct perf_tool *tool,
-					 struct perf_session *session __maybe_unused,
+					 struct perf_session *session,
 					 union perf_event *event)
 {
 	struct pyrf_session *psession = container_of(tool, struct pyrf_session, tool);
-	PyObject *pyevent = pyrf_event__new(event, /*evsel=*/NULL, psession->session,
-					    /*machine=*/NULL, NULL);
-	PyObject *ret;
+	PyGILState_STATE gstate = pyrf_session__callback_enter(psession);
+	int ret = __pyrf_session_tool__stat_round(tool, session, event);
 
-	if (pyevent == NULL)
-		return -ENOMEM;
-
-	ret = PyObject_CallFunction(psession->stat, "Oz", pyevent, NULL);
-	if (!ret) {
-		Py_DECREF(pyevent);
-		return -1;
-	}
-	Py_DECREF(ret);
-	Py_DECREF(pyevent);
-	return 0;
+	pyrf_session__callback_leave(psession, gstate);
+	return ret;
 }
 
 static PyObject *pyrf_session__find_thread(struct pyrf_session *psession, PyObject *args)
@@ -4611,6 +4918,8 @@ static PyObject *pyrf_session__find_thread(struct pyrf_session *psession, PyObje
 	int pid, tid = -1;
 
 	CHECK_INITIALIZED(psession->session, "session");
+	if (!pyrf_session__check_not_busy(psession))
+		return NULL;
 
 	if (!PyArg_ParseTuple(args, "i|i", &pid, &tid))
 		return NULL;
@@ -4680,6 +4989,9 @@ static PyObject *pyrf_session__new(PyTypeObject *type, PyObject *args, PyObject 
 	psession->crp = NULL;
 	psession->call_return_last_db_id = 0;
 	psession->sample_last_db_id = 0;
+	psession->callback_raised = false;
+	psession->callback_depth = 0;
+	psession->callback_thread = 0;
 	psession->vmlinux_name = NULL;
 	psession->kallsyms_name = NULL;
 	psession->symfs = NULL;
@@ -4762,7 +5074,6 @@ static PyObject *pyrf_session__new(PyTypeObject *type, PyObject *args, PyObject 
 			PyErr_NoMemory();
 			goto err_out;
 		}
-		symbol_conf.vmlinux_name = psession->vmlinux_name;
 	}
 
 	if (!kallsyms_str)
@@ -4773,7 +5084,6 @@ static PyObject *pyrf_session__new(PyTypeObject *type, PyObject *args, PyObject 
 			PyErr_NoMemory();
 			goto err_out;
 		}
-		symbol_conf.kallsyms_name = psession->kallsyms_name;
 	}
 
 	if (!symfs_str)
@@ -4784,16 +5094,7 @@ static PyObject *pyrf_session__new(PyTypeObject *type, PyObject *args, PyObject 
 			PyErr_NoMemory();
 			goto err_out;
 		}
-		symbol_conf.symfs = psession->symfs;
 	}
-
-	session = perf_session__new(&pdata->data, &psession->tool);
-	if (IS_ERR(session)) {
-		PyErr_Format(PyExc_IOError, "failed to create session: %ld", PTR_ERR(session));
-		goto err_out;
-	}
-	psession->session = session;
-	psession->session->itrace_synth_opts = &psession->itrace_opts;
 
 	if (!itrace_str)
 		itrace_str = getenv("PERF_ITRACE");
@@ -4801,18 +5102,43 @@ static PyObject *pyrf_session__new(PyTypeObject *type, PyObject *args, PyObject 
 		memset(&psession->itrace_opts, 0, sizeof(psession->itrace_opts));
 		if (itrace_do_parse_synth_opts(&psession->itrace_opts, itrace_str, 0) < 0) {
 			PyErr_SetString(PyExc_ValueError, "Failed to parse itrace options");
-			Py_DECREF(psession);
-			return NULL;
+			goto err_out;
 		}
 	}
 
+	if (pyrf_session__active) {
+		PyErr_SetString(PyExc_RuntimeError,
+				"Another perf.session is currently active");
+		goto err_out;
+	}
+
+	symbol_conf.vmlinux_name = psession->vmlinux_name;
+	symbol_conf.kallsyms_name = psession->kallsyms_name;
+	symbol_conf.symfs = psession->symfs ?: "";
 	symbol_conf.use_callchain = true;
 	symbol_conf.show_kernel_path = true;
 	symbol_conf.inline_name = false;
+
+	/* Reading the header of a pipe may block, let other python threads run. */
+	pyrf_session__active = psession;
+	Py_BEGIN_ALLOW_THREADS
+	session = perf_session__new(&pdata->data, &psession->tool);
+	Py_END_ALLOW_THREADS
+	pyrf_session__active = NULL;
+	if (!psession->kallsyms_name && symbol_conf.kallsyms_name)
+		psession->kallsyms_name = (char *)symbol_conf.kallsyms_name;
+	if (IS_ERR(session)) {
+		PyErr_Format(PyExc_IOError, "failed to create session: %ld", PTR_ERR(session));
+		goto err_out;
+	}
+	psession->session = session;
+	psession->session->itrace_synth_opts = &psession->itrace_opts;
 	if (symbol__init(perf_session__env(session)) < 0) {
 		PyErr_SetString(PyExc_OSError, "perf: symbol__init failed");
 		goto err_out;
 	}
+	if (psession->symfs && !symbol_conf.symfs[0])
+		zfree(&psession->symfs);
 
 	return (PyObject *)psession;
 err_out:
@@ -4823,14 +5149,16 @@ err_out:
 static void pyrf_session__delete(struct pyrf_session *psession)
 {
 	perf_session__delete(psession->session);
-	if (symbol_conf.vmlinux_name == psession->vmlinux_name)
-		symbol_conf.vmlinux_name = NULL;
+	if (!pyrf_session__active) {
+		if (symbol_conf.vmlinux_name == psession->vmlinux_name)
+			symbol_conf.vmlinux_name = NULL;
+		if (symbol_conf.kallsyms_name == psession->kallsyms_name)
+			symbol_conf.kallsyms_name = NULL;
+		if (symbol_conf.symfs == psession->symfs)
+			symbol_conf.symfs = "";
+	}
 	free(psession->vmlinux_name);
-	if (symbol_conf.kallsyms_name == psession->kallsyms_name)
-		symbol_conf.kallsyms_name = NULL;
 	free(psession->kallsyms_name);
-	if (symbol_conf.symfs == psession->symfs)
-		symbol_conf.symfs = "";
 	free(psession->symfs);
 	free(psession->itrace_opts.vm_tm_corr_args);
 	free(psession->itrace_opts.cpu_bitmap);
@@ -4847,11 +5175,48 @@ static void pyrf_session__delete(struct pyrf_session *psession)
 
 static PyObject *pyrf_session__find_thread_events(struct pyrf_session *psession)
 {
+	unsigned int stop_requests = pyrf_session__stop_requests;
 	int err;
 
 	CHECK_INITIALIZED(psession->session, "session");
+	if (pyrf_session__active) {
+		PyErr_SetString(PyExc_RuntimeError,
+				"Another perf.session is currently active");
+		return NULL;
+	}
 
+	symbol_conf.vmlinux_name = psession->vmlinux_name;
+	symbol_conf.kallsyms_name = psession->kallsyms_name;
+	symbol_conf.symfs = psession->symfs ?: "";
+
+	psession->callback_raised = false;
+	/* Callbacks that use python acquire the GIL, see pyrf_session_tool__sample(). */
+	pyrf_session__active = psession;
+	Py_BEGIN_ALLOW_THREADS
 	err = perf_session__process_events(psession->session);
+	Py_END_ALLOW_THREADS
+	pyrf_session__active = NULL;
+	if (psession->callback_raised) {
+		/*
+		 * Clear the early stop requested by this session's callback, in
+		 * pyrf_session__callback_raised(), so that later sessions process
+		 * all their events. That function is the only writer of
+		 * session_done in the python module, so resetting it here after
+		 * processing is sufficient and there is no need to also reset it
+		 * before processing.
+		 */
+		session_done = 0;
+	} else if (stop_requests != pyrf_session__stop_requests && !PyErr_Occurred()) {
+		/*
+		 * A callback of a session being processed concurrently, in
+		 * another thread, raised and set session_done which may have
+		 * stopped processing this session's events early. Raise an error
+		 * rather than silently dropping events.
+		 */
+		PyErr_SetString(PyExc_RuntimeError,
+				"Processing events may have stopped early as a callback of a concurrently processed session raised an exception");
+		return NULL;
+	}
 
 	if (PyErr_Occurred())
 		return NULL;
@@ -4892,6 +5257,8 @@ static PyObject *pyrf_session__getattro(struct pyrf_session *psession, PyObject 
 		PyErr_SetString(PyExc_ValueError, "session not initialized");
 		return NULL;
 	}
+	if (!pyrf_session__check_not_busy(psession))
+		return NULL;
 	if (!strcmp(name_str, "e_machine"))
 		return PyLong_FromLong(perf_session__e_machine(psession->session,
 							       /*e_flags=*/NULL));
@@ -4942,6 +5309,8 @@ static int pyrf_session__setattro(struct pyrf_session *psession, PyObject *attr_
 		PyErr_SetString(PyExc_ValueError, "session not initialized");
 		return -1;
 	}
+	if (!pyrf_session__check_not_busy(psession))
+		return -1;
 	return PyObject_GenericSetAttr((PyObject *) psession, attr_name, value);
 }
 

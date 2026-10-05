@@ -1946,6 +1946,8 @@ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_ATI, 0x4388, quirk_no_msi);
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_ATI, 0x4389, quirk_no_msi);
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_ATI, 0x438a, quirk_no_msi);
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_ATI, 0x438b, quirk_no_msi);
+/* ULi M1575 EHCI (10b9:5239): MSI stalls the async schedule */
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_AL, 0x5239, quirk_no_msi);
 
 static void quirk_pcie_mch(struct pci_dev *pdev)
 {
@@ -4283,17 +4285,16 @@ static int reset_qualcomm_wlan(struct pci_dev *pdev, bool probe)
 
 	msleep(10);
 
-	ret = read_poll_timeout(ioread32, val,
-				!PCI_POSSIBLE_ERROR(val),
-				20 * USEC_PER_MSEC,
-				5 * USEC_PER_SEC, false,
+	ret = read_poll_timeout(ioread32, val, !PCI_POSSIBLE_ERROR(val),
+				20 * USEC_PER_MSEC, 5 * USEC_PER_SEC, false,
 				bar + QUALCOMM_WLAN_PCIE_SOC_GLOBAL_RESET);
 	if (ret) {
 		pci_err(pdev, "PCIe link failed to recover after reset\n");
 		goto out_restore;
 	}
 
-	/* After SOC_GLOBAL_RESET, MHISTATUS may still have SYSERR bit set
+	/*
+	 * After SOC_GLOBAL_RESET, MHISTATUS may still have SYSERR bit set
 	 * and thus need to set MHICTRL_RESET to clear SYSERR.
 	 */
 	iowrite32(QUALCOMM_WLAN_MHICTRL_RESET_MASK, bar + QUALCOMM_WLAN_MHICTRL);

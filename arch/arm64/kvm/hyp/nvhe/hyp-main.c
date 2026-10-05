@@ -244,7 +244,7 @@ static void handle_pvm_entry_dabt(struct pkvm_hyp_vcpu *hyp_vcpu)
 
 	/* Handle PC increment on MMIO, or on a CMO the host skipped */
 	pc_update = vcpu_get_flag(host_vcpu, INCREMENT_PC) &&
-		(vcpu->mmio_needed || esr_dabt_is_cm(kvm_vcpu_get_esr(vcpu)));
+		    (vcpu->mmio_needed || esr_dabt_is_cm(kvm_vcpu_get_esr(vcpu)));
 	if (pc_update) {
 		vcpu_clear_flag(vcpu, PC_UPDATE_REQ);
 		kvm_incr_pc(vcpu);
@@ -919,7 +919,7 @@ DEFINE_KVM_HOST_HCALL(int, __kvm_vcpu_run, struct kvm_vcpu __kern *, vcpu)
 
 	host_vcpu = __get_host_hyp_vcpus(kern_hyp_va_host(vcpu), &hyp_vcpu);
 	if (!host_vcpu)
-		return -EINVAL;
+		return ret;
 
 	if (unlikely(hyp_vcpu)) {
 		/*
@@ -929,7 +929,7 @@ DEFINE_KVM_HOST_HCALL(int, __kvm_vcpu_run, struct kvm_vcpu __kern *, vcpu)
 		 * is misbehaving.
 		 */
 		if (unlikely(system_supports_sme() && read_sysreg_s(SYS_SVCR)))
-			return -EINVAL;
+			return ret;
 
 		/*
 		 * ON has a single writer, pkvm_reset_vcpu() on this CPU, so
@@ -1127,7 +1127,7 @@ DEFINE_KVM_HOST_HCALL(void, __kvm_adjust_pc,
 	 * for memory the host isn't sharing, a bad pointer, so the request
 	 * is dropped.
 	 */
-	host_vcpu = kern_hyp_va(vcpu);
+	host_vcpu = kern_hyp_va_host(vcpu);
 	if (hyp_pin_shared_mem(host_vcpu, host_vcpu + 1))
 		return;
 
@@ -1583,12 +1583,13 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__vgic_v5_vdpend),
 	HANDLE_FUNC(__vgic_v5_save_apr),
 	HANDLE_FUNC(__vgic_v5_restore_vmcr_apr),
+
 	HANDLE_FUNC(__pkvm_hyp_topup),
 	HANDLE_FUNC(__pkvm_hyp_reclaim),
 	HANDLE_FUNC(__pkvm_hyp_reclaimable),
-
 	HANDLE_FUNC(__pkvm_host_share_hyp),
 	HANDLE_FUNC(__pkvm_host_unshare_hyp),
+
 	HANDLE_FUNC(__pkvm_host_donate_guest),
 	HANDLE_FUNC(__pkvm_host_share_guest),
 	HANDLE_FUNC(__pkvm_host_unshare_guest),

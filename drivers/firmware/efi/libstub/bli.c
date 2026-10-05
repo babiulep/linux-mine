@@ -3,7 +3,6 @@
 #include <generated/utsrelease.h>
 
 #include <linux/efi.h>
-#include <linux/errno.h>
 #include <linux/unaligned.h>
 
 #include "efistub.h"

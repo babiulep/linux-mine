@@ -3845,10 +3845,13 @@ int pci_enable_atomic_ops_to_root(struct pci_dev *dev, u32 cap_mask)
 
 	root = pcie_find_root_port(dev);
 	if (!root) {
+
 		/*
-		 * A hypervisor may expose a headless topology with no
-		 * visible root port.  If it has already set AtomicOp
-		 * Requester Enable, there is nothing more to do.
+		 * A hypervisor may expose a topology with the root port
+		 * not visible to the guest.  If the hypervisor has already
+		 * set AtomicOp Requester Enable in the endpoint, we assume
+		 * it has verified support in the root port, so it is safe
+		 * for the driver to use AtomicOps.
 		 */
 		pcie_capability_read_dword(dev, PCI_EXP_DEVCTL2, &ctl2);
 		if (ctl2 & PCI_EXP_DEVCTL2_ATOMIC_REQ)

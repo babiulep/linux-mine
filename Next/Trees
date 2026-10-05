@@ -211,6 +211,8 @@ renesas		https://git.kernel.org/pub/scm/linux/kernel/git/geert/renesas-devel.git
 reset		https://git.kernel.org/pub/scm/linux/kernel/git/pza/linux#reset/next
 rockchip	https://git.kernel.org/pub/scm/linux/kernel/git/mmind/linux-rockchip.git#for-next
 samsung-krzk	https://git.kernel.org/pub/scm/linux/kernel/git/krzk/linux.git#for-next
+nomadik		https://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-nomadik.git#for-next
+integrator	https://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integrator.git#for-next
 scmi		https://git.kernel.org/pub/scm/linux/kernel/git/sudeep.holla/linux.git#for-linux-next
 sophgo		https://github.com/sophgo/linux.git#for-next
 sophgo-soc	https://github.com/sophgo/linux.git#soc-for-next

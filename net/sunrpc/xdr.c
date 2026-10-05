@@ -1160,6 +1160,7 @@ void xdr_init_encode(struct xdr_stream *xdr, struct xdr_buf *buf, __be32 *p,
 		iov->iov_len += len;
 	}
 	xdr->rqst = rqst;
+	xdr->xdrgen_ctx = NULL;
 }
 EXPORT_SYMBOL_GPL(xdr_init_encode);
 
@@ -1179,6 +1180,7 @@ void xdr_init_encode_pages(struct xdr_stream *xdr, struct xdr_buf *buf)
 	xdr->p = page_address(*xdr->page_ptr);
 	xdr->end = (void *)xdr->p + min_t(u32, buf->buflen, PAGE_SIZE);
 	xdr->rqst = NULL;
+	xdr->xdrgen_ctx = NULL;
 }
 EXPORT_SYMBOL_GPL(xdr_init_encode_pages);
 
@@ -1617,6 +1619,7 @@ void xdr_init_decode(struct xdr_stream *xdr, struct xdr_buf *buf, __be32 *p,
 		xdr->p = p;
 	}
 	xdr->rqst = rqst;
+	xdr->xdrgen_ctx = NULL;
 }
 EXPORT_SYMBOL_GPL(xdr_init_decode);
 
