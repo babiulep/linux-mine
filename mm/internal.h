@@ -248,9 +248,9 @@ static inline void vma_close(struct vm_area_struct *vma)
  */
 static inline int mmap_file(struct file *file, struct vm_area_struct *vma)
 {
-	const unsigned long prev_start = vma->vm_start;
-	const unsigned long prev_end = vma->vm_end;
-	const vma_flags_t prev_flags = vma->flags;
+	const unsigned long orig_start = vma->vm_start;
+	const unsigned long orig_end = vma->vm_end;
+	const vma_flags_t orig_flags = vma->flags;
 	int err;
 
 	err = vfs_mmap(file, vma);
@@ -269,11 +269,10 @@ static inline int mmap_file(struct file *file, struct vm_area_struct *vma)
 	if (unlikely(err))
 		return err;
 
-	err = mmap_hook_validate(prev_start, prev_end, &prev_flags, vma);
+	err = mmap_hook_validate(orig_start, orig_end, &orig_flags, vma);
 	if (unlikely(err)) {
-		vma->vm_start = prev_start;
-		vma->vm_end = prev_end;
-		vma_close(vma);
+		vma->vm_start = orig_start;
+		vma->vm_end = orig_end;
 	}
 
 	return err;
@@ -1118,7 +1117,7 @@ static inline struct file *maybe_unlock_mmap_for_io(struct vm_fault *vmf,
 
 static inline bool vma_supports_mlock(const struct vm_area_struct *vma)
 {
-	if (!vma_is_persistent(vma))
+	if (!vma_is_mm_backed(vma))
 		return false;
 	if (vma_is_dax(vma) || vma_is_hugetlb(vma))
 		return false;

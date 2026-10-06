@@ -817,11 +817,11 @@ struct vm_area_struct *vm_area_dup(struct vm_area_struct *orig);
 void vm_area_free(struct vm_area_struct *vma);
 
 #ifdef CONFIG_MMU
-int mmap_prepare_validate(const struct vm_area_desc *prev_desc,
+int mmap_prepare_validate(const struct vm_area_desc *orig_desc,
 			  const struct vm_area_desc *desc);
 
-int mmap_hook_validate(unsigned long prev_start, unsigned long prev_end,
-		       const vma_flags_t *prev_flags,
+int mmap_hook_validate(unsigned long orig_start, unsigned long orig_end,
+		       const vma_flags_t *orig_flags,
 		       const struct vm_area_struct *vma);
 
 /* vma_exec.c */
@@ -878,15 +878,15 @@ static inline bool map_deny_write_exec(const vma_flags_t *old,
 	return false;
 }
 #else
-static inline int mmap_prepare_validate(const struct vm_area_desc *prev_desc,
+static inline int mmap_prepare_validate(const struct vm_area_desc *orig_desc,
 					const struct vm_area_desc *desc)
 {
 	return 0;
 }
 
-static inline int mmap_hook_validate(unsigned long prev_start,
-				     unsigned long prev_end,
-				     const vma_flags_t *prev_flags,
+static inline int mmap_hook_validate(unsigned long orig_start,
+				     unsigned long orig_end,
+				     const vma_flags_t *orig_flags,
 				     const struct vm_area_struct *vma)
 {
 	return 0;

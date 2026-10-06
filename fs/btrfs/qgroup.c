@@ -999,7 +999,7 @@ static int btrfs_clean_quota_tree(struct btrfs_trans_handle *trans,
 int btrfs_quota_enable(struct btrfs_fs_info *fs_info,
 		       struct btrfs_ioctl_quota_ctl_args *quota_ctl_args)
 {
-	struct btrfs_root *quota_root;
+	struct btrfs_root *quota_root = NULL;
 	struct btrfs_root *tree_root = fs_info->tree_root;
 	struct btrfs_path *path = NULL;
 	struct btrfs_qgroup_status_item *ptr;
@@ -1076,6 +1076,7 @@ int btrfs_quota_enable(struct btrfs_fs_info *fs_info,
 	quota_root = btrfs_create_tree(trans, BTRFS_QUOTA_TREE_OBJECTID);
 	if (IS_ERR(quota_root)) {
 		ret =  PTR_ERR(quota_root);
+		quota_root = NULL;
 		btrfs_abort_transaction(trans, ret);
 		goto out;
 	}
@@ -1084,7 +1085,7 @@ int btrfs_quota_enable(struct btrfs_fs_info *fs_info,
 	if (unlikely(!path)) {
 		ret = -ENOMEM;
 		btrfs_abort_transaction(trans, ret);
-		goto out_free_root;
+		goto out;
 	}
 
 	key.objectid = 0;
@@ -1095,7 +1096,7 @@ int btrfs_quota_enable(struct btrfs_fs_info *fs_info,
 				      sizeof(*ptr));
 	if (unlikely(ret)) {
 		btrfs_abort_transaction(trans, ret);
-		goto out_free_path;
+		goto out;
 	}
 
 	leaf = path->nodes[0];
@@ -1131,7 +1132,7 @@ int btrfs_quota_enable(struct btrfs_fs_info *fs_info,
 		goto out_add_root;
 	if (unlikely(ret < 0)) {
 		btrfs_abort_transaction(trans, ret);
-		goto out_free_path;
+		goto out;
 	}
 
 	while (1) {
@@ -1150,14 +1151,14 @@ int btrfs_quota_enable(struct btrfs_fs_info *fs_info,
 			if (unlikely(!prealloc)) {
 				ret = -ENOMEM;
 				btrfs_abort_transaction(trans, ret);
-				goto out_free_path;
+				goto out;
 			}
 
 			ret = add_qgroup_item(trans, quota_root,
 					      found_key.offset);
 			if (unlikely(ret)) {
 				btrfs_abort_transaction(trans, ret);
-				goto out_free_path;
+				goto out;
 			}
 
 			qgroup = add_qgroup_rb(fs_info, prealloc, found_key.offset);
@@ -1165,13 +1166,13 @@ int btrfs_quota_enable(struct btrfs_fs_info *fs_info,
 			ret = btrfs_sysfs_add_one_qgroup(fs_info, qgroup);
 			if (unlikely(ret < 0)) {
 				btrfs_abort_transaction(trans, ret);
-				goto out_free_path;
+				goto out;
 			}
 			ret = btrfs_search_slot_for_read(tree_root, &found_key,
 							 path, 1, 0);
 			if (unlikely(ret < 0)) {
 				btrfs_abort_transaction(trans, ret);
-				goto out_free_path;
+				goto out;
 			}
 			if (ret > 0) {
 				/*
@@ -1188,7 +1189,7 @@ int btrfs_quota_enable(struct btrfs_fs_info *fs_info,
 		ret = btrfs_next_item(tree_root, path);
 		if (unlikely(ret < 0)) {
 			btrfs_abort_transaction(trans, ret);
-			goto out_free_path;
+			goto out;
 		}
 		if (ret)
 			break;
@@ -1199,21 +1200,21 @@ out_add_root:
 	ret = add_qgroup_item(trans, quota_root, BTRFS_FS_TREE_OBJECTID);
 	if (unlikely(ret)) {
 		btrfs_abort_transaction(trans, ret);
-		goto out_free_path;
+		goto out;
 	}
 
 	ASSERT(prealloc == NULL);
 	prealloc = kzalloc_obj(*prealloc, GFP_NOFS);
 	if (!prealloc) {
 		ret = -ENOMEM;
-		goto out_free_path;
+		goto out;
 	}
 	qgroup = add_qgroup_rb(fs_info, prealloc, BTRFS_FS_TREE_OBJECTID);
 	prealloc = NULL;
 	ret = btrfs_sysfs_add_one_qgroup(fs_info, qgroup);
 	if (unlikely(ret < 0)) {
 		btrfs_abort_transaction(trans, ret);
-		goto out_free_path;
+		goto out;
 	}
 
 	/*
@@ -1245,7 +1246,7 @@ out_add_root:
 			clear_bit(BTRFS_FS_SQUOTA_ENABLING, &fs_info->flags);
 			fs_info->qgroup_enable_gen = 0;
 		}
-		goto out_free_path;
+		goto out;
 	}
 
 	/*
@@ -1262,7 +1263,7 @@ out_add_root:
 
 	/* Skip rescan for simple qgroups. */
 	if (btrfs_qgroup_mode(fs_info) == BTRFS_QGROUP_MODE_SIMPLE)
-		goto out_free_path;
+		goto out;
 
 	ret = qgroup_rescan_init(fs_info, 0, 1);
 	if (!ret) {
@@ -1287,14 +1288,16 @@ out_add_root:
 		ret = 0;
 	}
 
-out_free_path:
-	btrfs_free_path(path);
-out_free_root:
-	if (ret)
-		btrfs_put_root(quota_root);
 out:
-	if (ret)
-		btrfs_sysfs_del_qgroups(fs_info);
+	btrfs_free_path(path);
+	if (ret) {
+		/*
+		 * Free all qgroups previously added with add_qgroup_rb() and
+		 * sysfs entries.
+		 */
+		btrfs_free_qgroup_config(fs_info);
+		btrfs_put_root(quota_root);
+	}
 	mutex_unlock(&fs_info->qgroup_ioctl_lock);
 	if (ret && trans)
 		btrfs_end_transaction(trans);
@@ -1562,7 +1565,10 @@ static int quick_update_accounting(struct btrfs_fs_info *fs_info,
 	}
 out:
 	if (ret)
-		set_bit(BTRFS_QGROUP_STATUS_BIT_INCONSISTENT, &fs_info->qgroup_flags);
+		qgroup_mark_inconsistent(fs_info,
+	"unable to do quick excl updating for qgroup %hu/%llu, ret=%d",
+					 btrfs_qgroup_level(src),
+					 btrfs_qgroup_subvolid(src), ret);
 	return ret;
 }
 
@@ -1613,7 +1619,11 @@ int btrfs_add_qgroup_relation(struct btrfs_trans_handle *trans, u64 src, u64 dst
 
 	ret = add_qgroup_relation_item(trans, dst, src);
 	if (ret) {
-		del_qgroup_relation_item(trans, src, dst);
+		int ret2;
+
+		ret2 = del_qgroup_relation_item(trans, src, dst);
+		if (ret2 < 0)
+			btrfs_abort_transaction(trans, ret);
 		goto out;
 	}
 
@@ -1847,13 +1857,14 @@ int btrfs_remove_qgroup(struct btrfs_trans_handle *trans, u64 qgroupid)
 	ret = del_qgroup_item(trans, qgroupid);
 	if (ret && ret != -ENOENT)
 		goto out;
+	ret = 0;
 
 	while (!list_empty(&qgroup->groups)) {
 		list = list_first_entry(&qgroup->groups,
 					struct btrfs_qgroup_list, next_group);
 		ret = __del_qgroup_relation(trans, qgroupid,
 					    list->group->qgroupid);
-		if (ret)
+		if (ret < 0)
 			goto out;
 	}
 
@@ -2480,8 +2491,8 @@ static int qgroup_trace_new_subtree_blocks(struct btrfs_trans_handle* trans,
 	int i;
 
 	/* Level sanity check */
-	if (unlikely(cur_level < 0 || cur_level >= BTRFS_MAX_LEVEL - 1 ||
-		     root_level < 0 || root_level >= BTRFS_MAX_LEVEL - 1 ||
+	if (unlikely(cur_level < 0 || cur_level >= BTRFS_MAX_LEVEL ||
+		     root_level < 0 || root_level >= BTRFS_MAX_LEVEL ||
 		     root_level < cur_level)) {
 		btrfs_err_rl(fs_info,
 			"%s: bad levels, cur_level=%d root_level=%d",
@@ -4909,7 +4920,7 @@ int btrfs_qgroup_trace_subtree_after_cow(struct btrfs_trans_handle *trans,
 	/* Found one, remove it from @blocks first and update blocks->swapped */
 	rb_erase(&block->node, &blocks->blocks[level]);
 	for (i = 0; i < BTRFS_MAX_LEVEL; i++) {
-		if (RB_EMPTY_ROOT(&blocks->blocks[i])) {
+		if (!RB_EMPTY_ROOT(&blocks->blocks[i])) {
 			swapped = true;
 			break;
 		}

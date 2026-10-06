@@ -17,11 +17,7 @@
 
 #include <linux/types.h>
 
-#ifdef __KERNEL__
-#define COMMAND_LINE_SIZE	CONFIG_COMMAND_LINE_SIZE
-#else
-#define COMMAND_LINE_SIZE	1024
-#endif
+#define COMMAND_LINE_SIZE 1024
 
 /* The list ends with an ATAG_NONE node. */
 #define ATAG_NONE	0x00000000

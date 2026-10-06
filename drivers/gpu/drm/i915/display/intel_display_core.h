@@ -244,13 +244,6 @@ struct intel_vbt_data {
 	struct list_head display_devices;
 	struct list_head bdb_blocks;
 
-	struct {
-		const u32 *tables;
-		int num_tables;
-		int num_columns;
-		int num_rows;
-	} vspeo;
-
 	struct sdvo_device_mapping {
 		u8 initialized;
 		u8 dvo_port;

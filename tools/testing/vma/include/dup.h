@@ -1358,23 +1358,23 @@ static inline int vfs_mmap_prepare(struct file *file, struct vm_area_desc *desc)
 	return file->f_op->mmap_prepare(desc);
 }
 
-int mmap_prepare_validate(const struct vm_area_desc *prev_desc,
+int mmap_prepare_validate(const struct vm_area_desc *orig_desc,
 			  const struct vm_area_desc *desc);
 
 static inline int __compat_vma_mmap(struct vm_area_desc *desc,
 		struct vm_area_struct *vma)
 {
-	struct vm_area_desc prev_desc;
+	struct vm_area_desc orig_desc;
 	int err;
 
 	/* Derive state prior to mmap_prepare hook. */
-	compat_set_desc_from_vma(&prev_desc, desc->file, vma);
+	compat_set_desc_from_vma(&orig_desc, desc->file, vma);
 	/* Perform any preparatory tasks for mmap action. */
 	err = mmap_action_prepare(desc);
 	if (err)
 		return err;
 	/* Check the caller did nothing crazy. */
-	err = mmap_prepare_validate(&prev_desc, desc);
+	err = mmap_prepare_validate(&orig_desc, desc);
 	if (err)
 		return err;
 	/* Update the VMA from the descriptor. */
@@ -1657,14 +1657,14 @@ static inline bool file_is_dev_zero(const struct file *file)
 	return file && file->f_op == &zero_fops;
 }
 
-static inline bool vma_flags_is_kernel_owned(const vma_flags_t *flags)
+static inline bool vma_flags_is_mm_managed(const vma_flags_t *flags)
 {
-	return vma_flags_test_any(flags, VMA_PFNMAP_BIT, VMA_MIXEDMAP_BIT);
+	return !vma_flags_test_any(flags, VMA_PFNMAP_BIT, VMA_MIXEDMAP_BIT);
 }
 
-static inline bool vma_is_kernel_owned(const struct vm_area_struct *vma)
+static inline bool vma_is_mm_managed(const struct vm_area_struct *vma)
 {
-	return vma_flags_is_kernel_owned(&vma->flags);
+	return vma_flags_is_mm_managed(&vma->flags);
 }
 
 static inline bool vma_flags_is_fixed_mapping(const vma_flags_t *flags)
@@ -1687,13 +1687,13 @@ static inline bool vma_flags_can_merge(const vma_flags_t *flags)
 	 * VMA merging assumes that a VMA's flags and fields completely describe
 	 * its state.
 	 *
-	 * However, kernel-owned mappings may have established state upon mapping
-	 * not embodied in any attribute of the VMA.
+	 * However, mappings which are not mm-managed may have established state
+	 * upon mapping not embodied in any attribute of the VMA.
 	 *
 	 * Additionally, private (CoW) PFN maps encode the source PFN of the
 	 * range in vma->vm_pgoff, which may otherwise cause spurious merges.
 	 */
-	if (vma_flags_is_kernel_owned(flags))
+	if (!vma_flags_is_mm_managed(flags))
 		return false;
 	/* VMA explicitly marked as being unmergeable. */
 	if (vma_flags_is_fixed_mapping(flags))

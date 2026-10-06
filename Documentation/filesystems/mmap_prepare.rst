@@ -241,8 +241,8 @@ In the ``get`` hook, the user must choose how to map kernel pages:
   VMA, then only those pages that fit will be mapped). For a compound page, the
   head page must be passed.
 * ``discontig_kernel_map_page_range()`` - Map an array of pages of a specified
-  size. Note that if the number of pages specified exceeds the VMA size then an
-  error will arise.
+  size. As with a compound page, if more pages are specified than remain in
+  the VMA then only those that fit will be mapped.
 
 If an error arises after ``init`` succeeded, the core unmaps the VMA, invoking
 ``vm_ops->close`` if set, which is therefore the place to release any state

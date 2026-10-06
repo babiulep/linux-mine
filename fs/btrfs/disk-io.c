@@ -2706,73 +2706,60 @@ static int __cold init_tree_roots(struct btrfs_fs_info *fs_info)
 	int backup_index = find_newest_super_backup(fs_info);
 	struct btrfs_super_block *sb = fs_info->super_copy;
 	struct btrfs_root *tree_root = fs_info->tree_root;
-	bool handle_error = false;
+	bool use_backup = btrfs_test_opt(fs_info, USEBACKUPROOT);
 	int ret = 0;
-	int i;
 
-	for (i = 0; i < BTRFS_NUM_BACKUP_ROOTS; i++) {
-		if (handle_error) {
-			if (!IS_ERR(tree_root->node))
-				free_extent_buffer(tree_root->node);
-			tree_root->node = NULL;
+	if (use_backup) {
+		ASSERT(fs_info->use_backup_slot >= 0 &&
+		       fs_info->use_backup_slot < BTRFS_NUM_BACKUP_ROOTS);
 
-			if (!btrfs_test_opt(fs_info, USEBACKUPROOT))
-				break;
-
-			free_root_pointers(fs_info, 0);
-
-			/*
-			 * Don't use the log in recovery mode, it won't be
-			 * valid
-			 */
-			btrfs_set_super_log_root(sb, 0);
-
-			btrfs_warn(fs_info, "try to load backup roots slot %d", i);
-			ret = read_backup_root(fs_info, i);
-			backup_index = ret;
-			if (ret < 0)
-				return ret;
+		ret = read_backup_root(fs_info, fs_info->use_backup_slot);
+		if (ret < 0) {
+			btrfs_err(fs_info,
+				  "failed to load backup roots at slot %d",
+				  fs_info->use_backup_slot);
+			return ret;
 		}
-
-		ret = load_important_roots(fs_info);
-		if (ret) {
-			handle_error = true;
-			continue;
-		}
-
 		/*
-		 * No need to hold btrfs_root::objectid_mutex since the fs
-		 * hasn't been fully initialised and we are the only user
+		 * Don't use the log in recovery mode, it won't be
+		 * valid
 		 */
-		ret = btrfs_init_root_free_objectid(tree_root);
-		if (ret < 0) {
-			handle_error = true;
-			continue;
-		}
-
-		ASSERT(tree_root->free_objectid <= BTRFS_LAST_FREE_OBJECTID);
-
-		ret = btrfs_read_roots(fs_info);
-		if (ret < 0) {
-			handle_error = true;
-			continue;
-		}
-
-		/* All successful */
-		fs_info->generation = btrfs_header_generation(tree_root->node);
-		btrfs_set_last_trans_committed(fs_info, fs_info->generation);
-		fs_info->last_reloc_trans = 0;
-
-		/* Always begin writing backup roots after the one being used */
-		if (backup_index < 0) {
-			fs_info->backup_root_index = 0;
-		} else {
-			fs_info->backup_root_index = backup_index + 1;
-			fs_info->backup_root_index %= BTRFS_NUM_BACKUP_ROOTS;
-		}
-		break;
+		btrfs_set_super_log_root(sb, 0);
+		backup_index = ret;
+		btrfs_warn(fs_info, "loaded backup roots at slot %d",
+			   fs_info->use_backup_slot);
 	}
 
+	ret = load_important_roots(fs_info);
+	if (ret)
+		return ret;
+
+	/*
+	 * No need to hold btrfs_root::objectid_mutex since the fs
+	 * hasn't been fully initialised and we are the only user
+	 */
+	ret = btrfs_init_root_free_objectid(tree_root);
+	if (ret < 0)
+		return ret;
+
+	ASSERT(tree_root->free_objectid <= BTRFS_LAST_FREE_OBJECTID);
+
+	ret = btrfs_read_roots(fs_info);
+	if (ret < 0)
+		return ret;
+
+	/* All successful */
+	fs_info->generation = btrfs_header_generation(tree_root->node);
+	btrfs_set_last_trans_committed(fs_info, fs_info->generation);
+	fs_info->last_reloc_trans = 0;
+
+	/* Always begin writing backup roots after the one being used */
+	if (backup_index < 0) {
+		fs_info->backup_root_index = 0;
+	} else {
+		fs_info->backup_root_index = backup_index + 1;
+		fs_info->backup_root_index %= BTRFS_NUM_BACKUP_ROOTS;
+	}
 	return ret;
 }
 
@@ -2911,6 +2898,7 @@ void btrfs_init_fs_info(struct btrfs_fs_info *fs_info)
 	init_waitqueue_head(&fs_info->async_submit_wait);
 	init_waitqueue_head(&fs_info->delayed_iputs_wait);
 
+	fs_info->use_backup_slot = -1;
 	/* Usable values until the real ones are cached from the superblock */
 	fs_info->nodesize = 4096;
 	fs_info->sectorsize = 4096;

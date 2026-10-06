@@ -1627,40 +1627,37 @@ static inline bool vma_is_hugetlb(const struct vm_area_struct *vma)
 }
 
 /**
- * vma_flags_is_kernel_owned() - Do the specified VMA flags indicate that the
- * contents of the VMA are owned by the kernel rather than the core mm?
+ * vma_flags_is_mm_managed() - Do the specified VMA flags indicate that the
+ * contents of the VMA are managed by core mm?
  * @flags: The VMA flags to test.
  *
- * A kernel-owned mapping is one whose contents are established and controlled
- * by the kernel, typically a driver, rather than by the core mm's fault and
- * rmap machinery.
+ * Such a mapping is one established by a simple mmap() or brk() with no driver
+ * or other kernel component involved.
  *
- * The mapping may be memory-mapped I/O, kernel-allocated pages or ordinary
- * pages the owner has chosen to map itself (shmem via a PFN map, for instance).
+ * They are rmappable, and core mm services rmap operations including reclaim,
+ * as well as population, CoW and merge/split (if eligible).
  *
- * In all cases the core mm must not populate, reclaim, migrate, copy-on-write
- * or merge it of its own accord.
+ * Mappings which fail this test are those where this is not the case -
+ * e.g. MMIO, user-mapped kernel pages, udmabuf (pfnmap shmem), etc.
  *
- * Pages mapped this way are not necessarily reference counted or map counted.
- *
- * Returns: true if the flags indicate a kernel-owned mapping.
+ * Returns: true if the flags indicate an mm-managed mapping.
  */
-static inline bool vma_flags_is_kernel_owned(const vma_flags_t *flags)
+static inline bool vma_flags_is_mm_managed(const vma_flags_t *flags)
 {
-	return vma_flags_test_any(flags, VMA_PFNMAP_BIT, VMA_MIXEDMAP_BIT);
+	return !vma_flags_test_any(flags, VMA_PFNMAP_BIT, VMA_MIXEDMAP_BIT);
 }
 
 /**
- * vma_is_kernel_owned() - Are the contents of @vma owned by the kernel?
+ * vma_is_mm_managed() - Are the contents of @vma managed by core mm?
  * @vma: The VMA to test.
  *
- * See vma_flags_is_kernel_owned() for a description of this property.
+ * See vma_flags_is_mm_managed() for a description of this property.
  *
- * Returns: true if the VMA is kernel-owned.
+ * Returns: true if the VMA is mm-managed.
  */
-static inline bool vma_is_kernel_owned(const struct vm_area_struct *vma)
+static inline bool vma_is_mm_managed(const struct vm_area_struct *vma)
 {
-	return vma_flags_is_kernel_owned(&vma->flags);
+	return vma_flags_is_mm_managed(&vma->flags);
 }
 
 /**
@@ -1669,8 +1666,8 @@ static inline bool vma_is_kernel_owned(const struct vm_area_struct *vma)
  * @flags: The VMA flags to test.
  *
  * Fixed mappings are those whose size is set at the point of mmap (for
- * instance, a kernel-owned mapping of a fixed range of memory), and thus
- * cannot be expanded or merged.
+ * instance, a mapping of a fixed range of memory established by a driver),
+ * and thus cannot be expanded or merged.
  *
  * Returns: true if the flags indicate a fixed mapping.
  */
@@ -1709,13 +1706,13 @@ static inline bool vma_flags_can_merge(const vma_flags_t *flags)
 	 * VMA merging assumes that a VMA's flags and fields completely describe
 	 * its state.
 	 *
-	 * However, kernel-owned mappings may have established state upon mapping
-	 * not embodied in any attribute of the VMA.
+	 * However, mappings which are not mm-managed may have established state
+	 * upon mapping not embodied in any attribute of the VMA.
 	 *
 	 * Additionally, private (CoW) PFN maps encode the source PFN of the
 	 * range in vma->vm_pgoff, which may otherwise cause spurious merges.
 	 */
-	if (vma_flags_is_kernel_owned(flags))
+	if (!vma_flags_is_mm_managed(flags))
 		return false;
 	/* VMA explicitly marked as being unmergeable. */
 	if (vma_flags_is_fixed_mapping(flags))
@@ -1735,76 +1732,53 @@ static inline bool vma_can_merge(const struct vm_area_struct *vma)
 }
 
 /**
- * vma_flags_is_persistent() - Do the specified VMA flags imply that the VMA
- * contains persistent data?
+ * vma_flags_is_mm_backed() - Do the specified VMA flags imply the mapping is
+ * backed by core mm?
  * @flags: The VMA flags to test.
  *
- * Persistent in the sense that - if you write bytes to the mapping - do they
- * stay written?
+ * An mm-backed mapping is one managed by core mm (see
+ * vma_flags_is_mm_managed()) for which two further things are true:
  *
- * If the kernel or a device could write to the memory independently of
- * userland, or the kernel could arbitrarily discard it, then it is not
- * persistent.
+ * 1. Everything mapped was placed there by core mm's fault path (no custom
+ *    ->fault).
+ * 2. What is mapped stays there until it is zapped or unmapped by the user.
  *
- * Returns: true if the flags imply this VMA is persistent, otherwise false.
+ * These mappings are the only ones which can be sensibly locked, merged, dumped
+ * or be subject to uffd faulting, as all of these assume core mm and core mm
+ * alone manages these, and that the mappings will remain there.
+ *
+ * Returns: true if the flags imply an mm-backed mapping, otherwise false.
  */
-static inline bool vma_flags_is_persistent(const vma_flags_t *flags)
+static inline bool vma_flags_is_mm_backed(const vma_flags_t *flags)
 {
-	/* hugetlb is a fixed mapping, but its contents are the user's own. */
+	/* hugetlb is a fixed mapping, but core mm owns it entirely. */
 	if (vma_flags_is_hugetlb(flags))
 		return true;
 	/*
-	 * MMIO mappings may not store what is written and may be changed by the
-	 * device. Kernel-owned and fixed mappings may be changed by their owner
-	 * without the user having initiated it.
+	 * Mappings not managed by core mm are populated by their owner.
+	 *
+	 * Fixed mappings may be mm-managed, but their contents are established
+	 * by a custom ->fault handler, so core mm cannot assume ordinary fault
+	 * semantics over them.
 	 */
-	if (vma_flags_is_kernel_owned(flags) ||
+	if (!vma_flags_is_mm_managed(flags) ||
 	    vma_flags_is_fixed_mapping(flags))
 		return false;
-	/* Droppable memory is discardable by definition. */
+	/* Core mm may discard droppable memory at any time. */
 	return !vma_flags_test_single_mask(flags, VMA_DROPPABLE);
 }
 
 /**
- * vma_is_persistent() - Does the VMA contain persistent data?
+ * vma_is_mm_backed() - Is @vma backed by core mm?
  * @vma: The VMA to test.
  *
- * See vma_flags_is_persistent() for details.
+ * See vma_flags_is_mm_backed() for details.
  *
- * Returns: true if the VMA is persistent, otherwise false.
+ * Returns: true if the VMA is mm-backed, otherwise false.
  */
-static inline bool vma_is_persistent(const struct vm_area_struct *vma)
+static inline bool vma_is_mm_backed(const struct vm_area_struct *vma)
 {
-	return vma_flags_is_persistent(&vma->flags);
-}
-
-/**
- * vma_flags_can_gup() - Do the specified VMA flags permit GUP to access the
- * mapping's pages?
- * @flags: The VMA flags to test.
- *
- * GUP cannot obtain pages from a PFN map (VMA_PFNMAP_BIT), which may have no
- * struct pages behind it, and must not provide access to memory-mapped I/O
- * (VMA_IO_BIT).
- *
- * Returns: true if GUP may access pages from the mapping, otherwise false.
- */
-static inline bool vma_flags_can_gup(const vma_flags_t *flags)
-{
-	return !vma_flags_test_any(flags, VMA_IO_BIT, VMA_PFNMAP_BIT);
-}
-
-/**
- * vma_can_gup() - May GUP obtain pages from @vma?
- * @vma: The VMA to test.
- *
- * See vma_flags_can_gup() for details.
- *
- * Returns: true if GUP may access pages from the mapping, otherwise false.
- */
-static inline bool vma_can_gup(const struct vm_area_struct *vma)
-{
-	return vma_flags_can_gup(&vma->flags);
+	return vma_flags_is_mm_backed(&vma->flags);
 }
 
 /**
@@ -4883,7 +4857,7 @@ discontig_kernel_map_page_range(struct discontig_kernel_page_state *state,
 {
 	state->action = DISCONTIG_KERNEL_PAGE_MAP_PAGE_RANGE;
 	state->__page_arr = page_arr;
-	state->__nr_pages = nr_pages;
+	state->__nr_pages = min(nr_pages, state->nr_pages_remain);
 }
 
 /* Look up the first VMA which exactly match the interval vm_start ... vm_end */

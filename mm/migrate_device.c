@@ -746,7 +746,7 @@ int migrate_vma_setup(struct migrate_vma *args)
 	args->end &= PAGE_MASK;
 	if (!vma)
 		return -EINVAL;
-	if (vma_is_kernel_owned(vma) || vma_is_fixed_mapping(vma) ||
+	if (!vma_is_mm_managed(vma) || vma_is_fixed_mapping(vma) ||
 	    vma_is_dax(vma))
 		return -EINVAL;
 	if (nr_pages <= 0)

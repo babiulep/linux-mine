@@ -2343,19 +2343,20 @@ void zap_vma_range(struct vm_area_struct *vma, unsigned long address,
 }
 
 /**
- * zap_special_vma_range - zap all page table entries in a kernel-owned VMA
+ * zap_special_vma_range - zap all page table entries in a VMA which is not
+ * mm-managed
  * @vma: the vma covering the range to zap
  * @address: starting address of the range to zap
  * @size: number of bytes to zap
  *
  * This function does nothing when the provided address range is not fully
- * contained in @vma, or when @vma is not kernel-owned.
+ * contained in @vma, or when @vma is mm-managed.
  */
 void zap_special_vma_range(struct vm_area_struct *vma, unsigned long address,
 		unsigned long size)
 {
 	if (!range_in_vma(vma, address, address + size) ||
-	   !vma_is_kernel_owned(vma))
+	   vma_is_mm_managed(vma))
 		return;
 
 	zap_vma_range(vma, address, size);
@@ -2417,11 +2418,11 @@ static bool vm_mixed_zeropage_allowed(struct vm_area_struct *vma)
 	 * be problematic as soon as the zeropage gets replaced by a different
 	 * page due to vma->vm_ops->pfn_mkwrite, because what's mapped would
 	 * now differ to what GUP looked up. FSDAX is incompatible to
-	 * FOLL_LONGTERM and memory-mapped I/O is incompatible to GUP completely
-	 * (see vma_can_gup()).
+	 * FOLL_LONGTERM and VM_IO is incompatible to GUP completely (see
+	 * check_vma_flags).
 	 */
 	return vma->vm_ops && vma->vm_ops->pfn_mkwrite &&
-	       (vma_is_fsdax(vma) || vma_test(vma, VMA_IO_BIT));
+	       (vma_is_fsdax(vma) || vma->vm_flags & VM_IO);
 }
 
 static int validate_page_before_insert(struct vm_area_struct *vma,
@@ -7119,8 +7120,7 @@ int follow_pfnmap_start(struct follow_pfnmap_args *args)
 	if (unlikely(address < vma->vm_start || address >= vma->vm_end))
 		goto out;
 
-	/* Only mappings GUP cannot handle are followed here. */
-	if (vma_can_gup(vma))
+	if (!(vma->vm_flags & (VM_IO | VM_PFNMAP)))
 		goto out;
 retry:
 	pgdp = pgd_offset(mm, address);
@@ -7320,9 +7320,8 @@ static int __access_remote_vm(struct mm_struct *mm, unsigned long addr,
 			}
 
 			/*
-			 * GUP failed, perhaps because this is a mapping it
-			 * cannot handle (see vma_can_gup()) - such mappings may
-			 * provide access via vm_ops->access() instead.
+			 * Check if this is a VM_IO | VM_PFNMAP VMA, which
+			 * we can access using slightly different code.
 			 */
 			bytes = 0;
 #ifdef CONFIG_HAVE_IOREMAP_PROT

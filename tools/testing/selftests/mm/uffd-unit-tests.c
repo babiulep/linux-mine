@@ -2049,28 +2049,29 @@ static void uffd_move_swap_test_common(uffd_global_test_opts_t *gopts,
 				       bool rwp)
 {
 	unsigned long page_size = gopts->page_size;
-	struct uffdio_move move = { };
-	int pagemap_fd;
+	struct uffdio_move move = {
+		.dst = (unsigned long)gopts->area_dst,
+		.src = (unsigned long)gopts->area_src,
+		.len = page_size,
+	};
+	int pagemap_fd = pagemap_open();
 
 	if (rwp) {
 		if (uffd_register_rwp(gopts->uffd, gopts->area_src, page_size))
 			err("register src failure");
-	} else if (uffd_register(gopts->uffd, gopts->area_src, page_size,
-				 false, true, false)) {
-		err("register src failure");
+		rwprotect_range(gopts->uffd, (unsigned long)gopts->area_src,
+				page_size, true);
+	} else {
+		if (uffd_register(gopts->uffd, gopts->area_src, page_size,
+				  false, true, false))
+			err("register src failure");
+		wp_range(gopts->uffd, (unsigned long)gopts->area_src,
+			 page_size, true);
 	}
 	if (uffd_register(gopts->uffd, gopts->area_dst, page_size,
 			  true, false, false))
 		err("register dst failure");
 
-	if (rwp)
-		rwprotect_range(gopts->uffd, (unsigned long)gopts->area_src,
-				page_size, true);
-	else
-		wp_range(gopts->uffd, (unsigned long)gopts->area_src,
-			 page_size, true);
-
-	pagemap_fd = pagemap_open();
 	if (madvise(gopts->area_src, page_size, MADV_PAGEOUT))
 		err("MADV_PAGEOUT");
 	if (!pagemap_is_swapped(pagemap_fd, gopts->area_src)) {
@@ -2078,11 +2079,10 @@ static void uffd_move_swap_test_common(uffd_global_test_opts_t *gopts,
 		goto out;
 	}
 
-	move.dst = (unsigned long)gopts->area_dst;
-	move.src = (unsigned long)gopts->area_src;
-	move.len = page_size;
-	if (ioctl(gopts->uffd, UFFDIO_MOVE, &move))
-		err("UFFDIO_MOVE");
+	if (ioctl(gopts->uffd, UFFDIO_MOVE, &move)) {
+		uffd_test_fail("UFFDIO_MOVE failed: %s", strerror(errno));
+		goto out;
+	}
 
 	if (pagemap_get_entry(pagemap_fd, gopts->area_dst) & PM_UFFD_WP)
 		uffd_test_fail("uffd bit moved into an area registered for missing faults only");

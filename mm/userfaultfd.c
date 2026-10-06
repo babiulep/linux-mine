@@ -1757,16 +1757,14 @@ static inline bool move_splits_huge_pmd(unsigned long dst_addr,
 
 static inline bool vma_move_compatible(const struct vm_area_struct *vma)
 {
-	/* uffd is generally incompatible with kernel-owned mappings. */
-	if (vma_is_kernel_owned(vma))
+	/* uffd is generally incompatible with mappings not managed by core mm. */
+	if (!vma_is_mm_managed(vma))
 		return false;
 	/* The shadow stack should not be written to by userspace. */
 	if (vma_test_single_mask(vma, VMA_SHADOW_STACK))
 		return false;
 	/* hugetlb mappings cannot be safely moved. */
-	if (vma_is_hugetlb(vma))
-		return false;
-	return true;
+	return !vma_is_hugetlb(vma);
 }
 
 static int validate_move_areas(struct userfaultfd_ctx *ctx,
@@ -2155,8 +2153,8 @@ static bool vma_can_userfault(struct vm_area_struct *vma, vm_flags_t vm_flags,
 {
 	const struct vm_uffd_ops *ops = vma_uffd_ops(vma);
 
-	/* Non-persistent memory is inherently not controllable by userspace. */
-	if (!vma_is_persistent(vma))
+	/* Only mm-backed memory can have its faults handled by userspace. */
+	if (!vma_is_mm_backed(vma))
 		return false;
 	/* The shadow stack should not be written to by userspace. */
 	if (vma_test_single_mask(vma, VMA_SHADOW_STACK))

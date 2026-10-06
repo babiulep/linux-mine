@@ -7,6 +7,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/pci.h>
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/kernel.h>
@@ -309,48 +310,76 @@ dw_edma_get_default_irq_mode(struct dw_edma_chan *chan)
 						  DW_EDMA_CH_IRQ_REMOTE;
 }
 
+static int dw_edma_device_config_irq_mode(struct dw_edma_chan *chan,
+					  enum dw_edma_ch_irq_mode mode)
+{
+	if (!(chan->dw->chip->flags & DW_EDMA_CHIP_LOCAL) ||
+	    (mode != DW_EDMA_CH_IRQ_LOCAL && mode != DW_EDMA_CH_IRQ_REMOTE))
+		return -EINVAL;
+
+	guard(spinlock_irqsave)(&chan->vc.lock);
+
+	if (chan->status != EDMA_ST_IDLE || chan->request != EDMA_REQ_NONE)
+		return -EBUSY;
+
+	/* IRQ routing cannot change after the initial configuration. */
+	if (chan->irq_mode == mode)
+		return 0;
+
+	if (chan->configured)
+		return -EBUSY;
+
+	chan->irq_mode = mode;
+
+	return 0;
+}
+
 static int dw_edma_device_config(struct dma_chan *dchan,
 				 struct dma_slave_config *config)
 {
+	const struct dw_edma_chan_config *dw_config = config->peripheral_config;
 	struct dw_edma_chan *chan = dchan2dw_edma_chan(dchan);
-	bool cfg_non_ll;
-	int non_ll = 0;
+	bool non_ll = false;
+	u32 flags = 0;
+	int ret;
 
-	chan->non_ll = false;
-	if (chan->dw->chip->mf == EDMA_MF_HDMA_NATIVE) {
-		if (config->peripheral_config &&
-		    config->peripheral_size != sizeof(int)) {
-			dev_err(dchan->device->dev,
-				"config param peripheral size mismatch\n");
+	if (dw_config) {
+		if (config->peripheral_size != sizeof(*dw_config) ||
+		    dw_config->flags & ~(DW_EDMA_CH_CONFIG_NON_LL |
+					 DW_EDMA_CH_CONFIG_IRQ_MODE))
+			return -EINVAL;
+		flags = dw_config->flags;
+	}
+
+	/*
+	 * When there is no valid LLP base address available then the
+	 * default DMA ops will use the non-LL mode.
+	 *
+	 * When LL mode is the default, clients can request non-LL mode
+	 * through DW_EDMA_CH_CONFIG_NON_LL.
+	 */
+	non_ll = chan->dw->chip->mf == EDMA_MF_HDMA_NATIVE &&
+		 chan->dw->chip->cfg_non_ll;
+
+	if (flags & DW_EDMA_CH_CONFIG_NON_LL) {
+		if (chan->dw->chip->mf != EDMA_MF_HDMA_NATIVE)
+			return -EINVAL;
+
+		if (chan->dw->chip->cfg_non_ll && !dw_config->non_ll) {
+			dev_err(dchan->device->dev, "invalid configuration\n");
 			return -EINVAL;
 		}
 
-		/*
-		 * When there is no valid LLP base address available then the
-		 * default DMA ops will use the non-LL mode.
-		 *
-		 * Cases where LL mode is enabled and client wants to use the
-		 * non-LL mode then also client can do so via providing the
-		 * peripheral_config param.
-		 */
-		cfg_non_ll = chan->dw->chip->cfg_non_ll;
-		if (config->peripheral_config) {
-			non_ll = *(int *)config->peripheral_config;
-
-			if (cfg_non_ll && !non_ll) {
-				dev_err(dchan->device->dev, "invalid configuration\n");
-				return -EINVAL;
-			}
-		}
-
-		if (cfg_non_ll || non_ll)
-			chan->non_ll = true;
-	} else if (config->peripheral_config) {
-		dev_err(dchan->device->dev,
-			"peripheral config param applicable only for HDMA\n");
-		return -EINVAL;
+		non_ll = dw_config->non_ll;
 	}
 
+	if (flags & DW_EDMA_CH_CONFIG_IRQ_MODE) {
+		ret = dw_edma_device_config_irq_mode(chan, dw_config->irq_mode);
+		if (ret)
+			return ret;
+	}
+
+	chan->non_ll = non_ll;
 	memcpy(&chan->config, config, sizeof(*config));
 	chan->configured = true;
 
@@ -1014,11 +1043,53 @@ static void dw_edma_wait_termination(struct dma_chan *dchan)
 		 "timeout waiting for channel termination\n");
 }
 
+static void dw_edma_synchronize_chan_irq(struct dw_edma_chan *chan)
+{
+	struct dw_edma *dw = chan->dw;
+	unsigned long *mask;
+	int i;
+
+	/*
+	 * A shared handler may retain this channel's status across quiesce.
+	 * With nr_irqs == 1, it scans both directions even if routing and
+	 * delegation are direction-wide. Drain it before allowing a routing change.
+	 */
+	for (i = 0; i < dw->nr_irqs; i++) {
+		mask = chan->dir == EDMA_DIR_WRITE ? dw->irq[i].wr_mask :
+						     dw->irq[i].rd_mask;
+		if (!test_bit(chan->id, mask))
+			continue;
+
+		synchronize_irq(dw->chip->ops->irq_vector(dw->chip->dev, i));
+		return;
+	}
+}
+
 static void dw_edma_device_synchronize(struct dma_chan *dchan)
 {
 	struct dw_edma_chan *chan = dchan2dw_edma_chan(dchan);
+	bool remote;
+
+	/*
+	 * irq_mode is fixed after initial configuration. The free path
+	 * restores it only after synchronization.
+	 */
+	remote = chan->dw->chip->flags & DW_EDMA_CHIP_LOCAL &&
+		 chan->irq_mode == DW_EDMA_CH_IRQ_REMOTE;
+
+	/*
+	 * Peer-driven transfers bypass local descriptor tracking, so quiesce
+	 * the hardware explicitly.
+	 */
+	if (remote && dw_edma_core_ch_quiesce(chan))
+		dev_warn(chan->dw->chip->dev,
+			 "failed to quiesce remote-routed %s channel %u\n",
+			 chan->dir == EDMA_DIR_WRITE ? "write" : "read",
+			 chan->id);
 
 	dw_edma_wait_termination(dchan);
+	if (remote)
+		dw_edma_synchronize_chan_irq(chan);
 	cancel_work_sync(&chan->irq_work);
 	atomic_set(&chan->irq_pending, 0);
 	vchan_synchronize(&chan->vc);
@@ -1031,8 +1102,10 @@ static void dw_edma_free_chan_resources(struct dma_chan *dchan)
 	dw_edma_device_terminate_all(dchan);
 	dw_edma_device_synchronize(dchan);
 
-	scoped_guard(spinlock_irqsave, &chan->vc.lock)
+	scoped_guard(spinlock_irqsave, &chan->vc.lock) {
 		chan->configured = false;
+		chan->irq_mode = dw_edma_get_default_irq_mode(chan);
+	}
 
 	vchan_free_chan_resources(&chan->vc);
 }
@@ -1119,6 +1192,7 @@ static int dw_edma_channel_setup(struct dw_edma *dw, u32 wr_alloc, u32 rd_alloc)
 					&dw->chip->dt_region_rd[chan->id];
 
 		vchan_init(&chan->vc, dma);
+		dmaengine_set_static_chan_id(&chan->vc.chan, i);
 
 		dw_edma_core_ch_config(chan);
 	}
@@ -1164,12 +1238,23 @@ static inline void dw_edma_dec_irq_alloc(int *nr_irqs, u32 *alloc, u16 cnt)
 	}
 }
 
+static void dw_edma_compose_msi(int irq, struct msi_msg *msi)
+{
+	struct msi_desc *desc = irq_get_msi_desc(irq);
+
+	if (!desc)
+		return;
+
+	get_cached_msi_msg(irq, msi);
+	if (dev_is_pci(desc->dev) && !desc->pci.msi_attrib.is_msix)
+		msi->data += irq - desc->irq;
+}
+
 static int dw_edma_irq_request(struct dw_edma *dw,
 			       u32 *wr_alloc, u32 *rd_alloc)
 {
 	struct dw_edma_chip *chip = dw->chip;
 	struct device *dev = dw->chip->dev;
-	struct msi_desc *msi_desc;
 	int i, err = 0;
 	u32 ch_cnt;
 	int irq;
@@ -1194,8 +1279,7 @@ static int dw_edma_irq_request(struct dw_edma *dw,
 			return err;
 		}
 
-		if (irq_get_msi_desc(irq))
-			get_cached_msi_msg(irq, &dw->irq[0].msi);
+		dw_edma_compose_msi(irq, &dw->irq[0].msi);
 
 		dw->nr_irqs = 1;
 	} else {
@@ -1218,12 +1302,7 @@ static int dw_edma_irq_request(struct dw_edma *dw,
 					  &dw->irq[i]);
 			if (err)
 				goto err_irq_free;
-			msi_desc = irq_get_msi_desc(irq);
-			if (msi_desc) {
-				get_cached_msi_msg(irq, &dw->irq[i].msi);
-				if (!msi_desc->pci.msi_attrib.is_msix)
-					dw->irq[i].msi.data = dw->irq[0].msi.data + i;
-			}
+			dw_edma_compose_msi(irq, &dw->irq[i].msi);
 		}
 
 		dw->nr_irqs = i;

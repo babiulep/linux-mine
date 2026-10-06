@@ -2618,17 +2618,23 @@ static int __mmap_new_file_vma(struct mmap_state *map,
 	if (error) {
 		UNMAP_STATE(unmap, vmi, vma, vma->vm_start, vma->vm_end,
 			    map->prev, map->next);
-		if (map_same_file(map))
-			fput(map->vm_file);
 
-		vma->vm_file = NULL;
 		vma_iter_set(vmi, vma->vm_end);
 		/* Undo any partial mapping done by a device driver. */
 		unmap_region(&unmap);
+		/* Only safe once unmapped. */
+		vma_close(vma);
+
+		if (map_same_file(map))
+			fput(map->vm_file);
+		vma->vm_file = NULL;
 		return error;
 	}
 
-	/* If VMA flags still valid for locked mask, reinstate. */
+	/*
+	 * If the VMA is still eligible for mlock(), reinstate any original
+	 * VMA_LOCKED_BIT and/or VMA_LOCKONFAULT_BIT flags.
+	 */
 	if (vma_supports_mlock(vma)) {
 		const vma_flags_t mask =
 			vma_flags_and_mask(&map->vma_flags,
@@ -2787,8 +2793,8 @@ static int mmap_validate_vma_flags(const vma_flags_t *flags)
 		return -EINVAL;
 #endif
 
-	if (!vma_flags_is_kernel_owned(flags)) {
-		/* Only kernel-owned mappings may set VMA_IO_BIT. */
+	if (vma_flags_is_mm_managed(flags)) {
+		/* mm-managed mappings may not set VMA_IO_BIT. */
 		if (WARN_ON_ONCE(vma_flags_test(flags, VMA_IO_BIT)))
 			return -EINVAL;
 	}
@@ -2797,26 +2803,26 @@ static int mmap_validate_vma_flags(const vma_flags_t *flags)
 }
 
 /* Check to ensure a driver hasn't done something crazy. */
-static int mmap_validate(unsigned long prev_start, unsigned long prev_end,
+static int mmap_validate(unsigned long orig_start, unsigned long orig_end,
 			 unsigned long curr_start, unsigned long curr_end,
-			 const vma_flags_t *prev_flags,
+			 const vma_flags_t *orig_flags,
 			 const vma_flags_t *curr_flags)
 {
 	bool was_maywrite, is_maywrite;
 
 	/* Drivers cannot alter the range of the VMA. */
-	if (WARN_ON_ONCE(prev_start != curr_start || prev_end != curr_end))
+	if (WARN_ON_ONCE(orig_start != curr_start || orig_end != curr_end))
 		return -EINVAL;
 
-	was_maywrite = vma_flags_test(prev_flags, VMA_MAYWRITE_BIT);
+	was_maywrite = vma_flags_test(orig_flags, VMA_MAYWRITE_BIT);
 	is_maywrite = vma_flags_test(curr_flags, VMA_MAYWRITE_BIT);
 
 	/* A driver may not make a previously unwritable mapping writable. */
 	if (WARN_ON_ONCE(!was_maywrite && is_maywrite))
 		return -EINVAL;
 
-	/* Only kernel-owned mappings may clear VMA_MAYWRITE_BIT. */
-	if (!vma_flags_is_kernel_owned(curr_flags) &&
+	/* mm-managed mappings may not clear VMA_MAYWRITE_BIT. */
+	if (vma_flags_is_mm_managed(curr_flags) &&
 	    WARN_ON_ONCE(was_maywrite && !is_maywrite))
 		return -EINVAL;
 
@@ -2826,47 +2832,50 @@ static int mmap_validate(unsigned long prev_start, unsigned long prev_end,
 /**
  * mmap_prepare_validate() - Ensure the driver hasn't violated invariants in its
  * f_op->mmap_prepare hook.
- * @prev_desc: The VMA descriptor prior to the mmap_prepare hook being called.
+ * @orig_desc: The VMA descriptor prior to the mmap_prepare hook being called.
  * @desc: The VMA descriptor after the mmap_prepare hook has been called.
  *
  * Returns: 0 on success, otherwise an error.
  */
-int mmap_prepare_validate(const struct vm_area_desc *prev_desc,
+int mmap_prepare_validate(const struct vm_area_desc *orig_desc,
 			  const struct vm_area_desc *desc)
 {
 	/*
 	 * It is not valid to execute mmap actions for VMAs which can be merged,
 	 * as any such merge would leave portions of the mapping incorrectly
 	 * unmapped.
+	 *
+	 * This is checked after mmap_action_prepare(), as it may update the VMA
+	 * flags and therefore whether the VMA can be merged.
 	 */
 	if (vma_flags_can_merge(&desc->vma_flags) &&
 	    WARN_ON_ONCE(desc->action.type != MMAP_NOTHING))
 		return -EINVAL;
 
-	return mmap_validate(prev_desc->start, prev_desc->end,
+	return mmap_validate(orig_desc->start, orig_desc->end,
 			     desc->start, desc->end,
-			     &prev_desc->vma_flags, &desc->vma_flags);
+			     &orig_desc->vma_flags, &desc->vma_flags);
 }
 
 /**
  * mmap_hook_validate() - Ensure the driver hasn't violated invariants in
  * its f_op->mmap hook.
- * @prev_start: The start of the mapping prior to the mmap hook.
- * @prev_end: The end of the mapping prior to the mmap hook.
- * @prev_flags: The VMA flags set for the VMA prior to the mmap hook.
+ * @orig_start: The start of the mapping prior to the mmap hook.
+ * @orig_end: The end of the mapping prior to the mmap hook.
+ * @orig_flags: The VMA flags set for the VMA prior to the mmap hook.
  * @vma: The VMA after the hook has been applied.
  *
  * Returns: 0 on success, otherwise an error.
  */
-int mmap_hook_validate(unsigned long prev_start, unsigned long prev_end,
-		       const vma_flags_t *prev_flags,
+int mmap_hook_validate(unsigned long orig_start, unsigned long orig_end,
+		       const vma_flags_t *orig_flags,
 		       const struct vm_area_struct *vma)
 {
 	const unsigned long start = vma->vm_start;
 	const unsigned long end = vma->vm_end;
 	const vma_flags_t *flags = &vma->flags;
 
-	return mmap_validate(prev_start, prev_end, start, end, prev_flags,
+	return mmap_validate(orig_start, orig_end, start, end, orig_flags,
 			     flags);
 }
 
@@ -2896,7 +2905,7 @@ static int call_action_prepare(struct mmap_state *map,
 static int call_mmap_prepare(struct mmap_state *map,
 		struct vm_area_desc *desc)
 {
-	const struct vm_area_desc prev_desc = *desc;
+	const struct vm_area_desc orig_desc = *desc;
 	int err;
 
 	/* Invoke the hook. */
@@ -2917,7 +2926,7 @@ static int call_mmap_prepare(struct mmap_state *map,
 		return err;
 
 	/* Check the caller did nothing crazy. */
-	err = mmap_prepare_validate(&prev_desc, desc);
+	err = mmap_prepare_validate(&orig_desc, desc);
 	if (err)
 		return err;
 
@@ -2976,7 +2985,7 @@ static bool can_set_ksm_flags_early(struct mmap_state *map)
 	return false;
 }
 
-static void put_map(struct mmap_state *map)
+static void map_put_vm_file(struct mmap_state *map)
 {
 	/*
 	 * An error occurred or the VMA was merged.
@@ -3046,7 +3055,7 @@ static unsigned long __mmap_region(struct file *file, unsigned long addr,
 
 	if (!allocated_new) {
 		/* Merged, so need to drop refcount. */
-		put_map(&map);
+		map_put_vm_file(&map);
 	} else if (have_mmap_prepare) {
 		error = mmap_action_complete(vma, &desc.action,
 					     /*is_compat=*/false);
@@ -3061,7 +3070,7 @@ unacct_error:
 	if (map.charged)
 		vm_unacct_memory(map.charged);
 abort_munmap:
-	put_map(&map);
+	map_put_vm_file(&map);
 	vms_abort_munmap_vmas(&map.vms, &map.mas_detach);
 	return error;
 }

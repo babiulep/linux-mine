@@ -5,7 +5,6 @@
 
 #include <linux/log2.h>
 #include <linux/math64.h>
-#include <linux/string_choices.h>
 
 #include <drm/drm_print.h>
 
@@ -190,7 +189,7 @@ int intel_cx0_wait_for_ack(struct intel_encoder *encoder,
 		drm_dbg_kms(display->drm,
 			    "PHY %c Error occurred during %s command. Status: 0x%x\n",
 			    phy_name(phy),
-			    str_read_write(command == XELPDP_PORT_P2M_COMMAND_READ_ACK), *val);
+			    command == XELPDP_PORT_P2M_COMMAND_READ_ACK ? "read" : "write", *val);
 		intel_cx0_bus_reset(encoder, lane);
 		return -EINVAL;
 	}
@@ -199,7 +198,7 @@ int intel_cx0_wait_for_ack(struct intel_encoder *encoder,
 		drm_dbg_kms(display->drm,
 			    "PHY %c Not a %s response. MSGBUS Status: 0x%x.\n",
 			    phy_name(phy),
-			    str_read_write(command == XELPDP_PORT_P2M_COMMAND_READ_ACK), *val);
+			    command == XELPDP_PORT_P2M_COMMAND_READ_ACK ? "read" : "write", *val);
 		intel_cx0_bus_reset(encoder, lane);
 		return -EINVAL;
 	}

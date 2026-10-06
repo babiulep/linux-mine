@@ -3521,7 +3521,7 @@ static int should_skip_vma(unsigned long start, unsigned long end, struct mm_wal
 	if (!vma_has_recency(vma))
 		return true;
 
-	if (vma_test(vma, VMA_LOCKED_BIT) || vma_is_kernel_owned(vma) ||
+	if (vma_test(vma, VMA_LOCKED_BIT) || !vma_is_mm_managed(vma) ||
 	    vma_is_fixed_mapping(vma))
 		return true;
 
@@ -4462,8 +4462,8 @@ bool lru_gen_look_around(struct page_vma_mapped_walk *pvmw, unsigned int nr)
 	if (spin_is_contended(pvmw->ptl))
 		return true;
 
-	/* exclude kernel-owned and fixed VMAs containing anon pages from COW */
-	if (vma_is_kernel_owned(vma) || vma_is_fixed_mapping(vma))
+	/* exclude fixed and non-mm-managed VMAs containing anon pages from COW */
+	if (!vma_is_mm_managed(vma) || vma_is_fixed_mapping(vma))
 		return true;
 
 	/* avoid taking the LRU lock under the PTL when possible */
