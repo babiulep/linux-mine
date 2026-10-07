@@ -1815,30 +1815,14 @@ enum umount_tree_flags {
 	UMOUNT_COVER = 4,
 };
 
-static bool disconnect_mount(struct mount *mnt, enum umount_tree_flags how)
+/* Do we need to leave the mountpoint on the parent covered? */
+static bool needs_cover(struct mount *mnt, enum umount_tree_flags how)
 {
-	/* Leaving mounts connected is only valid for lazy umounts */
 	if (how & UMOUNT_SYNC)
-		return true;
-
-	/* A mount without a parent has nothing to be connected to */
-	if (!mnt_has_parent(mnt))
-		return true;
-
-	/* Only an unmounted parent has a mountpoint to keep covered */
+		return false;
 	if (!(mnt->mnt_parent->mnt.mnt_flags & MNT_UMOUNT))
-		return true;
-
-	/* Has it been requested that the mountpoint stays covered? */
-	if (how & UMOUNT_COVER)
 		return false;
-
-	/* Is the mount locked such that its mountpoint must stay covered? */
-	if (IS_MNT_LOCKED(mnt))
-		return false;
-
-	/* By default disconnect the mount */
-	return true;
+	return (how & UMOUNT_COVER) || IS_MNT_LOCKED(mnt);
 }
 
 /*
@@ -1889,7 +1873,7 @@ static void umount_tree(struct mount *mnt, enum umount_tree_flags how)
 			p->mnt.mnt_flags |= MNT_SYNC_UMOUNT;
 
 		if (mnt_has_parent(p)) {
-			if (!disconnect_mount(p, how))
+			if (needs_cover(p, how))
 				leave_cover(p);
 			umount_mnt(p);
 		}
@@ -6388,8 +6372,8 @@ static struct vfsmount *__init knullfs_file_mount(void)
 	if (IS_ERR(mnt))
 		return ERR_CAST(mnt);
 	mnt->mnt_ns = MNT_NS_INTERNAL;
-	mnt->mnt.mnt_flags |= MNT_INTERNAL | MNT_READONLY;
-	/* nothing is ever mounted on it either */
+	mnt->mnt.mnt_flags |= MNT_INTERNAL;
+	mnt->mnt.mnt_flags &= ~MNT_READONLY;
 	dont_mount(mnt->mnt.mnt_root);
 	return &mnt->mnt;
 }

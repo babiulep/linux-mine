@@ -660,7 +660,7 @@ start_transaction(struct btrfs_root *root, unsigned int num_items,
 	int ret;
 
 	/* The type must be a single TRANS_* bit set. */
-	ASSERT(is_power_of_2(type));
+	ASSERT(has_single_bit_set(type));
 
 	if (unlikely(BTRFS_FS_ERROR(fs_info)))
 		return ERR_PTR(-EROFS);

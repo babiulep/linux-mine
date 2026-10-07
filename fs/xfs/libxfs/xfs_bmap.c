@@ -3149,6 +3149,8 @@ xfs_bmap_longest_free_extent(
 	xfs_extlen_t		*blen)
 {
 	xfs_extlen_t		longest;
+	unsigned int		min_free;
+	unsigned int		max_free;
 	int			error = 0;
 
 	if (!xfs_perag_initialised_agf(pag)) {
@@ -3158,8 +3160,9 @@ xfs_bmap_longest_free_extent(
 			return error;
 	}
 
-	longest = xfs_alloc_longest_free_extent(pag,
-				xfs_alloc_min_freelist(pag_mount(pag), pag),
+	/* bmap allocs always have minleft set, so account for max_free */
+	xfs_alloc_freelist(pag_mount(pag), pag, &min_free, &max_free);
+	longest = xfs_alloc_longest_free_extent(pag, min_free, max_free,
 				xfs_ag_resv_needed(pag, XFS_AG_RESV_NONE));
 	if (*blen < longest)
 		*blen = longest;
