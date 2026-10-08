@@ -68,7 +68,7 @@ struct dcn_dsc_reg_state;
 struct dcn_optc_reg_state;
 struct dcn_dccg_reg_state;
 
-#define DC_VER "3.2.400"
+#define DC_VER "3.2.401"
 
 /**
  * MAX_SURFACES - representative of the upper bound of surfaces that can be piped to a single CRTC
@@ -1042,6 +1042,8 @@ struct dc_virtual_addr_space_config {
 struct dc_bounding_box_overrides {
 	unsigned int sr_exit_time_ns;
 	unsigned int sr_enter_plus_exit_time_ns;
+	unsigned int sr_lp_exit_time_ns;
+	unsigned int sr_lp_enter_plus_exit_time_ns;
 	unsigned int sr_exit_z8_time_ns;
 	unsigned int sr_enter_plus_exit_z8_time_ns;
 	unsigned int urgent_latency_ns;
@@ -1293,6 +1295,7 @@ struct dc_debug_options {
 	union fw_assisted_mclk_switch_version fams_version;
 	union dmub_fams2_global_feature_config fams2_config;
 	bool fams2_imm_restore_drr;
+	bool skip_hdmi_rr_enable;
 	unsigned int force_cositing;
 	unsigned int disable_spl;
 	unsigned int force_easf;
@@ -2867,6 +2870,9 @@ void dc_link_set_preferred_training_settings(struct dc *dc,
 		struct dc_link_training_overrides *lt_overrides,
 		struct dc_link *link,
 		bool skip_immediate_retrain);
+
+/* Configure the sink-specific policy for future DP link training. */
+void dc_link_set_skip_link_bw_clear(struct dc_link *link, bool skip);
 
 /* return - true if FEC is supported with connected DP RX, false otherwise */
 bool dc_link_is_fec_supported(const struct dc_link *link);

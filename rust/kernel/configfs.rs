@@ -313,18 +313,21 @@ unsafe impl<Data> HasGroup<Data> for Group<Data> {
 unsafe fn get_group_data<'a, Parent>(this: *mut bindings::config_group) -> &'a Parent {
     // SAFETY: `this` is a valid pointer.
     let subsys = unsafe { (*this).cg_subsys };
+
     // `link_group()` in `fs/configfs/dir.c` assigns `cg_subsys` for every
     // `config_group` attached anywhere in a registered subsystem, including
     // the subsystem's own `su_group` (which gets a pointer to itself). The
     // only `config_group` with a NULL `cg_subsys` is the configfs root, and
     // userspace cannot trigger callbacks on it. The group is therefore the
     // subsystem's `su_group` iff it equals `&cg_subsys->su_group`.
-    //
-    // SAFETY: For every `config_group` the configfs core dispatches a
-    // callback on, `cg_subsys` was set by `link_group()` at registration time
-    // and points to a valid `configfs_subsystem` that outlives the callback.
     let is_root = !subsys.is_null()
-        && core::ptr::eq(this.cast_const(), unsafe { &raw const (*subsys).su_group });
+        && core::ptr::eq(
+            this.cast_const(),
+            // SAFETY: For every `config_group` the configfs core dispatches a
+            // callback on, `cg_subsys` was set by `link_group()` at registration time
+            // and points to a valid `configfs_subsystem` that outlives the callback.
+            unsafe { &raw const (*subsys).su_group },
+        );
 
     if is_root {
         // SAFETY: By the above, `this` is the `su_group` field of a

@@ -23,6 +23,7 @@
 #include "amdgpu.h"
 #include "gmc_v12_1.h"
 #include "soc15_common.h"
+#include "soc_v1_0.h"
 #include "soc_v1_0_enum.h"
 #include "oss/osssys_7_1_0_offset.h"
 #include "oss/osssys_7_1_0_sh_mask.h"
@@ -615,6 +616,7 @@ static void gmc_v12_1_get_npa_flags(struct amdgpu_device *adev,
 	*flags |= AMDGPU_PTE_SNOOPED | AMDGPU_PTE_PRT_GFX12 |
 		   AMDGPU_PTE_BUS_ATOMICS;
 	*flags &= ~AMDGPU_PTE_VALID;
+	*flags &= ~AMDGPU_PTE_SYSTEM;
 	*flags &= ~AMDGPU_PTE_EXECUTABLE;
 }
 
@@ -627,7 +629,7 @@ static void gmc_v12_1_get_mtypes(struct amdgpu_device *adev,
 				 unsigned int *mtype_local,
 				 unsigned int *mtype_remote)
 {
-	bool is_aid_a1 = (adev->rev_id & 0x10);
+	bool is_aid_a1 = SOC_V1_0_DIE_REV_AID(adev->rev_id) == 1;
 
 	/* Local memory: ASIC default depends on the AID stepping. */
 	*mtype_local = is_aid_a1 ? MTYPE_RW : MTYPE_NC;
@@ -679,6 +681,7 @@ static void gmc_v12_1_get_coherence_flags(struct amdgpu_device *adev,
 	unsigned int mtype, mtype_local, mtype_remote;
 	bool snoop = false;
 	bool is_local = false;
+	bool is_aid_a1, is_spx;
 
 	switch (gc_ip_version) {
 	case IP_VERSION(12, 1, 0):
@@ -689,7 +692,17 @@ static void gmc_v12_1_get_coherence_flags(struct amdgpu_device *adev,
 		if (uncached) {
 			mtype = MTYPE_UC;
 		} else if (ext_coherent) {
-			mtype = is_local ? mtype_local : MTYPE_UC;
+			is_aid_a1 = SOC_V1_0_DIE_REV_AID(adev->rev_id) == 1;
+			is_spx = amdgpu_xcp_query_partition_mode(adev->xcp_mgr,
+								 AMDGPU_XCP_FL_NONE) ==
+				 AMDGPU_SPX_PARTITION_MODE;
+			/* AID A0 requires MTYPE_UC for extended-scope coherent
+			 * local memory in DPX/QPX/CPX modes.
+			 */
+			if (is_local && (is_aid_a1 || is_spx))
+				mtype = mtype_local;
+			else
+				mtype = MTYPE_UC;
 		} else {
 			mtype = is_local ? mtype_local : mtype_remote;
 		}

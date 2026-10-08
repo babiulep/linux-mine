@@ -128,6 +128,8 @@ static vm_fault_t amdgpu_gem_fault(struct vm_fault *vmf)
 		return ret;
 
 	if (drm_dev_enter(ddev, &idx)) {
+		pm_runtime_get_noresume(ddev->dev);
+
 		ret = amdgpu_bo_fault_reserve_notify(bo);
 		if (ret) {
 			drm_dev_exit(idx);
@@ -137,6 +139,7 @@ static vm_fault_t amdgpu_gem_fault(struct vm_fault *vmf)
 		ret = ttm_bo_vm_fault_reserved(vmf, vmf->vma->vm_page_prot,
 					       TTM_BO_VM_NUM_PREFAULT);
 
+		pm_runtime_put_noidle(ddev->dev);
 		drm_dev_exit(idx);
 	} else {
 		ret = ttm_bo_vm_dummy_page(vmf, vmf->vma->vm_page_prot);
@@ -599,6 +602,11 @@ int amdgpu_gem_userptr_ioctl(struct drm_device *dev, void *data,
 			amdgpu_hmm_range_free(range);
 			goto release_object;
 		}
+
+		r = pm_runtime_resume_and_get(adev->dev);
+		if (r < 0)
+			goto user_pages_done;
+
 		r = amdgpu_bo_reserve(bo, true);
 		if (r)
 			goto user_pages_done;
@@ -608,6 +616,9 @@ int amdgpu_gem_userptr_ioctl(struct drm_device *dev, void *data,
 		amdgpu_bo_placement_from_domain(bo, AMDGPU_GEM_DOMAIN_GTT);
 		r = ttm_bo_validate(&bo->tbo, &bo->placement, &ctx);
 		amdgpu_bo_unreserve(bo);
+
+		pm_runtime_put_autosuspend(adev->dev);
+
 		if (r)
 			goto user_pages_done;
 	}
@@ -925,6 +936,12 @@ int amdgpu_gem_va_ioctl(struct drm_device *dev, void *data,
 		gobj = NULL;
 		abo = NULL;
 	}
+
+	PM_RUNTIME_ACQUIRE_IF_ENABLED_AUTOSUSPEND(dev->dev, lock);
+
+	r = PM_RUNTIME_ACQUIRE_ERR(&lock);
+	if (r)
+		goto error_put_gobj;
 
 	/* Add input syncobj fences (if any) for synchronization. */
 	r = amdgpu_gem_add_input_fence(filp,

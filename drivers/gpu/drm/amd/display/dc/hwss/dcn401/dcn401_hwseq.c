@@ -1635,20 +1635,10 @@ bool dcn401_dmub_hw_control_lock(struct dc *dc,
 	return true;
 }
 
-void dcn401_dmub_hw_control_lock_fast(union block_sequence_params *params)
+bool dcn401_is_dmub_hw_lock_supported(const struct dc *dc)
 {
-	struct dc *dc = params->dmub_hw_control_lock_fast_params.dc;
-	bool lock = params->dmub_hw_control_lock_fast_params.lock;
-
-	if (params->dmub_hw_control_lock_fast_params.is_required) {
-		union dmub_inbox0_cmd_lock_hw hw_lock_cmd = { 0 };
-
-		hw_lock_cmd.bits.command_code = DMUB_INBOX0_CMD__HW_LOCK;
-		hw_lock_cmd.bits.hw_lock_client = HW_LOCK_CLIENT_DRIVER;
-		hw_lock_cmd.bits.lock = lock;
-		hw_lock_cmd.bits.should_release = !lock;
-		dmub_hw_lock_mgr_inbox0_cmd(dc->ctx->dmub_srv, hw_lock_cmd);
-	}
+	/* Inbox0 HW lock is unconditionally available on this generation. */
+	return dc && dc->ctx && dc->ctx->dmub_srv && dc->ctx->dmub_srv->dmub;
 }
 
 void dcn401_fams2_update_config(struct dc *dc, struct dc_state *context, bool enable)
@@ -1789,54 +1779,11 @@ static void dcn401_add_dsc_sequence_for_odm_change(struct dc *dc, struct dc_stat
 
 	/* Process new DSC configuration if DSC is enabled */
 	if (otg_master->stream_res.dsc && otg_master->stream->timing.flags.DSC) {
-		struct dc_stream_state *stream = otg_master->stream;
-		struct pipe_ctx *odm_pipe;
-		int opp_cnt = 1;
-		int last_dsc_calc = 0;
-		bool should_use_dto_dscclk = (dc->res_pool->dccg->funcs->set_dto_dscclk != NULL) &&
-				stream->timing.pix_clk_100hz > 480000;
-
-		/* Count ODM pipes */
-		for (odm_pipe = otg_master->next_odm_pipe; odm_pipe; odm_pipe = odm_pipe->next_odm_pipe)
-			opp_cnt++;
-
-		int num_slices_h = stream->timing.dsc_cfg.num_slices_h / opp_cnt;
-
-		/* Step 1: Set DTO DSCCLK for main DSC if needed */
-		if (should_use_dto_dscclk) {
-			hwss_add_dccg_set_dto_dscclk(seq_state, dc->res_pool->dccg,
-					otg_master->stream_res.dsc->inst, num_slices_h);
+		if (!hwss_add_dsc_sequence_for_stream(seq_state, otg_master,
+				otg_master->dsc_padding_params.dsc_hactive_padding, NULL)) {
+			ASSERT(false);
+			return;
 		}
-
-		/* Step 2: Calculate and set DSC config for main DSC */
-		last_dsc_calc = *seq_state->num_steps;
-		hwss_add_dsc_calculate_and_set_config(seq_state, otg_master, true, opp_cnt);
-
-		/* Step 3: Enable main DSC block */
-		hwss_add_dsc_enable_with_opp(seq_state, otg_master);
-
-		/* Step 4: Configure and enable ODM DSC blocks */
-		for (odm_pipe = otg_master->next_odm_pipe; odm_pipe; odm_pipe = odm_pipe->next_odm_pipe) {
-			if (!odm_pipe->stream_res.dsc)
-				continue;
-
-			/* Set DTO DSCCLK for ODM DSC if needed */
-			if (should_use_dto_dscclk) {
-				hwss_add_dccg_set_dto_dscclk(seq_state, dc->res_pool->dccg,
-						odm_pipe->stream_res.dsc->inst, num_slices_h);
-			}
-
-			/* Calculate and set DSC config for ODM DSC */
-			last_dsc_calc = *seq_state->num_steps;
-			hwss_add_dsc_calculate_and_set_config(seq_state, odm_pipe, true, opp_cnt);
-
-			/* Enable ODM DSC block */
-			hwss_add_dsc_enable_with_opp(seq_state, odm_pipe);
-		}
-
-		/* Step 5: Configure DSC in timing generator */
-		hwss_add_tg_set_dsc_config(seq_state, otg_master->stream_res.tg,
-			&seq_state->steps[last_dsc_calc].params.dsc_calculate_and_set_config_params.dsc_optc_cfg, true);
 	} else if (otg_master->stream_res.dsc && !otg_master->stream->timing.flags.DSC) {
 		/* Disable DSC in OPTC */
 		hwss_add_tg_set_dsc_config(seq_state, otg_master->stream_res.tg, NULL, false);
