@@ -1597,7 +1597,7 @@ static void handle_at_local_packets(struct at_local *local, struct fw_ohci *ohci
 	spin_lock(&local->lock);
 
 	while ((packet = list_first_entry_or_null(&local->list, typeof(*packet), link_for_local))) {
-		list_del(&packet->link_for_local);
+		list_del_init(&packet->link_for_local);
 		spin_unlock(&local->lock);
 
 		if (unlikely(packet->ack != 0)) {
@@ -1668,6 +1668,10 @@ static void at_context_transmit(struct at_context *ctx, struct fw_packet *packet
 {
 	struct fw_ohci *ohci = ctx->context.ohci;
 	bool use_work = true;
+
+	// These members are used to cancel the packet.
+	packet->driver_data = NULL;
+	INIT_LIST_HEAD(&packet->link_for_local);
 
 	scoped_guard(spinlock_irqsave, &ohci->lock) {
 		if (!destination_is_local(packet, ohci)) {
@@ -2652,31 +2656,56 @@ static int ohci_cancel_packet(struct fw_card *card, struct fw_packet *packet)
 {
 	struct fw_ohci *ohci = fw_ohci(card);
 	struct at_context *ctx = &ohci->at_request_ctx;
-	struct driver_data *driver_data = packet->driver_data;
+	struct at_local *local = &ohci->at_request_local;
 	int ret = -ENOENT;
+
+	// handle_at_request_local_packet() can reach here by calling fw_core_handle_response().
+	if (current_work() != &local->work)
+		disable_work_sync(&local->work);
 
 	// Avoid dead lock due to programming mistake.
 	if (WARN_ON_ONCE(current_work() == &ctx->work))
 		return 0;
 	disable_work_sync(&ctx->work);
 
-	if (packet->ack != 0)
-		goto out;
+	bool use_local_work = false;
 
-	if (packet->payload_mapped)
-		dma_unmap_single(ohci->card.device, packet->payload_bus,
-				 packet->payload_length, DMA_TO_DEVICE);
+	if (!packet->ack) {
+		// NOTE: This function relies on this value, thus it is not thread-safe.
+		struct driver_data *driver_data = packet->driver_data;
 
-	driver_data->packet = NULL;
-	packet->ack = RCODE_CANCELLED;
+		if (driver_data) {
+			if (packet->payload_mapped) {
+				dma_unmap_single(ohci->card.device, packet->payload_bus,
+						 packet->payload_length, DMA_TO_DEVICE);
+			}
 
-	// Timestamping on behalf of the hardware.
-	packet->timestamp = cycle_time_to_ohci_tstamp(get_cycle_time(ohci));
+			// Invalidate the packet queued in AT request context.
+			driver_data->packet = NULL;
 
-	packet->callback(packet, &ohci->card, packet->ack);
-	ret = 0;
- out:
+			scoped_guard(spinlock_irqsave, &local->lock)
+				list_add_tail(&packet->link_for_local, &local->list);
+			use_local_work = true;
+		} else {
+			scoped_guard(spinlock_irqsave, &local->lock) {
+				if (!list_empty(&packet->link_for_local))
+					use_local_work = true;
+			}
+		}
+	}
+
 	enable_and_queue_work(card->async_wq, &ctx->work);
+
+	if (use_local_work) {
+		// Timestamping on behalf of the hardware.
+		packet->timestamp = cycle_time_to_ohci_tstamp(get_cycle_time(ohci));
+		packet->ack = RCODE_CANCELLED;
+
+		ret = 0;
+	}
+
+	if (current_work() != &local->work)
+		enable_and_queue_work(card->async_wq, &local->work);
 
 	return ret;
 }

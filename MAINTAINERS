@@ -3292,6 +3292,7 @@ F:	Documentation/devicetree/bindings/arm/ux500.yaml
 F:	Documentation/devicetree/bindings/arm/ux500/
 F:	Documentation/devicetree/bindings/gpio/st,nomadik-gpio.yaml
 F:	Documentation/devicetree/bindings/i2c/st,nomadik-i2c.yaml
+F:	Documentation/devicetree/bindings/power/stericsson,ux500-pm-domains.yaml
 F:	arch/arm/boot/dts/st/ste-*
 F:	arch/arm/mach-nomadik/
 F:	arch/arm/mach-ux500/
@@ -8474,13 +8475,6 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/display/panel/novatek,nt37801.yaml
 F:	drivers/gpu/drm/panel/panel-novatek-nt37801.c
 
-DRM DRIVER FOR NOVATEK NT51021 PANELS
-M:	Ryan Brue <ryanbrue.dev@gmail.com>
-M:	Nickolay Goppen <setotau@mainlining.org>
-S:	Maintained
-F:	Documentation/devicetree/bindings/display/panel/novatek,nt51021.yaml
-F:	drivers/gpu/drm/panel/panel-novatek-nt51021.c
-
 DRM DRIVER FOR NVIDIA GEFORCE/QUADRO GPUS
 M:	Lyude Paul <lyude@redhat.com>
 M:	Danilo Krummrich <dakr@kernel.org>
@@ -8569,12 +8563,6 @@ M:	Robert Chiras <robert.chiras@nxp.com>
 S:	Maintained
 F:	Documentation/devicetree/bindings/display/panel/raydium,rm67191.yaml
 F:	drivers/gpu/drm/panel/panel-raydium-rm67191.c
-
-DRM DRIVER FOR RAYDIUM RM69220 PANELS
-M:	Alexander Koskovich <akoskovich@pm.me>
-S:	Maintained
-F:	Documentation/devicetree/bindings/display/panel/raydium,rm69220.yaml
-F:	drivers/gpu/drm/panel/panel-raydium-rm69220.c
 
 DRM DRIVER FOR SAMSUNG DB7430 PANELS
 M:	Linus Walleij <linusw@kernel.org>
@@ -10051,7 +10039,7 @@ L:	linux-ext4@vger.kernel.org
 S:	Maintained
 W:	http://ext4.wiki.kernel.org
 Q:	http://patchwork.ozlabs.org/project/linux-ext4/list/
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/tytso/ext4.git
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/tytso/ext4.git dev
 F:	Documentation/filesystems/ext4/
 F:	fs/ext4/
 F:	include/trace/events/ext4.h
@@ -14356,6 +14344,19 @@ W:	https://linuxtv.org
 T:	git git://linuxtv.org/media.git
 F:	drivers/media/radio/radio-keene*
 
+KERNEL API SPECIFICATION FRAMEWORK (KAPI)
+M:	Sasha Levin <sashal@kernel.org>
+L:	linux-api@vger.kernel.org
+S:	Maintained
+F:	Documentation/dev-tools/kernel-api-spec.rst
+F:	include/linux/kapi_syscall.h
+F:	include/linux/kernel_api_spec.h
+F:	include/trace/events/kapi.h
+F:	kernel/api/
+F:	tools/kapi/
+F:	tools/lib/python/kdoc/kdoc_apispec.py
+F:	tools/testing/selftests/kapi/
+
 KERNEL AUTOMOUNTER
 M:	Ian Kent <raven@themaw.net>
 L:	autofs@vger.kernel.org
@@ -15399,7 +15400,6 @@ N:	litex
 
 LIVE PATCHING
 M:	Josh Poimboeuf <jpoimboe@kernel.org>
-M:	Jiri Kosina <jikos@kernel.org>
 M:	Miroslav Benes <mbenes@suse.cz>
 M:	Petr Mladek <pmladek@suse.com>
 R:	Joe Lawrence <joe.lawrence@redhat.com>
@@ -19773,6 +19773,13 @@ S:	Maintained
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/nolibc/linux-nolibc.git
 F:	tools/include/nolibc/
 F:	tools/testing/selftests/nolibc/
+
+NOVATEK NT72676 I2C CONTROLLER DRIVER
+M:	Ben Huang <ben_huang@novatek.com.tw>
+L:	linux-i2c@vger.kernel.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/i2c/novatek,nt72676-i2c.yaml
+F:	drivers/i2c/busses/i2c-nt72676.c
 
 NOVATEK NVT-TS I2C TOUCHSCREEN DRIVER
 M:	Hans de Goede <hansg@kernel.org>

@@ -9,6 +9,7 @@
 #include <string.h>
 #include <limits.h>
 #include "kselftest.h"
+#include "nommu.h"
 
 #include <sys/vfs.h>
 #ifndef RAMFS_MAGIC
@@ -16,6 +17,7 @@
 #endif
 
 static size_t ps;
+static int nommu;
 
 static long get_fs_type(const char *path)
 {
@@ -45,8 +47,7 @@ static void munmap_shrink_test(void)
 		if (ret != 0) {
 			ksft_print_msg("memory %p isn't unmapped at %p\n",
 				addr, (char *)addr + ps * i);
-			ksft_test_result_fail("munmap shrink\n");
-			return;
+			goto error;
 		}
 
 		if (i == 0) {
@@ -67,8 +68,10 @@ static void munmap_shrink_test(void)
 	ksft_test_result_pass("munmap shrink\n");
 	return;
 error:
-	for (int j = 0; j < 4; j++)
-		munmap((char *)addr + j * ps, ps);
+	for (int j = 0; j < 4; j++) {
+		if (munmap((char *)addr + j * ps, ps))
+			ksft_print_msg("cleanup munmap failed: %s\n", strerror(errno));
+	}
 	ksft_print_msg("clean up failures\n");
 	ksft_test_result_fail("munmap shrink\n");
 }
@@ -132,7 +135,7 @@ static void mremap_shrink_test(void)
 
 static int get_shared_writable_file_expected_error(const char *path)
 {
-	if (get_fs_type(path) == RAMFS_MAGIC)
+	if (nommu && get_fs_type(path) == RAMFS_MAGIC)
 		return EPERM; /* ramfs failed */
 
 	return 0;
@@ -145,6 +148,7 @@ struct mremap_case_t {
 	int mmap_prot;
 	int mmap_flags;
 	int exp_err;
+	int nommu_exp_err;
 	int (*resolve_exp_err)(const char *path);
 	unsigned int old_pages;
 	unsigned int new_pages;
@@ -167,11 +171,7 @@ static struct mremap_case_t mremap_cases[] = {
 		.mmap_prot = PROT_READ,
 		.mmap_flags = MAP_SHARED,
 		.exp_err = 0,
-#ifdef NOMMU
 		.resolve_exp_err = get_shared_writable_file_expected_error,
-#else
-		.resolve_exp_err = 0,
-#endif
 	},
 	{
 		.name = "private file unchanged length (r-)",
@@ -179,11 +179,8 @@ static struct mremap_case_t mremap_cases[] = {
 		.open_flags = O_CREAT | O_RDWR | O_EXCL,
 		.mmap_prot = PROT_READ,
 		.mmap_flags = MAP_PRIVATE,
-#ifdef NOMMU
-		.exp_err = EPERM,
-#else
 		.exp_err = 0,
-#endif
+		.nommu_exp_err = EPERM,
 		.resolve_exp_err = 0,
 		.old_pages = 4,
 		.new_pages = 4,
@@ -205,11 +202,8 @@ static struct mremap_case_t mremap_cases[] = {
 		.open_flags = O_CREAT | O_RDWR | O_EXCL,
 		.mmap_prot = PROT_READ,
 		.mmap_flags = MAP_PRIVATE,
-#ifdef NOMMU
-		.exp_err = EPERM,
-#else
 		.exp_err = 0,
-#endif
+		.nommu_exp_err = EPERM,
 		.resolve_exp_err = 0,
 		.old_pages = 4,
 		.new_pages = 8,
@@ -220,11 +214,8 @@ static struct mremap_case_t mremap_cases[] = {
 		.open_flags = O_CREAT | O_RDWR | O_EXCL,
 		.mmap_prot = PROT_READ | PROT_WRITE,
 		.mmap_flags = MAP_PRIVATE,
-#ifdef NOMMU
-		.exp_err = ENOMEM,
-#else
 		.exp_err = 0,
-#endif
+		.nommu_exp_err = ENOMEM,
 		.resolve_exp_err = 0,
 		.old_pages = 4,
 		.new_pages = 8,
@@ -257,22 +248,17 @@ static int run_mremap_test(struct mremap_case_t *tcase)
 		}
 		if (ftruncate(fd, ps * file_pages) != 0) {
 			ksft_print_msg("Failed to setup file backing\n");
-			ksft_test_result_fail("%s\n", tcase->name);
-			close(fd);
-			unlink(pb);
-			return KSFT_FAIL;
+			rc = KSFT_FAIL;
+			goto out;
 		}
 
-#ifdef NOMMU
-		if ((tcase->mmap_flags & MAP_SHARED) && get_fs_type(pb) != RAMFS_MAGIC) {
+		if (nommu && (tcase->mmap_flags & MAP_SHARED) &&
+		    get_fs_type(pb) != RAMFS_MAGIC) {
 			ksft_print_msg("Skip the test under non-ramfs filesystem (%s)\n",
 				pb);
-			ksft_test_result_skip("%s\n", tcase->name);
-			close(fd);
-			unlink(pb);
-			return KSFT_SKIP;
+			rc = KSFT_SKIP;
+			goto out;
 		}
-#endif
 		path = pb;
 	} else if (tcase->pathname) {
 		fd = open(tcase->pathname, tcase->open_flags, 0600);
@@ -282,16 +268,13 @@ static int run_mremap_test(struct mremap_case_t *tcase)
 			return KSFT_SKIP;
 		}
 
-#ifdef NOMMU
-		if ((tcase->mmap_flags & MAP_SHARED) &&
+		if (nommu && (tcase->mmap_flags & MAP_SHARED) &&
 		    get_fs_type(tcase->pathname) != RAMFS_MAGIC) {
 			ksft_print_msg("Skip the test under non-ramfs filesystem (%s)\n",
 					      tcase->pathname);
-			ksft_test_result_skip("%s\n", tcase->name);
-			close(fd);
-			return KSFT_SKIP;
+			rc = KSFT_SKIP;
+			goto out;
 		}
-#endif
 	}
 
 	addr = mmap(NULL, ps * old_pages, tcase->mmap_prot,
@@ -302,7 +285,7 @@ static int run_mremap_test(struct mremap_case_t *tcase)
 		goto out;
 	}
 
-	expected_error = tcase->exp_err;
+	expected_error = nommu ? tcase->nommu_exp_err : tcase->exp_err;
 	if (tcase->resolve_exp_err && fd >= 0)
 		expected_error = tcase->resolve_exp_err(path);
 
@@ -340,8 +323,11 @@ static int run_mremap_test(struct mremap_case_t *tcase)
 out:
 	if (fd >= 0) {
 		close(fd);
-		if (tcase->pathname && strstr(tcase->pathname, "XXXXXX"))
-			unlink(pb);
+		if (tcase->pathname && strstr(tcase->pathname, "XXXXXX") &&
+		    unlink(pb)) {
+			ksft_print_msg("unlink failed for %s: %s\n", pb, strerror(errno));
+			rc = KSFT_FAIL;
+		}
 	}
 
 	ksft_test_result_report(rc, "%s\n", tcase->name);
@@ -351,6 +337,10 @@ out:
 int main(int argc, char **argv)
 {
 	int i;
+
+	nommu = ksft_is_nommu();
+	if (nommu < 0)
+		ksft_exit_skip("Cannot read /proc/meminfo; mount procfs at /proc\n");
 
 	ps = sysconf(_SC_PAGESIZE);
 	ksft_print_header();
