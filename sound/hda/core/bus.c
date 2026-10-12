@@ -121,11 +121,15 @@ int snd_hdac_bus_exec_verb_unlocked(struct hdac_bus *bus, unsigned int addr,
 			break;
 		/* process pending verbs */
 		err = bus->ops->get_response(bus, addr, &tmp);
-		if (err)
+		if (err) {
+			snd_hdac_bus_reset_response_counter(bus, addr);
 			break;
+		}
 	}
 	if (!err && res) {
 		err = bus->ops->get_response(bus, addr, res);
+		if (err)
+			snd_hdac_bus_reset_response_counter(bus, addr);
 		trace_hda_get_response(bus, addr, *res);
 	}
 	return err;
@@ -182,10 +186,13 @@ static void snd_hdac_bus_process_unsol_events(struct work_struct *work)
 		codec = bus->caddr_tbl[caddr & 0x0f];
 		if (!codec || !codec->registered || codec->unsol_disabled)
 			continue;
-		spin_unlock_irq(&bus->reg_lock);
+		if (!codec->dev.driver)
+			continue;
 		drv = drv_to_hdac_driver(codec->dev.driver);
-		if (drv->unsol_event)
-			drv->unsol_event(codec, res);
+		if (!drv->unsol_event)
+			continue;
+		spin_unlock_irq(&bus->reg_lock);
+		drv->unsol_event(codec, res);
 		spin_lock_irq(&bus->reg_lock);
 	}
 	spin_unlock_irq(&bus->reg_lock);

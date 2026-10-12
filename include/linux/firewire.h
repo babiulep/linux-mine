@@ -92,17 +92,17 @@ struct fw_card {
 	u64 reset_jiffies;
 
 	struct {
-		int current_tlabel;
-		u64 tlabel_mask;
-		struct list_head list;
+		int current_tlabel __guarded_by(&lock);
+		u64 tlabel_mask __guarded_by(&lock);
+		struct list_head list __guarded_by(&lock);
 		spinlock_t lock;
 	} transactions;
 
 	struct {
-		u32 hi;
-		u32 lo;
-		unsigned int cycles;
-		unsigned int jiffies;
+		u32 hi __guarded_by(&lock);
+		u32 lo __guarded_by(&lock);
+		unsigned int cycles __guarded_by(&lock);
+		unsigned int jiffies __guarded_by(&lock);
 		spinlock_t lock;
 	} split_timeout;
 
@@ -139,7 +139,7 @@ struct fw_card {
 	u32 broadcast_channel;
 
 	struct {
-		__be32 buffer[(CSR_TOPOLOGY_MAP_END - CSR_TOPOLOGY_MAP) / 4];
+		__be32 buffer[(CSR_TOPOLOGY_MAP_END - CSR_TOPOLOGY_MAP) / 4] __guarded_by(&lock);
 		spinlock_t lock;
 	} topology_map;
 

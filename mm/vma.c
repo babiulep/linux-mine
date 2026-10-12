@@ -2616,21 +2616,21 @@ static int __mmap_new_file_vma(struct mmap_state *map,
 	map->vm_file = vma->vm_file;
 
 	if (error) {
-		struct file *file = vma->vm_file;
 		UNMAP_STATE(unmap, vmi, vma, vma->vm_start, vma->vm_end,
 			    map->prev, map->next);
+
+		if (vma->vm_ops->close) {
+			zap_vma(vma);
+			/* Safe, because VMA zapped. */
+			vma_close(vma);
+		}
+		if (map_same_file(map))
+			fput(map->vm_file);
 
 		vma->vm_file = NULL;
 		vma_iter_set(vmi, vma->vm_end);
 		/* Undo any partial mapping done by a device driver. */
 		unmap_region(&unmap);
-		vma->vm_file = file;
-		/* Only safe once unmapped. */
-		vma_close(vma);
-
-		if (map_same_file(map))
-			fput(map->vm_file);
-		vma->vm_file = NULL;
 		return error;
 	}
 

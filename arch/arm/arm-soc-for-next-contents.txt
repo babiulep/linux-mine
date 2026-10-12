@@ -57,14 +57,14 @@ soc/defconfig
 soc/late
 
 arm/fixes
-	<no branch> (55981579b27b6541aeeab81c768f248dba0491ac)
-		https://git.kernel.org/pub/scm/linux/kernel/git/qcom/linux tags/qcom-clk-fixes-for-7.3
-	<no branch> (35ce3c571297aee13c6da604d022929fd1aa9efb)
-		https://git.kernel.org/pub/scm/linux/kernel/git/qcom/linux tags/qcom-arm64-fixes-for-7.3
-	<no branch> (7ba5290db6bf365e46fb70bf13dc2a47048165ea)
-		https://git.kernel.org/pub/scm/linux/kernel/git/frank.li/linux tags/imx-fixes-7.3
-	<no branch> (3c0d2f1f431c51a11253f28763be723ac782fd7a)
-		git://git.kernel.org/pub/scm/linux/kernel/git/jenswi/linux-tee tags/optee-fixes-for-v7.3
-	patch
-		MAINTAINERS: update my email address
+	<no branch> (c5c95dbdc9011a56359df4dc00be829bbcc0b036)
+		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-7.3-soc-fixes
+	<no branch> (0f70fd6f4c1d6c1f2ea298d8dd07c4a4d5dff9af)
+		https://git.kernel.org/pub/scm/linux/kernel/git/conor/linux tags/riscv-dt-fixes-for-v7.3-rc
+	<no branch> (2fabd2f406d0cf787be47b3bbeea99b30004033d)
+		git://git.kernel.org/pub/scm/linux/kernel/git/khilman/linux-omap tags/omap-for-v7.3/fixes-signed
+	<no branch> (b86eaddf467a9ddb69dbaa46eea9dda7f93347a3)
+		git://git.kernel.org/pub/scm/linux/kernel/git/tegra/linux tags/tegra-for-7.3-arm64-dt-fixes
+	<no branch> (afb1ecfeda3fc31d6300a176f4854cc62e289bf3)
+		https://git.kernel.org/pub/scm/linux/kernel/git/at91/linux tags/at91-fixes-7.3
 

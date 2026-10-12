@@ -59,8 +59,8 @@ static int poly1305_suite_init(struct kunit_suite *suite)
  *   internal products of r_key by (accumulator + message block).  This
  *   increases the chance of detecting bugs that occur only in rare cases where
  *   the sum of these internal products is very large, for example the bug fixed
- *   by commit 678cce4019d746da ("crypto: x86/poly1305 - fix overflow during
- *   partial reduction").
+ *   by commit 678cce4019d7 ("crypto: x86/poly1305 - fix overflow during partial
+ *   reduction").
  *
  * Bugs with the handling of large internal product sums may be specific to
  * particular update lengths (in blocks) and/or require that the accumulator
@@ -159,7 +159,7 @@ static void test_poly1305_reduction_edge_cases(struct kunit *test)
  * being reached where the limbs are at or near their maximum values, even after
  * (lazy) reduction.  This can reproduce bugs that happen only in such cases.
  *
- * For example, this test case reproduces the bug fixed by commit f6e141ed74ec
+ * For example, this test case reproduces the bug fixed by commit 24f07e8c07a0
  * ("lib/crypto: arm64: Fix lost Poly1305 carry when resuming NEON state").
  *
  * However, reaching that bug required two consecutive updates: one with >= 8

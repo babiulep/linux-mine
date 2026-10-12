@@ -15,6 +15,7 @@
 #include <linux/irq.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
+#include <asm/mach/pci.h>
 #include "common.h"
 #include "orion5x.h"
 

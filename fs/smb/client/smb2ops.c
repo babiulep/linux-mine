@@ -1186,11 +1186,9 @@ smb2_query_eas(const unsigned int xid, struct cifs_tcon *tcon,
 	return rc;
 }
 
-static int
-smb2_set_ea(const unsigned int xid, struct cifs_tcon *tcon,
+static int smb2_set_ea(const unsigned int xid, struct cifs_tcon *tcon,
 	    const char *path, const char *ea_name, const void *ea_value,
-	    const __u16 ea_value_len, const struct nls_table *nls_codepage,
-	    struct cifs_sb_info *cifs_sb)
+	    const __u16 ea_value_len, struct cifs_sb_info *cifs_sb)
 {
 	struct smb2_compound_vars *vars;
 	struct cifs_ses *ses = tcon->ses;
@@ -1728,7 +1726,7 @@ replay_again:
 					SMB2_O_INFO_FILE, 0, data, size);
 		free_req1_func = SMB2_set_info_free;
 	} else if (qi.flags == PASSTHRU_QUERY_INFO) {
-		rqst[1].rq_iov = &vars->qi_iov;
+		rqst[1].rq_iov = vars->qi_iov;
 		rqst[1].rq_nvec = 1;
 
 		rc = SMB2_query_info_init(tcon, server,
@@ -3026,7 +3024,7 @@ replay_again:
 		goto qic_exit;
 	smb2_set_next_command(tcon, &rqst[0]);
 
-	rqst[1].rq_iov = &vars->qi_iov;
+	rqst[1].rq_iov = vars->qi_iov;
 	rqst[1].rq_nvec = 1;
 
 	if (cfid) {
@@ -5806,8 +5804,8 @@ struct smb_version_operations smb20_operations = {
 	.rename = smb2_rename_path,
 	.create_hardlink = smb2_create_hardlink,
 	.get_reparse_point_buffer = smb2_get_reparse_point_buffer,
-	.query_mf_symlink = smb3_query_mf_symlink,
-	.create_mf_symlink = smb3_create_mf_symlink,
+	.query_mf_symlink = smb2_query_mf_symlink,
+	.create_mf_symlink = smb2_create_mf_symlink,
 	.create_reparse_inode = smb2_create_reparse_inode,
 	.open = smb2_open_file,
 	.set_fid = smb2_set_fid,
@@ -5909,8 +5907,8 @@ struct smb_version_operations smb21_operations = {
 	.rename = smb2_rename_path,
 	.create_hardlink = smb2_create_hardlink,
 	.get_reparse_point_buffer = smb2_get_reparse_point_buffer,
-	.query_mf_symlink = smb3_query_mf_symlink,
-	.create_mf_symlink = smb3_create_mf_symlink,
+	.query_mf_symlink = smb2_query_mf_symlink,
+	.create_mf_symlink = smb2_create_mf_symlink,
 	.create_reparse_inode = smb2_create_reparse_inode,
 	.open = smb2_open_file,
 	.set_fid = smb2_set_fid,
@@ -6016,8 +6014,8 @@ struct smb_version_operations smb30_operations = {
 	.rename = smb2_rename_path,
 	.create_hardlink = smb2_create_hardlink,
 	.get_reparse_point_buffer = smb2_get_reparse_point_buffer,
-	.query_mf_symlink = smb3_query_mf_symlink,
-	.create_mf_symlink = smb3_create_mf_symlink,
+	.query_mf_symlink = smb2_query_mf_symlink,
+	.create_mf_symlink = smb2_create_mf_symlink,
 	.create_reparse_inode = smb2_create_reparse_inode,
 	.open = smb2_open_file,
 	.set_fid = smb2_set_fid,
@@ -6132,8 +6130,8 @@ struct smb_version_operations smb311_operations = {
 	.rename = smb2_rename_path,
 	.create_hardlink = smb2_create_hardlink,
 	.get_reparse_point_buffer = smb2_get_reparse_point_buffer,
-	.query_mf_symlink = smb3_query_mf_symlink,
-	.create_mf_symlink = smb3_create_mf_symlink,
+	.query_mf_symlink = smb2_query_mf_symlink,
+	.create_mf_symlink = smb2_create_mf_symlink,
 	.create_reparse_inode = smb2_create_reparse_inode,
 	.open = smb2_open_file,
 	.set_fid = smb2_set_fid,

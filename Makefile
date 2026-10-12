@@ -2,7 +2,7 @@
 VERSION = 7
 PATCHLEVEL = 3
 SUBLEVEL = 0
-EXTRAVERSION = -rc6
+EXTRAVERSION = -rc7
 NAME = Baby Opossum Posse
 
 # *DOCUMENTATION*
@@ -477,6 +477,7 @@ KBUILD_USERLDFLAGS := $(USERLDFLAGS)
 # These flags apply to all Rust code in the tree, including the kernel and
 # host programs.
 #
+# `-Aclippy::comparison_chain`: the lint has been demoted since 1.87.
 # `-Aclippy::unwrap_or_default`: the lint is buggy [1] and ignores our
 # MSRV. It can trigger depending on the optimization level.
 # [1] https://github.com/rust-lang/rust-clippy/issues/17379
@@ -495,6 +496,7 @@ export rust_common_flags := --edition=2021 \
 			    -Wclippy::cast_lossless \
 			    -Aclippy::collapsible_if \
 			    -Aclippy::collapsible_match \
+			    -Aclippy::comparison_chain \
 			    -Wclippy::ignored_unit_patterns \
 			    -Aclippy::incompatible_msrv \
 			    -Wclippy::mut_mut \
@@ -1778,6 +1780,7 @@ endif # CONFIG_MODULES
 CLEAN_FILES += vmlinux.symvers modules-only.symvers \
 	       modules.builtin modules.builtin.modinfo modules.nsdeps \
 	       modules.builtin.ranges vmlinux.o.map vmlinux.unstripped \
+	       vmlinux.BTF.inline \
 	       vmlinux.thinlto-index builtin.order \
 	       compile_commands.json rust/test \
 	       rust-project.json .vmlinux.objs .vmlinux.export.c \

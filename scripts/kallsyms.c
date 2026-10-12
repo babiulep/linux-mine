@@ -36,7 +36,6 @@
 #include <sys/stat.h>
 #include <xalloc.h>
 
-#include "../kernel/kallsyms_internal.h"
 #include "kallsyms.h"
 
 #define KSYM_NAME_LEN		512
@@ -407,19 +406,17 @@ static void write_src(FILE *out_bin_file, const char *out_bin_name)
 	printf("\t.long\t%u\n", table_cnt);
 	printf("\n");
 
-	/*
-	 * Table of offset markers, giving the offset in the compressed stream
-	 * every (1 << KALLSYMS_MARKER_SHIFT) symbols.
-	 */
-	markers_cnt = (table_cnt + KALLSYMS_MARKER_MASK) >> KALLSYMS_MARKER_SHIFT;
+	/* table of offset markers, that give the offset in the compressed stream
+	 * every 256 symbols */
+	markers_cnt = (table_cnt + 255) / 256;
 	markers = xmalloc(sizeof(*markers) * markers_cnt);
 
 	output_label("kallsyms_names");
 	bin_start = bin_pos(out_bin_file);
 	off = 0;
 	for (i = 0; i < table_cnt; i++) {
-		if ((i & KALLSYMS_MARKER_MASK) == 0)
-			markers[i >> KALLSYMS_MARKER_SHIFT] = off;
+		if ((i & 0xFF) == 0)
+			markers[i >> 8] = off;
 		table[i]->seq = i;
 
 		/* There cannot be any symbol of length zero. */

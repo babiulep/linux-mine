@@ -5045,14 +5045,17 @@ retry:
 		goto retry;
 
 	/*
-	 * Reclaim/compaction failed to prevent the fallback. The retry
-	 * budget was spent on making blocks, not on the request itself;
-	 * give the fallback a fresh one before considering OOM.
+	 * Reclaim/compaction failed to prevent the fallback. A promoted
+	 * request spent its retry budget on making blocks, not on the
+	 * request itself; give its fallback a fresh one before
+	 * considering OOM.
 	 */
 	if (defrag_mode && (alloc_flags & ALLOC_NOFRAGMENT)) {
 		alloc_flags &= ~ALLOC_NOFRAGMENT;
-		no_progress_loops = 0;
-		compaction_retries = 0;
+		if (reclaim_order != order) {
+			no_progress_loops = 0;
+			compaction_retries = 0;
+		}
 		goto retry;
 	}
 

@@ -35,21 +35,6 @@
 #include "kallsyms_internal.h"
 
 /*
- * Get the compressed symbol length and data pointer.
- */
-static inline const u8 *get_symbol_data(unsigned int off, unsigned int *len)
-{
-	const u8 *p = &kallsyms_names[off];
-	unsigned int l = *p++;
-
-	if (unlikely(l & 0x80))
-		l = (l & 0x7F) | (*p++ << 7);
-	*len = l;
-
-	return p;
-}
-
-/*
  * Expand a compressed symbol data into the resulting uncompressed string,
  * if uncompressed string is too long (>= maxlen), it will be truncated,
  * given the offset to where the symbol is in the compressed stream.
@@ -57,12 +42,28 @@ static inline const u8 *get_symbol_data(unsigned int off, unsigned int *len)
 static unsigned int kallsyms_expand_symbol(unsigned int off,
 					   char *result, size_t maxlen)
 {
-	int skipped_first = 0;
+	int len, skipped_first = 0;
 	const char *tptr;
-	unsigned int len;
-	const u8 *data = get_symbol_data(off, &len);
+	const u8 *data;
 
-	off = (data - kallsyms_names) + len;
+	/* Get the compressed symbol length from the first symbol byte. */
+	data = &kallsyms_names[off];
+	len = *data;
+	data++;
+	off++;
+
+	/* If MSB is 1, it is a "big" symbol, so needs an additional byte. */
+	if ((len & 0x80) != 0) {
+		len = (len & 0x7F) | (*data << 7);
+		data++;
+		off++;
+	}
+
+	/*
+	 * Update the offset to return the offset for the next symbol on
+	 * the compressed stream.
+	 */
+	off += len;
 
 	/*
 	 * For every byte on the compressed symbol data, copy the table
@@ -100,43 +101,14 @@ tail:
  */
 static char kallsyms_get_symbol_type(unsigned int off)
 {
-	unsigned int len;
-	const u8 *data = get_symbol_data(off, &len);
-
-	return kallsyms_token_table[kallsyms_token_index[*data]];
-}
-
-/*
- * Compare an uncompressed ASCII string against a compressed symbol table entry.
- * Returns negative if name < sym, positive if name > sym, 0 if equal.
- * Exits immediately on the first mismatched character without decompressing
- * the rest of the symbol name.
- */
-static int kallsyms_strcmp_symbol(unsigned int off, const char *name)
-{
-	const char *tptr;
-	unsigned int len;
-	const u8 *data = get_symbol_data(off, &len);
-
-	tptr = &kallsyms_token_table[kallsyms_token_index[*data++]] + 1;
-	while (*tptr) {
-		int diff = (unsigned char)*name++ - (unsigned char)*tptr++;
-
-		if (diff)
-			return diff;
-	}
-
-	while (--len) {
-		tptr = &kallsyms_token_table[kallsyms_token_index[*data++]];
-		do {
-			int diff = (unsigned char)*name++ - (unsigned char)*tptr++;
-
-			if (diff)
-				return diff;
-		} while (*tptr);
-	}
-
-	return (unsigned char)*name;
+	/*
+	 * Get just the first code, look it up in the token table,
+	 * and return the first char from this token. If MSB of length
+	 * is 1, it is a "big" symbol, so needs an additional byte.
+	 */
+	if (kallsyms_names[off] & 0x80)
+		off++;
+	return kallsyms_token_table[kallsyms_token_index[kallsyms_names[off + 1]]];
 }
 
 
@@ -150,10 +122,10 @@ static unsigned int get_symbol_offset(unsigned long pos)
 	int i, len;
 
 	/*
-	 * Use the closest marker we have. We have markers every
-	 * (1 << KALLSYMS_MARKER_SHIFT) positions, so that should be close enough.
+	 * Use the closest marker we have. We have markers every 256 positions,
+	 * so that should be close enough.
 	 */
-	name = &kallsyms_names[kallsyms_markers[pos >> KALLSYMS_MARKER_SHIFT]];
+	name = &kallsyms_names[kallsyms_markers[pos >> 8]];
 
 	/*
 	 * Sequentially scan all the symbols up to the point we're searching
@@ -161,7 +133,7 @@ static unsigned int get_symbol_offset(unsigned long pos)
 	 * so we just need to add the len to the current pointer for every
 	 * symbol we wish to skip.
 	 */
-	for (i = 0; i < (pos & KALLSYMS_MARKER_MASK); i++) {
+	for (i = 0; i < (pos & 0xFF); i++) {
 		len = *name;
 
 		/*
@@ -185,11 +157,14 @@ unsigned long kallsyms_sym_address(int idx)
 	return (unsigned long)offset_to_ptr(kallsyms_offsets + idx);
 }
 
-static inline unsigned int get_symbol_seq(int index)
+static unsigned int get_symbol_seq(int index)
 {
-	const u8 *p = &kallsyms_seqs_of_names[3 * index];
+	unsigned int i, seq = 0;
 
-	return (p[0] << 16) | (p[1] << 8) | p[2];
+	for (i = 0; i < 3; i++)
+		seq = (seq << 8) | kallsyms_seqs_of_names[3 * index + i];
+
+	return seq;
 }
 
 static int kallsyms_lookup_names(const char *name,
@@ -199,6 +174,7 @@ static int kallsyms_lookup_names(const char *name,
 	int ret;
 	int low, mid, high;
 	unsigned int seq, off;
+	char namebuf[KSYM_NAME_LEN];
 
 	low = 0;
 	high = kallsyms_num_syms - 1;
@@ -207,7 +183,8 @@ static int kallsyms_lookup_names(const char *name,
 		mid = low + (high - low) / 2;
 		seq = get_symbol_seq(mid);
 		off = get_symbol_offset(seq);
-		ret = kallsyms_strcmp_symbol(off, name);
+		kallsyms_expand_symbol(off, namebuf, ARRAY_SIZE(namebuf));
+		ret = strcmp(name, namebuf);
 		if (ret > 0)
 			low = mid + 1;
 		else if (ret < 0)
@@ -223,7 +200,8 @@ static int kallsyms_lookup_names(const char *name,
 	while (low) {
 		seq = get_symbol_seq(low - 1);
 		off = get_symbol_offset(seq);
-		if (kallsyms_strcmp_symbol(off, name) != 0)
+		kallsyms_expand_symbol(off, namebuf, ARRAY_SIZE(namebuf));
+		if (strcmp(name, namebuf))
 			break;
 		low--;
 	}
@@ -234,7 +212,8 @@ static int kallsyms_lookup_names(const char *name,
 		while (high < kallsyms_num_syms - 1) {
 			seq = get_symbol_seq(high + 1);
 			off = get_symbol_offset(seq);
-			if (kallsyms_strcmp_symbol(off, name) != 0)
+			kallsyms_expand_symbol(off, namebuf, ARRAY_SIZE(namebuf));
+			if (strcmp(name, namebuf))
 				break;
 			high++;
 		}

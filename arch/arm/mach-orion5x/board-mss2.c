@@ -12,6 +12,7 @@
 #include <linux/irq.h>
 #include <linux/of.h>
 #include <asm/mach/arch.h>
+#include <asm/mach/pci.h>
 #include "orion5x.h"
 #include "bridge-regs.h"
 #include "common.h"
