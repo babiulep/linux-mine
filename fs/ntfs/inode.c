@@ -537,6 +537,7 @@ void __ntfs_init_inode(struct super_block *sb, struct ntfs_inode *ni)
 	ni->reparse_tag = 0;
 	ni->reparse_flags = 0;
 	ni->target = NULL;
+	ni->linuxflags = 0;
 	ni->i_dealloc_clusters = 0;
 }
 
@@ -727,10 +728,8 @@ static bool ntfs_non_resident_sizes_inconsistent(struct inode *vi,
  * Q: What locks are held when the function is called?
  * A: i_state has I_NEW set, hence the inode is locked, also
  *    i_count is set to 1, so it is not going to go away
- *    i_flags is set to 0 and we have no business touching it.  Only an ioctl()
- *    is allowed to write to them. We should of course be honouring them but
- *    we need to do that using the IS_* macros defined in include/linux/fs.h.
- *    In any case ntfs_read_locked_inode() has nothing to do with i_flags.
+ *    i_flags is initialized from the persisted Linux file attributes and
+ *    the driver's system-file protection policy before publishing the inode.
  *
  * Return 0 on success and -errno on error.
  */
@@ -934,6 +933,11 @@ skip_attr_list_load:
 	if (!err) {
 		NInoSetHasEA(ni);
 		ntfs_ea_get_wsl_inode(vi, &dev, flags, &has_lxmod);
+		err = ntfs_ea_get_linuxflags(vi);
+		if (err)
+			goto unm_err_out;
+	} else if (err != -ENOENT) {
+		goto unm_err_out;
 	}
 
 	if (ni->flags & FILE_ATTR_REPARSE_POINT) {
@@ -3839,7 +3843,8 @@ static inline int ntfs_enlarge_attribute(struct inode *vi, s64 pos, s64 count,
 
 static s64 __ntfs_inode_resident_attr_pwrite(struct inode *vi,
 					     s64 pos, s64 count, u8 *buf,
-					     struct ntfs_attr_search_ctx *ctx)
+					     struct ntfs_attr_search_ctx *ctx,
+					     bool *modified)
 {
 	struct ntfs_inode *ni = NTFS_I(vi);
 	struct folio *folio;
@@ -3857,6 +3862,8 @@ static s64 __ntfs_inode_resident_attr_pwrite(struct inode *vi,
 	addr = (u8 *)ctx->attr + le16_to_cpu(ctx->attr->data.resident.value_offset);
 	memcpy(addr + pos, buf, count);
 	mark_mft_record_dirty(ctx->ntfs_ino);
+	if (count)
+		*modified = true;
 
 	/* Keep the first page clean and uptodate */
 	folio = __filemap_get_folio(mapping, 0, FGP_WRITEBEGIN | FGP_NOFS,
@@ -3881,7 +3888,7 @@ out:
 
 static s64 __ntfs_inode_non_resident_attr_pwrite(struct inode *vi,
 						 s64 pos, s64 count, u8 *buf,
-						 bool sync)
+						 bool sync, bool *modified)
 {
 	struct ntfs_inode *ni = NTFS_I(vi);
 	struct address_space *mapping = vi->i_mapping;
@@ -3925,6 +3932,7 @@ static s64 __ntfs_inode_non_resident_attr_pwrite(struct inode *vi,
 			attr_len = min_t(size_t, (size_t)count, folio_size(folio) - offset);
 		}
 		memcpy_to_folio(folio, offset, buf, attr_len);
+		*modified = true;
 
 		if (sync) {
 			struct ntfs_volume *vol = ni->vol;
@@ -4023,7 +4031,9 @@ s64 ntfs_inode_attr_pwrite(struct inode *vi, s64 pos, s64 count, u8 *buf, bool s
 	struct ntfs_inode *mrec_ni = ntfs_inode_is_named_stream(ni) ?
 			base_ni : ni;
 	struct ntfs_attr_search_ctx *ctx;
+	loff_t old_data_size, old_init_size;
 	s64 ret;
+	bool modified = false;
 
 	WARN_ON(!NInoAttr(ni));
 
@@ -4057,12 +4067,17 @@ s64 ntfs_inode_attr_pwrite(struct inode *vi, s64 pos, s64 count, u8 *buf, bool s
 		goto out_unlock;
 	}
 
+	old_data_size = ni->data_size;
+	old_init_size = ni->initialized_size;
 	ret = ntfs_enlarge_attribute(vi, pos, count, ctx);
+	modified = ni->data_size != old_data_size ||
+		   ni->initialized_size != old_init_size;
 	if (ret)
 		goto out_ctx;
 
 	if (!NInoNonResident(ni)) {
-		ret = __ntfs_inode_resident_attr_pwrite(vi, pos, count, buf, ctx);
+		ret = __ntfs_inode_resident_attr_pwrite(vi, pos, count, buf, ctx,
+						      &modified);
 		goto out_ctx;
 	}
 
@@ -4074,15 +4089,17 @@ s64 ntfs_inode_attr_pwrite(struct inode *vi, s64 pos, s64 count, u8 *buf, bool s
 	if (ntfs_inode_is_named_stream(ni)) {
 		/* A failed write must not expose any newly initialized data. */
 		ret = ntfs_extend_initialized_size(vi, pos + count, pos + count);
+		modified |= ni->initialized_size != old_init_size;
 		if (!ret)
 			ret = ntfs_attr_fallocate(ni, pos, count, true);
 	}
 	if (!ret)
 		ret = __ntfs_inode_non_resident_attr_pwrite(vi, pos, count,
-							    buf, sync);
+							    buf, sync,
+							    &modified);
 	if (ntfs_inode_is_named_stream(ni))
 		ntfs_stream_put(vi);
-	if (ret > 0 && ntfs_inode_is_named_stream(ni))
+	if (modified && ntfs_inode_is_named_stream(ni))
 		ntfs_stream_update_base_time(base_ni);
 	return ret;
 
@@ -4090,7 +4107,7 @@ out_ctx:
 	ntfs_attr_put_search_ctx(ctx);
 out_unlock:
 	mutex_unlock(&mrec_ni->mrec_lock);
-	if (ret > 0 && ntfs_inode_is_named_stream(ni))
+	if (modified && ntfs_inode_is_named_stream(ni))
 		ntfs_stream_update_base_time(base_ni);
 	return ret;
 }

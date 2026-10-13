@@ -8748,7 +8748,7 @@ F:	Documentation/devicetree/bindings/display/panel/synaptics,r63353.yaml
 F:	drivers/gpu/drm/panel/panel-synaptics-r63353.c
 
 DRM DRIVER FOR SYNOPSYS DESIGNWARE DISPLAYPORT BRIDGE
-M:	Andy Yan <andy.yan@rock-chips.com>
+M:	Andy Yan <andyshrk@163.com>
 S:	Maintained
 T:	git https://gitlab.freedesktop.org/drm/misc/kernel.git
 F:	Documentation/devicetree/bindings/display/rockchip/rockchip,dw-dp.yaml
@@ -9103,7 +9103,7 @@ F:	include/linux/platform_data/shmob_drm.h
 DRM DRIVERS FOR ROCKCHIP
 M:	Sandy Huang <hjc@rock-chips.com>
 M:	Heiko Stübner <heiko@sntech.de>
-M:	Andy Yan <andy.yan@rock-chips.com>
+M:	Andy Yan <andyshrk@163.com>
 L:	dri-devel@lists.freedesktop.org
 L:	linux-rockchip@lists.infradead.org
 S:	Maintained
@@ -10580,7 +10580,7 @@ L:	linux-fbdev@vger.kernel.org
 L:	dri-devel@lists.freedesktop.org
 S:	Maintained
 Q:	http://patchwork.kernel.org/project/linux-fbdev/list/
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/deller/linux-fbdev.git
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/deller/linux-fbdev.git for-next
 F:	Documentation/fb/
 F:	drivers/video/
 F:	include/linux/fb.h
@@ -13138,7 +13138,7 @@ S:	Maintained
 F:	drivers/power/supply/ip5xxx_power.c
 
 INNOSILICON HDMI BRIDGE DRIVER
-M:	Andy Yan <andy.yan@rock-chips.com>
+M:	Andy Yan <andyshrk@163.com>
 L:	dri-devel@lists.freedesktop.org
 S:	Maintained
 T:	git https://gitlab.freedesktop.org/drm/misc/kernel.git
@@ -23786,6 +23786,13 @@ L:	linux-renesas-soc@vger.kernel.org
 S:	Maintained
 F:	Documentation/devicetree/bindings/rtc/renesas,rzn1-rtc.yaml
 F:	drivers/rtc/rtc-rzn1.c
+
+RENESAS RZ/N1 TIMERS DRIVER
+M:	Herve Codina <herve.codina@bootlin.com>
+L:	linux-renesas-soc@vger.kernel.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/timer/renesas,rzn1-timer.yaml
+F:	drivers/clocksource/timer-rzn1.c
 
 RENESAS RZ/N1 USBF CONTROLLER DRIVER
 M:	Herve Codina <herve.codina@bootlin.com>

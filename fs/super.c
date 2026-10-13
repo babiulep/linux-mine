@@ -1411,7 +1411,7 @@ error:
 	deactivate_locked_super(sb);
 	return err;
 }
-EXPORT_SYMBOL(get_tree_super);
+EXPORT_SYMBOL_GPL(get_tree_super);
 
 int get_tree_nodev(struct fs_context *fc,
 		  int (*fill_super)(struct super_block *sb,

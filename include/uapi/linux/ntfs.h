@@ -27,7 +27,7 @@
  *
  * @stream_offset:	Offset within the named stream for read/write.
  * @io_len:		Number of bytes to read/write. Must be zero for remove.
- * @bytes_returned:	Actual bytes transferred (out).
+ * @bytes_returned:	Actual bytes transferred on success (out).
  * @name_len:		Stream name length in bytes, not including any
  *			terminating NUL. When NTFS_STREAM_FL_UTF16 is set,
  *			this counts UTF-16LE bytes and must be even.
@@ -43,6 +43,10 @@
  *
  * For NTFS_IOC_STREAM_READ, a successful short read indicates EOF. If a read
  * fails, the ioctl returns an error and copies no stream data to userspace.
+ *
+ * NTFS_IOC_STREAM_WRITE is not atomic. Write errors may leave partial data
+ * changes and an extended stream size. On error, bytes_returned is not valid.
+ * The ioctl does not report the completed byte count.
  */
 struct ntfs_stream {
 	__aligned_u64 stream_offset;

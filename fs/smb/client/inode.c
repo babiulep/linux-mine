@@ -486,8 +486,10 @@ static int cifs_get_unix_fattr(const unsigned char *full_path,
 
 	/* check for Minshall+French symlinks */
 	if (cifs_sb_flags(cifs_sb) & CIFS_MOUNT_MF_SYMLINKS) {
-		cifs_check_mf_symlink(xid, tcon, cifs_sb,
-				      full_path, *pinode, fattr);
+		rc = cifs_check_mf_symlink(xid, tcon, cifs_sb, full_path,
+					   *pinode, fattr);
+		if (rc)
+			return rc;
 	}
 
 	if (S_ISLNK(fattr->cf_mode) && !fattr->cf_symlink_target) {
@@ -1437,8 +1439,8 @@ handle_mnt_opt:
 
 	/* check for Minshall+French symlinks */
 	if (sbflags & CIFS_MOUNT_MF_SYMLINKS) {
-		cifs_check_mf_symlink(xid, tcon, cifs_sb,
-				      full_path, *inode, fattr);
+		rc = cifs_check_mf_symlink(xid, tcon, cifs_sb, full_path,
+					   *inode, fattr);
 	}
 
 out:
@@ -1537,8 +1539,8 @@ static int smb311_posix_get_fattr(struct cifs_open_info_data *data,
 	 */
 	/* check for Minshall+French symlinks */
 	if (cifs_sb_flags(cifs_sb) & CIFS_MOUNT_MF_SYMLINKS) {
-		cifs_check_mf_symlink(xid, tcon, cifs_sb,
-				      full_path, inode, fattr);
+		rc = cifs_check_mf_symlink(xid, tcon, cifs_sb, full_path,
+					   inode, fattr);
 	}
 
 out:

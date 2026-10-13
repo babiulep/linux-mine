@@ -220,7 +220,7 @@ int cifs_check_mf_symlink(unsigned int xid, struct cifs_tcon *tcon,
 	fattr->cf_symlink_target = symlink;
 out:
 	cifs_dbg(FYI, "%s: rc = %d\n", __func__, rc);
-	return rc;
+	return rc == -ENOMEM ? rc : 0;
 }
 
 #ifdef CONFIG_CIFS_ALLOW_INSECURE_LEGACY

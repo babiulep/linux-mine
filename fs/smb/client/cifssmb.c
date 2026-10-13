@@ -1230,9 +1230,10 @@ access_flags_to_smbopen_mode(const int access_flags)
 }
 
 int SMBLegacyOpen(const unsigned int xid, struct cifs_tcon *tcon,
-	    const char *fileName, const int openDisposition,
-	    const int access_flags, const int create_options, __u16 *netfid,
-	    int *pOplock, FILE_ALL_INFO *pfile_info, int remap)
+		  const char *fileName, const int openDisposition,
+		  const int access_flags, const int create_options,
+		  __u16 *netfid, int *pOplock, FILE_ALL_INFO *pfile_info,
+		  int remap)
 {
 	int rc;
 	OPENX_REQ *pSMB = NULL;
@@ -2544,7 +2545,7 @@ renameRetry:
 }
 
 int CIFSSMBRenameOpenFile(const unsigned int xid, struct cifs_tcon *pTcon,
-		int netfid, const char *target_name, int remap)
+			  int netfid, const char *target_name, int remap)
 {
 	struct smb_com_transaction2_sfi_req *pSMB  = NULL;
 	struct smb_com_transaction2_sfi_rsp *pSMBr = NULL;
@@ -5722,8 +5723,8 @@ CIFSSMBSetFileSize(const unsigned int xid, struct cifs_tcon *tcon,
 }
 
 int SMBSetInformation(const unsigned int xid, struct cifs_tcon *tcon,
-		  const char *fileName, __le32 attributes, __le64 write_time,
-		  struct cifs_sb_info *cifs_sb)
+		      const char *fileName, __le32 attributes,
+		      __le64 write_time, struct cifs_sb_info *cifs_sb)
 {
 	SETATTR_REQ *pSMB;
 	SETATTR_RSP *pSMBr;
@@ -5908,8 +5909,8 @@ CIFSSMBSetFileDisposition(const unsigned int xid, struct cifs_tcon *tcon,
 }
 
 int CIFSSMBSetPathInfo(const unsigned int xid, struct cifs_tcon *tcon,
-		   const char *fileName, const FILE_BASIC_INFO *data,
-		   struct cifs_sb_info *cifs_sb)
+		       const char *fileName, const FILE_BASIC_INFO *data,
+		       struct cifs_sb_info *cifs_sb)
 {
 	TRANSACTION2_SPI_REQ *pSMB = NULL;
 	TRANSACTION2_SPI_RSP *pSMBr = NULL;
@@ -6377,8 +6378,9 @@ QAllEAsOut:
 }
 
 int CIFSSMBSetEA(const unsigned int xid, struct cifs_tcon *tcon,
-	     const char *fileName, const char *ea_name, const void *ea_value,
-	     const __u16 ea_value_len, struct cifs_sb_info *cifs_sb)
+		 const char *fileName, const char *ea_name,
+		 const void *ea_value, const __u16 ea_value_len,
+		 struct cifs_sb_info *cifs_sb)
 {
 	struct smb_com_transaction2_spi_req *pSMB = NULL;
 	struct smb_com_transaction2_spi_rsp *pSMBr = NULL;

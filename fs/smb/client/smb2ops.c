@@ -1187,8 +1187,9 @@ smb2_query_eas(const unsigned int xid, struct cifs_tcon *tcon,
 }
 
 static int smb2_set_ea(const unsigned int xid, struct cifs_tcon *tcon,
-	    const char *path, const char *ea_name, const void *ea_value,
-	    const __u16 ea_value_len, struct cifs_sb_info *cifs_sb)
+		       const char *path, const char *ea_name,
+		       const void *ea_value, const __u16 ea_value_len,
+		       struct cifs_sb_info *cifs_sb)
 {
 	struct smb2_compound_vars *vars;
 	struct cifs_ses *ses = tcon->ses;
