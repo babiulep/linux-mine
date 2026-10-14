@@ -825,9 +825,8 @@ enum mmap_action_type {
 
 enum discontig_kernel_page_action {
 	DISCONTIG_KERNEL_PAGE_ABORT,
-	DISCONTIG_KERNEL_PAGE_MAP_PAGE,
-	DISCONTIG_KERNEL_PAGE_MAP_COMPOUND_PAGE,
-	DISCONTIG_KERNEL_PAGE_MAP_PAGE_RANGE,
+	DISCONTIG_KERNEL_PAGE_MAP_PAGES,	/* Array of individual pages. */
+	DISCONTIG_KERNEL_PAGE_MAP_CONTIG_PAGES,	/* 1..N contiguous pages. */
 };
 
 struct discontig_kernel_page_state {
@@ -847,7 +846,6 @@ struct discontig_kernel_page_state {
 	enum discontig_kernel_page_action action;
 	union {
 		struct page *__page;
-		struct folio *__folio;
 		struct page **__page_arr;
 	};
 	unsigned long __nr_pages;

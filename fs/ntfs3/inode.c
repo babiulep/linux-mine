@@ -285,8 +285,7 @@ next_attr:
 		break;
 
 	case ATTR_ROOT:
-		if (attr->non_res ||
-		    asize < sizeof(struct INDEX_ROOT) + roff ||
+		if (attr->non_res || asize < sizeof(struct INDEX_ROOT) + roff ||
 		    rsize < sizeof(struct INDEX_ROOT))
 			goto out;
 
@@ -969,9 +968,7 @@ static int ntfs_iomap_begin(struct inode *inode, loff_t offset, loff_t length,
 		}
 	}
 
-	if (IOMAP_ZERO == flags && (endbyte & sbi->cluster_mask)) {
-		rw = true;
-	} else if (rw) {
+	if (rw) {
 		clen_max = bytes_to_cluster(sbi, endbyte) - vcn;
 	}
 
@@ -979,7 +976,7 @@ static int ntfs_iomap_begin(struct inode *inode, loff_t offset, loff_t length,
 	 * Force to allocate clusters if directIO(write) or writeback_range.
 	 * NOTE: attr_data_get_block allocates clusters only for sparse file.
 	 * Normal file allocates clusters in attr_set_size.
-	*/
+	 */
 	no_da = flags == (IOMAP_DIRECT | IOMAP_WRITE) || srcmap == WB_NO_DA;
 
 	err = attr_data_get_block(ni, vcn, clen_max, &lcn, &clen,
@@ -988,8 +985,6 @@ static int ntfs_iomap_begin(struct inode *inode, loff_t offset, loff_t length,
 	if (err) {
 		return err;
 	}
-	if (!clen)
-		return -EINVAL;
 
 	if (lcn == EOF_LCN) {
 		/* request out of file. */
@@ -1023,6 +1018,11 @@ static int ntfs_iomap_begin(struct inode *inode, loff_t offset, loff_t length,
 		iomap->offset = 0;
 		iomap->length = clen; /* resident size in bytes. */
 		return 0;
+	}
+
+	if (!clen) {
+		/* Looks like file is broken.*/
+		return -EINVAL;
 	}
 
 	iomap->bdev = inode->i_sb->s_bdev;
@@ -1232,6 +1232,15 @@ static int ntfs_writepages(struct address_space *mapping,
 
 			folio_unlock(folio);
 			if (err2) {
+				/*
+				 * attr_data_write_resident() can return the
+				 * positive internal code E_NTFS_NONRESIDENT;
+				 * both mapping_set_error() and writeback_iter()
+				 * need a negative errno and warn on a positive
+				 * value.
+				 */
+				if (err2 > 0)
+					err2 = -EIO;
 				mapping_set_error(mapping, err2);
 				if (!err)
 					err = err2;
@@ -1835,7 +1844,7 @@ int ntfs_create_inode(const struct mnt_idmap *idmap, struct inode *dir,
 		inode->i_flags |= S_NOSEC;
 	}
 
-	if (!S_ISLNK(mode)) {
+	if (!S_ISLNK(mode) && sbi->options->ugm) {
 		/*
 		 * ntfs_init_acl and ntfs_save_wsl_perm update extended attribute.
 		 * The packed size of extended attribute is stored in direntry too.

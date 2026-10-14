@@ -359,12 +359,12 @@ xrep_bmap_scan_ag(
 	struct xfs_scrub	*sc = rb->sc;
 	int			error;
 
-	error = xrep_ag_init(sc, pag, &sc->sa);
+	error = xrep_ag_init(sc, pag);
 	if (error)
 		return error;
 
 	error = xfs_rmap_query_all(sc->sa.rmap_cur, xrep_bmap_walk_rmap, rb);
-	xchk_ag_free(sc, &sc->sa);
+	xchk_ag_free(sc);
 	return error;
 }
 
@@ -456,16 +456,15 @@ xrep_bmap_scan_rtgroup(
 	if (!xfs_has_rtrmapbt(sc->mp))
 		return 0;
 
-	error = xrep_rtgroup_init(sc, rtg, &sc->sr,
-			XFS_RTGLOCK_RMAP |
-			XFS_RTGLOCK_REFCOUNT |
-			XFS_RTGLOCK_BITMAP_SHARED);
+	error = xrep_rtgroup_init(sc, rtg, XFS_RTGLOCK_RMAP |
+					   XFS_RTGLOCK_REFCOUNT |
+					   XFS_RTGLOCK_BITMAP_SHARED);
 	if (error)
 		return error;
 
 	error = xfs_rmap_query_all(sc->sr.rmap_cur, xrep_bmap_walk_rtrmap, rb);
-	xchk_rtgroup_btcur_free(&sc->sr);
-	xchk_rtgroup_free(sc, &sc->sr);
+	xchk_rtgroup_btcur_free(sc);
+	xchk_rtgroup_free(sc);
 	return error;
 }
 #else

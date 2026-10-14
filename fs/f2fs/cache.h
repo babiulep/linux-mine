@@ -84,6 +84,8 @@ enum f2fs_cache_request_flag {
 
 #define F2FS_ONSTACK_CACHES		(32)
 
+#define METADATA_CACHE_SHRINK_NUMBER	(128)
+
 #define F2FS_CACHE_FLAG_TEST_FUNC(name, flagname)			\
 static inline bool f2fs_cache_test_##name(				\
 			const struct f2fs_cached_block *entry)		\
@@ -223,18 +225,28 @@ void f2fs_drop_cache_range(struct f2fs_cached_block_list *cache,
 
 unsigned long f2fs_shrink_cache(struct f2fs_sb_info *sbi,
 				unsigned long nr_to_scan);
+unsigned long f2fs_shrink_meta_cache(struct f2fs_sb_info *sbi,
+				unsigned long nr_to_scan);
+unsigned long f2fs_shrink_node_cache(struct f2fs_sb_info *sbi,
+				unsigned long nr_to_scan);
 
 #define DEF_DIRTY_CACHE_TIMEOUT 5000
 #define MIN_DIRTY_CACHE_TIMEOUT 100
 #define MAX_DIRTY_CACHE_TIMEOUT 30000
 
+#define DEF_CACHE_WB_DIRTY_THRESH	(8192)
+
 struct f2fs_cache_kthread {
 	struct task_struct *cache_wb_task;
 	wait_queue_head_t cache_wb_wq;
 	unsigned int cache_wb_interval;
+	unsigned int cache_wb_dirty_threshold;
+	unsigned int cache_wb_total_threshold;
+	bool cache_wb_throttled;	/* last round made no progress */
 };
 
 int f2fs_start_cache_wb_thread(struct f2fs_sb_info *sbi);
 void f2fs_stop_cache_wb_thread(struct f2fs_sb_info *sbi);
+void f2fs_wake_up_cache_wb(struct f2fs_sb_info *sbi);
 
 #endif /* _LINUX_F2FS_CACHE_H */

@@ -240,7 +240,7 @@ In the ``get`` hook, the user must choose how to map kernel pages:
   compound pages (if the compound page is bigger than the remaining pages in the
   VMA, then only those pages that fit will be mapped). For a compound page, the
   head page must be passed.
-* ``discontig_kernel_map_page_range()`` - Map an array of pages of a specified
+* ``discontig_kernel_map_pages()`` - Map an array of pages of a specified
   size. As with a compound page, if more pages are specified than remain in
   the VMA then only those that fit will be mapped.
 

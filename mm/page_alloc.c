@@ -4117,30 +4117,10 @@ out:
 	return page;
 }
 
-/*
- * If fallbacks are not permitted (defrag_mode), we either need to
- * reclaim space in a block of matching type, or clear out an entire
- * block to allow __rmqueue_claim() to convert.
- *
- * Reclaim by itself is primarily freeing space in movable blocks,
- * since that's where the LRU pages live. So this works for movable
- * requests, but not for others.
- *
- * For those, promote the order of reclaim and compaction to help make
- * blocks, instead of spinning in reclaim alone unproductively. Retry
- * decisions based on the outcome of that work - reclaim progress and
- * compaction results - must account for the promotion as well, so
- * __alloc_pages_slowpath() computes the promoted order once and passes
- * it alongside the request order.
- */
-static inline unsigned int nofrag_promote_order(unsigned int order,
-						unsigned int alloc_flags,
-						const struct alloc_context *ac)
+static inline bool order_nofrag_promoted(unsigned int order,
+					 const struct alloc_context *ac)
 {
-	if ((alloc_flags & ALLOC_NOFRAGMENT) && ac->migratetype != MIGRATE_MOVABLE)
-		return max(order, pageblock_order);
-
-	return order;
+	return ac->reclaim_compact_order != order;
 }
 
 /*
@@ -4153,9 +4133,8 @@ static inline unsigned int nofrag_promote_order(unsigned int order,
 /* Try memory compaction for high-order allocations before reclaim */
 static struct page *
 __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
-		unsigned int compact_order, unsigned int alloc_flags,
-		const struct alloc_context *ac, enum compact_priority prio,
-		enum compact_result *compact_result)
+		unsigned int alloc_flags, const struct alloc_context *ac,
+		enum compact_priority prio, enum compact_result *compact_result)
 {
 	struct page *page = NULL;
 	unsigned long pflags;
@@ -4166,6 +4145,7 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 		.order = order,
 		.page = NULL,
 	};
+	int compact_order = ac->reclaim_compact_order;
 
 	if (!compact_order)
 		return NULL;
@@ -4247,7 +4227,7 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 
 static inline bool
 should_compact_retry(gfp_t gfp_mask, struct alloc_context *ac, int order,
-		     int compact_order, int alloc_flags,
+		     int alloc_flags,
 		     enum compact_result compact_result,
 		     enum compact_priority *compact_priority,
 		     int *compaction_retries)
@@ -4258,7 +4238,7 @@ should_compact_retry(gfp_t gfp_mask, struct alloc_context *ac, int order,
 	int retries = *compaction_retries;
 	enum compact_priority priority = *compact_priority;
 
-	if (!compact_order)
+	if (!ac->reclaim_compact_order)
 		return false;
 
 	if (fatal_signal_pending(current))
@@ -4267,14 +4247,12 @@ should_compact_retry(gfp_t gfp_mask, struct alloc_context *ac, int order,
 	/*
 	 * Compaction was skipped due to a lack of free order-0
 	 * migration targets. Continue if reclaim can help.
-	 *
-	 * Promoted requests have exhausted their reclaim retries at
-	 * this point, and they can fall back instead.
+	 * Promoted requests fall back instead.
 	 */
 	if (compact_result == COMPACT_SKIPPED) {
-		if (compact_order == order)
-			ret = compaction_zonelist_suitable(ac, order, alloc_flags,
-							   gfp_mask);
+		if (!order_nofrag_promoted(order, ac))
+			ret = compaction_zonelist_suitable(ac, order,
+							   alloc_flags, gfp_mask);
 		goto out;
 	}
 
@@ -4319,9 +4297,8 @@ out:
 #else
 static inline struct page *
 __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
-		unsigned int compact_order, unsigned int alloc_flags,
-		const struct alloc_context *ac, enum compact_priority prio,
-		enum compact_result *compact_result)
+		unsigned int alloc_flags, const struct alloc_context *ac,
+		enum compact_priority prio, enum compact_result *compact_result)
 {
 	*compact_result = COMPACT_SKIPPED;
 	return NULL;
@@ -4329,7 +4306,7 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 
 static inline bool
 should_compact_retry(gfp_t gfp_mask, struct alloc_context *ac, int order,
-		     int compact_order, int alloc_flags,
+		     int alloc_flags,
 		     enum compact_result compact_result,
 		     enum compact_priority *compact_priority,
 		     int *compaction_retries)
@@ -4468,12 +4445,13 @@ __perform_reclaim(gfp_t gfp_mask, unsigned int order,
 /* The really slow allocator path where we enter direct reclaim */
 static inline struct page *
 __alloc_pages_direct_reclaim(gfp_t gfp_mask, unsigned int order,
-		unsigned int reclaim_order, unsigned int alloc_flags,
-		const struct alloc_context *ac, unsigned long *did_some_progress)
+		unsigned int alloc_flags, const struct alloc_context *ac,
+		unsigned long *did_some_progress)
 {
 	struct page *page = NULL;
 	unsigned long pflags;
 	bool drained = false;
+	int reclaim_order = ac->reclaim_compact_order;
 
 	psi_memstall_enter(&pflags);
 	*did_some_progress = __perform_reclaim(gfp_mask, reclaim_order, ac);
@@ -4639,9 +4617,8 @@ bool gfp_pfmemalloc_allowed(gfp_t gfp_mask)
  */
 static inline bool
 should_reclaim_retry(gfp_t gfp_mask, unsigned order,
-		     unsigned int reclaim_order, struct alloc_context *ac,
-		     int alloc_flags, bool did_some_progress,
-		     int *no_progress_loops)
+		     struct alloc_context *ac, int alloc_flags,
+		     bool did_some_progress, int *no_progress_loops)
 {
 	struct zone *zone;
 	struct zoneref *z;
@@ -4650,17 +4627,12 @@ should_reclaim_retry(gfp_t gfp_mask, unsigned order,
 	/*
 	 * Costly allocations might have made a progress but this doesn't mean
 	 * their order will become available due to high fragmentation so
-	 * always increment the no progress counter for them.
-	 *
-	 * The same goes for requests whose reclaim is promoted to make whole
-	 * blocks. At that order, reclaim also reports progress when it backs
-	 * off for compaction without freeing anything.
-	 *
-	 * The watermark check below stays at the request order: it asks
-	 * whether the request itself could succeed after reclaim.
+	 * always increment the no progress counter for them. The same goes for
+	 * promoted requests: their reclaim reports progress when it backs off
+	 * for compaction without freeing anything.
 	 */
 	if (did_some_progress && order <= PAGE_ALLOC_COSTLY_ORDER &&
-	    reclaim_order == order)
+	    !order_nofrag_promoted(order, ac))
 		*no_progress_loops = 0;
 	else
 		(*no_progress_loops)++;
@@ -4800,7 +4772,6 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	bool nofail;
 	struct page *page = NULL;
 	unsigned int alloc_flags;
-	unsigned int reclaim_order;
 	unsigned long did_some_progress;
 	enum compact_priority compact_priority;
 	enum compact_result compact_result;
@@ -4960,22 +4931,33 @@ retry:
 	/* If allocation has taken excessively long, warn about it */
 	check_alloc_stall_warn(gfp_mask, ac->nodemask, order, alloc_start_time);
 
-	/* The order reclaim and compaction work at, see nofrag_promote_order() */
-	reclaim_order = nofrag_promote_order(order, alloc_flags, ac);
+	/*
+	 * If fallbacks are not permitted (defrag_mode), we either
+	 * need to reclaim space in a block of matching type, or clear
+	 * out an entire block to allow __rmqueue_claim() to convert.
+	 *
+	 * Reclaim by itself is primarily freeing space in movable
+	 * blocks, since that's where the LRU pages live. So this
+	 * works for movable requests, but not for others.
+	 *
+	 * For those, promote the order to help make blocks, instead
+	 * of spinning in reclaim alone unproductively.
+	 */
+	ac->reclaim_compact_order = order;
+	if ((alloc_flags & ALLOC_NOFRAGMENT) && ac->migratetype != MIGRATE_MOVABLE)
+		ac->reclaim_compact_order = max(order, pageblock_order);
 
 	/* Try direct reclaim and then allocating */
 	if (!compact_first) {
-		page = __alloc_pages_direct_reclaim(gfp_mask, order, reclaim_order,
-						    alloc_flags, ac,
-						    &did_some_progress);
+		page = __alloc_pages_direct_reclaim(gfp_mask, order, alloc_flags,
+							ac, &did_some_progress);
 		if (page)
 			goto got_pg;
 	}
 
 	/* Try direct compaction and then allocating */
-	page = __alloc_pages_direct_compact(gfp_mask, order, reclaim_order,
-					    alloc_flags, ac, compact_priority,
-					    &compact_result);
+	page = __alloc_pages_direct_compact(gfp_mask, order, alloc_flags, ac,
+					compact_priority, &compact_result);
 	if (page)
 		goto got_pg;
 
@@ -5027,9 +5009,8 @@ retry:
 	    check_retry_zonelist(zonelist_iter_cookie))
 		goto restart;
 
-	if (should_reclaim_retry(gfp_mask, order, reclaim_order, ac,
-				 alloc_flags, did_some_progress > 0,
-				 &no_progress_loops))
+	if (should_reclaim_retry(gfp_mask, order, ac, alloc_flags,
+				 did_some_progress > 0, &no_progress_loops))
 		goto retry;
 
 	/*
@@ -5039,20 +5020,16 @@ retry:
 	 * of free memory (see __compaction_suitable)
 	 */
 	if (did_some_progress > 0 && can_compact &&
-	    should_compact_retry(gfp_mask, ac, order, reclaim_order,
-				 alloc_flags, compact_result, &compact_priority,
+	    should_compact_retry(gfp_mask, ac, order, alloc_flags,
+				 compact_result, &compact_priority,
 				 &compaction_retries))
 		goto retry;
 
-	/*
-	 * Reclaim/compaction failed to prevent the fallback. A promoted
-	 * request spent its retry budget on making blocks, not on the
-	 * request itself; give its fallback a fresh one before
-	 * considering OOM.
-	 */
+	/* Reclaim/compaction failed to prevent the fallback */
 	if (defrag_mode && (alloc_flags & ALLOC_NOFRAGMENT)) {
 		alloc_flags &= ~ALLOC_NOFRAGMENT;
-		if (reclaim_order != order) {
+		/* Retries went into making blocks, start the fallback afresh */
+		if (order_nofrag_promoted(order, ac)) {
 			no_progress_loops = 0;
 			compaction_retries = 0;
 		}

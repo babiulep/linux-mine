@@ -43,7 +43,7 @@ xchk_setup_rtrefcountbt(
 			return error;
 	}
 
-	error = xchk_rtgroup_init(sc, sc->sm->sm_agno, &sc->sr);
+	error = xchk_rtgroup_init(sc, sc->sm->sm_agno);
 	if (error)
 		return error;
 
@@ -55,7 +55,7 @@ xchk_setup_rtrefcountbt(
 	if (error)
 		return error;
 
-	return xchk_rtgroup_lock(sc, &sc->sr, XCHK_RTGLOCK_ALL);
+	return xchk_rtgroup_lock(sc, XCHK_RTGLOCK_ALL);
 }
 
 /* Realtime Reference count btree scrubber. */
@@ -269,7 +269,7 @@ xchk_rtrefcount_count_agblocks(
 	xfs_filblks_t		agblocks = 0;
 	int			error;
 
-	error = xchk_ag_init_existing(sc, agno, &sc->sa);
+	error = xchk_ag_init_existing(sc, agno);
 	if (error)
 		goto out_free;
 
@@ -290,7 +290,7 @@ xchk_rtrefcount_count_agblocks(
 
 	*blocks += agblocks;
 out_free:
-	xchk_ag_free(sc, &sc->sa);
+	xchk_ag_free(sc);
 	return error;
 }
 

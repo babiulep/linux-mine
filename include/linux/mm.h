@@ -1695,57 +1695,22 @@ static inline bool vma_is_fixed_mapping(const struct vm_area_struct *vma)
 }
 
 /**
- * vma_flags_can_merge() - Do the specified VMA flags permit the VMA to be
- * merged with another?
- * @flags: The VMA flags to test.
- * Returns: true if the flags permit merging, false otherwise.
- */
-static inline bool vma_flags_can_merge(const vma_flags_t *flags)
-{
-	/*
-	 * VMA merging assumes that a VMA's flags and fields completely describe
-	 * its state.
-	 *
-	 * However, mappings which are not mm-managed may have established state
-	 * upon mapping not embodied in any attribute of the VMA.
-	 *
-	 * Additionally, private (CoW) PFN maps encode the source PFN of the
-	 * range in vma->vm_pgoff, which may otherwise cause spurious merges.
-	 */
-	if (!vma_flags_is_mm_managed(flags))
-		return false;
-	/* VMA explicitly marked as being unmergeable. */
-	if (vma_flags_is_fixed_mapping(flags))
-		return false;
-
-	return true;
-}
-
-/**
- * vma_can_merge() - Do @vma's flags permit it to be merged with another VMA?
- * @vma: The VMA to test.
- * Returns: true if the flags permit merging, otherwise false.
- */
-static inline bool vma_can_merge(const struct vm_area_struct *vma)
-{
-	return vma_flags_can_merge(&vma->flags);
-}
-
-/**
  * vma_flags_is_mm_backed() - Do the specified VMA flags imply the mapping is
  * backed by core mm?
  * @flags: The VMA flags to test.
  *
  * An mm-backed mapping is one managed by core mm (see
- * vma_flags_is_mm_managed()) for which two further things are true:
+ * vma_flags_is_mm_managed()) whose contents are established by core mm's own
+ * fault path rather than a custom ->fault handler.
  *
- * 1. Everything mapped was placed there by core mm's fault path (no custom
- *    ->fault).
- * 2. What is mapped stays there until it is zapped or unmapped by the user.
+ * Mappings not managed by core mm are populated by their owner, and fixed
+ * mappings may be mm-managed but have their contents established by a custom
+ * ->fault handler, so neither are mm-backed. hugetlb mappings are fixed, but
+ * core mm owns them entirely, so they are.
  *
- * These mappings are the only ones which can be sensibly locked, merged, dumped
- * or be subject to uffd faulting, as all of these assume core mm and core mm
- * alone manages these, and that the mappings will remain there.
+ * These are the only mappings which can sensibly be merged, locked, dumped or
+ * be subject to uffd faulting, as all of these assume core mm and core mm
+ * alone manages their contents.
  *
  * Returns: true if the flags imply an mm-backed mapping, otherwise false.
  */
@@ -1761,11 +1726,7 @@ static inline bool vma_flags_is_mm_backed(const vma_flags_t *flags)
 	 * by a custom ->fault handler, so core mm cannot assume ordinary fault
 	 * semantics over them.
 	 */
-	if (!vma_flags_is_mm_managed(flags) ||
-	    vma_flags_is_fixed_mapping(flags))
-		return false;
-	/* Core mm may discard droppable memory at any time. */
-	return !vma_flags_test_single_mask(flags, VMA_DROPPABLE);
+	return vma_flags_is_mm_managed(flags) && !vma_flags_is_fixed_mapping(flags);
 }
 
 /**
@@ -1779,6 +1740,43 @@ static inline bool vma_flags_is_mm_backed(const vma_flags_t *flags)
 static inline bool vma_is_mm_backed(const struct vm_area_struct *vma)
 {
 	return vma_flags_is_mm_backed(&vma->flags);
+}
+
+/**
+ * vma_flags_can_merge() - Do the specified VMA flags permit the VMA to be
+ * merged with another?
+ * @flags: The VMA flags to test.
+ * Returns: true if the flags permit merging, false otherwise.
+ */
+static inline bool vma_flags_can_merge(const vma_flags_t *flags)
+{
+	/*
+	 * VMA merging assumes that a VMA's flags and fields completely describe
+	 * its state, which is only the case for mm-backed mappings.
+	 *
+	 * Mappings which are not mm-managed may have established state upon
+	 * mapping not embodied in any attribute of the VMA.
+	 *
+	 * Additionally, private (CoW) PFN maps encode the source PFN of the
+	 * range in vma->vm_pgoff, which may otherwise cause spurious merges.
+	 */
+	if (!vma_flags_is_mm_backed(flags))
+		return false;
+	/*
+	 * hugetlb mappings contain per-VMA state, so their flags and fields do
+	 * not completely describe them.
+	 */
+	return !vma_flags_is_hugetlb(flags);
+}
+
+/**
+ * vma_can_merge() - Do @vma's flags permit it to be merged with another VMA?
+ * @vma: The VMA to test.
+ * Returns: true if the flags permit merging, otherwise false.
+ */
+static inline bool vma_can_merge(const struct vm_area_struct *vma)
+{
+	return vma_flags_can_merge(&vma->flags);
 }
 
 /**
@@ -4837,28 +4835,26 @@ discontig_kernel_map_abort(struct discontig_kernel_page_state *state)
 
 static inline void
 discontig_kernel_map_page(struct discontig_kernel_page_state *state,
-			  struct page *page)
+		struct page *page)
 {
 	struct folio *folio = page_folio(page);
+	unsigned long nr_pages = 1;
 
 	if (folio_test_large(folio)) {
 		VM_WARN_ON_ONCE(page != folio_page(folio, 0));
-		state->action = DISCONTIG_KERNEL_PAGE_MAP_COMPOUND_PAGE;
-		state->__folio = folio;
-		state->__nr_pages = min(state->nr_pages_remain,
-					folio_nr_pages(folio));
-	} else {
-		state->action = DISCONTIG_KERNEL_PAGE_MAP_PAGE;
-		state->__page = page;
-		state->__nr_pages = 1;
+		nr_pages = folio_nr_pages(folio);
 	}
+
+	state->action = DISCONTIG_KERNEL_PAGE_MAP_CONTIG_PAGES;
+	state->__page = page;
+	state->__nr_pages = min(nr_pages, state->nr_pages_remain);
 }
 
 static inline void
-discontig_kernel_map_page_range(struct discontig_kernel_page_state *state,
-				struct page **page_arr, unsigned long nr_pages)
+discontig_kernel_map_pages(struct discontig_kernel_page_state *state,
+		struct page **page_arr, unsigned long nr_pages)
 {
-	state->action = DISCONTIG_KERNEL_PAGE_MAP_PAGE_RANGE;
+	state->action = DISCONTIG_KERNEL_PAGE_MAP_PAGES;
 	state->__page_arr = page_arr;
 	state->__nr_pages = min(nr_pages, state->nr_pages_remain);
 }

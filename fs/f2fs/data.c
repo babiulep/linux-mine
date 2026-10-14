@@ -271,7 +271,7 @@ static void f2fs_read_end_io(struct bio *bio)
 {
 	struct f2fs_sb_info *sbi = F2FS_F_SB(bio_first_folio_all(bio));
 	struct bio_post_read_ctx *ctx;
-	bool intask = in_task() && !irqs_disabled();
+	bool intask = !bio_in_atomic();
 
 	iostat_update_and_unbind_ctx(bio);
 	ctx = bio->bi_private;
@@ -298,6 +298,40 @@ static void f2fs_read_end_io(struct bio *bio)
 	f2fs_verify_and_finish_bio(bio, intask);
 }
 
+static void f2fs_cache_write_end_bio(struct bio *bio)
+{
+	struct f2fs_cached_block *entry = F2FS_BIO(bio)->entry;
+	struct f2fs_sb_info *sbi = entry->cache->sbi;
+	struct f2fs_cached_block *next;
+
+	if (bio->bi_status != BLK_STS_OK)
+		f2fs_stop_checkpoint(sbi, true,
+			STOP_CP_REASON_WRITE_FAIL);
+
+	while (entry) {
+		next = entry->next_entry;
+		entry->next_entry = NULL;
+
+		if (f2fs_is_node_cache(entry)) {
+			f2fs_sanity_check_node_footer(sbi, entry,
+				entry->index, NODE_TYPE_REGULAR, true);
+			f2fs_bug_on(sbi, entry->index != nid_of_node(sbi, entry));
+		}
+		if (f2fs_in_warm_node_list(sbi, entry))
+			f2fs_del_fsync_node_entry(sbi, entry);
+
+		dec_cache_count(sbi, F2FS_WB_CP_DATA);
+
+		if (!get_nr_caches(sbi, F2FS_WB_CP_DATA) &&
+				wq_has_sleeper(&sbi->cp_wait))
+			wake_up(&sbi->cp_wait);
+
+		f2fs_end_cache_writeback(entry);
+		entry = next;
+	}
+	bio_put(bio);
+}
+
 static void f2fs_write_end_bio(struct bio *bio)
 {
 	struct f2fs_sb_info *sbi = bio->bi_private;
@@ -305,6 +339,11 @@ static void f2fs_write_end_bio(struct bio *bio)
 
 	if (time_to_inject(sbi, FAULT_WRITE_IO))
 		bio->bi_status = BLK_STS_IOERR;
+
+	if (f2fs_is_cache_bio(bio)) {
+		f2fs_cache_write_end_bio(bio);
+		return;
+	}
 
 	bio_for_each_folio_all(fi, bio) {
 		struct folio *folio = fi.folio;
@@ -359,7 +398,9 @@ static void f2fs_write_end_io(struct bio *bio)
 
 	sbi = bio->bi_private;
 
-	if (in_atomic() && bio->bi_iter.bi_size > sbi->max_atc_write_bio_size) {
+	if (bio_in_atomic() &&
+	    (bio->bi_iter.bi_size > sbi->max_atc_write_bio_size ||
+	     F2FS_BIO(bio)->entry_cnt > sbi->max_atc_write_bio_entry_cnt)) {
 		struct work_struct *w;
 
 		w = &container_of(bio, struct f2fs_bio, bio)->work;
@@ -404,45 +445,6 @@ static void f2fs_cache_read_end_io(struct bio *bio)
 	bio_put(bio);
 }
 
-static void f2fs_cache_write_end_io(struct bio *bio)
-{
-	struct f2fs_cached_block *entry = F2FS_BIO(bio)->entry;
-	struct f2fs_sb_info *sbi = entry->cache->sbi;
-	struct f2fs_cached_block *next;
-
-	iostat_update_and_unbind_ctx(bio);
-
-	if (time_to_inject(sbi, FAULT_WRITE_IO))
-		bio->bi_status = BLK_STS_IOERR;
-
-	if (bio->bi_status != BLK_STS_OK)
-		f2fs_stop_checkpoint(sbi, true,
-			STOP_CP_REASON_WRITE_FAIL);
-
-	while (entry) {
-		next = entry->next_entry;
-		entry->next_entry = NULL;
-
-		if (f2fs_is_node_cache(entry)) {
-			f2fs_sanity_check_node_footer(sbi, entry,
-				entry->index, NODE_TYPE_REGULAR, true);
-			f2fs_bug_on(sbi, entry->index != nid_of_node(sbi, entry));
-		}
-		if (f2fs_in_warm_node_list(sbi, entry))
-			f2fs_del_fsync_node_entry(sbi, entry);
-
-		dec_cache_count(sbi, F2FS_WB_CP_DATA);
-
-		if (!get_nr_caches(sbi, F2FS_WB_CP_DATA) &&
-				wq_has_sleeper(&sbi->cp_wait))
-			wake_up(&sbi->cp_wait);
-
-		f2fs_end_cache_writeback(entry);
-		entry = next;
-	}
-	bio_put(bio);
-}
-
 #ifdef CONFIG_BLK_DEV_ZONED
 static void f2fs_zone_write_end_io(struct bio *bio)
 {
@@ -450,10 +452,7 @@ static void f2fs_zone_write_end_io(struct bio *bio)
 
 	bio->bi_private = io->bi_private;
 	complete(&io->zone_wait);
-	if (f2fs_is_cache_bio(bio))
-		f2fs_cache_write_end_io(bio);
-	else
-		f2fs_write_end_io(bio);
+	f2fs_write_end_io(bio);
 }
 #endif
 
@@ -536,6 +535,10 @@ static struct bio *__bio_alloc(struct f2fs_io_info *fio, int npages)
 	struct bio *bio;
 
 	bdev = f2fs_target_device(sbi, fio->new_blkaddr, &sector);
+	/* avoid reversed IO if bio is split due to exceeding max_segments */
+	if (npages > 1 && !is_read_io(fio->op) &&
+	    f2fs_is_sequential_zone_area(sbi, fio->new_blkaddr))
+		npages = min_t(int, npages, bdev_max_segments(bdev));
 	bio = bio_alloc_bioset(bdev, npages,
 				fio->op | fio->op_flags | f2fs_io_flags(fio),
 				GFP_NOIO, &f2fs_bioset);
@@ -548,17 +551,13 @@ static struct bio *__bio_alloc(struct f2fs_io_info *fio, int npages)
 		else
 			bio->bi_end_io = f2fs_read_end_io;
 	} else {
-		if (fio->is_cache) {
-			bio->bi_end_io = f2fs_cache_write_end_io;
-		} else {
-			bio->bi_end_io = f2fs_write_end_io;
-			bio->bi_private = sbi;
-		}
-
+		bio->bi_end_io = f2fs_write_end_io;
+		bio->bi_private = sbi;
 		bio->bi_write_hint = f2fs_io_type_to_rw_hint(sbi,
 						fio->type, fio->temp);
 		bio->bi_write_stream = f2fs_io_type_to_write_stream(bdev, fio->type,
 								    fio->temp);
+		F2FS_BIO(bio)->entry_cnt = 0;
 	}
 	iostat_alloc_and_bind_ctx(sbi, bio, NULL);
 
@@ -892,7 +891,19 @@ static bool page_is_mergeable(struct f2fs_sb_info *sbi, struct bio *bio,
 		return false;
 	if (last_blkaddr + 1 != cur_blkaddr)
 		return false;
-	return bio->bi_bdev == f2fs_target_device(sbi, cur_blkaddr, NULL);
+	if (bio->bi_bdev != f2fs_target_device(sbi, cur_blkaddr, NULL))
+		return false;
+	/* avoid reversed IO if bio is split due to exceeding max_segments/sectors */
+	if (f2fs_is_sequential_zone_area(sbi, cur_blkaddr)) {
+		struct request_queue *q = bdev_get_queue(bio->bi_bdev);
+
+		if (bio->bi_vcnt >= queue_max_segments(q))
+			return false;
+		if (bio_sectors(bio) + (F2FS_BLKSIZE(sbi) >> SECTOR_SHIFT) >
+				queue_max_sectors(q))
+			return false;
+	}
+	return true;
 }
 
 static bool io_type_is_mergeable(struct f2fs_bio_info *io,
@@ -1226,6 +1237,8 @@ alloc_new:
 		goto alloc_new;
 	}
 
+	F2FS_BIO(io->bio)->entry_cnt++;
+
 	if (fio->io_wbc)
 		wbc_account_cgroup_owner(fio->io_wbc, fio->folio,
 				folio_size(fio->folio));
@@ -1332,6 +1345,7 @@ alloc_new:
 	}
 
 	f2fs_bio_add_cache(fio, io->bio);
+	F2FS_BIO(io->bio)->entry_cnt++;
 
 	io->last_block_in_bio = fio->new_blkaddr;
 
@@ -2481,7 +2495,6 @@ static int f2fs_read_single_page(struct inode *inode, struct fsverity_info *vi,
 got_it:
 	if ((map->m_flags & F2FS_MAP_MAPPED)) {
 		block_nr = map->m_pblk + block_in_file - map->m_lblk;
-		folio_set_mappedtodisk(folio);
 
 		if (!f2fs_is_valid_blkaddr(F2FS_I_SB(inode), block_nr,
 						DATA_GENERIC_ENHANCE_READ)) {
@@ -3137,7 +3150,7 @@ bool f2fs_should_update_outplace(struct inode *inode, struct f2fs_io_info *fio)
 	 * If IO comes from compressed write path and fallback to raw write,
 	 * force out‑place to prevent metadata‑data inconsistency.
 	 */
-	if (f2fs_compressed_file(inode))
+	if (fio && f2fs_compressed_file(inode))
 		return true;
 
 	/* swap file is migrating in aligned write mode */
@@ -3915,11 +3928,15 @@ static int prepare_write_begin(struct f2fs_sb_info *sbi,
 
 	/* f2fs_lock_op avoids race between write CP and convert_inline_page */
 	if (f2fs_has_inline_data(inode)) {
-		if (pos + len > MAX_INLINE_DATA(inode)) {
+		if (pos + len > MAX_INLINE_DATA(inode))
 			flag = F2FS_GET_BLOCK_DEFAULT;
-			f2fs_map_lock(sbi, &lc, flag);
-			locked = true;
-		}
+		/*
+		 * it needs to cover FI_DATA_EXIST and inline data update w/
+		 * node_change, otherwise concurrent checkpoint may persist
+		 * inline data only w/o F2FS_DATA_EXIST.
+		 */
+		f2fs_map_lock(sbi, &lc, flag);
+		locked = true;
 	} else if ((pos & PAGE_MASK) >= i_size_read(inode)) {
 		f2fs_map_lock(sbi, &lc, flag);
 		locked = true;

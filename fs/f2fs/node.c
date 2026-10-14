@@ -123,6 +123,16 @@ bool f2fs_available_free_memory(struct f2fs_sb_info *sbi, int type)
 #else
 		res = false;
 #endif
+	} else if (type == META_BLOCK) {
+		mem_size = (META_CACHE(sbi)->num_entries *
+				(sizeof(struct f2fs_cached_block) +
+				F2FS_BLKSIZE(sbi))) >> PAGE_SHIFT;
+		res = mem_size < ((avail_ram * nm_i->ram_thresh / 100) >> 1);
+	} else if (type == NODE_BLOCK) {
+		mem_size = (NODE_CACHE(sbi)->num_entries *
+				(sizeof(struct f2fs_cached_block) +
+				F2FS_BLKSIZE(sbi))) >> PAGE_SHIFT;
+		res = mem_size < ((avail_ram * nm_i->ram_thresh / 100) >> 1);
 	} else {
 		if (!bdi_wb_dirty_exceeded(sbi->sb->s_bdi))
 			return true;
@@ -2101,7 +2111,8 @@ unlock:
 }
 
 int f2fs_writeback_node_caches(struct f2fs_sb_info *sbi, long nr_to_write,
-			bool sync, bool do_balance, enum iostat_type io_type)
+			bool sync, bool do_balance, enum iostat_type io_type,
+			long *nr_written)
 {
 	pgoff_t index;
 	struct f2fs_cached_block *entries[F2FS_ONSTACK_CACHES];
@@ -2221,6 +2232,9 @@ out:
 
 	trace_f2fs_write_caches(sbi, nr_to_write, nwritten, NODE);
 
+	if (nr_written)
+		*nr_written = nwritten;
+
 	if (unlikely(f2fs_cp_error(sbi)))
 		return -EIO;
 	return ret;
@@ -2261,7 +2275,7 @@ int f2fs_wait_on_node_caches_writeback(struct f2fs_sb_info *sbi,
 	return f2fs_cp_error(sbi) ? -EIO : 0;
 }
 
-int f2fs_write_node_caches(struct f2fs_sb_info *sbi)
+int f2fs_write_node_caches(struct f2fs_sb_info *sbi, long *nr_written)
 {
 	struct blk_plug plug;
 	long nr_to_write = LONG_MAX;
@@ -2286,7 +2300,8 @@ int f2fs_write_node_caches(struct f2fs_sb_info *sbi)
 
 	nr_to_write = adjust_flush_cache_number(sbi, NODE);
 	blk_start_plug(&plug);
-	f2fs_writeback_node_caches(sbi, nr_to_write, false, true, FS_NODE_IO);
+	f2fs_writeback_node_caches(sbi, nr_to_write, false, true, FS_NODE_IO,
+								nr_written);
 	blk_finish_plug(&plug);
 	return 0;
 }

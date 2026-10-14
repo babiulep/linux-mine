@@ -224,7 +224,10 @@ xrep_abt_walk_rmap(
 	void				*priv)
 {
 	struct xrep_abt			*ra = priv;
-	int				error;
+	int				error = 0;
+
+	if (xchk_should_terminate(ra->sc, &error))
+		return error;
 
 	/* Record all the OWN_AG blocks... */
 	if (rec->rm_owner == XFS_RMAP_OWN_AG) {
@@ -367,7 +370,7 @@ xrep_abt_find_freespace(
 
 	xagb_bitmap_init(&ra->not_allocbt_blocks);
 
-	xrep_ag_btcur_init(sc, &sc->sa);
+	xrep_ag_btcur_init(sc);
 
 	/*
 	 * Iterate all the reverse mappings to find gaps in the physical
@@ -403,7 +406,7 @@ xrep_abt_find_freespace(
 err_agfl:
 	xfs_trans_brelse(sc->tp, agfl_bp);
 err:
-	xchk_ag_btcur_free(&sc->sa);
+	xchk_ag_btcur_free(sc);
 	xagb_bitmap_destroy(&ra->not_allocbt_blocks);
 	return error;
 }
@@ -657,14 +660,10 @@ xrep_abt_reset_counters(
 
 	/*
 	 * Compute the contribution to agf_btreeblks for the new free space
-	 * btrees.  This is the computed btree size minus anything we didn't
-	 * use.
+	 * btrees.  This is the computed btree size minus the root block.
 	 */
 	freesp_btreeblks += ra->new_bnobt.bload.nr_blocks - 1;
 	freesp_btreeblks += ra->new_cntbt.bload.nr_blocks - 1;
-
-	freesp_btreeblks -= xrep_newbt_unused_blocks(&ra->new_bnobt);
-	freesp_btreeblks -= xrep_newbt_unused_blocks(&ra->new_cntbt);
 
 	/*
 	 * The AGF header contains extra information related to the free space

@@ -385,12 +385,12 @@ xrep_rtrefc_scan_ag(
 	struct xfs_scrub	*sc = rr->sc;
 	int			error;
 
-	error = xrep_ag_init(sc, pag, &sc->sa);
+	error = xrep_ag_init(sc, pag);
 	if (error)
 		return error;
 
 	error = xfs_rmap_query_all(sc->sa.rmap_cur, xrep_rtrefc_walk_rmap, rr);
-	xchk_ag_free(sc, &sc->sa);
+	xchk_ag_free(sc);
 	return error;
 }
 
@@ -418,7 +418,7 @@ xrep_rtrefc_find_refcounts(
 		}
 	}
 
-	xrep_rtgroup_btcur_init(sc, &sc->sr);
+	xrep_rtgroup_btcur_init(sc);
 
 	/*
 	 * Set up a bag to store all the rmap records that we're tracking to
@@ -510,7 +510,7 @@ xrep_rtrefc_find_refcounts(
 out_bag:
 	rcbag_free(&rcstack);
 out_cur:
-	xchk_rtgroup_btcur_free(&sc->sr);
+	xchk_rtgroup_btcur_free(sc);
 	return error;
 }
 

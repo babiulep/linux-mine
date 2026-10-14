@@ -101,18 +101,17 @@ int xrep_setup_ag_allocbt(struct xfs_scrub *sc);
 struct xfs_imap;
 int xrep_setup_inode(struct xfs_scrub *sc, const struct xfs_imap *imap);
 
-void xrep_ag_btcur_init(struct xfs_scrub *sc, struct xchk_ag *sa);
-int xrep_ag_init(struct xfs_scrub *sc, struct xfs_perag *pag,
-		struct xchk_ag *sa);
+void xrep_ag_btcur_init(struct xfs_scrub *sc);
+int xrep_ag_init(struct xfs_scrub *sc, struct xfs_perag *pag);
 #ifdef CONFIG_XFS_RT
 int xrep_rtgroup_init(struct xfs_scrub *sc, struct xfs_rtgroup *rtg,
-		struct xchk_rt *sr, unsigned int rtglock_flags);
-void xrep_rtgroup_btcur_init(struct xfs_scrub *sc, struct xchk_rt *sr);
+		unsigned int rtglock_flags);
+void xrep_rtgroup_btcur_init(struct xfs_scrub *sc);
 int xrep_require_rtext_inuse(struct xfs_scrub *sc, xfs_rgblock_t rgbno,
 		xfs_filblks_t len);
 xfs_extlen_t xrep_calc_rtgroup_resblks(struct xfs_scrub *sc);
 #else
-# define xrep_rtgroup_init(sc, rtg, sr, lockflags)	(-ENOSYS)
+# define xrep_rtgroup_init(sc, rtg, lockflags)		(-ENOSYS)
 # define xrep_calc_rtgroup_resblks(sc)			(0)
 #endif /* CONFIG_XFS_RT */
 
@@ -240,7 +239,7 @@ xrep_setup_nothing(
 #define xrep_setup_rtrmapbt		xrep_setup_nothing
 #define xrep_setup_rtrefcountbt		xrep_setup_nothing
 
-#define xrep_setup_inode(sc, imap)	((void)0)
+#define xrep_setup_inode(sc, imap)	(0)
 
 static inline int xrep_setup_symlink(struct xfs_scrub *sc, unsigned int *x)
 {

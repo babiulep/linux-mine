@@ -581,10 +581,11 @@ redirty_out:
 	return false;
 }
 
-void f2fs_write_meta_caches(struct f2fs_sb_info *sbi)
+void f2fs_write_meta_caches(struct f2fs_sb_info *sbi, long *nr_written)
 {
 	struct f2fs_lock_context lc;
 	long nr_to_write = LONG_MAX;
+	long nwritten;
 
 	if (unlikely(is_sbi_flag_set(sbi, SBI_POR_DOING)))
 		return;
@@ -599,14 +600,17 @@ void f2fs_write_meta_caches(struct f2fs_sb_info *sbi)
 		return;
 
 	nr_to_write = adjust_flush_cache_number(sbi, META);
-	f2fs_sync_meta_caches(sbi, nr_to_write, false, FS_META_IO);
+	nwritten = f2fs_sync_meta_caches(sbi, nr_to_write, false, FS_META_IO);
 	f2fs_up_write_trace(&sbi->cp_global_sem, &lc);
+
+	if (nr_written)
+		*nr_written = nwritten;
 }
 
 long f2fs_sync_meta_caches(struct f2fs_sb_info *sbi, long nr_to_write,
 				bool sync, enum iostat_type io_type)
 {
-	pgoff_t index = 0, prev = ULONG_MAX;
+	pgoff_t index = 0, next = ULONG_MAX;
 	struct f2fs_cached_block *entries[F2FS_ONSTACK_CACHES];
 	long nwritten = 0;
 	int nr;
@@ -629,8 +633,8 @@ long f2fs_sync_meta_caches(struct f2fs_sb_info *sbi, long nr_to_write,
 				goto stop;
 			}
 
-			if (background && i != 0 &&
-					entry->index != prev + 1) {
+			if (background && next != ULONG_MAX &&
+					entry->index != next) {
 				f2fs_cache_gang_release(entries, nr);
 				goto stop;
 			}
@@ -654,15 +658,19 @@ continue_unlock:
 
 			if (!__f2fs_write_meta_cache(entry, io_type)) {
 				f2fs_unlock_cache(entry);
-				break;
+				f2fs_cache_gang_release(entries, nr);
+				goto stop;
 			}
 			nwritten++;
-			prev = entry->index;
+			next = entry->index + 1;
 			if (unlikely(nwritten >= nr_to_write))
 				break;
 		}
 		f2fs_cache_gang_release(entries, nr);
 		cond_resched();
+
+		if (unlikely(nwritten >= nr_to_write))
+			break;
 	}
 stop:
 	if (nwritten)
@@ -1553,7 +1561,7 @@ retry_flush_nodes:
 		f2fs_up_write(&sbi->node_write);
 		atomic_inc(&sbi->wb_sync_req[NODE]);
 		err = f2fs_writeback_node_caches(sbi, LONG_MAX,
-			true, false, FS_CP_NODE_IO);
+			true, false, FS_CP_NODE_IO, NULL);
 		atomic_dec(&sbi->wb_sync_req[NODE]);
 		if (err) {
 			f2fs_up_write(&sbi->node_change);

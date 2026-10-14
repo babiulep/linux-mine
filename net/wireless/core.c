@@ -94,7 +94,7 @@ static int cfg80211_dev_check_name(struct cfg80211_registered_device *rdev,
 	struct cfg80211_registered_device *rdev2;
 	int wiphy_idx, taken = -1, digits;
 
-	ASSERT_RTNL();
+	lockdep_assert_held(&cfg80211_mutex);
 
 	if (strlen(newname) > NL80211_WIPHY_NAME_MAXLEN)
 		return -EINVAL;
@@ -127,7 +127,7 @@ int cfg80211_dev_rename(struct cfg80211_registered_device *rdev,
 {
 	int result;
 
-	ASSERT_RTNL();
+	lockdep_assert_held(&cfg80211_mutex);
 	lockdep_assert_wiphy(&rdev->wiphy);
 
 	/* Ignore nop renames */
@@ -170,6 +170,9 @@ static int __cfg80211_switch_netns(struct cfg80211_registered_device *rdev,
 	struct net *old_net = wiphy_net(&rdev->wiphy);
 	struct wireless_dev *wdev, *tmp;
 	int err = 0;
+
+	/* make the whole switch atomic for cfg80211_mutex holders, e.g. dumps */
+	guard(mutex)(&cfg80211_mutex);
 
 	list_for_each_entry_safe(wdev, tmp, &rdev->wiphy.wdev_list, list) {
 		err = cfg80211_switch_wdev_netns(wdev, net);
@@ -657,33 +660,13 @@ struct wiphy *wiphy_new_nm(const struct cfg80211_ops *ops, int sizeof_priv,
 	/* atomic_inc_return makes it start at 1, make it start at 0 */
 	rdev->wiphy_idx--;
 
-	/* give it a proper name */
-	if (requested_name && requested_name[0]) {
+	/* remember the name, used/checked during registration */
+	if (!requested_name || !requested_name[0] ||
+	    dev_set_name(&rdev->wiphy.dev, "%s", requested_name)) {
 		int rv;
 
-		rtnl_lock();
-		rv = cfg80211_dev_check_name(rdev, requested_name);
-
-		if (rv < 0) {
-			rtnl_unlock();
-			goto use_default_name;
-		}
-
-		rv = dev_set_name(&rdev->wiphy.dev, "%s", requested_name);
-		rtnl_unlock();
-		if (rv)
-			goto use_default_name;
-	} else {
-		int rv;
-
-use_default_name:
-		/* NOTE:  This is *probably* safe w/out holding rtnl because of
-		 * the restrictions on phy names.  Probably this call could
-		 * fail if some other part of the kernel (re)named a device
-		 * phyX.  But, might should add some locking and check return
-		 * value, and use a different name if this one exists?
-		 */
-		rv = dev_set_name(&rdev->wiphy.dev, PHY_NAME "%d", rdev->wiphy_idx);
+		rv = dev_set_name(&rdev->wiphy.dev, PHY_NAME "%d",
+				  rdev->wiphy_idx);
 		if (rv < 0) {
 			kfree(rdev);
 			return NULL;
@@ -1237,7 +1220,14 @@ int wiphy_register(struct wiphy *wiphy)
 	rtnl_lock();
 	mutex_lock(&cfg80211_mutex);
 	wiphy_lock(&rdev->wiphy);
-	res = device_add(&rdev->wiphy.dev);
+
+	/* use default name if the requested one isn't good */
+	res = cfg80211_dev_check_name(rdev, dev_name(&rdev->wiphy.dev));
+	if (res)
+		res = dev_set_name(&rdev->wiphy.dev, PHY_NAME "%d",
+				   rdev->wiphy_idx);
+	if (!res)
+		res = device_add(&rdev->wiphy.dev);
 	if (res) {
 		wiphy_unlock(&rdev->wiphy);
 		mutex_unlock(&cfg80211_mutex);
@@ -1471,6 +1461,7 @@ void cfg80211_dev_free(struct cfg80211_registered_device *rdev)
 	 * can just free it here.
 	 */
 	kfree(rcu_dereference_raw(rdev->wiphy.regd));
+	kfree(rdev->requested_regd);
 
 	kfree(rdev);
 }
@@ -1514,6 +1505,16 @@ static void _cfg80211_unregister_wdev(struct wireless_dev *wdev,
 
 	list_del_rcu(&wdev->list);
 	synchronize_net();
+
+	/*
+	 * After synchronize_net() any lookups under RCU either have
+	 * references (must wdev_hold() inside the critical section)
+	 * or can't find this wdev anymore. Wait for any wdev_hold()
+	 * users on a pure wdev to get to dev_put().
+	 */
+	if (!wdev->netdev && !refcount_dec_and_test(&wdev->refcnt))
+		wait_var_event(&wdev->refcnt, !refcount_read(&wdev->refcnt));
+
 	rdev->devlist_generation++;
 	wiphy_work_cancel(wdev->wiphy, &wdev->disconnect_wk);
 
@@ -1700,6 +1701,7 @@ EXPORT_SYMBOL(cfg80211_stop_link);
 
 void cfg80211_init_wdev(struct wireless_dev *wdev)
 {
+	refcount_set(&wdev->refcnt, 1);
 	INIT_LIST_HEAD(&wdev->event_list);
 	spin_lock_init(&wdev->event_lock);
 	INIT_LIST_HEAD(&wdev->mgmt_registrations);

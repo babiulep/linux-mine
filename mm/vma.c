@@ -2639,9 +2639,7 @@ static int __mmap_new_file_vma(struct mmap_state *map,
 	 * VMA_LOCKED_BIT and/or VMA_LOCKONFAULT_BIT flags.
 	 */
 	if (vma_supports_mlock(vma)) {
-		const vma_flags_t mask =
-			vma_flags_and_mask(&map->vma_flags,
-					   VMA_LOCKED_MASK);
+		const vma_flags_t mask = vma_flags_and_mask(&map->vma_flags, VMA_LOCKED_MASK);
 
 		vma_set_flags_mask(vma, mask);
 	}

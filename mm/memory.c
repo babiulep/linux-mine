@@ -2674,26 +2674,24 @@ int map_discontig_kernel_pages_prepare(struct vm_area_desc *desc)
 }
 
 static int apply_discontig_action(struct vm_area_struct *vma,
-				  struct discontig_kernel_page_state *state)
+		struct discontig_kernel_page_state *state)
 {
 	unsigned long nr_pages = state->__nr_pages;
 	unsigned long addr = state->addr;
 	unsigned long i;
 
-	if (state->action == DISCONTIG_KERNEL_PAGE_MAP_PAGE)
-		return insert_page(vma, addr, state->__page,
-				   vma->vm_page_prot, /*mkwrite=*/false);
-	if (state->action == DISCONTIG_KERNEL_PAGE_MAP_PAGE_RANGE)
+	if (state->action == DISCONTIG_KERNEL_PAGE_MAP_PAGES)
 		return insert_pages(vma, addr, state->__page_arr,
-				    &nr_pages, vma->vm_page_prot);
+				&nr_pages, vma->vm_page_prot);
 
-	/* Compound folio - have to iterate through each page. */
+	VM_WARN_ON_ONCE(state->action != DISCONTIG_KERNEL_PAGE_MAP_CONTIG_PAGES);
+	/* Contiguous pages - have to iterate through each one. */
 	for (i = 0; i < nr_pages; i++, addr += PAGE_SIZE) {
-		struct page *page = folio_page(state->__folio, i);
+		struct page *page = state->__page + i;
 		int err;
 
 		err = insert_page(vma, addr, page, vma->vm_page_prot,
-				  /*mkwrite=*/false);
+				/*mkwrite=*/false);
 		if (err)
 			return err;
 	}
@@ -7239,6 +7237,7 @@ int generic_access_phys(struct vm_area_struct *vma, unsigned long addr,
 	resource_size_t phys_addr;
 	pgprot_t prot = __pgprot(0);
 	void __iomem *maddr;
+	struct page *page;
 	int offset = offset_in_page(addr);
 	int ret = -EINVAL;
 	bool writable;
@@ -7253,6 +7252,19 @@ int generic_access_phys(struct vm_area_struct *vma, unsigned long addr,
 retry:
 	if (follow_pfnmap_start(&args))
 		return -EINVAL;
+
+	/*
+	 * Reject anything that looks like ordinary RAM, including anonymous
+	 * folios in CoW mappings or allocated kernel memory. Note that we
+	 * cannot distinguish memblock allocations from non-RAM reliably, so
+	 * we cannot easily reject them here.
+	 */
+	page = pfn_to_online_page(args.pfn);
+	if (page && !PageReserved(page)) {
+		follow_pfnmap_end(&args);
+		return -EINVAL;
+	}
+
 	prot = args.pgprot;
 	phys_addr = (resource_size_t)args.pfn << PAGE_SHIFT;
 	writable = args.writable;

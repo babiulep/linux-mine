@@ -746,8 +746,8 @@ int migrate_vma_setup(struct migrate_vma *args)
 	args->end &= PAGE_MASK;
 	if (!vma)
 		return -EINVAL;
-	if (!vma_is_mm_managed(vma) || vma_is_fixed_mapping(vma) ||
-	    vma_is_dax(vma))
+	/* The migrate_vma page walk has no hugetlb support. */
+	if (!vma_is_mm_backed(vma) || vma_is_hugetlb(vma) || vma_is_dax(vma))
 		return -EINVAL;
 	if (nr_pages <= 0)
 		return -EINVAL;

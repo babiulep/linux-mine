@@ -749,6 +749,9 @@ static bool ksm_compatible(const struct file *file, vma_flags_t vma_flags)
 		return false;
 	if (!vma_flags_is_mm_backed(&vma_flags))
 		return false;
+	/* Core mm may discard droppable memory at any time. */
+	if (vma_flags_test_single_mask(&vma_flags, VMA_DROPPABLE))
+		return false;
 	if (file_is_dax(file))
 		return false;
 #ifdef VM_SAO
