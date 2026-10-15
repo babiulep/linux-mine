@@ -591,7 +591,7 @@ static void __init_memblock memblock_insert_region(struct memblock_type *type,
  * @type: memblock type to search
  * @base: base physical address of the candidate range
  *
- * Returns the first region index that could potentially overlap @base.
+ * Return: the first region index that could potentially overlap @base.
  */
 static int __init_memblock __memblock_search(struct memblock_type *type,
 						  phys_addr_t base)
@@ -667,9 +667,8 @@ repeat:
 	 */
 	base = obase;
 	nr_new = 0;
-	idx = __memblock_search(type, base);
 
-	for (; idx < type->cnt; idx++) {
+	for (idx = __memblock_search(type, base); idx < type->cnt; idx++) {
 		struct memblock_region *rgn = &type->regions[idx];
 		phys_addr_t rbase = rgn->base;
 		phys_addr_t rend = rbase + rgn->size;
@@ -833,7 +832,6 @@ static int __init_memblock memblock_isolate_range(struct memblock_type *type,
 					int *start_rgn, int *end_rgn)
 {
 	phys_addr_t end = base + memblock_cap_size(base, &size);
-	int idx;
 
 	*start_rgn = *end_rgn = 0;
 
@@ -845,9 +843,7 @@ static int __init_memblock memblock_isolate_range(struct memblock_type *type,
 		if (memblock_double_array(type, base, size) < 0)
 			return -ENOMEM;
 
-	idx = __memblock_search(type, base);
-
-	for (; idx < type->cnt; idx++) {
+	for (int idx = __memblock_search(type, base); idx < type->cnt; idx++) {
 		struct memblock_region *rgn = &type->regions[idx];
 		phys_addr_t rbase = rgn->base;
 		phys_addr_t rend = rbase + rgn->size;

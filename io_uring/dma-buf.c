@@ -9,7 +9,7 @@ static inline void io_release_dmabuf(void *priv)
 	kfree(bd);
 }
 
-int io_register_dmabuf(struct io_ring_ctx *ctx,
+int __io_register_dmabuf(struct io_ring_ctx *ctx,
 			struct io_uring_regbuf_desc *desc,
 			struct io_mapped_ubuf *imu)
 {
@@ -51,7 +51,7 @@ int io_register_dmabuf(struct io_ring_ctx *ctx,
 	imu->len = dmabuf->size;
 	imu->release = io_release_dmabuf;
 	imu->priv = bd;
-	imu->flags = IO_REGBUF_F_DMABUF;
+	imu->flags = IO_REGBUF_F_DMABUF | IO_REGBUF_F_UNCLONEABLE;
 	imu->dir = IO_BUF_DEST | IO_BUF_SOURCE;
 	dma_buf_put(dmabuf);
 	return 0;

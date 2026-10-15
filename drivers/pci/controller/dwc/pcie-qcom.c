@@ -1152,6 +1152,11 @@ static int qcom_pcie_post_init_2_7_0(struct qcom_pcie *pcie)
 
 static int qcom_pcie_enable_aspm(struct pci_dev *pdev, void *userdata)
 {
+	/*
+	 * Downstream devices need to be in D0 state before enabling PCI PM
+	 * substates.
+	 */
+	pci_set_power_state_locked(pdev, PCI_D0);
 	pci_enable_link_state_locked(pdev, PCIE_LINK_STATE_ALL);
 
 	return 0;
@@ -1913,6 +1918,9 @@ static int qcom_pcie_reset_root_port(struct pci_host_bridge *bridge,
 	qcom_pcie_start_link(pci);
 
 	ret = dw_pcie_wait_for_link(pci);
+	/* This linkdown might have been a hot-unplug */
+	if (ret == -ENODEV)
+		ret = 0;
 	if (ret)
 		return ret;
 
@@ -2014,11 +2022,13 @@ static int qcom_pcie_ecam_host_init(struct pci_config_window *cfg)
 	 */
 	raw_spin_lock_init(&pp->lock);
 
-	ret = dw_pcie_msi_host_init(pp);
-	if (ret)
-		return ret;
+	pp->use_imsi_rx = !pci_host_of_has_msi_map(dev);
+	if (pp->use_imsi_rx) {
+		ret = dw_pcie_msi_host_init(pp);
+		if (ret)
+			return ret;
+	}
 
-	pp->use_imsi_rx = true;
 	dw_pcie_msi_init(pp);
 
 	return devm_add_action_or_reset(dev, qcom_pci_free_msi, pp);

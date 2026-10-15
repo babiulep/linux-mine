@@ -918,6 +918,20 @@ static int dw_pcie_iatu_setup(struct dw_pcie_rp *pp)
 		atu.parent_bus_addr = entry->res->start - pci->parent_bus_offset;
 		atu.pci_addr = entry->res->start - entry->offset;
 
+		if (pp->bypass_ob_mem_iatu) {
+			/*
+			 * The no-match pass-through path preserves the correct
+			 * PCI address only for identity-mapped MEM ranges.
+			 */
+			if (atu.parent_bus_addr != atu.pci_addr) {
+				dev_err(pci->dev,
+					"Cannot bypass outbound iATU for non-identity MEM range %pr\n",
+					entry->res);
+				return -EINVAL;
+			}
+			continue;
+		}
+
 		/* Adjust iATU size if MSG TLP region was allocated before */
 		if (pp->msg_res && pp->msg_res->parent == entry->res)
 			res_size = resource_size(entry->res) -
@@ -964,8 +978,7 @@ static int dw_pcie_iatu_setup(struct dw_pcie_rp *pp)
 
 			ret = dw_pcie_prog_outbound_atu(pci, &atu);
 			if (ret) {
-				dev_err(pci->dev, "Failed to set IO range %pr\n",
-					entry->res);
+				dev_err(pci->dev, "Failed to set IO range\n");
 				return ret;
 			}
 			ob_iatu_index++;
@@ -1224,14 +1237,21 @@ static int dw_pcie_pme_turn_off(struct dw_pcie *pci)
 
 int dw_pcie_suspend_noirq(struct dw_pcie *pci)
 {
-	bool pme_capable = false;
+	bool d3cold, pme_capable = false;
 	int ret = 0;
 	u32 val;
 
 	if (!dw_pcie_link_up(pci))
 		goto stop_link;
 
-	if (!pci_host_common_d3cold_possible(pci->pp.bridge, &pme_capable))
+	d3cold = pci_host_common_d3cold_possible(pci->pp.bridge, &pme_capable);
+
+	/*
+	 * Enter L2 if D3cold is possible, or if the platform loses RC power
+	 * during suspend (in which case L2 entry is required to notify
+	 * endpoints before power loss, regardless of D3cold support).
+	 */
+	if (!d3cold && !pci->pp.suspend_poweroff)
 		return 0;
 
 	if (pci->pp.ops->pme_turn_off) {

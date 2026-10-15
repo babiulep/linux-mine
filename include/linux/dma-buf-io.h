@@ -74,6 +74,19 @@ __dma_buf_io_get_map(struct dma_buf_io_ctx *ctx)
 	return map;
 }
 
+/**
+ * dma_buf_io_get_map - Create a new or reference an existing map.
+ * @ctx:	[in]	dma-buf I/O context
+ * @nowait:	[in]	specifies whether it's allowed to block
+ *
+ * Create a new or acquire an existing map. When succeeds, it returns
+ * a referenced map, which should eventually be put down with
+ * dma_buf_io_map_drop(). If @nowait is set and the function would block,
+ * it return -EAGAIN, and the caller is expected to retry from a context
+ * where blocking is allowed.
+ *
+ * Returns a map on success, or ERR_PTR encoded errno otherwise.
+ */
 static inline struct dma_buf_io_map *
 dma_buf_io_get_map(struct dma_buf_io_ctx *ctx, bool nowait)
 {
@@ -88,6 +101,13 @@ dma_buf_io_get_map(struct dma_buf_io_ctx *ctx, bool nowait)
 	return dma_buf_io_create_map(ctx);
 }
 
+/**
+ * dma_buf_io_map_drop - Drop the map.
+ * @map:	[in]	dma-buf I/O map
+ *
+ * Put down a reference for the @map acquired via dma_buf_io_get_map().
+ * Should be called as soon as I/O is completed.
+ */
 static inline void dma_buf_io_map_drop(struct dma_buf_io_map *map)
 {
 	percpu_ref_put(&map->refs);

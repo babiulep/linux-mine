@@ -5120,7 +5120,6 @@ F:	include/uapi/linux/filter.h
 F:	kernel/bpf/
 F:	kernel/trace/bpf_trace.c
 F:	lib/buildid.c
-F:	lib/test_bpf.c
 F:	net/bpf/
 F:	net/core/filter.c
 F:	net/sched/act_bpf.c
@@ -12420,7 +12419,6 @@ S:	Maintained
 F:	drivers/media/i2c/hi847.c
 
 Hyper-V/Azure CORE AND DRIVERS
-M:	"K. Y. Srinivasan" <kys@microsoft.com>
 M:	Haiyang Zhang <haiyangz@microsoft.com>
 M:	Wei Liu <wei.liu@kernel.org>
 M:	Dexuan Cui <decui@microsoft.com>
@@ -14685,6 +14683,7 @@ L:	kvm@vger.kernel.org
 S:	Supported
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/kvms390/linux.git
 F:	Documentation/virt/kvm/s390*
+F:	arch/s390/include/arm64/*
 F:	arch/s390/include/asm/gmap_helpers.h
 F:	arch/s390/include/asm/kvm*
 F:	arch/s390/include/uapi/asm/kvm*
@@ -14696,6 +14695,22 @@ F:	drivers/s390/char/uvdevice.c
 F:	tools/testing/selftests/drivers/s390x/uvdevice/
 F:	tools/testing/selftests/kvm/*/s390/
 F:	tools/testing/selftests/kvm/s390/
+
+KERNEL VIRTUAL MACHINE for arm-on-s390 (KVM/s390)
+R:	Steffen Eiden <seiden@linux.ibm.com>
+R:	Andreas Grapentin <gra@linux.ibm.com>
+R:	Marc Zyngier <maz@kernel.org>
+L:	kvm@vger.kernel.org
+L:	linux-s390@vger.kernel.org
+S:	Supported
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/kvms390/linux.git
+F:	arch/s390/include/arm64/
+F:	arch/s390/include/asm/aef.h
+F:	arch/s390/include/asm/kvm_host_arm64*
+F:	arch/s390/include/asm/sae*
+F:	arch/s390/kernel/aef.c
+F:	arch/s390/kvm/arm64/
+F:	arch/s390/tools/*arm64*
 
 KERNEL VIRTUAL MACHINE FOR X86 (KVM/x86)
 M:	Sean Christopherson <seanjc@google.com>
@@ -17810,6 +17825,7 @@ F:	Documentation/admin-guide/mm/transhuge.rst
 F:	include/linux/huge_mm.h
 F:	include/linux/khugepaged.h
 F:	include/trace/events/huge_memory.h
+F:	mm/collapse.h
 F:	mm/huge_memory.c
 F:	mm/khugepaged.c
 F:	mm/mm_slot.h
@@ -19207,6 +19223,7 @@ F:	drivers/net/ethernet/nebula-matrix/
 
 NETCONSOLE
 M:	Breno Leitao <leitao@debian.org>
+R:	Gustavo Luiz Duarte <gustavold@gmail.com>
 S:	Maintained
 F:	Documentation/networking/netconsole.rst
 F:	drivers/net/netconsole.c
@@ -23111,6 +23128,14 @@ F:	Documentation/networking/device_drivers/cellular/qualcomm/rmnet.rst
 F:	drivers/net/ethernet/qualcomm/rmnet/
 F:	include/linux/if_rmnet.h
 
+QUALCOMM SPMI CONTROLLER (PMIC ARBITER) DRIVER
+M:	Abel Vesa <abelvesa@kernel.org>
+M:	David Collins <david.collins@oss.qualcomm.com>
+L:	linux-arm-msm@vger.kernel.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/spmi/qcom,*spmi-pmic-arb*.yaml
+F:	drivers/spmi/spmi-pmic-arb.c
+
 QUALCOMM TEE (QCOMTEE) DRIVER
 M:	Amirreza Zarrabi <amirreza.zarrabi@oss.qualcomm.com>
 L:	linux-arm-msm@vger.kernel.org
@@ -26407,6 +26432,7 @@ F:	tools/spi/
 
 SPMI SUBSYSTEM
 M:	Stephen Boyd <sboyd@kernel.org>
+M:	Abel Vesa <abelvesa@kernel.org>
 L:	linux-kernel@vger.kernel.org
 S:	Maintained
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/sboyd/spmi.git

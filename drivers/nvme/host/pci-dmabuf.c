@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
+ * Code for supporting dma-buf I/O maps in the NVMe driver.
  * Copyright (C) 2026 Pavel Begunkov <asml.silence@gmail.com>
  */
 
@@ -108,6 +109,7 @@ void __nvme_pci_remove_dmabuf(struct nvme_dma_buf_list *list)
 	struct nvme_dma_buf_io_ctx *ctx, *tmp;
 
 	mutex_lock(&list->lock);
+	list->dead = true;
 	list_for_each_entry_safe(ctx, tmp, &list->ctxs, list) {
 		dma_buf_io_detach(ctx->base);
 		dma_buf_detach(ctx->base->dmabuf, ctx->attach);
@@ -128,6 +130,9 @@ static int nvme_init_io_ctx_locked(struct nvme_ctrl *ctrl,
 {
 	struct nvme_dma_buf_io_ctx *nvme_ctx;
 	struct dma_buf_attachment *attach;
+
+	if (buf_list->dead)
+		return -ENODEV;
 
 	nvme_ctx = kzalloc_obj(*nvme_ctx);
 	if (!nvme_ctx)

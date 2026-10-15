@@ -12,6 +12,10 @@ struct io_buf_dma {
 	struct file			*target_file;
 };
 
+int __io_register_dmabuf(struct io_ring_ctx *ctx,
+			struct io_uring_regbuf_desc *desc,
+			struct io_mapped_ubuf *imu);
+
 static inline void io_detach_dmabuf_map(struct io_kiocb *req)
 {
 	if (!IS_ENABLED(CONFIG_DMA_SHARED_BUFFER))
@@ -60,8 +64,13 @@ static inline int io_import_dmabuf_map(struct io_kiocb *req,
 	return 0;
 }
 
-int io_register_dmabuf(struct io_ring_ctx *ctx,
+static inline int io_register_dmabuf(struct io_ring_ctx *ctx,
 			struct io_uring_regbuf_desc *desc,
-			struct io_mapped_ubuf *imu);
+			struct io_mapped_ubuf *imu)
+{
+	if (!IS_ENABLED(CONFIG_DMA_SHARED_BUFFER))
+		return -EOPNOTSUPP;
+	return __io_register_dmabuf(ctx, desc, imu);
+}
 
 #endif /* IOU_DMA_BUF_H */

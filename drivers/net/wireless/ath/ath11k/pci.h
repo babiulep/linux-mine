@@ -72,8 +72,7 @@ struct ath11k_pci {
 
 	/* enum ath11k_pci_flags */
 	unsigned long flags;
-	/* Cached PCIe ASPM states */
-	u32 aspm_states;
+	u16 link_ctl;
 	u64 dma_mask;
 };
 

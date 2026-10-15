@@ -584,7 +584,7 @@ static int imx_setup_phy_mpll(struct imx_pcie *imx_pcie)
 		return 0;
 
 	for (i = 0; i < imx_pcie->num_clks; i++)
-		if (strncmp(clks[i].id, "pcie_phy", 8) == 0)
+		if (clks[i].id && strncmp(clks[i].id, "pcie_phy", 8) == 0)
 			phy_rate = clk_get_rate(clks[i].clk);
 
 	switch (phy_rate) {
@@ -1455,7 +1455,7 @@ static int imx_pcie_host_init(struct dw_pcie_rp *pp)
 	if (!pp->skip_pwrctrl_off) {
 		ret = pci_pwrctrl_power_on_devices(dev);
 		if (ret) {
-			dev_err(dev, "failed to power on pwrctrl devices\n");
+			dev_err_probe(dev, ret, "failed to power on pwrctrl devices\n");
 			goto err_reg_disable;
 		}
 	}
@@ -1902,7 +1902,8 @@ static int imx_pcie_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, imx_pcie->num_clks,
 				     "failed to get clocks\n");
 	for (i = 0; i < imx_pcie->num_clks; i++)
-		if (strncmp(imx_pcie->clks[i].id, "extref", 6) == 0)
+		if (imx_pcie->clks[i].id &&
+		    strncmp(imx_pcie->clks[i].id, "extref", 6) == 0)
 			imx_pcie->enable_ext_refclk = true;
 
 	if (imx_check_flag(imx_pcie, IMX_PCIE_FLAG_HAS_PHYDRV)) {
@@ -2047,6 +2048,8 @@ static int imx_pcie_probe(struct platform_device *pdev)
 			if (ret < 0)
 				goto err_pwrctrl_destroy;
 		}
+
+		pci->pp.suspend_poweroff = true;
 
 		if (imx_check_flag(imx_pcie, IMX_PCIE_FLAG_SKIP_L23_READY))
 			pci->pp.skip_l23_ready = true;

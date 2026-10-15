@@ -1269,8 +1269,6 @@ static u8 hci_cc_le_read_conn_interval(struct hci_dev *hdev, void *data,
 				       struct sk_buff *skb)
 {
 	struct hci_rp_le_read_conn_interval *rp = data;
-	u16 min_interval = 0;
-	int i;
 
 	bt_dev_dbg(hdev, "status 0x%2.2x", rp->status);
 
@@ -1283,17 +1281,11 @@ static u8 hci_cc_le_read_conn_interval(struct hci_dev *hdev, void *data,
 		return HCI_ERROR_UNSPECIFIED;
 	}
 
-	/* Store the smallest minimum supported connection interval reported by
-	 * the controller so the default rate parameters can be clamped to it.
+	/* Store the minimum supported connection interval so the default rate
+	 * parameters can be clamped to it. It is reported on its own rather
+	 * than derived from the groups, as there may be none.
 	 */
-	for (i = 0; i < rp->num_grps; i++) {
-		u16 min = le16_to_cpu(rp->grps[i].min);
-
-		if (!min_interval || min < min_interval)
-			min_interval = min;
-	}
-
-	hdev->le_min_rate_interval = min_interval;
+	hdev->le_min_rate_interval = rp->min;
 
 	return rp->status;
 }
@@ -3015,8 +3007,25 @@ static void hci_cs_le_read_remote_features(struct hci_dev *hdev, u8 status)
 	hci_dev_lock(hdev);
 
 	conn = hci_conn_hash_lookup_handle(hdev, __le16_to_cpu(cp->handle));
-	if (conn && conn->state == BT_CONFIG)
+	if (conn && conn->state == BT_CONFIG) {
+		/* If the local controller supports peripheral-initiated
+		 * features exchange, but the remote controller does not,
+		 * then the controller may already return the error code
+		 * 0x1a for unsupported remote feature in the command
+		 * status.
+		 *
+		 * Handle it as hci_le_remote_feat_complete_evt() does and
+		 * allow the connection to transition into connected state.
+		 */
+		if (!conn->out &&
+		    status == HCI_ERROR_UNSUPPORTED_REMOTE_FEATURE &&
+		    (hdev->le_features[0] & HCI_LE_PERIPHERAL_FEATURES)) {
+			conn->state = BT_CONNECTED;
+			status = 0x00;
+		}
+
 		hci_connect_cfm(conn, status);
+	}
 
 	hci_dev_unlock(hdev);
 }
@@ -4113,8 +4122,17 @@ static void hci_cs_le_read_all_remote_features(struct hci_dev *hdev, u8 status)
 	hci_dev_lock(hdev);
 
 	conn = hci_conn_hash_lookup_handle(hdev, __le16_to_cpu(cp->handle));
-	if (conn && conn->state == BT_CONFIG)
+	if (conn && conn->state == BT_CONFIG) {
+		/* See hci_cs_le_read_remote_features() */
+		if (!conn->out &&
+		    status == HCI_ERROR_UNSUPPORTED_REMOTE_FEATURE &&
+		    (hdev->le_features[0] & HCI_LE_PERIPHERAL_FEATURES)) {
+			conn->state = BT_CONNECTED;
+			status = 0x00;
+		}
+
 		hci_connect_cfm(conn, status);
+	}
 
 	hci_dev_unlock(hdev);
 }

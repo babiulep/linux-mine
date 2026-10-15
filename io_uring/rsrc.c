@@ -907,9 +907,6 @@ static struct io_rsrc_node *io_register_dmabuf_desc(struct io_ring_ctx *ctx,
 	struct io_mapped_ubuf *imu = NULL;
 	int ret;
 
-	if (!IS_ENABLED(CONFIG_DMA_SHARED_BUFFER))
-		return ERR_PTR(-EOPNOTSUPP);
-
 	node = io_rsrc_node_alloc(ctx, IORING_RSRC_BUFFER);
 	if (!node)
 		return ERR_PTR(-ENOMEM);
@@ -948,6 +945,8 @@ static struct io_rsrc_node *io_sqe_buffer_register(struct io_ring_ctx *ctx,
 	struct io_imu_folio_data data;
 	bool coalesced = false;
 
+	if (uaddr != desc->uaddr || size != desc->size)
+		return ERR_PTR(-EOVERFLOW);
 	if (desc->type >= __IO_REGBUF_TYPE_MAX)
 		return ERR_PTR(-EINVAL);
 	if (!mem_is_zero(&desc->__resv, sizeof(desc->__resv)) || desc->flags)

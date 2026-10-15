@@ -34,7 +34,12 @@
 
 #define KVM_INTERNAL_MEM_SLOTS 1
 
+#define __KVM_HAVE_INVALID_WAKEUPS
+#define __KVM_HAVE_NO_POLL
+
 #define KVM_S390_MANAGES_S390_GUEST 1
+
+#define __KVM_NO_MMIO
 
 /*
  * These seem to be used for allocating ->chip in the routing table, which we

@@ -753,7 +753,6 @@ struct nameidata {
 #define ND_ROOT_PRESET 1
 #define ND_ROOT_GRABBED 2
 #define ND_JUMPED 4
-#define ND_UNLINKED 8
 
 static void __set_nameidata(struct nameidata *p, int dfd, struct filename *name)
 {
@@ -2094,28 +2093,41 @@ all_done: // pure jump
  * catch this via d_seq and another lookup for the name. Give the same
  * guarantee in refwalk.
  *
- * The caller fails the walk with -ESTALE. ND_UNLINKED tells walk_again()
- * that no cache was stale, so that the walk is repeated even if this was
- * the attempt with LOOKUP_REVAL. The dentry is unhashed by now and the
- * next attempt can't find it.
+ * Only a dentry that still had mounts when its name went away matters.
+ * __detach_mounts() marks it before the mounts are detached, so a walk
+ * that doesn't find them anymore sees the mark. Any other dentry is fine
+ * to step onto. The walk found the name before it was removed.
+ *
+ * The walk fails with -ESTALE and is repeated with LOOKUP_REVAL. That is
+ * the last attempt, so there it fails with -ENOENT.
  */
-static bool unlink_may_reveal(struct nameidata *nd, int flags,
-			      struct path *path, struct dentry *dentry)
+static int unlink_may_reveal(struct nameidata *nd, int flags,
+			     struct path *path, struct dentry *dentry)
 {
+	/* rcuwalk catches this via d_seq */
+	if (nd->flags & LOOKUP_RCU)
+		return 0;
 	/* ".." and LOOKUP_DOWN may land on an unhashed directory */
 	if (flags & WALK_NOFOLLOW)
-		return false;
-	/* We crossed onto a mount and the name led us here while it still existed */
-	if (path->mnt != nd->path.mnt)
-		return false;
-	/* only a name on its way out is flagged */
-	if (likely(!cant_mount(dentry)))
-		return false;
+		return 0;
+	/*
+	 * We crossed onto the root of a mount and the name led us there
+	 * while it still existed. The reference on @dentry went with the
+	 * first crossing and a race with several mount --move can lead
+	 * back to the mount we started on, so compare the dentries.
+	 */
+	if (path->dentry != dentry)
+		return 0;
+	/* only a name that went away while covered is flagged */
+	if (likely(!(READ_ONCE(dentry->d_flags) & DCACHE_UNCOVERED)))
+		return 0;
+	/* d_invalidate() in ->unlink() detaches before dont_mount() runs */
 	if (!d_unlinked(dentry))
-		return false;
+		return 0;
 	dput(no_free_ptr(path->dentry));
-	nd->state |= ND_UNLINKED;
-	return true;
+	if (path->mnt != nd->path.mnt)
+		mntput(path->mnt);
+	return nd->flags & LOOKUP_REVAL ? -ENOENT : -ESTALE;
 }
 
 /*
@@ -2136,6 +2148,9 @@ static noinline const char *step_into_slowpath(struct nameidata *nd, int flags,
 	err = handle_mounts(nd, dentry, &path);
 	if (unlikely(err < 0))
 		return ERR_PTR(err);
+	err = unlink_may_reveal(nd, flags, &path, dentry);
+	if (unlikely(err))
+		return ERR_PTR(err);
 	inode = path.dentry->d_inode;
 	if (likely(!d_is_symlink(path.dentry)) ||
 	   ((flags & WALK_TRAILING) && !(nd->flags & LOOKUP_FOLLOW)) ||
@@ -2147,8 +2162,6 @@ static noinline const char *step_into_slowpath(struct nameidata *nd, int flags,
 			if (unlikely(!inode))
 				return ERR_PTR(-ENOENT);
 		} else {
-			if (unlikely(unlink_may_reveal(nd, flags, &path, dentry)))
-				return ERR_PTR(-ESTALE);
 			dput(nd->path.dentry);
 			if (nd->path.mnt != path.mnt)
 				mntput(nd->path.mnt);
@@ -2726,7 +2739,6 @@ static const char *path_init(struct nameidata *nd, unsigned flags)
 
 	nd->flags = flags;
 	nd->state |= ND_JUMPED;
-	nd->state &= ~ND_UNLINKED;
 
 	nd->m_seq = __read_seqcount_begin(&mount_lock.seqcount);
 	nd->r_seq = __read_seqcount_begin(&rename_lock.seqcount);
@@ -2832,15 +2844,6 @@ static int handle_lookup_down(struct nameidata *nd)
 	return PTR_ERR(step_into(nd, WALK_NOFOLLOW, nd->path.dentry));
 }
 
-/*
- * The attempt with LOOKUP_REVAL is the last one, unless it failed because
- * a name was removed under it.
- */
-static inline bool walk_again(const struct nameidata *nd, int err)
-{
-	return unlikely(err == -ESTALE) && (nd->state & ND_UNLINKED);
-}
-
 /* Returns 0 and nd will be valid on success; Returns error, otherwise. */
 static int path_lookupat(struct nameidata *nd, unsigned flags, struct path *path)
 {
@@ -2888,8 +2891,6 @@ int filename_lookup(int dfd, struct filename *name, unsigned flags,
 		retval = path_lookupat(&nd, flags, path);
 	if (unlikely(retval == -ESTALE))
 		retval = path_lookupat(&nd, flags | LOOKUP_REVAL, path);
-	while (walk_again(&nd, retval))
-		retval = path_lookupat(&nd, flags | LOOKUP_REVAL, path);
 
 	if (likely(!retval))
 		audit_inode(name, path->dentry,
@@ -2931,8 +2932,6 @@ static int __filename_parentat(int dfd, struct filename *name,
 	if (unlikely(retval == -ECHILD))
 		retval = path_parentat(&nd, flags, parent);
 	if (unlikely(retval == -ESTALE))
-		retval = path_parentat(&nd, flags | LOOKUP_REVAL, parent);
-	while (walk_again(&nd, retval))
 		retval = path_parentat(&nd, flags | LOOKUP_REVAL, parent);
 	if (likely(!retval)) {
 		*last = nd.last;
@@ -5089,8 +5088,6 @@ struct file *do_file_open(int dfd, struct filename *pathname,
 		filp = path_openat(&nd, op, flags);
 	if (unlikely(filp == ERR_PTR(-ESTALE)))
 		filp = path_openat(&nd, op, flags | LOOKUP_REVAL);
-	while (walk_again(&nd, PTR_ERR_OR_ZERO(filp)))
-		filp = path_openat(&nd, op, flags | LOOKUP_REVAL);
 	restore_nameidata();
 	return filp;
 }
@@ -5114,8 +5111,6 @@ struct file *do_file_open_root(const struct path *root,
 	if (unlikely(file == ERR_PTR(-ECHILD)))
 		file = path_openat(&nd, op, flags);
 	if (unlikely(file == ERR_PTR(-ESTALE)))
-		file = path_openat(&nd, op, flags | LOOKUP_REVAL);
-	while (walk_again(&nd, PTR_ERR_OR_ZERO(file)))
 		file = path_openat(&nd, op, flags | LOOKUP_REVAL);
 	restore_nameidata();
 	return file;

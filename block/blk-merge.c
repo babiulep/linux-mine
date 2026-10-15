@@ -543,6 +543,8 @@ unsigned int blk_recalc_rq_segments(struct request *rq)
 
 	if (!rq->bio)
 		return 0;
+	if (op_is_dmabuf(rq->bio->bi_opf))
+		return 1;
 
 	switch (bio_op(rq->bio)) {
 	case REQ_OP_DISCARD:
