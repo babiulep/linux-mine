@@ -23,6 +23,7 @@
 #include <asm/vdso.h>
 #include <asm/vdso/vdso.h>
 #include <vdso/helpers.h>
+#include <vdso/vsyscall.h>
 
 static_assert(VDSO_NR_PAGES == __VDSO_PAGES);
 

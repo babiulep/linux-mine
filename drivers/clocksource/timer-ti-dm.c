@@ -1095,7 +1095,6 @@ static int omap_dm_timer_write_counter(struct omap_dm_timer *cookie, unsigned in
 {
 	struct dmtimer *timer;
 	struct device *dev;
-	int ret;
 
 	timer = to_dmtimer(cookie);
 	if (unlikely(!timer)) {
@@ -1105,10 +1104,7 @@ static int omap_dm_timer_write_counter(struct omap_dm_timer *cookie, unsigned in
 
 	dev = &timer->pdev->dev;
 
-	ret = pm_runtime_resume_and_get(dev);
-	if (ret < 0)
-		return ret;
-
+	pm_runtime_resume_and_get(dev);
 	dmtimer_write(timer, OMAP_TIMER_COUNTER_REG, value);
 	pm_runtime_put_sync(dev);
 
@@ -1479,8 +1475,7 @@ static int omap_dm_timer_probe(struct platform_device *pdev)
 
 	timer->pdev = pdev;
 
-	if (pdata->system_timer_capable &&
-	    timer->capability & OMAP_TIMER_ALWON && !IS_ERR_OR_NULL(timer->fclk)) {
+	if (timer->capability & OMAP_TIMER_ALWON && !IS_ERR_OR_NULL(timer->fclk)) {
 		if (!omap_dm_timer_sched_clock_counter) {
 			ret = omap_dm_timer_setup_clocksource(timer);
 			if (ret)
@@ -1590,7 +1585,6 @@ static const struct dmtimer_platform_data omap3plus_pdata = {
 
 static const struct dmtimer_platform_data am6_pdata = {
 	.timer_ops = &dmtimer_ops,
-	.system_timer_capable = true,
 };
 
 static const struct of_device_id omap_timer_match[] = {

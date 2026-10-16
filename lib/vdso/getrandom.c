@@ -16,12 +16,8 @@
 #include <uapi/linux/mman.h>
 #include <uapi/linux/random.h>
 
-#ifndef __arch_get_vdso_u_rng_data
-static __always_inline const struct vdso_rng_data *__arch_get_vdso_u_rng_data(void)
-{
-	return &vdso_u_rng_data;
-}
-#endif
+/* Bring in default accessors */
+#include <vdso/vsyscall.h>
 
 #define MEMCPY_AND_ZERO_SRC(type, dst, src, len) do {				\
 	while (len >= sizeof(type)) {						\

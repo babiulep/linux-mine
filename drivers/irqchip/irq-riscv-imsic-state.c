@@ -740,14 +740,6 @@ static int __init imsic_parse_fwnode(struct fwnode_handle *fwnode,
 		return -EINVAL;
 	}
 
-	/* Group index bits must not overlap guest and HART index bits. */
-	i = IMSIC_MMIO_PAGE_SHIFT + global->guest_index_bits +
-	    global->hart_index_bits;
-	if (global->group_index_bits && global->group_index_shift < i) {
-		pr_err("%pfwP: group index shift too small\n", fwnode);
-		return -EINVAL;
-	}
-
 	/* Sanity check group index shift */
 	i = global->group_index_bits + global->group_index_shift - 1;
 	if (i >= BITS_PER_LONG) {
@@ -822,9 +814,9 @@ int __init imsic_setup_state(struct fwnode_handle *fwnode, void *opaque)
 	imsic = kzalloc_obj(*imsic);
 	if (!imsic)
 		return -ENOMEM;
+	imsic->fwnode = fwnode;
 	global = &imsic->global;
 
-	global->fwnode = fwnode;
 	global->local = alloc_percpu(typeof(*global->local));
 	if (!global->local) {
 		rc = -ENOMEM;
