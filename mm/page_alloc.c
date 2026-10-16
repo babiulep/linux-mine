@@ -4117,7 +4117,7 @@ out:
 	return page;
 }
 
-static inline bool order_nofrag_promoted(unsigned int order,
+static inline bool order_defrag_promoted(unsigned int order,
 					 const struct alloc_context *ac)
 {
 	return ac->reclaim_compact_order != order;
@@ -4250,7 +4250,7 @@ should_compact_retry(gfp_t gfp_mask, struct alloc_context *ac, int order,
 	 * Promoted requests fall back instead.
 	 */
 	if (compact_result == COMPACT_SKIPPED) {
-		if (!order_nofrag_promoted(order, ac))
+		if (!order_defrag_promoted(order, ac))
 			ret = compaction_zonelist_suitable(ac, order,
 							   alloc_flags, gfp_mask);
 		goto out;
@@ -4632,7 +4632,7 @@ should_reclaim_retry(gfp_t gfp_mask, unsigned order,
 	 * for compaction without freeing anything.
 	 */
 	if (did_some_progress && order <= PAGE_ALLOC_COSTLY_ORDER &&
-	    !order_nofrag_promoted(order, ac))
+	    !order_defrag_promoted(order, ac))
 		*no_progress_loops = 0;
 	else
 		(*no_progress_loops)++;
@@ -5029,7 +5029,7 @@ retry:
 	if (defrag_mode && (alloc_flags & ALLOC_NOFRAGMENT)) {
 		alloc_flags &= ~ALLOC_NOFRAGMENT;
 		/* Retries went into making blocks, start the fallback afresh */
-		if (order_nofrag_promoted(order, ac)) {
+		if (order_defrag_promoted(order, ac)) {
 			no_progress_loops = 0;
 			compaction_retries = 0;
 		}
@@ -6737,12 +6737,8 @@ void calculate_min_free_kbytes(void)
 	lowmem_kbytes = nr_free_buffer_pages() * (PAGE_SIZE >> 10);
 	new_min_free_kbytes = int_sqrt(lowmem_kbytes * 16);
 
-	if (new_min_free_kbytes > user_min_free_kbytes)
+	if (user_min_free_kbytes < 0)
 		min_free_kbytes = clamp(new_min_free_kbytes, 128, 262144);
-	else
-		pr_warn_ratelimited("min_free_kbytes is not updated to %d because user defined value %d is preferred\n",
-				    new_min_free_kbytes, user_min_free_kbytes);
-
 }
 
 int __meminit init_per_zone_wmark_min(void)

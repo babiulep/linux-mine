@@ -10,6 +10,7 @@
 #include <linux/namei.h>
 #include <linux/pagemap.h>
 #include <linux/iversion.h>
+#include <linux/folio_queue.h>
 #include "internal.h"
 #include "xdr_fs.h"
 
@@ -109,8 +110,9 @@ static void afs_clear_contig_bits(union afs_xdr_dir_block *block,
  */
 static union afs_xdr_dir_block *afs_dir_get_block(struct afs_dir_iter *iter, size_t block)
 {
+	struct folio_queue *fq;
 	struct afs_vnode *dvnode = iter->dvnode;
-	struct bvecq *bq;
+	struct folio *folio;
 	size_t blpos = block * AFS_DIR_BLOCK_SIZE;
 	size_t blend = (block + 1) * AFS_DIR_BLOCK_SIZE, fpos = iter->fpos;
 	int ret;
@@ -118,38 +120,41 @@ static union afs_xdr_dir_block *afs_dir_get_block(struct afs_dir_iter *iter, siz
 	if (dvnode->directory_size < blend) {
 		size_t cur_size = dvnode->directory_size;
 
-		ret = bvecq_expand_buffer(&dvnode->directory, &cur_size, blend,
-					  mapping_gfp_mask(dvnode->netfs.inode.i_mapping));
+		ret = netfs_alloc_folioq_buffer(
+			NULL, &dvnode->directory, &cur_size, blend,
+			mapping_gfp_mask(dvnode->netfs.inode.i_mapping));
 		dvnode->directory_size = cur_size;
 		if (ret < 0)
 			goto fail;
 	}
 
-	bq = iter->bq;
-	if (!bq)
-		bq = dvnode->directory;
+	fq = iter->fq;
+	if (!fq)
+		fq = dvnode->directory;
 
-	/* Search the contents for the region containing the block... */
-	for (; bq; bq = bq->next) {
-		for (int s = iter->bq_slot; s < bq->nr_slots; s++) {
-			struct bio_vec *bv = &bq->bv[s];
-			size_t bsize = bv->bv_len;
+	/* Search the folio queue for the folio containing the block... */
+	for (; fq; fq = fq->next) {
+		for (int s = iter->fq_slot; s < folioq_count(fq); s++) {
+			size_t fsize = folioq_folio_size(fq, s);
 
-			if (blend <= fpos + bsize) {
+			if (blend <= fpos + fsize) {
 				/* ... and then return the mapped block. */
-				iter->bq = bq;
-				iter->bq_slot = s;
+				folio = folioq_folio(fq, s);
+				if (WARN_ON_ONCE(folio_pos(folio) != fpos))
+					goto fail;
+				iter->fq = fq;
+				iter->fq_slot = s;
 				iter->fpos = fpos;
-				return bvec_kmap_partial(bv, blpos - fpos);
+				return kmap_local_folio(folio, blpos - fpos);
 			}
-			fpos += bsize;
+			fpos += fsize;
 		}
-		iter->bq_slot = 0;
+		iter->fq_slot = 0;
 	}
 
 fail:
-	iter->bq = NULL;
-	iter->bq_slot = 0;
+	iter->fq = NULL;
+	iter->fq_slot = 0;
 	afs_invalidate_dir(dvnode, afs_dir_invalid_edit_get_block);
 	return NULL;
 }

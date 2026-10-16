@@ -712,7 +712,7 @@ struct afs_vnode {
 #define AFS_VNODE_MODIFYING	10		/* Set if we're performing a modification op */
 #define AFS_VNODE_DIR_READ	11		/* Set if we've read a dir's contents */
 
-	struct bvecq		*directory;	/* Directory contents */
+	struct folio_queue	*directory;	/* Directory contents */
 	struct afs_symlink __rcu *symlink;	/* Symlink content */
 	struct list_head	wb_keys;	/* List of keys available for writeback */
 	struct list_head	pending_locks;	/* locks waiting to be granted */
@@ -993,9 +993,9 @@ static inline void afs_invalidate_cache(struct afs_vnode *vnode, unsigned int fl
 struct afs_dir_iter {
 	struct afs_vnode	*dvnode;
 	union afs_xdr_dir_block *block;
-	struct bvecq		*bq;
+	struct folio_queue	*fq;
 	unsigned int		fpos;
-	int			bq_slot;
+	int			fq_slot;
 	unsigned int		loop_check;
 	u8			nr_slots;
 	u8			bucket;

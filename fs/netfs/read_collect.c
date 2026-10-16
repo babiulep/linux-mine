@@ -79,11 +79,11 @@ void netfs_cancel_copy_to_cache(struct netfs_io_request *rreq, struct folio *fol
  * dirty and let writeback handle it.
  */
 static void netfs_unlock_read_folio(struct netfs_io_request *rreq,
-				    struct bvecq *bq,
+				    struct folio_queue *folioq,
 				    int slot)
 {
 	struct netfs_folio *finfo;
-	struct folio *folio = bvec_folio(&bq->bv[slot]);
+	struct folio *folio = folioq_folio(folioq, slot);
 
 	if (unlikely(folio_pos(folio) < rreq->abandon_to)) {
 		trace_netfs_folio(folio, netfs_folio_trace_abandon);
@@ -114,7 +114,7 @@ static void netfs_unlock_read_folio(struct netfs_io_request *rreq,
 			trace_netfs_folio(folio, netfs_folio_trace_read_done);
 		}
 
-		bq->bv[slot].bv_page = NULL;
+		folioq_clear(folioq, slot);
 	} else {
 		// TODO: Use of PG_private_2 is deprecated.
 		if (folio_test_private_2(folio))
@@ -130,7 +130,7 @@ just_unlock:
 		folio_unlock(folio);
 	}
 
-	bq->bv[slot].bv_page = NULL;
+	folioq_clear(folioq, slot);
 }
 
 /*
@@ -138,22 +138,21 @@ just_unlock:
  */
 void netfs_read_set_unlock_at(struct netfs_io_request *rreq)
 {
-	const struct bvecq *bq = rreq->buffer.tail;
+	struct folio_queue *folioq = rreq->buffer.tail;
 	unsigned int slot = rreq->buffer.first_tail_slot;
 	size_t cleaned_to = rreq->cleaned_to - rreq->start;
 	size_t progress_at = cleaned_to;
 	size_t minimum = 256 * 1024;
 
 	while (progress_at < rreq->len) {
-		if (!bvecq_acquire_slot(bq, slot)) {
-			bq = bvecq_next(bq);
-			if (!bq)
+		if (slot >= folioq_count(folioq)) {
+			folioq = folioq->next;
+			if (!folioq)
 				break;
 			slot = 0;
-			continue;
 		}
 
-		progress_at += bq->bv[slot].bv_len;
+		progress_at += folioq_folio_size(folioq, slot);
 		if (progress_at - cleaned_to >= minimum)
 			break;
 		slot++;
@@ -169,7 +168,7 @@ void netfs_read_set_unlock_at(struct netfs_io_request *rreq)
 static void netfs_read_unlock_folios(struct netfs_io_request *rreq,
 				     unsigned int *notes)
 {
-	struct bvecq *bq = rreq->buffer.tail;
+	struct folio_queue *folioq = rreq->buffer.tail;
 	unsigned int slot = rreq->buffer.first_tail_slot;
 	uoff_t collected_to = rreq->collected_to;
 
@@ -178,9 +177,9 @@ static void netfs_read_unlock_folios(struct netfs_io_request *rreq,
 
 	// TODO: Begin decryption
 
-	while (!bvecq_acquire_slot(bq, slot)) {
-		bq = rolling_buffer_delete_spent(&rreq->buffer);
-		if (!bq) {
+	if (slot >= folioq_nr_slots(folioq)) {
+		folioq = rolling_buffer_delete_spent(&rreq->buffer);
+		if (!folioq) {
 			WRITE_ONCE(rreq->progress_at, rreq->len);
 			return;
 		}
@@ -199,13 +198,13 @@ static void netfs_read_unlock_folios(struct netfs_io_request *rreq,
 		uoff_t fpos, fend;
 		size_t fsize;
 
-		folio = bvec_folio(&bq->bv[slot]);
+		folio = folioq_folio(folioq, slot);
 		if (WARN_ONCE(!folio_test_locked(folio),
 			      "R=%08x: folio %lx is not locked\n",
 			      rreq->debug_id, folio->index))
 			trace_netfs_folio(folio, netfs_folio_trace_not_locked);
 
-		fsize = bq->bv[slot].bv_len;
+		fsize = folioq_folio_size(folioq, slot);
 		fpos = folio_pos(folio);
 		fend = fpos + fsize;
 
@@ -215,28 +214,29 @@ static void netfs_read_unlock_folios(struct netfs_io_request *rreq,
 		if (collected_to < fend)
 			break;
 
-		netfs_unlock_read_folio(rreq, bq, slot);
+		netfs_unlock_read_folio(rreq, folioq, slot);
 		WRITE_ONCE(rreq->cleaned_to, fpos + fsize);
 		*notes |= MADE_PROGRESS;
 
-		/* Clean up the head bq.  If we clear an entire bq, then
-		 * we can get rid of it provided it's not also the tail bq
+		/* Clean up the head folioq.  If we clear an entire folioq, then
+		 * we can get rid of it provided it's not also the tail folioq
 		 * being filled by the issuer.
 		 */
-		bq->bv[slot].bv_page = NULL;
+		folioq_clear(folioq, slot);
 		slot++;
-		while (!bvecq_acquire_slot(bq, slot)) {
-			bq = rolling_buffer_delete_spent(&rreq->buffer);
-			if (!bq)
+		if (slot >= folioq_nr_slots(folioq)) {
+			folioq = rolling_buffer_delete_spent(&rreq->buffer);
+			if (!folioq)
 				goto done;
 			slot = 0;
+			trace_netfs_folioq(folioq, netfs_trace_folioq_read_progress);
 		}
 
 		if (fpos + fsize >= collected_to)
 			break;
 	}
 
-	rreq->buffer.tail = bq;
+	rreq->buffer.tail = folioq;
 done:
 	rreq->buffer.first_tail_slot = slot;
 

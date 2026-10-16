@@ -1916,7 +1916,6 @@ EXPORT_SYMBOL(d_invalidate);
  
 static struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name)
 {
-	static struct lock_class_key __lookup_key;
 	struct dentry *dentry;
 	char *dname;
 	int err;
@@ -1978,7 +1977,8 @@ static struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name)
 	dentry->waiters = NULL;
 	INIT_HLIST_NODE(&dentry->d_sib);
 
-	lockdep_init_map(&dentry->lookup_map, "DCACHE_PAR_LOOKUP", &__lookup_key, 0);
+	lockdep_init_map(&dentry->dep_map, "DCACHE_PAR_LOOKUP",
+			 &sb->s_type->d_lookup_key, 0);
 
 	if (dentry->d_op && dentry->d_op->d_init) {
 		err = dentry->d_op->d_init(dentry);
@@ -2027,11 +2027,12 @@ EXPORT_SYMBOL(d_alloc);
  * @dentry: the dentry to duplicate
  *
  * Some rename operations need to be combined with another operation
- * inside the filesystem.
- * 1/ A cluster filesystem when renaming to an in-use file might need to
- *   first "silly-rename" that target out of the way before the main rename
- * 2/ A filesystem that supports white-out might want to create a whiteout
- *   in place of the file being moved.
+ * inside the filesystem:
+ *
+ * 1. A cluster filesystem when renaming to an in-use file might need to
+ *    first "silly-rename" that target out of the way before the main rename
+ * 2. A filesystem that supports whiteout might want to create a whiteout
+ *    in place of the file being moved.
  *
  * For this they need two dentries which temporarily have the same name,
  * before one is renamed.  d_duplicate() provides for this.  Given a
@@ -2059,7 +2060,7 @@ struct dentry *d_duplicate(struct dentry *dentry)
 		return ERR_PTR(-ENOMEM);
 
 	new->d_flags |= DCACHE_PAR_LOOKUP;
-	lock_map_acquire_try(&new->lookup_map);
+	lock_map_acquire_try(&new->dep_map);
 	spin_lock(&parent->d_lock);
 	new->d_parent = dget_dlock(parent);
 	hlist_add_head(&new->d_sib, &parent->d_children);
@@ -2833,12 +2834,11 @@ static void d_wait_lookup(struct dentry *dentry)
 {
 	if (likely(d_in_lookup(dentry))) {
 		/*
-		 * Tell lockdep we will wait for the lookup lock, after
-		 * dropping ->d_lock, but won't actually take it.
+		 * Tell lockdep we may wait for the lookup lock, after
+		 * dropping ->d_lock.
 		 */
 		spin_release(&dentry->d_lock.dep_map, _THIS_IP_);
-		lock_map_acquire(&dentry->lookup_map);
-		lock_map_release(&dentry->lookup_map);
+		might_lock(dentry);
 		spin_acquire(&dentry->d_lock.dep_map, 0, 1, _THIS_IP_);
 
 		dentry->d_flags |= DCACHE_LOOKUP_WAITERS;
@@ -2963,7 +2963,7 @@ retry:
 	}
 	hlist_bl_add_head(&new->d_in_lookup_hash, b);
 	hlist_bl_unlock(b);
-	lock_map_acquire_try(&new->lookup_map);
+	lock_map_acquire_try(&new->dep_map);
 	return new;
 mismatch:
 	spin_unlock(&dentry->d_lock);
@@ -3062,7 +3062,7 @@ static void __d_lookup_unhash(struct dentry *dentry)
 	b = in_lookup_hash(dentry->d_parent, dentry->d_name.hash);
 	hlist_bl_lock(b);
 	dentry->d_flags &= ~DCACHE_PAR_LOOKUP;
-	lock_map_release(&dentry->lookup_map);
+	lock_map_release(&dentry->dep_map);
 	__hlist_bl_del(&dentry->d_in_lookup_hash);
 	hlist_bl_unlock(b);
 	dentry->waiters = NULL;

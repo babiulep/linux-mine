@@ -3,7 +3,6 @@
 netfs-y := \
 	buffered_read.o \
 	buffered_write.o \
-	bvecq.o \
 	direct_read.o \
 	direct_write.o \
 	iterator.o \

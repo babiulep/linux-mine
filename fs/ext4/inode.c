@@ -133,17 +133,12 @@ void ext4_inode_csum_set(struct inode *inode, struct ext4_inode *raw,
  */
 void ext4_iomap_clear_disksize_pending(struct inode *inode)
 {
+	if (!test_and_clear_wake_up_bit(
+		ext4_inode_state_wait_bit(EXT4_STATE_DISKSIZE_GROW_PENDING),
+		ext4_inode_state_wait_word(inode)))
+		return;
+
 	trace_ext4_iomap_clear_disksize_pending(inode);
-	ext4_clear_inode_state(inode, EXT4_STATE_DISKSIZE_GROW_PENDING);
-	/*
-	 * Make sure clearing of EXT4_STATE_DISKSIZE_GROW_PENDING is
-	 * visible before we send the wakeup. Pairs with the implicit
-	 * barrier in prepare_to_wait() inside wait_on_bit() in
-	 * ext4_iomap_wait_disksize_pending().
-	 */
-	smp_mb();
-	wake_up_bit(ext4_inode_state_wait_word(inode),
-		    ext4_inode_state_wait_bit(EXT4_STATE_DISKSIZE_GROW_PENDING));
 }
 
 /*
@@ -152,7 +147,10 @@ void ext4_iomap_clear_disksize_pending(struct inode *inode)
  */
 void ext4_iomap_wait_disksize_pending(struct inode *inode)
 {
-	trace_ext4_iomap_wait_disksize_pending(inode);
+	/* Only emit the trace when the bit is actually set */
+	if (ext4_test_inode_state(inode, EXT4_STATE_DISKSIZE_GROW_PENDING))
+		trace_ext4_iomap_wait_disksize_pending(inode);
+
 	wait_on_bit(ext4_inode_state_wait_word(inode),
 		    ext4_inode_state_wait_bit(EXT4_STATE_DISKSIZE_GROW_PENDING),
 		    TASK_UNINTERRUPTIBLE);
@@ -755,6 +753,11 @@ int ext4_map_create_blocks(handle_t *handle, struct inode *inode,
  * Otherwise, call with ext4_ind_map_blocks() to handle indirect mapping
  * based files
  *
+ * ext4_map_blocks() may also be called with a NULL @handle. In that case
+ * it starts its own transaction handle only when block allocation is
+ * actually needed, i.e. after the lookup confirms the blocks are not yet
+ * mapped, and stops it before returning.
+ *
  * On success, it returns the number of blocks being mapped or allocated.
  * If flags doesn't contain EXT4_GET_BLOCKS_CREATE the blocks are
  * pre-allocated and unwritten, the resulting @map is marked as unwritten.
@@ -857,15 +860,13 @@ create_retry:
 	retval = ext4_map_query_blocks(handle, inode, map, flags);
 	up_read((&EXT4_I(inode)->i_data_sem));
 	if (retval < 0)
-		goto out_handle;
+		goto out;
 
 found:
 	if (retval > 0 && map->m_flags & EXT4_MAP_MAPPED) {
 		ret = check_block_validity(inode, map);
-		if (ret != 0) {
-			retval = ret;
-			goto out_handle;
-		}
+		if (ret != 0)
+			goto out;
 	}
 
 	/* If it is only a block(s) look up */
@@ -886,13 +887,15 @@ found:
 		 */
 		if (map->m_flags & EXT4_MAP_MAPPED &&
 		    !(flags & EXT4_GET_BLOCKS_CONVERT_UNWRITTEN))
-			goto out_handle;
+			goto out;
 		if (map->m_flags & EXT4_MAP_UNWRITTEN &&
 		    (flags & EXT4_GET_BLOCKS_UNWRIT_EXT) &&
 		    !(flags & EXT4_GET_BLOCKS_CONVERT)) {
 			/* Contains EXT4_GET_BLOCKS_CREATE - mark mapped. */
-			map->m_flags |= EXT4_MAP_MAPPED;
-			goto out_handle;
+			ret = check_block_validity(inode, map);
+			if (!ret)
+				map->m_flags |= EXT4_MAP_MAPPED;
+			goto out;
 		}
 	} else if (retval == 0) {
 		/*
@@ -900,14 +903,16 @@ found:
 		 * data submission path.
 		 */
 		if (!map->m_flags && (flags & EXT4_GET_BLOCKS_IO_SUBMIT))
-			goto out_handle;
+			goto out;
 	}
 
 	if (!handle) {
 		handle = ext4_journal_start(inode, EXT4_HT_MAP_BLOCKS,
 				ext4_chunk_trans_blocks(inode, orig_mlen));
-		if (IS_ERR(handle))
-			return PTR_ERR(handle);
+		if (IS_ERR(handle)) {
+			ret = PTR_ERR(handle);
+			goto out;
+		}
 		internal_handle = true;
 	}
 
@@ -923,8 +928,10 @@ found:
 	/*
 	 * Check the validity of the mapping found via the extent status
 	 * tree or the disk query. A racing truncate may have changed the
-	 * extent, since writeback does not hold i_rwsem or the folio locks
-	 * covering the full extent.
+	 * extent, since writeback may not hold i_rwsem or the folio locks
+	 * covering the full extent(e.g., the iomap writeback path may
+	 * allocate an extent that extends beyond the length of the locked
+	 * folio in advance).
 	 */
 	if (map->m_seq != READ_ONCE(EXT4_I(inode)->i_es_seq)) {
 		up_write(&EXT4_I(inode)->i_data_sem);
@@ -938,14 +945,12 @@ found:
 	if (retval < 0)
 		ext_debug(inode, "failed with err %d\n", retval);
 	if (retval <= 0)
-		goto out_handle;
+		goto out;
 
 	if (map->m_flags & EXT4_MAP_MAPPED) {
 		ret = check_block_validity(inode, map);
-		if (ret != 0) {
-			retval = ret;
-			goto out_handle;
-		}
+		if (ret != 0)
+			goto out;
 
 		/*
 		 * Inodes with freshly allocated blocks where contents will be
@@ -966,19 +971,17 @@ found:
 			else
 				ret = ext4_jbd2_inode_add_write(handle, inode,
 						start_byte, length);
-			if (ret) {
-				retval = ret;
-				goto out_handle;
-			}
+			if (ret)
+				goto out;
 		}
 	}
 	ext4_fc_track_range(handle, inode, map->m_lblk, map->m_lblk +
 			    map->m_len - 1);
-
-out_handle:
+out:
 	if (internal_handle)
 		ext4_journal_stop(handle);
-	return retval;
+
+	return ret ? ret : retval;
 }
 
 /*
@@ -2502,6 +2505,12 @@ static int mpage_map_one_extent(handle_t *handle, struct mpage_da_data *mpd)
 	err = ext4_map_blocks(handle, inode, map, get_blocks_flags);
 	if (err < 0)
 		return err;
+	/*
+	 * A hole? This should never happen since mpage_add_bh_to_extent()
+	 * has filtered it out.
+	 */
+	if (WARN_ON_ONCE(!err))
+		return -EINVAL;
 	if (dioread_nolock && (map->m_flags & EXT4_MAP_UNWRITTEN)) {
 		if (!mpd->io_submit.io_end->handle &&
 		    ext4_handle_valid(handle)) {
@@ -4277,7 +4286,7 @@ const struct iomap_ops ext4_iomap_buffered_da_write_ops = {
 static DEFINE_IOMAP_ITER_NEXT(ext4_iomap_buffered_read_next,
 			      ext4_iomap_buffered_read_begin);
 
-const struct iomap_ops ext4_iomap_buffered_read_ops = {
+static const struct iomap_ops ext4_iomap_buffered_read_ops = {
 	.iomap_next = ext4_iomap_buffered_read_next,
 };
 
@@ -4302,6 +4311,7 @@ static int ext4_iomap_map_writeback_range(struct iomap_writepage_ctx *wpc,
 	struct ext4_map_blocks map;
 	ext4_lblk_t index = offset >> inode->i_blkbits;
 	unsigned int blk_len, blk_end;
+	int retries = 0;
 	int ret;
 
 	ret = ext4_emergency_state(sb);
@@ -4336,7 +4346,8 @@ retry:
 		 * ext4_count_free_blocks() is non-zero, a commit
 		 * should free up blocks.
 		 */
-		if (ret == -ENOSPC && journal && ext4_count_free_clusters(sb)) {
+		if (ret == -ENOSPC && journal && ext4_count_free_clusters(sb) &&
+		    ++retries <= 3) {
 			jbd2_journal_force_commit_nested(journal);
 			goto retry;
 		}
@@ -4461,7 +4472,10 @@ static void ext4_iomap_wb_submit_zeroed_eof(struct inode *inode,
 		range_start = wbc->range_start;
 
 	plen = ext4_iomap_get_disksize_pending_range(inode, &pstart);
-	if (!plen || range_start < pstart + plen)
+	if (!plen)
+		return;
+	if (round_down(range_start, mapping_min_folio_nrbytes(mapping)) <
+	    pstart + plen)
 		return;
 
 	/* Keep the caller's sync mode to avoid stalling the background flusher. */
@@ -4499,14 +4513,16 @@ static int ext4_iomap_writepages(struct address_space *mapping,
 	 * Does ext4_change_inode_journal_flag() change the inode's
 	 * buffered I/O path?
 	 */
-	if (!ext4_inode_buffered_iomap(inode))
-		goto out;
+	if (!ext4_inode_buffered_iomap(inode)) {
+		ext4_writepages_up_read(sb, alloc_ctx);
+		return ret;
+	}
 
 	trace_ext4_writepages(inode, wbc);
 	ret = iomap_writepages(&wpc);
 	trace_ext4_writepages_result(inode, wbc, ret, nr - wbc->nr_to_write);
-out:
 	ext4_writepages_up_read(sb, alloc_ctx);
+
 	return ret;
 }
 
@@ -4904,6 +4920,27 @@ static int ext4_iomap_mark_disksize_pending(struct inode *inode, loff_t from)
 	WARN_ON_ONCE(folio_test_writeback(folio));
 
 	/*
+	 * If the zeroed range does not overlap the existing on-disk tail
+	 * block, the zeroed data lies beyond the currently on-disk data
+	 * and will be written back before i_disksize is advanced past it,
+	 * so no stale data can be exposed.
+	 *
+	 * Checking i_disksize here (after folio_wait_writeback()) is
+	 * necessary and safe. If a delalloc writeback of this folio was
+	 * in-flight, it could be raced by a concurrent mmap write which
+	 * corrupts the tail block beyond i_size but the i_disksize is not
+	 * advanced. folio_wait_writeback() has waited for its completion
+	 * and the ioend has advanced i_disksize accordingly. If writeback
+	 * had not started, we don't need to mark any pending state because
+	 * any future writeback will carry the pagecache content that now
+	 * includes the zeroed data, so no stale data can appear on disk
+	 * even without the pending tracking.
+	 */
+	if (from >= round_up(READ_ONCE(EXT4_I(inode)->i_disksize),
+			     i_blocksize(inode)))
+		goto out;
+
+	/*
 	 * Mark the inode as disksize-grow-pending. The zeroed block will
 	 * be written out by the generic writepages cycle or any other
 	 * syncing operation.
@@ -4912,7 +4949,7 @@ static int ext4_iomap_mark_disksize_pending(struct inode *inode, loff_t from)
 	 * because we only mark the pending state after zeroing the on-disk
 	 * EOF block, and i_disksize can only be updated after the previous
 	 * zeroed pending block has been written back or the dirty folio
-	 * has been discared.
+	 * has been discarded.
 	 */
 	if (likely(folio_test_dirty(folio) &&
 		   !ext4_test_inode_state(inode,
@@ -4920,7 +4957,7 @@ static int ext4_iomap_mark_disksize_pending(struct inode *inode, loff_t from)
 		trace_ext4_iomap_mark_disksize_pending(inode);
 		ext4_set_inode_state(inode, EXT4_STATE_DISKSIZE_GROW_PENDING);
 	}
-
+out:
 	folio_unlock(folio);
 	folio_put(folio);
 	return 0;
@@ -5002,21 +5039,8 @@ int ext4_block_zero_eof(struct inode *inode, loff_t from, loff_t end)
 	 * truncating up or performing an append write, because there might be
 	 * exposing stale on-disk data which may caused by concurrent post-EOF
 	 * mmap write during folio writeback.
-	 *
-	 * Ordered I/O is required only when zeroing the tail of a block that
-	 * overlaps with i_disksize. If the zeroed range falls outside that
-	 * block, the zeroed data lies beyond the existing on-disk data. It
-	 * will be written out before i_disksize is later extended past
-	 * i_size, so no stale data can be exposed.
-	 *
-	 * Note that it's safe to read i_disksize without holding i_data_sem
-	 * here. Since we already hold i_rwsem, the only possible race is with
-	 * concurrent writeback that updates i_disksize. And if such a race
-	 * occurs, it means the previous unaligned EOF block has already been
-	 * zeroed (if needed) and persisted to disk.
 	 */
-	if (did_zero && zero_written && !IS_DAX(inode) &&
-	    from < round_up(READ_ONCE(EXT4_I(inode)->i_disksize), blocksize)) {
+	if (did_zero && zero_written && !IS_DAX(inode)) {
 		if (ext4_should_order_data(inode)) {
 			handle_t *handle;
 

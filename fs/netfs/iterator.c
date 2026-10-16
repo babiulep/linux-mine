@@ -245,34 +245,33 @@ static size_t netfs_limit_xarray(const struct iov_iter *iter, size_t start_offse
 }
 
 /*
- * Select the span of a bvecq iterator we're going to use.  Limit it by both
- * maximum size and maximum number of segments.  Returns the size of the span
- * in bytes.
+ * Select the span of a folio queue iterator we're going to use.  Limit it by
+ * both maximum size and maximum number of segments.  Returns the size of the
+ * span in bytes.
  */
-static size_t netfs_limit_bvecq(const struct iov_iter *iter, size_t start_offset,
-				size_t max_size, size_t max_segs)
+static size_t netfs_limit_folioq(const struct iov_iter *iter, size_t start_offset,
+				 size_t max_size, size_t max_segs)
 {
-	const struct bvecq *bq = iter->bvecq;
+	const struct folio_queue *folioq = iter->folioq;
 	unsigned int nsegs = 0;
-	unsigned int slot = iter->bvecq_slot;
+	unsigned int slot = iter->folioq_slot;
 	size_t span = 0, n = iter->count;
 
-	if (WARN_ON(!iov_iter_is_bvecq(iter)) ||
+	if (WARN_ON(!iov_iter_is_folioq(iter)) ||
 	    WARN_ON(start_offset > n) ||
 	    n == 0)
 		return 0;
 	max_size = umin(max_size, n - start_offset);
 
-	if (!bvecq_acquire_slot(bq, slot)) {
-		bq = bvecq_next(bq);
+	if (slot >= folioq_nr_slots(folioq)) {
+		folioq = folioq->next;
 		slot = 0;
 	}
 
 	start_offset += iter->iov_offset;
 	do {
-		size_t flen;
+		size_t flen = folioq_folio_size(folioq, slot);
 
-		flen = bq->bv[slot].bv_len;
 		if (start_offset < flen) {
 			span += flen - start_offset;
 			nsegs++;
@@ -284,11 +283,11 @@ static size_t netfs_limit_bvecq(const struct iov_iter *iter, size_t start_offset
 			break;
 
 		slot++;
-		if (!bvecq_acquire_slot(bq, slot)) {
-			bq = bvecq_next(bq);
+		if (slot >= folioq_nr_slots(folioq)) {
+			folioq = folioq->next;
 			slot = 0;
 		}
-	} while (bq);
+	} while (folioq);
 
 	return umin(span, max_size);
 }
@@ -296,8 +295,8 @@ static size_t netfs_limit_bvecq(const struct iov_iter *iter, size_t start_offset
 size_t netfs_limit_iter(const struct iov_iter *iter, size_t start_offset,
 			size_t max_size, size_t max_segs)
 {
-	if (iov_iter_is_bvecq(iter))
-		return netfs_limit_bvecq(iter, start_offset, max_size, max_segs);
+	if (iov_iter_is_folioq(iter))
+		return netfs_limit_folioq(iter, start_offset, max_size, max_segs);
 	if (iov_iter_is_bvec(iter))
 		return netfs_limit_bvec(iter, start_offset, max_size, max_segs);
 	if (iov_iter_is_xarray(iter))

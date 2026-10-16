@@ -2027,8 +2027,7 @@ out:
  * leaking them.
  *
  * The dentry is unhashed before the mounts go so that no lookup finds
- * what they covered. DCACHE_UNCOVERED tells a walk that found it earlier
- * that the mounts are gone. The caller removes it for good afterwards.
+ * what they covered. The caller removes it for good afterwards.
  *
  * The caller may hold dentry->d_inode->i_rwsem.
  */
@@ -2046,10 +2045,7 @@ void __detach_mounts(struct dentry *dentry)
 		return;
 
 	/* the name goes first, what covered it goes second */
-	spin_lock(&dentry->d_lock);
-	dentry->d_flags |= DCACHE_UNCOVERED;
-	__d_drop(dentry);
-	spin_unlock(&dentry->d_lock);
+	d_drop(dentry);
 	event++;
 	while (mp.node.next) {
 		mnt = hlist_entry(mp.node.next, struct mount, mnt_mp_list);

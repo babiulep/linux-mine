@@ -53,7 +53,7 @@ static void netfs_pgpriv2_copy_folio(struct netfs_io_request *creq, struct folio
 	trace_netfs_folio(folio, netfs_folio_trace_store_copy);
 
 	/* Attach the folio to the rolling buffer. */
-	if (rolling_buffer_append(&creq->buffer, folio, creq->gfp) < 0) {
+	if (rolling_buffer_append(&creq->buffer, folio, 0, creq->gfp) < 0) {
 		set_bit(NETFS_RREQ_CANCEL_CACHING, &creq->flags);
 		folio_end_private_2(folio);
 		return;
@@ -173,15 +173,13 @@ void netfs_pgpriv2_end_copy_to_cache(struct netfs_io_request *rreq)
  */
 bool netfs_pgpriv2_unlock_copied_folios(struct netfs_io_request *creq)
 {
-	struct bvecq *bq = creq->buffer.tail;
+	struct folio_queue *folioq = creq->buffer.tail;
 	unsigned int slot = creq->buffer.first_tail_slot;
 	uoff_t collected_to = creq->collected_to;
 	bool made_progress = false;
 
-	while (!bvecq_acquire_slot(bq, slot)) {
-		bq = rolling_buffer_delete_spent(&creq->buffer);
-		if (!bq)
-			return false;
+	if (slot >= folioq_nr_slots(folioq)) {
+		folioq = rolling_buffer_delete_spent(&creq->buffer);
 		slot = 0;
 	}
 
@@ -190,7 +188,7 @@ bool netfs_pgpriv2_unlock_copied_folios(struct netfs_io_request *creq)
 		uoff_t fpos, fend;
 		size_t fsize, flen;
 
-		folio = bvec_folio(&bq->bv[slot]);
+		folio = folioq_folio(folioq, slot);
 		if (WARN_ONCE(!folio_test_private_2(folio),
 			      "R=%08x: folio %lx is not marked private_2\n",
 			      creq->debug_id, folio->index))
@@ -213,15 +211,15 @@ bool netfs_pgpriv2_unlock_copied_folios(struct netfs_io_request *creq)
 		creq->cleaned_to = fpos + fsize;
 		made_progress = true;
 
-		/* Clean up the head bq.  If we clear an entire bq, then
-		 * we can get rid of it provided it's not also the tail bq
+		/* Clean up the head folioq.  If we clear an entire folioq, then
+		 * we can get rid of it provided it's not also the tail folioq
 		 * being filled by the issuer.
 		 */
-		bq->bv[slot].bv_page = NULL;
+		folioq_clear(folioq, slot);
 		slot++;
-		while (!bvecq_acquire_slot(bq, slot)) {
-			bq = rolling_buffer_delete_spent(&creq->buffer);
-			if (!bq)
+		if (slot >= folioq_nr_slots(folioq)) {
+			folioq = rolling_buffer_delete_spent(&creq->buffer);
+			if (!folioq)
 				goto done;
 			slot = 0;
 		}
@@ -230,7 +228,7 @@ bool netfs_pgpriv2_unlock_copied_folios(struct netfs_io_request *creq)
 			break;
 	}
 
-	creq->buffer.tail = bq;
+	creq->buffer.tail = folioq;
 done:
 	creq->buffer.first_tail_slot = slot;
 	return made_progress;

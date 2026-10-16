@@ -2053,14 +2053,8 @@ retry:
 	 * to ensure they are still none, thereby preventing the pte entries
 	 * from being repopulated by another thread.
 	 */
-	if (can_reclaim_pt && direct_reclaim && addr == end) {
-		/*
-		 * The rmap changes need to be observed before PTEs get zapped.
-		 * Pairs with smp_rmb() in zap_pmd_range().
-		 */
-		smp_wmb();
+	if (can_reclaim_pt && direct_reclaim && addr == end)
 		direct_reclaim = zap_empty_pte_table(mm, pmd, ptl, &pmdval);
-	}
 	pte_unmap_unlock(start_pte, ptl);
 
 	/*
@@ -2108,17 +2102,11 @@ static inline unsigned long zap_pmd_range(struct mmu_gather *tlb,
 				continue;
 			}
 			/* fall through */
-		} else if (details && details->single_folio &&
-			   folio_test_pmd_mappable(details->single_folio) &&
-			   next - addr == HPAGE_PMD_SIZE && pmd_none(*pmd)) {
-			sync_with_folio_pmd_zap(tlb->mm, pmd);
 		}
+
 		if (pmd_none(*pmd)) {
-			/*
-			 * Order this PMD read before the folio's mapcount read.
-			 * Pairs with smp_wmb() in zap_pte_range().
-			 */
-			smp_rmb();
+			if (details && details->single_folio)
+				sync_with_folio_pmd_zap(tlb->mm, pmd);
 			addr = next;
 			continue;
 		}

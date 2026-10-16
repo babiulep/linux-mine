@@ -66,11 +66,12 @@ bool afs_dir_init_iter(struct afs_dir_iter *iter, const struct qstr *name)
  */
 union afs_xdr_dir_block *afs_dir_find_block(struct afs_dir_iter *iter, size_t block)
 {
+	struct folio_queue *fq = iter->fq;
 	struct afs_vnode *dvnode = iter->dvnode;
-	struct bvecq *bq = iter->bq;
+	struct folio *folio;
 	size_t blpos = block * AFS_DIR_BLOCK_SIZE;
 	size_t blend = (block + 1) * AFS_DIR_BLOCK_SIZE, fpos = iter->fpos;
-	int slot = iter->bq_slot;
+	int slot = iter->fq_slot;
 
 	_enter("%zx,%d", block, slot);
 
@@ -79,34 +80,36 @@ union afs_xdr_dir_block *afs_dir_find_block(struct afs_dir_iter *iter, size_t bl
 	if (dvnode->directory_size < blend)
 		goto fail;
 
-	if (!bq || blpos < fpos) {
-		bq = dvnode->directory;
+	if (!fq || blpos < fpos) {
+		fq = dvnode->directory;
 		slot = 0;
 		fpos = 0;
 	}
 
 	/* Search the folio queue for the folio containing the block... */
-	for (; bq; bq = bq->next) {
-		for (; slot < bq->nr_slots; slot++) {
-			struct bio_vec *bv = &bq->bv[slot];
-			size_t bsize = bv->bv_len;
+	for (; fq; fq = fq->next) {
+		for (; slot < folioq_count(fq); slot++) {
+			size_t fsize = folioq_folio_size(fq, slot);
 
-			if (blend <= fpos + bsize) {
+			if (blend <= fpos + fsize) {
 				/* ... and then return the mapped block. */
-				iter->bq = bq;
-				iter->bq_slot = slot;
+				folio = folioq_folio(fq, slot);
+				if (WARN_ON_ONCE(folio_pos(folio) != fpos))
+					goto fail;
+				iter->fq = fq;
+				iter->fq_slot = slot;
 				iter->fpos = fpos;
-				iter->block = bvec_kmap_partial(bv, blpos - fpos);
+				iter->block = kmap_local_folio(folio, blpos - fpos);
 				return iter->block;
 			}
-			fpos += bsize;
+			fpos += fsize;
 		}
 		slot = 0;
 	}
 
 fail:
-	iter->bq = NULL;
-	iter->bq_slot = 0;
+	iter->fq = NULL;
+	iter->fq_slot = 0;
 	afs_invalidate_dir(dvnode, afs_dir_invalid_edit_get_block);
 	return NULL;
 }

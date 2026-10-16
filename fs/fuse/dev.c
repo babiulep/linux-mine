@@ -466,24 +466,27 @@ static bool fuse_dev_install_with_pq(struct fuse_dev *fud, struct fuse_chan *fch
 	struct fuse_chan *old_fch;
 
 	guard(spinlock)(&fch->lock);
-	/*
-	 * Pairs with:
-	 *  - xchg() in fuse_dev_release()
-	 *  - smp_load_acquire() in fuse_dev_fc_get()
-	 */
-	old_fch = cmpxchg(&fud->chan, NULL, fch);
-	if (old_fch) {
+	/* protect fud->pq.processing assignment */
+	scoped_guard(spinlock, &fud->pq.lock) {
 		/*
-		 * failed to set fud->chan because
-		 *  - it was already set to a different fc
-		 *  - it was set to disconneted
+		 * Pairs with:
+		 *  - xchg() in fuse_dev_release()
+		 *  - smp_load_acquire() in fuse_dev_fc_get()
 		 */
-		kfree(pq);
-		return false;
-	}
-	if (pq) {
-		WARN_ON(fud->pq.processing);
-		fud->pq.processing = pq;
+		old_fch = cmpxchg(&fud->chan, NULL, fch);
+		if (old_fch) {
+			/*
+			 * failed to set fud->chan because
+			 *  - it was already set to a different fc
+			 *  - it was set to disconneted
+			 */
+			kfree(pq);
+			return false;
+		}
+		if (pq) {
+			WARN_ON(fud->pq.processing);
+			fud->pq.processing = pq;
+		}
 	}
 	list_add_tail(&fud->entry, &fch->devices);
 	fuse_conn_get(fch->conn);
@@ -1148,32 +1151,32 @@ static int fuse_try_move_folio(struct fuse_copy_state *cs, struct folio **foliop
 	if (cs->len != folio_size(oldfolio))
 		goto out_fallback;
 
-	if (!pipe_buf_try_steal(cs->pipe, buf))
-		goto out_fallback;
-
 	newfolio = page_folio(buf->page);
 
-	folio_clear_uptodate(newfolio);
-	folio_clear_mappedtodisk(newfolio);
-
 	if (folio_test_large(newfolio))
-		goto out_fallback_unlock;
-
-	if (fuse_check_folio(newfolio) != 0)
-		goto out_fallback_unlock;
+		goto out_fallback;
 
 	/*
 	 * This is a new and locked page, it shouldn't be mapped or
 	 * have any special flags on it
 	 */
 	if (WARN_ON(folio_mapped(oldfolio)))
-		goto out_fallback_unlock;
+		goto out_fallback;
 	if (WARN_ON(folio_has_private(oldfolio)))
-		goto out_fallback_unlock;
+		goto out_fallback;
 	if (WARN_ON(folio_test_dirty(oldfolio) ||
 				folio_test_writeback(oldfolio)))
-		goto out_fallback_unlock;
+		goto out_fallback;
 	if (WARN_ON(folio_test_mlocked(oldfolio)))
+		goto out_fallback;
+
+	if (!pipe_buf_try_steal(cs->pipe, buf))
+		goto out_fallback;
+
+	folio_clear_uptodate(newfolio);
+	folio_clear_mappedtodisk(newfolio);
+
+	if (fuse_check_folio(newfolio) != 0)
 		goto out_fallback_unlock;
 
 	err = lock_request(cs->req);
@@ -2321,39 +2324,64 @@ static long fuse_dev_ioctl_clone(struct file *file, __u32 __user *argp)
 	return 0;
 }
 
+static struct fuse_conn *fuse_get_conn_for_passthrough(struct file *file)
+{
+	struct fuse_dev *fud = fuse_get_dev(file);
+
+	if (IS_ERR(fud))
+		return ERR_CAST(fud);
+
+	if (!smp_load_acquire(&fud->chan->initialized))
+		return ERR_PTR(-ENOTCONN);
+
+	if (!IS_ENABLED(CONFIG_FUSE_PASSTHROUGH))
+		return ERR_PTR(-EOPNOTSUPP);
+
+	return fud->chan->conn;
+}
+
 static long fuse_dev_ioctl_backing_open(struct file *file,
 					struct fuse_backing_map __user *argp)
 {
-	struct fuse_dev *fud = fuse_get_dev(file);
+	struct fuse_conn *fc = fuse_get_conn_for_passthrough(file);
 	struct fuse_backing_map map;
 
-	if (IS_ERR(fud))
-		return PTR_ERR(fud);
-
-	if (!IS_ENABLED(CONFIG_FUSE_PASSTHROUGH))
-		return -EOPNOTSUPP;
+	if (IS_ERR(fc))
+		return PTR_ERR(fc);
 
 	if (copy_from_user(&map, argp, sizeof(map)))
 		return -EFAULT;
 
-	return fuse_backing_open(fud->chan->conn, &map);
+	return fuse_backing_open(fc, &map);
+}
+
+static long fuse_dev_ioctl_backing_create(struct file *file,
+					  struct fuse_backing_create_in __user *argp)
+{
+	struct fuse_conn *fc = fuse_get_conn_for_passthrough(file);
+	struct fuse_backing_create_in map;
+
+	if (IS_ERR(fc))
+		return PTR_ERR(fc);
+
+	if (copy_from_user(&map, argp, sizeof(map)))
+		return -EFAULT;
+
+	return fuse_backing_open_64(fc, &map);
 }
 
 static long fuse_dev_ioctl_backing_close(struct file *file, __u32 __user *argp)
 {
-	struct fuse_dev *fud = fuse_get_dev(file);
+	struct fuse_conn *fc = fuse_get_conn_for_passthrough(file);
 	int backing_id;
 
-	if (IS_ERR(fud))
-		return PTR_ERR(fud);
-
-	if (!IS_ENABLED(CONFIG_FUSE_PASSTHROUGH))
-		return -EOPNOTSUPP;
+	if (IS_ERR(fc))
+		return PTR_ERR(fc);
 
 	if (get_user(backing_id, argp))
 		return -EFAULT;
 
-	return fuse_backing_close(fud->chan->conn, backing_id);
+	return fuse_backing_close(fc, backing_id);
 }
 
 static long fuse_dev_ioctl_sync_init(struct file *file)
@@ -2378,6 +2406,9 @@ static long fuse_dev_ioctl(struct file *file, unsigned int cmd,
 
 	case FUSE_DEV_IOC_BACKING_OPEN:
 		return fuse_dev_ioctl_backing_open(file, argp);
+
+	case FUSE_DEV_IOC_BACKING_CREATE:
+		return fuse_dev_ioctl_backing_create(file, argp);
 
 	case FUSE_DEV_IOC_BACKING_CLOSE:
 		return fuse_dev_ioctl_backing_close(file, argp);

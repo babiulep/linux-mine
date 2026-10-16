@@ -849,35 +849,15 @@ static int __mem_open(struct inode *inode, struct file *file, unsigned int mode)
 	return 0;
 }
 
-/* private_data for proc_mem_operations */
-struct mem_private {
-	struct mm_struct *mm;
-	/*
-	 * Was the ptrace access check on open bypassed because the opener used
-	 * the same MM (introspection)?
-	 */
-	bool opened_by_owner;
-};
-
 static int mem_open(struct inode *inode, struct file *file)
 {
-	struct mem_private *priv __free(kfree) = kmalloc_obj(struct mem_private);
-
-	if (!priv)
-		return -ENOMEM;
 	if (WARN_ON_ONCE(!(file->f_op->fop_flags & FOP_UNSIGNED_OFFSET)))
 		return -EINVAL;
-	priv->mm = proc_mem_open(inode, PTRACE_MODE_ATTACH);
-	if (IS_ERR_OR_NULL(priv->mm))
-		return priv->mm ? PTR_ERR(priv->mm) : -ESRCH;
-	priv->opened_by_owner = priv->mm == current->mm;
-	file->private_data = no_free_ptr(priv);
-	return 0;
+	return __mem_open(inode, file, PTRACE_MODE_ATTACH);
 }
 
 static bool proc_mem_foll_force(struct file *file, struct mm_struct *mm)
 {
-	struct mem_private *priv = file->private_data;
 	struct task_struct *task;
 	bool ptrace_active = false;
 
@@ -892,20 +872,16 @@ static bool proc_mem_foll_force(struct file *file, struct mm_struct *mm)
 					READ_ONCE(task->parent) == current;
 			put_task_struct(task);
 		}
-		if (!ptrace_active)
-			return false;
-		break;
+		return ptrace_active;
 	default:
-		break;
+		return true;
 	}
-	return security_mem_foll_force(file->f_cred, priv->opened_by_owner) == 0;
 }
 
 static ssize_t mem_rw(struct file *file, char __user *buf,
 			size_t count, loff_t *ppos, int write)
 {
-	struct mem_private *priv = file->private_data;
-	struct mm_struct *mm = priv->mm;
+	struct mm_struct *mm = file->private_data;
 	unsigned long addr = *ppos;
 	ssize_t copied;
 	char *page;
@@ -995,21 +971,12 @@ static int mem_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static int mem_release_with_private(struct inode *inode, struct file *file)
-{
-	struct mem_private *priv = file->private_data;
-
-	mmdrop(priv->mm);
-	kfree(priv);
-	return 0;
-}
-
 static const struct file_operations proc_mem_operations = {
 	.llseek		= mem_lseek,
 	.read		= mem_read,
 	.write		= mem_write,
 	.open		= mem_open,
-	.release	= mem_release_with_private,
+	.release	= mem_release,
 	.fop_flags	= FOP_UNSIGNED_OFFSET,
 };
 

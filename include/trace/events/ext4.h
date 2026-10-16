@@ -3165,6 +3165,7 @@ DECLARE_EVENT_CLASS(ext4_set_iomap_class,
 		__field(dev_t, dev)
 		__field(u64, ino)
 		__field(ext4_lblk_t, m_lblk)
+		__field(ext4_fsblk_t, pblk)
 		__field(unsigned int, m_len)
 		__field(unsigned int, m_flags)
 		__field(u64, m_seq)
@@ -3176,6 +3177,7 @@ DECLARE_EVENT_CLASS(ext4_set_iomap_class,
 		__entry->dev		= inode->i_sb->s_dev;
 		__entry->ino		= inode->i_ino;
 		__entry->m_lblk		= map->m_lblk;
+		__entry->pblk		= map->m_pblk;
 		__entry->m_len		= map->m_len;
 		__entry->m_flags	= map->m_flags;
 		__entry->m_seq		= map->m_seq;
@@ -3184,9 +3186,9 @@ DECLARE_EVENT_CLASS(ext4_set_iomap_class,
 		__entry->iomap_flags	= flags;
 
 	),
-	TP_printk("dev %d:%d ino %llu m_lblk %u m_len %u m_flags %s m_seq %llu orig_off 0x%llx orig_len 0x%llx iomap_flags 0x%x",
+	TP_printk("dev %d:%d ino %llu m_lblk %u pblk %llu m_len %u m_flags %s m_seq %llu orig_off 0x%llx orig_len 0x%llx iomap_flags 0x%x",
 		  MAJOR(__entry->dev), MINOR(__entry->dev),
-		  __entry->ino, __entry->m_lblk, __entry->m_len,
+		  __entry->ino, __entry->m_lblk, __entry->pblk, __entry->m_len,
 		  show_mflags(__entry->m_flags), __entry->m_seq,
 		  __entry->offset, __entry->length, __entry->iomap_flags)
 )
