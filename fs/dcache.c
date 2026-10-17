@@ -32,12 +32,8 @@
 #include <linux/bit_spinlock.h>
 #include <linux/rculist_bl.h>
 #include <linux/list_lru.h>
-#include <linux/delay.h>
 #include "internal.h"
 #include "mount.h"
-
-/* debug: stall "ocrace*" names between ->d_inode and the type */
-static int sysctl_ocrace_instantiate_us;
 
 #include <asm/runtime-const.h>
 
@@ -204,13 +200,6 @@ static int proc_nr_dentry(const struct ctl_table *table, int write, void *buffer
 }
 
 static const struct ctl_table fs_dcache_sysctls[] = {
-	{
-		.procname	= "ocrace_instantiate_us",
-		.data		= &sysctl_ocrace_instantiate_us,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
-	},
 	{
 		.procname	= "dentry-state",
 		.data		= &dentry_stat,
@@ -416,10 +405,6 @@ static inline void __d_set_inode_and_type(struct dentry *dentry,
 	unsigned flags;
 
 	dentry->d_inode = inode;
-	/* debug: an interrupt landing right here */
-	if (unlikely(READ_ONCE(sysctl_ocrace_instantiate_us)) &&
-	    !strncmp(dentry->d_name.name, "ocrace", 6))
-		udelay(READ_ONCE(sysctl_ocrace_instantiate_us));
 	flags = READ_ONCE(dentry->d_flags);
 	flags &= ~DCACHE_ENTRY_TYPE;
 	flags |= type_flags;
