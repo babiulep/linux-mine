@@ -1227,8 +1227,8 @@ MODULE_DEVICE_TABLE(i2c, raydium_i2c_id);
 
 #ifdef CONFIG_ACPI
 static const struct acpi_device_id raydium_acpi_id[] = {
-	{ .id = "RAYD0001" },
-	{ }
+	{ "RAYD0001", 0 },
+	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(acpi, raydium_acpi_id);
 #endif

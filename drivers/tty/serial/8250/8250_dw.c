@@ -15,7 +15,6 @@
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/device.h>
-#include <linux/err.h>
 #include <linux/io.h>
 #include <linux/lockdep.h>
 #include <linux/module.h>
@@ -775,9 +774,9 @@ static int dw8250_probe(struct platform_device *pdev)
 		up->dma = &data->data.dma;
 	}
 
-	data->data.uport = serial8250_register_8250_port(up);
-	if (IS_ERR(data->data.uport))
-		return PTR_ERR(data->data.uport);
+	data->data.line = serial8250_register_8250_port(up);
+	if (data->data.line < 0)
+		return data->data.line;
 
 	platform_set_drvdata(pdev, data);
 
@@ -793,7 +792,7 @@ static void dw8250_remove(struct platform_device *pdev)
 
 	pm_runtime_get_sync(dev);
 
-	serial8250_unregister_port(data->data.uport);
+	serial8250_unregister_port(data->data.line);
 
 	pm_runtime_disable(dev);
 	pm_runtime_put_noidle(dev);
@@ -803,7 +802,7 @@ static int dw8250_suspend(struct device *dev)
 {
 	struct dw8250_data *data = dev_get_drvdata(dev);
 
-	serial8250_suspend_port(data->data.uport);
+	serial8250_suspend_port(data->data.line);
 
 	return 0;
 }
@@ -812,7 +811,7 @@ static int dw8250_resume(struct device *dev)
 {
 	struct dw8250_data *data = dev_get_drvdata(dev);
 
-	serial8250_resume_port(data->data.uport);
+	serial8250_resume_port(data->data.line);
 
 	return 0;
 }

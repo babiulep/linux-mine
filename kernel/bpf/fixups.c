@@ -477,11 +477,7 @@ static int adjust_subprog_starts_after_remove(struct bpf_verifier_env *env,
 
 	if (j > i) {
 		struct bpf_prog_aux *aux = env->prog->aux;
-		int move, k;
-
-		/* The removed subprogs own their jump tables. */
-		for (k = i; k < j; k++)
-			kvfree(env->subprog_info[k].jt);
+		int move;
 
 		/* move fake 'exit' subprog as well */
 		move = env->subprog_cnt + 1 - j;
@@ -489,9 +485,6 @@ static int adjust_subprog_starts_after_remove(struct bpf_verifier_env *env,
 		memmove(env->subprog_info + i,
 			env->subprog_info + j,
 			sizeof(*env->subprog_info) * move);
-		/* The vacated tail still holds copies of the moved entries. */
-		memset(env->subprog_info + i + move, 0,
-		       sizeof(*env->subprog_info) * (j - i));
 		env->subprog_cnt -= j - i;
 
 		/* remove func_info and its aux */
@@ -865,6 +858,25 @@ apply_patch_buffer:
 	return 0;
 }
 
+/*
+ * The prologue takes the context from R1, and it can clobber R2-R5. An
+ * extension gets the arguments of the function that it replaces.
+ */
+static bool ext_prog_takes_prologue(const struct bpf_verifier_env *env)
+{
+	const struct bpf_subprog_info *sub = &env->subprog_info[0];
+	int i, cnt = min_t(int, sub->arg_slot_cnt, MAX_BPF_FUNC_REG_ARGS);
+
+	if (!cnt || sub->args[0].arg_type != ARG_PTR_TO_CTX)
+		return false;
+
+	for (i = 1; i < cnt; i++)
+		if (sub->args[i].arg_type != ARG_SCALAR)
+			return false;
+
+	return true;
+}
+
 /* convert load instructions that access fields of a context type into a
  * sequence of instructions that access fields of the underlying structure:
  *     struct __sk_buff    -> struct sk_buff
@@ -922,6 +934,18 @@ int bpf_convert_ctx_accesses(struct bpf_verifier_env *env)
 			verifier_bug(env, "prologue is too long");
 			return -EFAULT;
 		} else if (cnt) {
+			if (env->prog->type == BPF_PROG_TYPE_EXT &&
+			    !ext_prog_takes_prologue(env)) {
+				verbose(env,
+					"Extension writing packet data must take ctx and scalars only\n");
+				return -EINVAL;
+			}
+			if (env->prog->type == BPF_PROG_TYPE_EXT &&
+			    bpf_check_ext_prologue(&env->log,
+						   env->prog->aux->dst_prog,
+						   env->prog->aux->attach_btf_id))
+				return -EINVAL;
+			env->prog->aux->has_prologue = true;
 			new_prog = __bpf_patch_insn_data(env, 0, insn_buf, cnt,
 							 BPF_PATCH_MOVE_TARGET);
 			if (!new_prog)
@@ -2158,6 +2182,10 @@ int bpf_do_misc_fixups(struct bpf_verifier_env *env)
 			if (!bpf_allow_tail_call_in_subprogs(env))
 				prog->aux->stack_depth = MAX_BPF_STACK;
 			prog->aux->max_pkt_offset = MAX_PACKET_OFF;
+			prog->aux->max_rdonly_access = U32_MAX;
+			prog->aux->max_rdwr_access = U32_MAX;
+			if (prog->type == BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE)
+				prog->aux->max_tp_access = U32_MAX;
 
 			/* mark bpf_tail_call as different opcode to avoid
 			 * conditional branch in the interpreter for every normal
@@ -2467,7 +2495,7 @@ patch_map_ops_generic:
 				cnt = 2;
 			}
 			insn_buf[cnt++] = BPF_JMP32_REG(BPF_JGE, BPF_REG_2, BPF_REG_0, 6);
-			insn_buf[cnt++] = BPF_ALU64_IMM(BPF_LSH, BPF_REG_2, 3);
+			insn_buf[cnt++] = BPF_ALU32_IMM(BPF_LSH, BPF_REG_2, 3);
 			insn_buf[cnt++] = BPF_ALU64_REG(BPF_ADD, BPF_REG_2, BPF_REG_1);
 			insn_buf[cnt++] = BPF_LDX_MEM(BPF_DW, BPF_REG_0, BPF_REG_2, 0);
 			insn_buf[cnt++] = BPF_STX_MEM(BPF_DW, BPF_REG_3, BPF_REG_0, 0);

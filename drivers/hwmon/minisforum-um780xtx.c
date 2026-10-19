@@ -180,7 +180,7 @@ static ssize_t um780xtx_sys_point_temp_store(struct device *dev,
 	struct sensor_device_attribute *sattr = to_sensor_dev_attr(attr);
 	u8 points[2];
 	u8 readback;
-	long value;
+	long value, lo, hi;
 	int ret;
 
 	ret = kstrtol(buf, 10, &value);
@@ -198,13 +198,15 @@ static ssize_t um780xtx_sys_point_temp_store(struct device *dev,
 	if (points[0] >= points[1] || points[1] >= data->sys_point3)
 		return -EIO;
 
-	value = DIV_ROUND_CLOSEST(value, 1000);
-	if (!sattr->index)
-		value = clamp_val(value, 0, points[1] - 1);
-	else
-		value = clamp_val(value, points[0] + 1,
-				  data->sys_point3 - 1);
-	points[sattr->index] = value;
+	if (!sattr->index) {
+		lo = 0;
+		hi = points[1] - 1;
+	} else {
+		lo = points[0] + 1;
+		hi = data->sys_point3 - 1;
+	}
+	value = DIV_ROUND_CLOSEST(clamp_val(value, 0, 255000), 1000);
+	points[sattr->index] = clamp_val(value, lo, hi);
 
 	ret = ec_write(um780xtx_sys_point_offsets[sattr->index],
 		       points[sattr->index]);

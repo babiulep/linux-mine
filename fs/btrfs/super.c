@@ -1524,6 +1524,8 @@ static int btrfs_reconfigure(struct fs_context *fc)
 		/* Make sure free space cache options match the state on disk. */
 		if (btrfs_fs_compat_ro(fs_info, FREE_SPACE_TREE))
 			btrfs_set_opt(fs_info->mount_opt, FREE_SPACE_TREE);
+		else
+			btrfs_clear_opt(fs_info->mount_opt, FREE_SPACE_TREE);
 	}
 
 	ret = 0;

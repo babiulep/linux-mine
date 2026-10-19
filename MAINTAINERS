@@ -1097,7 +1097,6 @@ F:	include/linux/cdx/*
 
 AMD CRYPTOGRAPHIC COPROCESSOR (CCP) DRIVER
 M:	Tom Lendacky <thomas.lendacky@amd.com>
-M:	John Allen <john.allen@amd.com>
 L:	linux-crypto@vger.kernel.org
 S:	Supported
 F:	drivers/crypto/ccp/
@@ -1342,6 +1341,7 @@ AMD SENSOR FUSION HUB DRIVER
 M:	Basavaraj Natikar <basavaraj.natikar@amd.com>
 L:	linux-input@vger.kernel.org
 S:	Maintained
+F:	Documentation/ABI/testing/sysfs-driver-amd-sfh
 F:	Documentation/hid/amd-sfh*
 F:	drivers/hid/amd-sfh-hid/
 F:	drivers/input/misc/amd_sfh_tabletmode.c
@@ -10345,7 +10345,6 @@ F:	tools/testing/selftests/mount_setattr/
 
 FILESYSTEMS [IOMAP]
 M:	Christian Brauner <brauner@kernel.org>
-R:	Darrick J. Wong <djwong@kernel.org>
 L:	linux-xfs@vger.kernel.org
 L:	linux-fsdevel@vger.kernel.org
 S:	Supported
@@ -11316,8 +11315,8 @@ M:	Vincenzo Frascino <vincenzo.frascino@arm.com>
 L:	linux-kernel@vger.kernel.org
 S:	Maintained
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git timers/vdso
+F:	include/asm-generic/vdso/vsyscall.h
 F:	include/linux/vdso_datastore.h
-F:	include/linux/vdso_time.h
 F:	include/vdso/
 F:	kernel/time/namespace_vdso.c
 F:	kernel/time/vsyscall.c
@@ -12119,7 +12118,7 @@ M:	Chengchang Tang <tangchengchang@huawei.com>
 M:	Junxian Huang <huangjunxian6@hisilicon.com>
 L:	linux-rdma@vger.kernel.org
 S:	Maintained
-F:	Documentation/devicetree/bindings/infiniband/hisilicon-hns-roce.txt
+F:	Documentation/devicetree/bindings/infiniband/hisilicon,hns-roce-v1.yaml
 F:	drivers/infiniband/hw/hns/
 
 HISILICON SAS Controller
@@ -14657,8 +14656,6 @@ F:	arch/powerpc/include/asm/kvm*
 F:	arch/powerpc/include/uapi/asm/kvm*
 F:	arch/powerpc/kernel/kvm*
 F:	arch/powerpc/kvm/
-F:	tools/testing/selftests/kvm/*/powerpc/
-F:	tools/testing/selftests/kvm/powerpc/
 
 KERNEL VIRTUAL MACHINE FOR RISC-V (KVM/riscv)
 M:	Anup Patel <anup@brainfault.org>
@@ -14683,7 +14680,6 @@ L:	kvm@vger.kernel.org
 S:	Supported
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/kvms390/linux.git
 F:	Documentation/virt/kvm/s390*
-F:	arch/s390/include/arm64/*
 F:	arch/s390/include/asm/gmap_helpers.h
 F:	arch/s390/include/asm/kvm*
 F:	arch/s390/include/uapi/asm/kvm*
@@ -14695,22 +14691,6 @@ F:	drivers/s390/char/uvdevice.c
 F:	tools/testing/selftests/drivers/s390x/uvdevice/
 F:	tools/testing/selftests/kvm/*/s390/
 F:	tools/testing/selftests/kvm/s390/
-
-KERNEL VIRTUAL MACHINE for arm-on-s390 (KVM/s390)
-R:	Steffen Eiden <seiden@linux.ibm.com>
-R:	Andreas Grapentin <gra@linux.ibm.com>
-R:	Marc Zyngier <maz@kernel.org>
-L:	kvm@vger.kernel.org
-L:	linux-s390@vger.kernel.org
-S:	Supported
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/kvms390/linux.git
-F:	arch/s390/include/arm64/
-F:	arch/s390/include/asm/aef.h
-F:	arch/s390/include/asm/kvm_host_arm64*
-F:	arch/s390/include/asm/sae*
-F:	arch/s390/kernel/aef.c
-F:	arch/s390/kvm/arm64/
-F:	arch/s390/tools/*arm64*
 
 KERNEL VIRTUAL MACHINE FOR X86 (KVM/x86)
 M:	Sean Christopherson <seanjc@google.com>
@@ -15484,8 +15464,7 @@ LIVE PATCHING
 M:	Josh Poimboeuf <jpoimboe@kernel.org>
 M:	Miroslav Benes <mbenes@suse.cz>
 M:	Petr Mladek <pmladek@suse.com>
-M:	Joe Lawrence <joe.lawrence@redhat.com>
-M:	Song Liu <song@kernel.org>
+R:	Joe Lawrence <joe.lawrence@redhat.com>
 L:	live-patching@vger.kernel.org
 S:	Maintained
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/livepatching/livepatching.git
@@ -19790,6 +19769,7 @@ F:	drivers/scsi/nsp32*
 
 NINTENDO HID DRIVER
 M:	Daniel J. Ogorchock <djogorchock@gmail.com>
+M:	Vicki Pfau <vi@endrift.com>
 L:	linux-input@vger.kernel.org
 S:	Maintained
 F:	drivers/hid/hid-nintendo*
@@ -19930,6 +19910,7 @@ W:	http://www.paragon-software.com/
 T:	git https://github.com/Paragon-Software-Group/linux-ntfs3.git
 F:	Documentation/filesystems/ntfs3.rst
 F:	fs/ntfs3/
+F:	include/trace/events/ntfs3.h
 
 NTSYNC SYNCHRONIZATION PRIMITIVE DRIVER
 M:	Elizabeth Figura <zfigura@codeweavers.com>
@@ -22612,15 +22593,6 @@ F:	sound/soc/codecs/wcd-mbhc-v2.*
 F:	sound/soc/codecs/wcd93*.*
 F:	sound/soc/codecs/wsa88*.*
 F:	sound/soc/qcom/
-
-QCOM AUDIO INTERFACE (QAIF) DRIVER
-M:	Harendra Gautam <harendra.gautam@oss.qualcomm.com>
-M:	Srinivas Kandagatla <srini@kernel.org>
-L:	linux-sound@vger.kernel.org
-L:	linux-arm-msm@vger.kernel.org
-S:	Supported
-F:	Documentation/devicetree/bindings/sound/qcom,shikra-qaif-cpu.yaml
-F:	sound/soc/qcom/qaif*
 
 QCOM EMBEDDED USB DEBUGGER (EUD)
 M:	Souradeep Chowdhury <quic_schowdhu@quicinc.com>
@@ -28694,8 +28666,6 @@ F:	lib/union_find.c
 UNIVERSAL FLASH STORAGE HOST CONTROLLER DRIVER
 R:	Alim Akhtar <alim.akhtar@samsung.com>
 R:	Bart Van Assche <bvanassche@acm.org>
-R:	Bean Huo <beanhuo@micron.com>
-R:	Stanley Jhu <stanleyjhu@google.com>
 L:	linux-scsi@vger.kernel.org
 S:	Supported
 F:	Documentation/devicetree/bindings/ufs/
@@ -28751,7 +28721,6 @@ UNIWILL LAPTOP DRIVER
 M:	Armin Wolf <W_Armin@gmx.de>
 L:	platform-driver-x86@vger.kernel.org
 S:	Maintained
-F:	Documentation/ABI/removed/sysfs-driver-uniwill-laptop
 F:	Documentation/ABI/testing/sysfs-driver-uniwill-laptop
 F:	Documentation/admin-guide/laptops/uniwill-laptop.rst
 F:	Documentation/wmi/devices/uniwill-laptop.rst
@@ -28848,28 +28817,6 @@ L:	linux-usb@vger.kernel.org
 S:	Maintained
 F:	Documentation/usb/ehci.rst
 F:	drivers/usb/host/ehci*
-
-USB GADGET/PERIPHERAL SUBSYSTEM
-M:	Neill Kapron <nkapron@google.com>
-L:	linux-usb@vger.kernel.org
-S:	Supported
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/usb.git
-F:	Documentation/ABI/testing/configfs-usb-gadget*
-F:	Documentation/ABI/testing/sysfs-devices-platform-_UDC_-gadget
-F:	Documentation/driver-api/usb/gadget.rst
-F:	Documentation/usb/functionfs*
-F:	Documentation/usb/gadget*
-F:	Documentation/usb/mass-storage.rst
-F:	drivers/usb/gadget/
-F:	include/linux/usb/composite.h
-F:	include/linux/usb/func_utils.h
-F:	include/linux/usb/functionfs.h
-F:	include/linux/usb/g_hid.h
-F:	include/linux/usb/gadget*
-F:	include/uapi/linux/usb/functionfs.h
-F:	include/uapi/linux/usb/g_*.h
-F:	include/uapi/linux/usb/gadgetfs.h
-F:	tools/usb/ffs-*
 
 USB HID/HIDBP DRIVERS (USB KEYBOARDS, MICE, REMOTE CONTROLS, ...)
 M:	Jiri Kosina <jikos@kernel.org>
@@ -30605,16 +30552,6 @@ F:	Documentation/devicetree/bindings/misc/xlnx,sd-fec.yaml
 F:	Documentation/misc-devices/xilinx_sdfec.rst
 F:	drivers/misc/xilinx_sdfec.c
 F:	include/uapi/misc/xilinx_sdfec.h
-
-XILINX SMMU CSR IRQ DRIVER
-M:	Anirudha Sarangi <anirudha.sarangi@amd.com>
-M:	Tushar Nimkar <tushar.nimkar@amd.com>
-L:	git@amd.com
-L:	linux-arm-kernel@lists.infradead.org
-L:	linux-kernel@vger.kernel.org
-S:	Maintained
-F:	Documentation/devicetree/bindings/interrupt-controller/xlnx,versal-net-smmu-csr.yaml
-F:	drivers/irqchip/irq-xilinx-smmu-csr.c
 
 XILINX TRNG DRIVER
 M:	Mounika Botcha <mounika.botcha@amd.com>

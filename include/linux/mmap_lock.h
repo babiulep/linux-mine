@@ -554,7 +554,7 @@ static inline int __must_check mmap_write_lock_killable(struct mm_struct *mm)
 	return ret;
 }
 
-void reset_vma_seqcounts(struct mm_struct *mm);
+void __mm_reset_vma_seqcounts(struct mm_struct *mm);
 
 /*
  * Drop all currently-held per-VMA locks.
@@ -577,7 +577,7 @@ static inline void vma_end_write_all(struct mm_struct *mm)
 	 * seqcount so that no stale value survives the wrap.
 	 */
 	if (unlikely(!mm->mm_lock_seq.sequence))
-		reset_vma_seqcounts(mm);
+		__mm_reset_vma_seqcounts(mm);
 }
 
 static inline void mmap_write_unlock(struct mm_struct *mm)

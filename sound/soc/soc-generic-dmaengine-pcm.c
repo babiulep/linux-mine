@@ -454,6 +454,10 @@ int snd_dmaengine_pcm_register(struct device *dev,
 	struct dmaengine_pcm *pcm;
 	int ret;
 
+	component = snd_soc_component_alloc(dev);
+	if (!component)
+		return -ENOMEM;
+
 	pcm = kzalloc_obj(*pcm);
 	if (!pcm)
 		return -ENOMEM;
@@ -462,6 +466,10 @@ int snd_dmaengine_pcm_register(struct device *dev,
 		config = &snd_dmaengine_pcm_default_config;
 	pcm->config = config;
 	pcm->flags = flags;
+
+	if (config->name)
+		snd_soc_component_set_name(component, config->name);
+	snd_soc_component_set_priv(component, pcm);
 
 	ret = dmaengine_pcm_request_chan_of(pcm, dev, config);
 	if (ret)
@@ -472,15 +480,7 @@ int snd_dmaengine_pcm_register(struct device *dev,
 	else
 		driver = &dmaengine_pcm_component;
 
-	component = snd_soc_component_new(dev, config->name, driver);
-	if (IS_ERR(component)) {
-		ret = PTR_ERR(component);
-		goto err_free_dma;
-	}
-
-	snd_soc_component_set_priv(component, pcm);
-
-	ret = snd_soc_component_register(component, NULL, 0);
+	ret = snd_soc_register_component(component, driver, NULL, 0);
 	if (ret)
 		goto err_free_dma;
 

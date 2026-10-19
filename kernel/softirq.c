@@ -350,8 +350,8 @@ static inline void ksoftirqd_run_end(void)
 	local_irq_enable();
 }
 
-static inline bool softirq_handle_begin(void) { return false; }
-static inline void softirq_handle_end(bool from_irq_exit) { }
+static inline void softirq_handle_begin(void) { }
+static inline void softirq_handle_end(void) { }
 
 static inline bool should_wake_ksoftirqd(void)
 {
@@ -481,38 +481,15 @@ void __local_bh_enable_ip(unsigned long ip, unsigned int cnt)
 }
 EXPORT_SYMBOL(__local_bh_enable_ip);
 
-static inline bool softirq_handle_begin(void)
+static inline void softirq_handle_begin(void)
 {
-	if (!in_hardirq()) {
-		__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET);
-		return false;
-	}
-
-	/*
-	 * Only reached from irq_exit(), with HARDIRQ_OFFSET still set.
-	 * Replace it with SOFTIRQ_OFFSET before handle_softirqs() enables
-	 * interrupts. Use the raw operation to preserve the preemption
-	 * disable location recorded by irq_enter_rcu(), and update lockdep
-	 * directly.
-	 */
-	__preempt_count_sub(HARDIRQ_OFFSET - SOFTIRQ_OFFSET);
-	lockdep_softirqs_off(_RET_IP_);
-	WARN_ON_ONCE(irq_count() != SOFTIRQ_OFFSET);
-
-	return true;
+	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET);
 }
 
-static inline void softirq_handle_end(bool from_irq_exit)
+static inline void softirq_handle_end(void)
 {
-	if (!from_irq_exit) {
-		__local_bh_enable(SOFTIRQ_OFFSET);
-		WARN_ON_ONCE(in_interrupt());
-		return;
-	}
-
-	lockdep_softirqs_on(_RET_IP_);
-	__preempt_count_add(HARDIRQ_OFFSET - SOFTIRQ_OFFSET);
-	WARN_ON_ONCE(irq_count() != HARDIRQ_OFFSET);
+	__local_bh_enable(SOFTIRQ_OFFSET);
+	WARN_ON_ONCE(in_interrupt());
 }
 
 static inline void ksoftirqd_run_begin(void)
@@ -628,7 +605,6 @@ static void handle_softirqs(bool ksirqd)
 	unsigned long old_flags = current->flags;
 	int max_restart = MAX_SOFTIRQ_RESTART;
 	struct softirq_action *h;
-	bool from_irq_exit;
 	bool in_hardirq;
 	__u32 pending;
 	int softirq_bit;
@@ -642,7 +618,7 @@ static void handle_softirqs(bool ksirqd)
 
 	pending = local_softirq_pending();
 
-	from_irq_exit = softirq_handle_begin();
+	softirq_handle_begin();
 	in_hardirq = lockdep_softirq_start();
 	account_softirq_enter(current);
 
@@ -694,7 +670,7 @@ restart:
 
 	account_softirq_exit(current);
 	lockdep_softirq_end(in_hardirq);
-	softirq_handle_end(from_irq_exit);
+	softirq_handle_end();
 	current_restore_flags(old_flags, PF_MEMALLOC);
 }
 
@@ -740,7 +716,7 @@ static inline void tick_irq_exit(void)
 
 	/* Make sure that timer wheel updates are propagated */
 	if ((sched_core_idle_cpu(cpu) && !need_resched()) || tick_nohz_full_cpu(cpu)) {
-		if (hardirq_count() == HARDIRQ_OFFSET)
+		if (!in_hardirq())
 			tick_nohz_irq_exit();
 	}
 #endif
@@ -772,12 +748,8 @@ static inline void __irq_exit_rcu(void)
 	lockdep_assert_irqs_disabled();
 #endif
 	account_hardirq_exit(current);
-
-	/*
-	 * HARDIRQ_OFFSET is still set. Only the outermost interrupt handles
-	 * softirqs, and only if it did not hit a softirq or BH disabled section.
-	 */
-	if (irq_count() == HARDIRQ_OFFSET && local_softirq_pending()) {
+	preempt_count_sub(HARDIRQ_OFFSET);
+	if (!in_interrupt() && local_softirq_pending()) {
 		/*
 		 * If we left hrtimers unarmed, make sure to arm them now,
 		 * before enabling interrupts to run softirq.
@@ -786,17 +758,11 @@ static inline void __irq_exit_rcu(void)
 		invoke_softirq();
 	}
 
-	/*
-	 * Wake the timer thread even if the interrupt hit a softirq or a
-	 * section with BHs disabled. Only the outermost interrupt can wake it.
-	 */
 	if (IS_ENABLED(CONFIG_IRQ_FORCED_THREADING) && force_irqthreads() &&
-	    local_timers_pending_force_th() &&
-	    hardirq_count() == HARDIRQ_OFFSET)
+	    local_timers_pending_force_th() && !(in_nmi() | in_hardirq()))
 		wake_timersd();
 
 	tick_irq_exit();
-	preempt_count_sub(HARDIRQ_OFFSET);
 }
 
 /**

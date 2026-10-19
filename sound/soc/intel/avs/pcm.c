@@ -461,8 +461,6 @@ static int avs_dai_hda_be_prepare(struct snd_pcm_substream *substream, struct sn
 	link_stream = data->link_stream;
 	p = &be->dpcm[substream->stream].hw_params;
 
-	if (substream->runtime->state != SNDRV_PCM_STATE_PREPARED)
-		link_stream->link_prepared = false;
 	if (link_stream->link_prepared)
 		return 0;
 
@@ -1401,6 +1399,10 @@ int avs_register_component(struct device *dev, const char *name,
 	if (!acomp)
 		return -ENOMEM;
 
+	acomp->base = snd_soc_component_alloc(dev);
+	if (!acomp->base)
+		return -ENOMEM;
+
 	comp_name = devm_kstrdup(dev, name, GFP_KERNEL);
 	if (!comp_name)
 		return -ENOMEM;
@@ -1409,13 +1411,10 @@ int avs_register_component(struct device *dev, const char *name,
 
 	drv->use_dai_pcm_id = !obsolete_card_names;
 
-	acomp->base = snd_soc_component_new(dev, comp_name, drv);
-	if (IS_ERR(acomp->base))
-		return PTR_ERR(acomp->base);
-
+	snd_soc_component_set_name(acomp->base, comp_name);
 	snd_soc_component_set_priv(acomp->base, acomp);
 
-	return snd_soc_component_register(acomp->base, cpu_dais, num_cpu_dais);
+	return snd_soc_register_component(acomp->base, drv, cpu_dais, num_cpu_dais);
 }
 
 static struct snd_soc_dai_driver dmic_cpu_dais[] = {

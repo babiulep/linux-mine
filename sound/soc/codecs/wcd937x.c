@@ -2536,23 +2536,23 @@ static int wcd937x_soc_codec_probe(struct snd_soc_component *component)
 						      WCD937X_IRQ_AUX_PDM_WD_INT);
 
 	/* Request for watchdog interrupt */
-	ret = request_threaded_irq(wcd937x->hphr_pdm_wd_int, NULL, wcd937x_wd_handle_irq,
-				   IRQF_ONESHOT | IRQF_TRIGGER_RISING,
-				   "HPHR PDM WDOG INT", wcd937x);
+	ret = devm_request_threaded_irq(dev, wcd937x->hphr_pdm_wd_int, NULL, wcd937x_wd_handle_irq,
+					IRQF_ONESHOT | IRQF_TRIGGER_RISING,
+					"HPHR PDM WDOG INT", wcd937x);
 	if (ret)
-		goto err_free_clsh;
+		dev_err(dev, "Failed to request HPHR watchdog interrupt (%d)\n", ret);
 
-	ret = request_threaded_irq(wcd937x->hphl_pdm_wd_int, NULL, wcd937x_wd_handle_irq,
-				   IRQF_ONESHOT | IRQF_TRIGGER_RISING,
-				   "HPHL PDM WDOG INT", wcd937x);
+	ret = devm_request_threaded_irq(dev, wcd937x->hphl_pdm_wd_int, NULL, wcd937x_wd_handle_irq,
+					IRQF_ONESHOT | IRQF_TRIGGER_RISING,
+					"HPHL PDM WDOG INT", wcd937x);
 	if (ret)
-		goto err_free_hphr_irq;
+		dev_err(dev, "Failed to request HPHL watchdog interrupt (%d)\n", ret);
 
-	ret = request_threaded_irq(wcd937x->aux_pdm_wd_int, NULL, wcd937x_wd_handle_irq,
-				   IRQF_ONESHOT | IRQF_TRIGGER_RISING,
-				   "AUX PDM WDOG INT", wcd937x);
+	ret = devm_request_threaded_irq(dev, wcd937x->aux_pdm_wd_int, NULL, wcd937x_wd_handle_irq,
+					IRQF_ONESHOT | IRQF_TRIGGER_RISING,
+					"AUX PDM WDOG INT", wcd937x);
 	if (ret)
-		goto err_free_hphl_irq;
+		dev_err(dev, "Failed to request Aux watchdog interrupt (%d)\n", ret);
 
 	/* Disable watchdog interrupt for HPH and AUX */
 	disable_irq_nosync(wcd937x->hphr_pdm_wd_int);
@@ -2564,33 +2564,23 @@ static int wcd937x_soc_codec_probe(struct snd_soc_component *component)
 						ARRAY_SIZE(wcd9375_dapm_widgets));
 		if (ret < 0) {
 			dev_err(component->dev, "Failed to add snd_ctls\n");
-			goto err_free_irqs;
+			wcd_clsh_ctrl_free(wcd937x->clsh_info);
+			return ret;
 		}
 
 		ret = snd_soc_dapm_add_routes(dapm, wcd9375_audio_map,
 					      ARRAY_SIZE(wcd9375_audio_map));
 		if (ret < 0) {
 			dev_err(component->dev, "Failed to add routes\n");
-			goto err_free_irqs;
+			wcd_clsh_ctrl_free(wcd937x->clsh_info);
+			return ret;
 		}
 	}
 
 	ret = wcd937x_mbhc_init(component);
-	if (ret) {
+	if (ret)
 		dev_err(component->dev, "mbhc initialization failed\n");
-		goto err_free_irqs;
-	}
 
-	return ret;
-
-err_free_irqs:
-	free_irq(wcd937x->aux_pdm_wd_int, wcd937x);
-err_free_hphl_irq:
-	free_irq(wcd937x->hphl_pdm_wd_int, wcd937x);
-err_free_hphr_irq:
-	free_irq(wcd937x->hphr_pdm_wd_int, wcd937x);
-err_free_clsh:
-	wcd_clsh_ctrl_free(wcd937x->clsh_info);
 	return ret;
 }
 

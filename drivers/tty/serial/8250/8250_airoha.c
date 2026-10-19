@@ -10,7 +10,6 @@
 #include <linux/array_size.h>
 #include <linux/bits.h>
 #include <linux/bitfield.h>
-#include <linux/err.h>
 #include <linux/errno.h>
 #include <linux/math64.h>
 #include <linux/module.h>
@@ -28,6 +27,10 @@
 #define UART_AIROHA_XYD		11
 #define   UART_AIROHA_XYD_X	GENMASK(31, 16)
 #define   UART_AIROHA_XYD_Y	GENMASK(15, 0)
+
+struct airoha_8250_priv {
+	int line;
+};
 
 #define UART_BRD_20M		0x0001
 
@@ -116,12 +119,17 @@ static int airoha_8250_probe(struct platform_device *pdev)
 {
 	struct uart_8250_port uart = { };
 	struct device *dev = &pdev->dev;
+	struct airoha_8250_priv *priv;
 	struct resource *res;
 	int ret;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res)
 		return dev_err_probe(dev, -EINVAL, "invalid address\n");
+
+	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
+	if (!priv)
+		return -ENOMEM;
 
 	uart.port.dev = dev;
 	if (device_is_compatible(dev, "airoha,an7581-hsuart"))
@@ -139,20 +147,21 @@ static int airoha_8250_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	struct uart_8250_port *uport = serial8250_register_8250_port(&uart);
-	if (IS_ERR(uport))
-		return PTR_ERR(uport);
+	ret = serial8250_register_8250_port(&uart);
+	if (ret < 0)
+		return ret;
 
-	platform_set_drvdata(pdev, uport);
+	priv->line = ret;
+	platform_set_drvdata(pdev, priv);
 
 	return 0;
 }
 
 static void airoha_8250_remove(struct platform_device *ofdev)
 {
-	struct uart_8250_port *uport = platform_get_drvdata(ofdev);
+	struct airoha_8250_priv *priv = platform_get_drvdata(ofdev);
 
-	serial8250_unregister_port(uport);
+	serial8250_unregister_port(priv->line);
 }
 
 static const struct of_device_id airoha_8250_dt_ids[] = {

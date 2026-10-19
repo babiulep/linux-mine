@@ -819,8 +819,6 @@ static void __nvmet_req_complete(struct nvmet_req *req, u16 status)
 		nvmet_pr_put_ns_pc_ref(pc_ref);
 	if (ns)
 		nvmet_put_namespace(ns);
-
-	nvmet_put_passthru_ref(req);
 }
 
 void nvmet_req_complete(struct nvmet_req *req, u16 status)
@@ -1197,7 +1195,6 @@ bool nvmet_req_init(struct nvmet_req *req, struct nvmet_sq *sq,
 	req->error_loc = NVMET_NO_ERROR_LOC;
 	req->error_slba = 0;
 	req->pc_ref = NULL;
-	req->p.ref_held = false;
 
 	/* no support for fused commands yet */
 	if (unlikely(flags & (NVME_CMD_FUSE_FIRST | NVME_CMD_FUSE_SECOND))) {
@@ -1238,7 +1235,7 @@ bool nvmet_req_init(struct nvmet_req *req, struct nvmet_sq *sq,
 		goto fail;
 	}
 
-	if (sq->ctrl && sq->ctrl->tbkas)
+	if (sq->ctrl)
 		sq->ctrl->reset_tbkas = true;
 
 	return true;
@@ -1648,16 +1645,8 @@ struct nvmet_ctrl *nvmet_alloc_ctrl(struct nvmet_alloc_ctrl_args *args)
 
 #ifdef CONFIG_NVME_TARGET_PASSTHRU
 	/* By default, set loop targets to clear IDS by default */
-	if (ctrl->port->disc_addr.trtype == NVMF_TRTYPE_LOOP) {
-		mutex_lock(&subsys->lock);
-		subsys->passthru = nvmet_subsys_passthru(subsys);
-		if (!subsys->passthru) {
-			mutex_unlock(&subsys->lock);
-			goto out_free_ctrl;
-		}
-		subsys->passthru->clear_ids = 1;
-		mutex_unlock(&subsys->lock);
-	}
+	if (ctrl->port->disc_addr.trtype == NVMF_TRTYPE_LOOP)
+		subsys->clear_ids = 1;
 #endif
 
 	INIT_WORK(&ctrl->async_event_work, nvmet_async_event_work);
@@ -1698,7 +1687,6 @@ struct nvmet_ctrl *nvmet_alloc_ctrl(struct nvmet_alloc_ctrl_args *args)
 	mutex_lock(&subsys->lock);
 
 	ctrl->max_qid = subsys->max_qid;
-	ctrl->tbkas = subsys->tbkas;
 
 	ctrl->sqs = kzalloc_objs(struct nvmet_sq *, ctrl->max_qid + 1);
 	if (!ctrl->sqs)
@@ -1884,7 +1872,6 @@ struct nvmet_subsys *nvmet_subsys_alloc(const char *subsysnqn,
 	}
 
 	subsys->ieee_oui = 0;
-	subsys->tbkas = true;
 
 	subsys->firmware_rev = kstrndup(UTS_RELEASE, NVMET_FR_MAX_SIZE, GFP_KERNEL);
 	if (!subsys->firmware_rev) {

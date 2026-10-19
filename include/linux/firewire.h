@@ -92,17 +92,17 @@ struct fw_card {
 	u64 reset_jiffies;
 
 	struct {
-		int current_tlabel __guarded_by(&lock);
-		u64 tlabel_mask __guarded_by(&lock);
-		struct list_head list __guarded_by(&lock);
+		int current_tlabel;
+		u64 tlabel_mask;
+		struct list_head list;
 		spinlock_t lock;
 	} transactions;
 
 	struct {
-		u32 hi __guarded_by(&lock);
-		u32 lo __guarded_by(&lock);
-		unsigned int cycles __guarded_by(&lock);
-		unsigned int jiffies __guarded_by(&lock);
+		u32 hi;
+		u32 lo;
+		unsigned int cycles;
+		unsigned int jiffies;
 		spinlock_t lock;
 	} split_timeout;
 
@@ -139,7 +139,7 @@ struct fw_card {
 	u32 broadcast_channel;
 
 	struct {
-		__be32 buffer[(CSR_TOPOLOGY_MAP_END - CSR_TOPOLOGY_MAP) / 4] __guarded_by(&lock);
+		__be32 buffer[(CSR_TOPOLOGY_MAP_END - CSR_TOPOLOGY_MAP) / 4];
 		spinlock_t lock;
 	} topology_map;
 
@@ -286,69 +286,20 @@ struct fw_request;
 
 typedef void (*fw_packet_callback_t)(struct fw_packet *packet,
 				     struct fw_card *card, int status);
-
-/**
- * typedef fw_transaction_callback_t - Function to handle the result of outgoing transaction.
- * @card: the interface to send the request at
- * @rcode: the response code
- * @data: the data for the response subaction
- * @length: the length of data
- * @callback_data: the data registered with this callback
- *
- * This callback is called from a workqueue in process context after the outgoing transaction is
- * completed successfully or unsuccessfully.
- *
- * Among its parameters is the response code which is either one of the rcodes per IEEE 1394 or, in
- * case of internal errors, the firewire-core specific %RCODE_SEND_ERROR. The other firewire-core
- * specific rcodes (%RCODE_CANCELLED, %RCODE_BUSY, %RCODE_GENERATION, %RCODE_NO_ACK) denote
- * transaction timeout, busy responder, stale request generation, or missing ACK respectively.
- *
- * Context: Process context.
- */
 typedef void (*fw_transaction_callback_t)(struct fw_card *card, int rcode,
 					  void *data, size_t length,
 					  void *callback_data);
-
-/**
- * typedef fw_transaction_callback_with_tstamp_t - Function to handle the result of outgoing
- *						   transaction with hardware time stamps.
- * @card: the interface to send the request at
- * @rcode: the response code
- * @request_tstamp: the time stamp at which the request subaction finished
- * @response_tstamp: the time stamp at which the response subaction finished
- * @data: the data for the response subaction
- * @length: the length of data
- * @callback_data: the data registered with this callback
- *
- * This callback is called from a workqueue in process context after the outgoing transaction is
- * completed successfully or unsuccessfully.
- *
- * Among its parameters is the response code which is either one of the rcodes per IEEE 1394 or, in
- * case of internal errors, the firewire-core specific %RCODE_SEND_ERROR. The other firewire-core
- * specific rcodes (%RCODE_CANCELLED, %RCODE_BUSY, %RCODE_GENERATION, %RCODE_NO_ACK) denote
- * transaction timeout, busy responder, stale request generation, or missing ACK respectively.
- *
- * The timestamp consists of the low order 3 bits of second field and the full 13 bits of count
- * field of isochronous cycle time register.
- *
- * Context: Process context.
- */
 typedef void (*fw_transaction_callback_with_tstamp_t)(struct fw_card *card, int rcode,
 					u32 request_tstamp, u32 response_tstamp, void *data,
 					size_t length, void *callback_data);
 
-/**
- * union fw_transaction_callback - A union to store the outgoing transaction callback.
- * @without_tstamp: Callback without hardware timestamps.
- * @with_tstamp: Callback with hardware timestamps.
- */
 union fw_transaction_callback {
 	fw_transaction_callback_t without_tstamp;
 	fw_transaction_callback_with_tstamp_t with_tstamp;
 };
 
 /**
- * typedef fw_address_callback_t - Function to handle the request of the incoming transaction.
+ * typedef fw_address_callback_t - Function to handle the request of the asynchronous transaction.
  * @card: the card instance which receives the request
  * @request: the request instance.
  * @tcode: the transaction code
@@ -362,9 +313,8 @@ union fw_transaction_callback {
  *
  * This callback handles an inbound request subaction.
  *
- * The contents of @request are opaque to the callback. The callback is responsible for calling
- * fw_send_response() for @request, except for FCP registers, for which the core handles the
- * response.
+ * The callback is responsible that fw_send_response() is called on the @request, except for FCP
+ * registers for which the core takes care of that.
  *
  * Context: Process context.
  */
@@ -402,15 +352,7 @@ struct fw_packet {
 	void *driver_data;
 };
 
-/**
- * struct fw_transaction - A structure to hold outgoing transaction state.
- *
- * All structure members are for internal use only. Once passed to __fw_send_request(), this
- * structure holds the state of an outgoing transaction. It must not be freed until the callback
- * reports the transaction result.
- */
 struct fw_transaction {
-	/* private: */
 	int node_id; /* The generation is implied; it is always the current. */
 	int tlabel;
 	struct list_head link;
@@ -435,37 +377,18 @@ struct fw_transaction {
 	u32 response_timestamp;
 };
 
-/**
- * struct fw_address_handler - A handler for incoming transaction requests to a registered address
- *			       region.
- * @offset: The registered offset, available after successful registration.
- * @length: The length of the address region in bytes, a multiple of a quadlet.
- * @address_callback: Callback invoked when a transaction request is received for the registered
- *		      address region.
- * @callback_data: Data passed to @address_callback.
- *
- * This structure represents a handler registered to receive incoming asynchronous requests to a
- * specific region of the address space on the local node.
- */
 struct fw_address_handler {
 	u64 offset;
 	u64 length;
 	fw_address_callback_t address_callback;
 	void *callback_data;
 
-	/* private: */
+	// Only for core functions.
 	struct list_head link;
 	struct kref kref;
 	struct completion done;
 };
 
-/**
- * struct fw_address_region - An address range.
- * @start: The starting offset in bytes, a multiple of a quadlet.
- * @end: The ending offset in bytes, a multiple of a quadlet.
- *
- * Represents a range of addresses in the local node's address space.
- */
 struct fw_address_region {
 	u64 start;
 	u64 end;
@@ -506,8 +429,6 @@ void __fw_send_request(struct fw_card *card, struct fw_transaction *t, int tcode
  *
  * After the transaction is completed successfully or unsuccessfully, the @callback will be called
  * in process context.
- *
- * Context: Any context.
  */
 static inline void fw_send_request(struct fw_card *card, struct fw_transaction *t, int tcode,
 				   int destination_id, int generation, int speed,
@@ -540,8 +461,6 @@ static inline void fw_send_request(struct fw_card *card, struct fw_transaction *
  *
  * After the transaction is completed successfully or unsuccessfully, the @callback will be called
  * in process context.
- *
- * Context: Any context.
  */
 static inline void fw_send_request_with_tstamp(struct fw_card *card, struct fw_transaction *t,
 	int tcode, int destination_id, int generation, int speed, unsigned long long offset,

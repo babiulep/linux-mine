@@ -116,11 +116,9 @@ avs_module_ida_alloc(struct avs_dev *adev, struct avs_mods_info *newinfo, bool p
 	int i;
 
 	if (!purge && oldinfo) {
-		if (oldinfo->count >= newinfo->count) {
-			dev_warn(adev->dev, "modules info underflow, old: %d, new: %d\n",
+		if (oldinfo->count >= newinfo->count)
+			dev_warn(adev->dev, "refreshing %d modules info with %d\n",
 				 oldinfo->count, newinfo->count);
-			return -EPROTO;
-		}
 		tocopy_count = oldinfo->count;
 	}
 

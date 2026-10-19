@@ -17,6 +17,7 @@
 #include "debug.h"
 #include "ntfs.h"
 #include "ntfs_fs.h"
+#include <trace/events/ntfs3.h>
 
 struct IGET5_PARAM {
 	const struct MFT_REF *ref;
@@ -953,6 +954,8 @@ static int ntfs_iomap_begin(struct inode *inode, loff_t offset, loff_t length,
 	bool new_clst = false;
 	bool no_da;
 	bool zero = false;
+
+	trace_ntfs3_iomap_begin(inode, offset, length, flags);
 	if (unlikely(ntfs3_forced_shutdown(sbi->sb)))
 		return -EIO;
 
@@ -1089,6 +1092,8 @@ static int ntfs_iomap_end(struct inode *inode, loff_t pos, loff_t length,
 	int err = 0;
 	struct ntfs_inode *ni = ntfs_i(inode);
 	loff_t endbyte = pos + written;
+
+	trace_ntfs3_iomap_end(inode, pos, length, written, flags);
 
 	if ((flags & IOMAP_WRITE) || (flags & IOMAP_ZERO)) {
 		if (iomap->type == IOMAP_INLINE) {
@@ -1424,6 +1429,8 @@ int ntfs_create_inode(const struct mnt_idmap *idmap, struct inode *dir,
 
 	/* New file will be resident or non resident. */
 	const bool new_file_resident = 1;
+
+	trace_ntfs3_create_inode(dir, dentry);
 
 	if (!fnd)
 		ni_lock_dir(dir_ni);

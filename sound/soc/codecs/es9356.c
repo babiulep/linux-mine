@@ -26,20 +26,6 @@
 #include <sound/sdca_asoc.h>
 #include "es9356.h"
 
-/*
- * The DAI stream capabilities were never filled in. snd_soc_runtime_calc_hw()
- * intersects the capabilities of the CPU and codec DAIs to derive hw->rates
- * and hw->formats, so an empty mask on the codec side leaves the PCM with no
- * usable configuration and soc_hw_sanity_check() fails every open with -EINVAL
- * ("No matching rates"). es9356_sdw_pcm_hw_params() already programs 16 kHz,
- * 44.1 kHz, 48 kHz and 96 kHz, so advertise exactly that set, with the formats
- * used by the other SDCA codecs in the tree.
- */
-#define ES9356_RATES (SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_44100 | \
-		      SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_96000)
-#define ES9356_FORMATS (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE | \
-			SNDRV_PCM_FMTBIT_S32_LE)
-
 struct  es9356_sdw_priv {
 	struct sdw_slave *slave;
 	struct device *dev;
@@ -631,8 +617,6 @@ static struct snd_soc_dai_driver es9356_sdw_dai[] = {
 		.id = ES9356_DMIC,
 		.capture = {
 			.stream_name = "DP1 Capture",
-			.rates = ES9356_RATES,
-			.formats = ES9356_FORMATS,
 			.channels_min = 1,
 			.channels_max = 2,
 		},
@@ -643,8 +627,6 @@ static struct snd_soc_dai_driver es9356_sdw_dai[] = {
 		.id = ES9356_JACK_IN,
 		.capture = {
 			.stream_name = "DP2 Capture",
-			.rates = ES9356_RATES,
-			.formats = ES9356_FORMATS,
 			.channels_min = 1,
 			.channels_max = 2,
 		},
@@ -655,8 +637,6 @@ static struct snd_soc_dai_driver es9356_sdw_dai[] = {
 		.id = ES9356_AMP,
 		.playback = {
 			.stream_name = "DP3 Playback",
-			.rates = ES9356_RATES,
-			.formats = ES9356_FORMATS,
 			.channels_min = 1,
 			.channels_max = 2,
 		},
@@ -667,8 +647,6 @@ static struct snd_soc_dai_driver es9356_sdw_dai[] = {
 		.id = ES9356_JACK_OUT,
 		.playback = {
 			.stream_name = "DP4 Playback",
-			.rates = ES9356_RATES,
-			.formats = ES9356_FORMATS,
 			.channels_min = 1,
 			.channels_max = 2,
 		},

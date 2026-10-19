@@ -6,7 +6,6 @@
  * Author: Matthias Brugger <matthias.bgg@gmail.com>
  */
 #include <linux/clk.h>
-#include <linux/err.h>
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -69,7 +68,7 @@ enum dma_rx_status {
 #endif
 
 struct mtk8250_data {
-	struct uart_8250_port	*uport;
+	int			line;
 	unsigned int		rx_pos;
 	unsigned int		clk_count;
 	struct clk		*uart_clk;
@@ -432,7 +431,7 @@ mtk8250_set_termios(struct uart_port *port, struct ktermios *termios,
 static int __maybe_unused mtk8250_runtime_suspend(struct device *dev)
 {
 	struct mtk8250_data *data = dev_get_drvdata(dev);
-	struct uart_8250_port *up = data->uport;
+	struct uart_8250_port *up = serial8250_get_port(data->line);
 
 	/* wait until UART in idle status */
 	while
@@ -588,9 +587,9 @@ static int mtk8250_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, data);
 
-	data->uport = serial8250_register_8250_port(&uart);
-	if (IS_ERR(data->uport))
-		return PTR_ERR(data->uport);
+	data->line = serial8250_register_8250_port(&uart);
+	if (data->line < 0)
+		return data->line;
 
 	data->rx_wakeup_irq = platform_get_irq_optional(pdev, 1);
 
@@ -606,7 +605,7 @@ static void mtk8250_remove(struct platform_device *pdev)
 
 	pm_runtime_get_sync(&pdev->dev);
 
-	serial8250_unregister_port(data->uport);
+	serial8250_unregister_port(data->line);
 
 	pm_runtime_disable(&pdev->dev);
 	pm_runtime_put_noidle(&pdev->dev);
@@ -618,7 +617,7 @@ static int __maybe_unused mtk8250_suspend(struct device *dev)
 	int irq = data->rx_wakeup_irq;
 	int err;
 
-	serial8250_suspend_port(data->uport);
+	serial8250_suspend_port(data->line);
 
 	pinctrl_pm_select_sleep_state(dev);
 	if (irq >= 0) {
@@ -628,7 +627,7 @@ static int __maybe_unused mtk8250_suspend(struct device *dev)
 				"failed to enable irq wake on IRQ %d: %d\n",
 				irq, err);
 			pinctrl_pm_select_default_state(dev);
-			serial8250_resume_port(data->uport);
+			serial8250_resume_port(data->line);
 			return err;
 		}
 	}
@@ -645,7 +644,7 @@ static int __maybe_unused mtk8250_resume(struct device *dev)
 		disable_irq_wake(irq);
 	pinctrl_pm_select_default_state(dev);
 
-	serial8250_resume_port(data->uport);
+	serial8250_resume_port(data->line);
 
 	return 0;
 }

@@ -329,6 +329,9 @@ static void kvm_vm_stage2_unmap_range(struct kvm_s2_mmu *mmu,
 	struct kvm *kvm = kvm_s2_mmu_to_kvm(mmu);
 	int (*fn)(struct kvm_pgtable *, u64, u64);
 
+	lockdep_assert_held_write(&kvm->mmu_lock);
+	WARN_ON(size & ~PAGE_MASK);
+
 	if (kvm_is_nested_s2_mmu(kvm, mmu))
 		fn = kvm_pgtable_stage2_unmap_tracked;
 	else
@@ -2297,9 +2300,11 @@ static int user_mem_abort(const struct kvm_s2_fault_desc *s2fd,
 
 static int kvm_vm_mem_abort(const struct kvm_s2_fault_desc *s2fd)
 {
-	VM_WARN_ON_ONCE(kvm_s2_fault_is_perm(s2fd) &&
-			!esr_abt_is_write_fault(s2fd->esr) &&
-			!kvm_s2_fault_is_exec(s2fd));
+	struct kvm_vcpu *vcpu = s2fd->vcpu;
+
+	VM_WARN_ON_ONCE(kvm_vcpu_trap_is_permission_fault(vcpu) &&
+			!kvm_is_write_fault(vcpu) &&
+			!esr_abt_is_exec_fault(kvm_vcpu_get_esr(vcpu)));
 
 	if (kvm_slot_has_gmem(s2fd->memslot))
 		return gmem_abort(s2fd, NULL);
@@ -2952,18 +2957,18 @@ void kvm_set_way_flush(struct kvm_vcpu *vcpu)
 
 	/*
 	 * If this is the first time we do a S/W operation
-	 * (i.e. HCR_TVM not set) flush the whole memory, and set the
+	 * (i.e. HCR_EL2_TVM not set) flush the whole memory, and set the
 	 * VM trapping.
 	 *
 	 * Otherwise, rely on the VM trapping to wait for the MMU +
 	 * Caches to be turned off. At that point, we'll be able to
 	 * clean the caches again.
 	 */
-	if (!(hcr & HCR_TVM)) {
+	if (!(hcr & HCR_EL2_TVM)) {
 		trace_kvm_set_way_flush(*vcpu_pc(vcpu),
 					vcpu_has_cache_enabled(vcpu));
 		stage2_flush_vm(vcpu->kvm);
-		*vcpu_hcr(vcpu) = hcr | HCR_TVM;
+		*vcpu_hcr(vcpu) = hcr | HCR_EL2_TVM;
 	}
 }
 
@@ -2981,7 +2986,7 @@ void kvm_toggle_cache(struct kvm_vcpu *vcpu, bool was_enabled)
 
 	/* Caches are now on, stop trapping VM ops (until a S/W op) */
 	if (now_enabled)
-		*vcpu_hcr(vcpu) &= ~HCR_TVM;
+		*vcpu_hcr(vcpu) &= ~HCR_EL2_TVM;
 
 	trace_kvm_toggle_cache(*vcpu_pc(vcpu), was_enabled, now_enabled);
 }

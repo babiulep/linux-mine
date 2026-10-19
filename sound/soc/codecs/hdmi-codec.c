@@ -475,12 +475,8 @@ static int hdmi_codec_startup(struct snd_pcm_substream *substream,
 		if (ret)
 			return ret;
 
-		/* An empty ELD means no sink is connected; nothing to parse. */
-		if (hcp->eld[0])
-			snd_parse_eld(dai->dev, &hcp->eld_parsed,
-				      hcp->eld, sizeof(hcp->eld));
-		else
-			memset(&hcp->eld_parsed, 0, sizeof(hcp->eld_parsed));
+		snd_parse_eld(dai->dev, &hcp->eld_parsed,
+			      hcp->eld, sizeof(hcp->eld));
 
 		ret = snd_pcm_hw_constraint_eld(substream->runtime, hcp->eld);
 		if (ret)

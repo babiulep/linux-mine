@@ -1487,7 +1487,7 @@ static inline bool kvm_is_lbrv_enabled(void)
  */
 static inline bool kvm_is_nested_virtualization_enabled(void)
 {
-	if (host_cpu_is_intel)
+	if (host_cpu_is_intel_compatible)
 		return get_kvm_intel_param_bool("nested");
 
 	return get_kvm_amd_param_integer("nested");

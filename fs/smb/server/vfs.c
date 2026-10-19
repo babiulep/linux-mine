@@ -362,7 +362,7 @@ int ksmbd_vfs_read(struct ksmbd_work *work, struct ksmbd_file *fp, size_t count,
 	if (ksmbd_stream_fd(fp))
 		return ksmbd_vfs_stream_read(fp, rbuf, pos, count);
 
-	if (!work->tcon->posix_extensions) {
+	if (!fp->is_posix_ctxt) {
 		int ret;
 
 		ret = check_lock_range(filp, *pos, *pos + count - 1, READ);
@@ -526,7 +526,6 @@ int ksmbd_vfs_write(struct ksmbd_work *work, struct ksmbd_file *fp,
 		    ssize_t *written)
 {
 	struct file *filp;
-	loff_t	offset = *pos;
 	int err = 0;
 
 	if (work->conn->connection_type) {
@@ -548,7 +547,7 @@ int ksmbd_vfs_write(struct ksmbd_work *work, struct ksmbd_file *fp,
 		goto out;
 	}
 
-	if (!work->tcon->posix_extensions) {
+	if (!fp->is_posix_ctxt) {
 		err = check_lock_range(filp, *pos, *pos + count - 1, WRITE);
 		if (err) {
 			pr_err("unable to write due to lock\n");
@@ -573,7 +572,7 @@ int ksmbd_vfs_write(struct ksmbd_work *work, struct ksmbd_file *fp,
 	*written = err;
 	err = 0;
 	if (sync) {
-		err = vfs_fsync_range(filp, offset, offset + *written, 0);
+		err = vfs_fsync_range(filp, *pos - *written, *pos, 0);
 		if (err < 0)
 			pr_err("fsync failed for filename = %pD, err = %d\n",
 			       fp->filp, err);
@@ -1012,6 +1011,15 @@ int ksmbd_vfs_zero_data(struct ksmbd_work *work, struct ksmbd_file *fp,
 	loff_t pos = off, size;
 	char *zero_buf = NULL;
 	int err;
+
+	/*
+	 * A directory handle can hold FILE_WRITE_DATA (the add-file right),
+	 * so the caller access check does not exclude it. Writing zeroes to a
+	 * directory makes no sense and kernel_write() would warn on the
+	 * directory file (no FMODE_WRITE), so reject it here.
+	 */
+	if (S_ISDIR(file_inode(fp->filp)->i_mode))
+		return -EINVAL;
 
 	smb_break_all_levII_oplock(work, fp, 1);
 	if (!work->tcon->posix_extensions) {

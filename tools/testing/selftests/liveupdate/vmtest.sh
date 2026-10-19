@@ -180,7 +180,7 @@ function run_qemu() {
 	echo "# Serial Log: $serial"
 	timeout 30s \
 	$qemu_cmd -m 1G -smp 2 -no-reboot -nographic -nodefaults \
-		  -accel kvm -accel hvf -accel tcg \
+		  -accel tcg -accel hvf -accel kvm \
 		  -serial file:"$serial" \
 		  -append "$cmdline" \
 		  -kernel "$kernel_path" \

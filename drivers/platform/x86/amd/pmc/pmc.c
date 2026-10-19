@@ -198,7 +198,6 @@ static const struct pci_device_id pmc_pci_ids[] = {
 	{ PCI_DEVICE_DATA(AMD, 1AH_M20H_ROOT, NULL) },
 	{ PCI_DEVICE_DATA(AMD, 1AH_M60H_ROOT, NULL) },
 	{ PCI_DEVICE_DATA(AMD, 1AH_M80H_ROOT, &amd_1ah_m80_cpu_info) },
-	{ PCI_DEVICE_DATA(AMD, 1AH_MDCH_ROOT, &amd_1ah_m80_cpu_info) },
 	{ }
 };
 
@@ -958,10 +957,6 @@ static void amd_pmc_remove(struct platform_device *pdev)
 	pci_dev_put(dev->rdev);
 	if (IS_ENABLED(CONFIG_AMD_MP2_STB))
 		amd_mp2_stb_deinit(dev);
-	dev->regbase = NULL;
-	dev->smu_virt_addr = NULL;
-	dev->stb_virt_addr = NULL;
-	dev->fch_virt_addr = NULL;
 }
 
 static const struct acpi_device_id amd_pmc_acpi_ids[] = {

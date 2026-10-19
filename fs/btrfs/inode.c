@@ -2676,13 +2676,7 @@ void btrfs_clear_delalloc_extent(struct btrfs_inode *inode,
 		btrfs_mod_outstanding_extents(inode, -num_extents);
 		spin_unlock(&inode->lock);
 
-		/*
-		 * We don't reserve metadata space for space cache inodes so we
-		 * don't need to call delalloc_release_metadata if there is an
-		 * error.
-		 */
-		if (bits & EXTENT_CLEAR_META_RESV &&
-		    root != fs_info->tree_root)
+		if (bits & EXTENT_CLEAR_META_RESV)
 			btrfs_delalloc_release_metadata(inode, len, true);
 
 		/* For sanity tests. */
@@ -3371,9 +3365,13 @@ out:
 		if (ret)
 			btrfs_mark_ordered_extent_error(ordered_extent);
 
-		/* Drop extent maps for the part of the extent we didn't write. */
+		/*
+		 * Drop extent maps for the part of the extent we didn't write.
+		 * On error the written part is freed below as well, so drop
+		 * its maps too.
+		 */
 		unwritten_start = start;
-		if (truncated)
+		if (truncated && !ret)
 			unwritten_start += logical_len;
 		btrfs_drop_extent_map_range(inode, unwritten_start, end, false);
 

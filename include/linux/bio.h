@@ -80,8 +80,7 @@ static inline bool bio_no_advance_iter(const struct bio *bio)
 {
 	return bio_op(bio) == REQ_OP_DISCARD ||
 	       bio_op(bio) == REQ_OP_SECURE_ERASE ||
-	       bio_op(bio) == REQ_OP_WRITE_ZEROES ||
-	       op_is_dmabuf(bio->bi_opf);
+	       bio_op(bio) == REQ_OP_WRITE_ZEROES;
 }
 
 static inline void *bio_data(struct bio *bio)
@@ -114,13 +113,11 @@ static inline void bio_advance_iter(const struct bio *bio,
 {
 	iter->bi_sector += bytes >> 9;
 
-	if (bio_no_advance_iter(bio)) {
+	if (bio_no_advance_iter(bio))
 		iter->bi_size -= bytes;
-		iter->bi_offset += bytes;
-	} else {
+	else
 		bvec_iter_advance(bio->bi_io_vec, iter, bytes);
 		/* TODO: It is reasonable to complete bio with error here. */
-	}
 }
 
 /* @bytes should be less or equal to bvec[i->bi_idx].bv_len */
@@ -130,12 +127,10 @@ static inline void bio_advance_iter_single(const struct bio *bio,
 {
 	iter->bi_sector += bytes >> 9;
 
-	if (bio_no_advance_iter(bio)) {
+	if (bio_no_advance_iter(bio))
 		iter->bi_size -= bytes;
-		iter->bi_offset += bytes;
-	} else {
+	else
 		bvec_iter_advance_single(bio->bi_io_vec, iter, bytes);
-	}
 }
 
 void __bio_advance(struct bio *, unsigned bytes);
@@ -259,6 +254,12 @@ static inline struct page *bio_first_page_all(struct bio *bio)
 static inline struct folio *bio_first_folio_all(struct bio *bio)
 {
 	return page_folio(bio_first_page_all(bio));
+}
+
+static inline struct bio_vec *bio_last_bvec_all(struct bio *bio)
+{
+	WARN_ON_ONCE(bio_flagged(bio, BIO_CLONED));
+	return &bio->bi_io_vec[bio->bi_vcnt - 1];
 }
 
 /**
@@ -439,12 +440,12 @@ static inline void bio_wouldblock_error(struct bio *bio)
 
 /*
  * Calculate number of bvec segments that should be allocated to fit data
- * pointed by @iter. If @iter is backed by a bvec or a dmabuf, the bvec array /
- * the dma map are going to be reused, and so no extra allocation is required.
+ * pointed by @iter. If @iter is backed by bvec it's going to be reused
+ * instead of allocating a new one.
  */
 static inline int bio_iov_vecs_to_alloc(struct iov_iter *iter, int max_segs)
 {
-	if (iov_iter_is_bvec(iter) || iov_iter_is_dmabuf_map(iter))
+	if (iov_iter_is_bvec(iter))
 		return 0;
 	return iov_iter_npages(iter, max_segs);
 }

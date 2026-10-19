@@ -2211,7 +2211,7 @@ skip_regmap:
 static int mt8196_afe_runtime_resume(struct device *dev)
 {
 	struct mtk_base_afe *afe = dev_get_drvdata(dev);
-	int ret;
+	int ret = 0;
 
 	ret = mt8196_afe_enable_reg_rw_clk(afe);
 	if (ret)
@@ -2222,9 +2222,7 @@ static int mt8196_afe_runtime_resume(struct device *dev)
 		goto skip_regmap;
 	}
 	regcache_cache_only(afe->regmap, false);
-	ret = regcache_sync(afe->regmap);
-	if (ret)
-		goto err_set_cache_only;
+	regcache_sync(afe->regmap);
 
 	/* set audio 26M request */
 	regmap_update_bits(afe->regmap, AFE_SPM_CONTROL_REQ, 0x1, 0x1);
@@ -2235,20 +2233,10 @@ static int mt8196_afe_runtime_resume(struct device *dev)
 			   CPU_HD_ALIGN_MASK_SFT, 0 << CPU_HD_ALIGN_SFT);
 
 	/* enable AFE */
-	ret = mt8196_afe_enable_main_clock(afe);
-	if (ret)
-		goto err_reset_26m_req;
+	mt8196_afe_enable_main_clock(afe);
 
 skip_regmap:
 	return 0;
-
-err_reset_26m_req:
-	regmap_update_bits(afe->regmap, AFE_SPM_CONTROL_REQ, 0x1, 0x0);
-err_set_cache_only:
-	regcache_cache_only(afe->regmap, true);
-	mt8196_afe_disable_reg_rw_clk(afe);
-
-	return ret;
 }
 
 static int mt8196_afe_component_probe(struct snd_soc_component *component)
@@ -2360,7 +2348,7 @@ static int mt8196_afe_pcm_dev_probe(struct platform_device *pdev)
 	/* init audio related clock */
 	ret = mt8196_init_clock(afe);
 	if (ret)
-		return ret;
+		return dev_err_probe(dev, ret, "init clock error.\n");
 
 	/* init memif */
 	/* IPM2.0 no need banding */
@@ -2394,13 +2382,13 @@ static int mt8196_afe_pcm_dev_probe(struct platform_device *pdev)
 	/* request irq */
 	irq_id = platform_get_irq(pdev, 0);
 	if (irq_id < 0)
-		return irq_id;
+		return dev_err_probe(dev, irq_id, "no irq found");
 
 	ret = devm_request_irq(dev, irq_id, mt8196_afe_irq_handler,
 			       IRQF_TRIGGER_NONE,
 			       "Afe_ISR_Handle", afe);
 	if (ret)
-		return ret;
+		return dev_err_probe(dev, ret, "could not request_irq for Afe_ISR_Handle\n");
 
 	/* init sub_dais */
 	INIT_LIST_HEAD(&afe->sub_dais);
@@ -2469,8 +2457,10 @@ static int mt8196_afe_pcm_dev_probe(struct platform_device *pdev)
 					      &mt8196_afe_component,
 					      afe->dai_drivers,
 					      afe->num_dai_drivers);
-	if (ret)
+	if (ret) {
+		dev_err(dev, "afe component err\n");
 		return ret;
+	}
 
 	return 0;
 

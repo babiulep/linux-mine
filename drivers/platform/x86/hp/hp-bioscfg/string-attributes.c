@@ -101,13 +101,8 @@ static const struct attribute_group string_attr_group = {
 int hp_alloc_string_data(void)
 {
 	bioscfg_drv.string_instances_count = hp_get_instance_count(HP_WMI_BIOS_STRING_GUID);
-
-	if (!bioscfg_drv.string_instances_count)
-		return -EINVAL;
-	bioscfg_drv.string_data =
-			kvzalloc_objs(*bioscfg_drv.string_data,
-					bioscfg_drv.string_instances_count);
-
+	bioscfg_drv.string_data = kzalloc_objs(*bioscfg_drv.string_data,
+					       bioscfg_drv.string_instances_count);
 	if (!bioscfg_drv.string_data) {
 		bioscfg_drv.string_instances_count = 0;
 		return -ENOMEM;
@@ -347,6 +342,6 @@ void hp_exit_string_attributes(void)
 	}
 	bioscfg_drv.string_instances_count = 0;
 
-	kvfree(bioscfg_drv.string_data);
+	kfree(bioscfg_drv.string_data);
 	bioscfg_drv.string_data = NULL;
 }

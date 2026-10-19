@@ -202,8 +202,9 @@ static bool vma_seqcount_is_write_locked(unsigned int vma_seq, unsigned int mm_s
 		return false;
 
 	/*
-	 * The VMA seqcount is always odd if locked. An even value can only be
-	 * the zero stored by reset_vma_seqcounts(), never a write lock.
+	 * The VMA seqcount is always odd if locked. For an attached VMA an even
+	 * value can only be the zero stored by __mm_reset_vma_seqcounts(),
+	 * never a write lock.
 	 */
 	return vma_seq & 1;
 }
@@ -268,17 +269,20 @@ static struct vm_area_struct *vma_start_read(struct mm_struct *mm,
 	 * vma->vm_lock_seq under vma->vm_refcnt protection and mm->mm_lock_seq
 	 * modification invalidates all existing locks.
 	 *
-	 * The only other writer is reset_vma_seqcounts(), which stores zero
-	 * (even, so never a write lock) after the mmap write lock's seqcount
-	 * has been released and before any new write lock can be taken, hence
-	 * the READ_ONCE().
+	 * ACQUIRE semantics are required for both reads.
 	 *
-	 * We must use ACQUIRE semantics for the mm_lock_seq so that if we are
-	 * racing with vma_end_write_all(), we only start reading from the VMA
-	 * after it has been unlocked.
-	 * This pairs with RELEASE semantics in vma_end_write_all().
+	 * __mm_reset_vma_seqcounts() might reset vma->vm_lock_seq to zero
+	 * after an overflow. A reader observing that zero must also observe
+	 * the VMA modifications made under the write lock which just ended, so
+	 * the ACQUIRE pairs with the smp_wmb() in do_raw_write_seqcount_end()
+	 * that precedes the reset stores.
+	 *
+	 * The ACQUIRE semantics for the mm_lock_seq read is required so that,
+	 * if we are racing with vma_end_write_all(), we only start reading from
+	 * the VMA after it has been unlocked. This pairs with the RELEASE
+	 * semantics in vma_end_write_all().
 	 */
-	vma_seq = READ_ONCE(vma->vm_lock_seq);
+	vma_seq = smp_load_acquire(&vma->vm_lock_seq);
 	mm_seq = raw_read_seqcount(&mm->mm_lock_seq);
 	if (unlikely(vma_seqcount_is_write_locked(vma_seq, mm_seq))) {
 		vma_refcount_put(vma);
@@ -496,9 +500,10 @@ fallback:
  *
  * The stores below follow the smp_wmb() in do_raw_write_seqcount_end(), so
  * a reader that observes a reset value also observes this cycle's VMA
- * modifications (ordered by the smp_rmb() in raw_read_seqcount()).
+ * modifications (ordered by the ACQUIRE on vma->vm_lock_seq in
+ * vma_start_read()).
  */
-void reset_vma_seqcounts(struct mm_struct *mm)
+void __mm_reset_vma_seqcounts(struct mm_struct *mm)
 {
 	struct vm_area_struct *vma;
 	VMA_ITERATOR(vmi, mm, 0);
@@ -524,7 +529,7 @@ void reset_vma_seqcounts(struct mm_struct *mm)
 	for_each_vma(vmi, vma)
 		WRITE_ONCE(vma->vm_lock_seq, 0);
 }
-EXPORT_SYMBOL(reset_vma_seqcounts);
+EXPORT_SYMBOL(__mm_reset_vma_seqcounts);
 
 #ifdef CONFIG_LOCK_MM_AND_FIND_VMA
 #include <linux/extable.h>

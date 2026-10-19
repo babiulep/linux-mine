@@ -14,6 +14,7 @@
 #include "debug.h"
 #include "ntfs.h"
 #include "ntfs_fs.h"
+#include <trace/events/ntfs3.h>
 
 /* Convert little endian UTF-16 to NLS string. */
 int ntfs_utf16_to_nls(struct ntfs_sb_info *sbi, const __le16 *name, u32 len,
@@ -293,6 +294,8 @@ struct inode *dir_search_flags(struct inode *dir, const struct cpu_str *uni,
 	struct inode *inode = NULL;
 	struct ntfs_fnd *fnd_a = NULL;
 
+	trace_ntfs3_dir_search_u(dir, uni ? uni->len : 0);
+
 	if (!fnd) {
 		fnd_a = fnd_get();
 		if (!fnd_a) {
@@ -557,11 +560,21 @@ static int ntfs_readdir(struct file *file, struct dir_context *ctx)
 		bit = (pos - sbi->record_size) >> index_bits;
 	} else {
 		/*
+		 * Release ni_lock before dir_emit (which may fault into
+		 * user pages).  root->ihdr lives in the main MFT record
+		 * whose lifetime is bound to the inode, and i_rwsem shared
+		 * prevents concurrent directory modifications.
+		 */
+		ni_unlock(ni);
+
+		/*
 		 * Add each name from root in 'ctx'.
 		 */
 		err = ntfs_read_hdr(sbi, ni, &root->ihdr, 0, pos, name, ctx);
 		if (err)
 			goto out;
+
+		ni_lock(ni);
 		bit = 0;
 	}
 
@@ -591,6 +604,12 @@ static int ntfs_readdir(struct file *file, struct dir_context *ctx)
 			goto out;
 
 		/*
+		 * node->index is a kmalloc'd buffer, safe after ni_unlock.
+		 * Release lock before dir_emit to avoid lock-order issues.
+		 */
+		ni_unlock(ni);
+
+		/*
 		 * Add each name from index in 'ctx'.
 		 */
 		err = ntfs_read_hdr(sbi, ni, &node->index->ihdr,
@@ -598,6 +617,8 @@ static int ntfs_readdir(struct file *file, struct dir_context *ctx)
 				    pos, name, ctx);
 		if (err)
 			goto out;
+
+		ni_lock(ni);
 	}
 
 out:

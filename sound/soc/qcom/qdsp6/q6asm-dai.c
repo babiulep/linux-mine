@@ -485,10 +485,11 @@ static snd_pcm_uframes_t q6asm_dai_pointer(struct snd_soc_component *component,
 	struct q6asm_dai_rtd *prtd = runtime->private_data;
 	snd_pcm_uframes_t ptr;
 
-	/* a full lap of period buffers is the start of the ring again */
-	ptr = q6asm_get_hw_pointer(prtd->audio_client, substream->stream) % runtime->periods;
+	ptr = q6asm_get_hw_pointer(prtd->audio_client, substream->stream) * runtime->period_size;
+	if (ptr)
+		return ptr - 1;
 
-	return ptr * runtime->period_size;
+	return 0;
 }
 
 static int q6asm_dai_hw_params(struct snd_soc_component *component,

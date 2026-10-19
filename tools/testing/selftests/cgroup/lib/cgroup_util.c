@@ -659,25 +659,18 @@ int clone_into_cgroup_run_wait(const char *cgroup)
 
 static int __prepare_for_wait(const char *cgroup, const char *filename)
 {
-	char *path;
-	int fd, ret;
-
-	path = cg_control(cgroup, filename);
-	if (!path)
-		return -1;
+	int fd, ret = -1;
 
 	fd = inotify_init1(0);
 	if (fd == -1)
-		goto out;
+		return fd;
 
-	ret = inotify_add_watch(fd, path, IN_MODIFY);
+	ret = inotify_add_watch(fd, cg_control(cgroup, filename), IN_MODIFY);
 	if (ret == -1) {
 		close(fd);
 		fd = -1;
 	}
 
-out:
-	free(path);
 	return fd;
 }
 

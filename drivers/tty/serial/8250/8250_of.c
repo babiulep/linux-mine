@@ -8,7 +8,6 @@
 #include <linux/align.h>
 #include <linux/bits.h>
 #include <linux/console.h>
-#include <linux/err.h>
 #include <linux/math.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -29,7 +28,7 @@ struct of_serial_info {
 	struct clk *bus_clk;
 	struct reset_control *rst;
 	int type;
-	struct uart_8250_port *uport;
+	int line;
 	struct notifier_block clk_notifier;
 };
 
@@ -72,10 +71,11 @@ static int of_platform_serial_clk_notifier_cb(struct notifier_block *nb, unsigne
 					      void *data)
 {
 	struct of_serial_info *info = clk_nb_to_info(nb);
+	struct uart_8250_port *port8250 = serial8250_get_port(info->line);
 	struct clk_notifier_data *ndata = data;
 
 	if (event == POST_RATE_CHANGE) {
-		serial8250_update_uartclk(&info->uport->port, ndata->new_rate);
+		serial8250_update_uartclk(&port8250->port, ndata->new_rate);
 		return NOTIFY_OK;
 	}
 
@@ -292,13 +292,12 @@ static int of_platform_serial_probe(struct platform_device *ofdev)
 			&port8250.overrun_backoff_time_ms) != 0)
 		port8250.overrun_backoff_time_ms = 0;
 
-	info->uport = serial8250_register_8250_port(&port8250);
-	if (IS_ERR(info->uport)) {
-		ret = PTR_ERR(info->uport);
+	ret = serial8250_register_8250_port(&port8250);
+	if (ret < 0)
 		goto err_dispose;
-	}
 
 	info->type = port_type;
+	info->line = ret;
 	platform_set_drvdata(ofdev, info);
 
 	if (info->clk) {
@@ -312,7 +311,7 @@ static int of_platform_serial_probe(struct platform_device *ofdev)
 
 	return 0;
 err_unregister:
-	serial8250_unregister_port(info->uport);
+	serial8250_unregister_port(info->line);
 err_dispose:
 	pm_runtime_put_sync(&ofdev->dev);
 	pm_runtime_disable(&ofdev->dev);
@@ -331,7 +330,7 @@ static void of_platform_serial_remove(struct platform_device *ofdev)
 	if (info->clk)
 		clk_notifier_unregister(info->clk, &info->clk_notifier);
 
-	serial8250_unregister_port(info->uport);
+	serial8250_unregister_port(info->line);
 
 	reset_control_assert(info->rst);
 	pm_runtime_put_sync(&ofdev->dev);
@@ -343,10 +342,10 @@ static void of_platform_serial_remove(struct platform_device *ofdev)
 static int of_serial_suspend(struct device *dev)
 {
 	struct of_serial_info *info = dev_get_drvdata(dev);
-	struct uart_8250_port *port8250 = info->uport;
+	struct uart_8250_port *port8250 = serial8250_get_port(info->line);
 	struct uart_port *port = &port8250->port;
 
-	serial8250_suspend_port(port8250);
+	serial8250_suspend_port(info->line);
 
 	if (!uart_console(port) || console_suspend_enabled) {
 		pm_runtime_put_sync(dev);
@@ -359,7 +358,7 @@ static int of_serial_suspend(struct device *dev)
 static int of_serial_resume(struct device *dev)
 {
 	struct of_serial_info *info = dev_get_drvdata(dev);
-	struct uart_8250_port *port8250 = info->uport;
+	struct uart_8250_port *port8250 = serial8250_get_port(info->line);
 	struct uart_port *port = &port8250->port;
 
 	if (!uart_console(port) || console_suspend_enabled) {
@@ -368,7 +367,7 @@ static int of_serial_resume(struct device *dev)
 		clk_prepare_enable(info->clk);
 	}
 
-	serial8250_resume_port(port8250);
+	serial8250_resume_port(info->line);
 
 	return 0;
 }

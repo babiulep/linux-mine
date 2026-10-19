@@ -136,11 +136,7 @@ impl TransactionLogEntry {
             offsets_size: info.offsets_size,
             return_error_line: if failed { info.error_line } else { None },
             return_error: if failed { info.reply } else { 0 },
-            return_error_param: if failed {
-                info.errno.map_or(0, |e| e.to_errno())
-            } else {
-                0
-            },
+            return_error_param: if failed { info.errno } else { 0 },
             context_name,
         }
     }
@@ -258,7 +254,7 @@ pub(crate) struct TransactionInfo {
     pub(crate) offsets_size: usize,
     pub(crate) buffers_size: usize,
     pub(crate) target_handle: u32,
-    pub(crate) errno: Option<Error>,
+    pub(crate) errno: i32,
     pub(crate) reply: u32,
     pub(crate) error_line: Option<ErrorLocation>,
     pub(crate) oneway_spam_suspect: bool,
@@ -365,13 +361,21 @@ impl Transaction {
         let txn_security_ctx = node_ref.node.flags & FLAT_BINDER_FLAG_TXN_SECURITY_CTX != 0;
         let mut txn_security_ctx_off = if txn_security_ctx { Some(0) } else { None };
         let to = node_ref.node.owner.clone();
-        let mut alloc = from.copy_transaction_data(
+        let mut alloc = match from.copy_transaction_data(
             to.clone(),
             info,
             info.debug_id,
             allow_fds,
             txn_security_ctx_off.as_mut(),
-        )?;
+        ) {
+            Ok(alloc) => alloc,
+            Err(err) => {
+                if !err.is_dead() {
+                    pr_warn!("Failure in copy_transaction_data: {:?}", err);
+                }
+                return Err(err);
+            }
+        };
         if info.is_oneway() {
             if from_parent.is_some() {
                 pr_warn_ratelimited!("Oneway transaction should not be in a transaction stack.\n");
@@ -412,7 +416,13 @@ impl Transaction {
         allow_fds: bool,
     ) -> BinderResult<DLArc<Self>> {
         let mut alloc =
-            from.copy_transaction_data(to.clone(), info, info.debug_id, allow_fds, None)?;
+            match from.copy_transaction_data(to.clone(), info, info.debug_id, allow_fds, None) {
+                Ok(alloc) => alloc,
+                Err(err) => {
+                    pr_warn!("Failure in copy_transaction_data: {:?}", err);
+                    return Err(err);
+                }
+            };
         if info.flags.contains(TransactionFlag::ClearBuf) {
             alloc.set_info_clear_on_drop();
         }

@@ -19,7 +19,6 @@
 #include <linux/acpi.h>
 #include <linux/dmi.h>
 #include <linux/regulator/consumer.h>
-#include <linux/timer.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -4046,16 +4045,26 @@ static int rt5645_i2c_probe(struct i2c_client *i2c)
 	rt5645->gpiod_hp_det = devm_gpiod_get_optional(&i2c->dev, "hp-detect",
 						       GPIOD_IN);
 
-	if (IS_ERR(rt5645->gpiod_hp_det))
-		return dev_err_probe(&i2c->dev, PTR_ERR(rt5645->gpiod_hp_det),
-				     "failed to get hp-detect gpio\n");
+	if (IS_ERR(rt5645->gpiod_hp_det)) {
+		dev_info(&i2c->dev, "failed to initialize gpiod\n");
+		ret = PTR_ERR(rt5645->gpiod_hp_det);
+		/*
+		 * Continue if optional gpiod is missing, bail for all other
+		 * errors, including -EPROBE_DEFER
+		 */
+		if (ret != -ENOENT)
+			return ret;
+	}
 
 	rt5645->gpiod_cbj_sleeve = devm_gpiod_get_optional(&i2c->dev, "cbj-sleeve",
 							   GPIOD_OUT_LOW);
 
-	if (IS_ERR(rt5645->gpiod_cbj_sleeve))
-		return dev_err_probe(&i2c->dev, PTR_ERR(rt5645->gpiod_cbj_sleeve),
-				     "failed to get cbj-sleeve gpio\n");
+	if (IS_ERR(rt5645->gpiod_cbj_sleeve)) {
+		ret = PTR_ERR(rt5645->gpiod_cbj_sleeve);
+		dev_info(&i2c->dev, "failed to initialize gpiod, ret=%d\n", ret);
+		if (ret != -ENOENT)
+			return ret;
+	}
 
 	for (i = 0; i < ARRAY_SIZE(rt5645->supplies); i++)
 		rt5645->supplies[i].supply = rt5645_supply_names[i];
@@ -4296,10 +4305,10 @@ static void rt5645_i2c_remove(struct i2c_client *i2c)
 		free_irq(i2c->irq, rt5645);
 
 	/*
-	 * The timer and jack_detect_work can rearm each other. Shut down the
-	 * timer before cancelling the work.
+	 * Since the rt5645_btn_check_callback() can queue jack_detect_work,
+	 * the timer need to be delted first
 	 */
-	timer_shutdown_sync(&rt5645->btn_check_timer);
+	timer_delete_sync(&rt5645->btn_check_timer);
 
 	cancel_delayed_work_sync(&rt5645->jack_detect_work);
 	cancel_delayed_work_sync(&rt5645->rcclock_work);

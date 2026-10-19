@@ -262,8 +262,9 @@ static int mtk_audio_hires_event(struct snd_soc_dapm_widget *w,
 	default:
 		return 0;
 	}
+	mt8195_afe_set_clk_parent(afe, clk, clk_parent);
 
-	return mt8195_afe_set_clk_parent(afe, clk, clk_parent);
+	return 0;
 }
 
 static struct mtk_dai_adda_priv *get_adda_priv_by_name(struct mtk_base_afe *afe,

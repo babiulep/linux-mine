@@ -23,7 +23,7 @@ cflags-$(CONFIG_X86)		+= -fPIC
 # Nothing enables IBT while the stub runs, so ENDBR would only take space.
 cflags-$(CONFIG_X86)		+= $(call cc-option,-fcf-protection=none)
 
-cflags-$(CONFIG_ARM64)		+= -fpie -ffixed-x18 -fno-unwind-tables \
+cflags-$(CONFIG_ARM64)		+= -fpie -fno-unwind-tables \
 				   -fno-asynchronous-unwind-tables
 cflags-$(CONFIG_ARM)		+= -DEFI_HAVE_STRLEN -DEFI_HAVE_STRNLEN \
 				   -DEFI_HAVE_MEMCHR -DEFI_HAVE_STRRCHR \

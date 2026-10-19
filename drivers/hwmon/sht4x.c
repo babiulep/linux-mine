@@ -258,6 +258,8 @@ static ssize_t heater_enable_show(struct device *dev,
 {
 	struct sht4x_data *data = dev_get_drvdata(dev);
 
+	guard(hwmon_lock)(dev);
+
 	return sysfs_emit(buf, "%u\n", time_before64(get_jiffies_64(), data->heating_complete));
 }
 
@@ -306,6 +308,8 @@ static ssize_t heater_enable_store(struct device *dev,
 	ret = i2c_master_send(data->client, &cmd, SHT4X_CMD_LEN);
 	if (ret < 0)
 		return ret;
+	if (ret != SHT4X_CMD_LEN)
+		return -EIO;
 
 	data->heating_complete = get_jiffies_64() + msecs_to_jiffies(heating_time_bound);
 	data->data_pending = true;

@@ -1625,27 +1625,34 @@ MODULE_PARM_DESC(mask_port_ext,
 		 "where <pci_dev> is the PCI ID of an AHCI controller in the "
 		 "form \"domain:bus:dev.func\"");
 
-static void ahci_port_mask(struct device *dev, char *mask_s, u32 *mask)
+static u32 ahci_port_mask(struct device *dev, char *mask_s)
 {
-	if (kstrtou32(mask_s, 0, mask))
+	unsigned int mask;
+
+	if (kstrtouint(mask_s, 0, &mask)) {
 		dev_err(dev, "Invalid port map mask\n");
+		return 0;
+	}
+
+	return mask;
 }
 
-static void ahci_get_port_mask(struct device *dev, char *mask_p, u32 *mask)
+static u32 ahci_get_port_mask(struct device *dev, char *mask_p)
 {
 	char *param, *end, *str, *mask_s;
 	char *name;
+	u32 mask = 0;
 
 	if (!mask_p || !strlen(mask_p))
-		return;
+		return 0;
 
 	str = kstrdup(mask_p, GFP_KERNEL);
 	if (!str)
-		return;
+		return 0;
 
 	/* Handle single mask case */
 	if (!strchr(str, '=')) {
-		ahci_port_mask(dev, str, mask);
+		mask = ahci_port_mask(dev, str);
 		goto free;
 	}
 
@@ -1680,11 +1687,13 @@ static void ahci_get_port_mask(struct device *dev, char *mask_p, u32 *mask)
 			param++;
 		}
 
-		ahci_port_mask(dev, mask_s, mask);
+		mask = ahci_port_mask(dev, mask_s);
 	}
 
 free:
 	kfree(str);
+
+	return mask;
 }
 
 static void ahci_pci_save_initial_config(struct pci_dev *pdev,
@@ -1710,10 +1719,10 @@ static void ahci_pci_save_initial_config(struct pci_dev *pdev,
 	}
 
 	/* Handle port map masks passed as module parameter. */
-	ahci_get_port_mask(&pdev->dev, ahci_mask_port_map,
-			   &hpriv->mask_port_map);
-	ahci_get_port_mask(&pdev->dev, ahci_mask_port_ext,
-			   &hpriv->mask_port_ext);
+	hpriv->mask_port_map =
+		ahci_get_port_mask(&pdev->dev, ahci_mask_port_map);
+	hpriv->mask_port_ext =
+		ahci_get_port_mask(&pdev->dev, ahci_mask_port_ext);
 
 	ahci_save_initial_config(&pdev->dev, hpriv);
 }

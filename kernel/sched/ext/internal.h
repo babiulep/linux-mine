@@ -878,9 +878,8 @@ struct sched_ext_ops {
 	 * @args: argument container, see the struct definition
 	 *
 	 * The sub-scheduler holds no caps by this point and can no longer
-	 * affect any cid. Its caps went away without a
-	 * sub_child_ecaps_updated() report, so whatever was delegated to it,
-	 * e.g. cpuperf targets, is the parent's to restore here.
+	 * affect any cid. Whatever was delegated to it, e.g. cpuperf targets,
+	 * is the parent's to restore here.
 	 */
 	void (*sub_detach)(struct scx_sub_detach_args *args);
 
@@ -932,25 +931,6 @@ struct sched_ext_ops {
 	 * Runs with the rq lock held on the context switch path.
 	 */
 	void (*sub_cid_sched_updated)(s32 cid, u64 sched);
-
-	/**
-	 * @sub_child_ecaps_updated: A child's effective caps on a cid changed
-	 * @cgroup_id: cgroup id of the direct child
-	 * @cid: the cid whose effective caps changed
-	 * @before: the child's effective caps as of the last delivery
-	 * @after: the child's effective caps now
-	 *
-	 * Invoked right after the child's sub_ecaps_updated(), once a grant or
-	 * revoke is in effect on the cpu. From here on the parent can act on a
-	 * cap the child lost, e.g. reset the cpuperf target or schedule on the
-	 * cid. A detaching child's caps go away without a report, see
-	 * sub_detach(). A cpu going offline drops caps without a report.
-	 *
-	 * Runs in dispatch context with rq lock held, and can perform all
-	 * operations allowed in ops.dispatch() including inserting/moving
-	 * tasks.
-	 */
-	void (*sub_child_ecaps_updated)(u64 cgroup_id, s32 cid, u64 before, u64 after);
 
 	/*
 	 * All online ops must come before ops.cpu_online().
@@ -1210,7 +1190,6 @@ struct sched_ext_ops_cid {
 	void (*sub_caps_updated)(const struct scx_cmask *cmask__arena, u64 caps);
 	void (*sub_ecaps_updated)(s32 cid, u64 before, u64 after);
 	void (*sub_cid_sched_updated)(s32 cid, u64 sched);
-	void (*sub_child_ecaps_updated)(u64 cgroup_id, s32 cid, u64 before, u64 after);
 	void (*cid_online)(s32 cid);
 	void (*cid_offline)(s32 cid);
 	s32 (*init_cids)(void);
@@ -1474,10 +1453,7 @@ struct scx_sched_pcpu {
 	struct llist_node	ecaps_to_sync_node;
 	/* owed a forced update_idle() re-notify on this cpu */
 	bool			idle_renotify;
-	/*
-	 * ecaps as of the last sub_ecaps_updated() and
-	 * sub_child_ecaps_updated() delivery. See __scx_process_sync_ecaps().
-	 */
+	/* effective caps as of the last sub_ecaps_updated() delivery */
 	u64			reported_ecaps;
 
 	/*
@@ -1842,8 +1818,8 @@ enum scx_enq_flags {
 	/*
 	 * Only allowed on local DSQs. Guarantees that the task either gets
 	 * on the CPU immediately and stays on it, or gets reenqueued back
-	 * to the BPF scheduler. A blocked proxy donor may be put back on the
-	 * local DSQ temporarily while proxy execution resolves its mutex owner.
+	 * to the BPF scheduler. It will never linger on a local DSQ or be
+	 * silently put back after preemption.
 	 *
 	 * The protection persists until the next fresh enqueue - it
 	 * survives SAVE/RESTORE cycles, slice extensions and preemption.
@@ -1890,12 +1866,6 @@ enum scx_enq_flags {
 	/*
 	 * The task is blocked on a mutex and is being kept runnable as a proxy
 	 * donor. Only passed to ops.enqueue() when %SCX_OPS_ENQ_BLOCKED is set.
-	 *
-	 * Blocking on the mutex does not enqueue the task by itself. A donor put
-	 * with slice left stays at the head of the local DSQ, except when an
-	 * IMMED donor is preempted or cannot stay local. It is passed to
-	 * ops.enqueue() when its slice runs out, the IMMED placement cannot be
-	 * kept, or proxy execution moves it to the owner's CPU.
 	 */
 	SCX_ENQ_BLOCKED		= 1LLU << 42,
 

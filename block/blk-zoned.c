@@ -2328,7 +2328,7 @@ static int disk_revalidate_capacity(struct gendisk *disk,
 				    struct blk_revalidate_zone_args *args)
 {
 	struct queue_limits *lim = &disk->queue->limits;
-	sector_t zone_sectors = lim->chunk_sectors;
+        sector_t zone_sectors = lim->chunk_sectors;
 	unsigned int nr_zones;
 	int ret = -ENODEV;
 

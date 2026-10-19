@@ -157,7 +157,10 @@ andx_again:
 		}
 	}
 
-	ret = cmds->proc(work);
+	if (smb2_check_compound_fid(work))
+		ret = -EBADF;
+	else
+		ret = cmds->proc(work);
 	if (conn->ops->inc_reqs) {
 		struct smb2_hdr *rsp = ksmbd_resp_buf_curr(work);
 
@@ -436,7 +439,6 @@ static int ksmbd_server_process_request(struct ksmbd_conn *conn)
 static int ksmbd_server_terminate_conn(struct ksmbd_conn *conn)
 {
 	ksmbd_conn_sessions_cleanup(conn);
-	destroy_lease_table(conn);
 	return 0;
 }
 
@@ -472,6 +474,8 @@ static int server_conf_init(void)
 				KSMBD_AUTH_MSKRB5;
 #endif
 	server_conf.max_inflight_req = SMB2_MAX_CREDITS;
+	server_conf.max_sessions_per_connection =
+		KSMBD_DEFAULT_MAX_SESSIONS_PER_CONNECTION;
 	return 0;
 }
 
@@ -664,7 +668,7 @@ static int ksmbd_server_shutdown(void)
 	ksmbd_proc_cleanup();
 	ksmbd_crypto_destroy();
 	ksmbd_free_global_file_table();
-	destroy_lease_table(NULL);
+	destroy_lease_table();
 	ksmbd_work_pool_destroy();
 	ksmbd_exit_file_cache();
 	server_conf_free();

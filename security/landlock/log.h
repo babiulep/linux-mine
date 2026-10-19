@@ -25,12 +25,9 @@ enum landlock_request_type {
 	LANDLOCK_REQUEST_NET_ACCESS,
 	LANDLOCK_REQUEST_SCOPE_ABSTRACT_UNIX_SOCKET,
 	LANDLOCK_REQUEST_SCOPE_SIGNAL,
-	LANDLOCK_REQUEST_NAMESPACE,
-	LANDLOCK_REQUEST_CAPABILITY,
 };
 
 struct landlock_blockers {
-	/* Blocking access rights or permissions, as selected by @type. */
 	access_mask_t access;
 	enum landlock_request_type type;
 };
@@ -61,13 +58,8 @@ struct landlock_signal_trace {
  * CONFIG_SECURITY_LANDLOCK_LOG is not set.
  */
 struct landlock_request {
-	/* Mandatory request type. */
+	/* Mandatory fields. */
 	enum landlock_request_type type;
-
-	/* Required field for permission requests. */
-	access_mask_t permission;
-
-	/* Mandatory audit context. */
 	struct common_audit_data audit;
 
 	/**

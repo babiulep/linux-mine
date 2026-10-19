@@ -108,8 +108,7 @@ struct bvec_iter {
 	unsigned int		bi_idx;
 
 	/*
-	 * Current offset in the bvec entry pointed to by `bi_idx` or into
-	 * a dma-buf map.
+	 * Current offset in the bvec entry pointed to by `bi_idx`.
 	 */
 	unsigned int		bi_offset;
 } __packed __aligned(4);
