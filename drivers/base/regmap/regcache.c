@@ -289,7 +289,8 @@ void regcache_exit(struct regmap *map)
 
 	regcache_hw_exit(map);
 	if (map->cache_ops->exit) {
-		dev_dbg(map->dev, "Destroying %s cache\n", map->cache_ops->name);
+		dev_dbg(map->dev, "Destroying %s cache\n",
+			map->cache_ops->name);
 		map->cache_ops->exit(map);
 	}
 

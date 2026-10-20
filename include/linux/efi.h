@@ -631,6 +631,8 @@ typedef struct {
 
 extern unsigned long __ro_after_init efi_rng_seed;		/* RNG Seed table */
 
+enum efi_rts_ids;
+
 /*
  * All runtime access to EFI goes through this structure:
  */
@@ -650,6 +652,7 @@ extern struct efi {
 	unsigned long			mokvar_table;		/* MOK variable config table */
 	unsigned long			coco_secret;		/* Confidential computing secret table */
 	unsigned long			unaccepted;		/* Unaccepted memory table */
+	unsigned long			mem_reserve;		/* Persistent memory reservations */
 
 	efi_get_time_t			*get_time;
 	efi_set_time_t			*set_time;
@@ -665,6 +668,10 @@ extern struct efi {
 	efi_query_capsule_caps_t	*query_capsule_caps;
 	efi_get_next_high_mono_count_t	*get_next_high_mono_count;
 	efi_reset_system_t		*reset_system;
+
+#if IS_ENABLED(CONFIG_LKDTM)
+	efi_status_t			(*lkdtm_rt_test)(enum efi_rts_ids id);
+#endif
 
 	struct efi_memory_map		memmap;
 	unsigned long			flags;
@@ -1253,6 +1260,10 @@ enum efi_rts_ids {
 	EFI_UPDATE_CAPSULE,
 	EFI_QUERY_CAPSULE_CAPS,
 	EFI_ACPI_PRM_HANDLER,
+#if IS_ENABLED(CONFIG_LKDTM)
+	EFI_LKDTM_RUNTIME_RO_TEST,
+	EFI_LKDTM_RUNTIME_NX_TEST,
+#endif
 };
 
 union efi_rts_args;

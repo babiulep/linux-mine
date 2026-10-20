@@ -1446,11 +1446,6 @@ static int __open_id(struct ksmbd_file_table *ft, struct ksmbd_file *fp,
 	u64			id = 0;
 	int			ret;
 
-	if (type == OPEN_ID_TYPE_VOLATILE_ID && fd_limit_depleted()) {
-		__open_id_set(fp, KSMBD_NO_FID, type);
-		return -EMFILE;
-	}
-
 	idr_preload(KSMBD_DEFAULT_GFP);
 	write_lock(&ft->lock);
 	ret = idr_alloc_cyclic(ft->idr, fp, KSMBD_START_FID, INT_MAX - 1,
@@ -1460,7 +1455,6 @@ static int __open_id(struct ksmbd_file_table *ft, struct ksmbd_file *fp,
 		ret = 0;
 	} else {
 		id = KSMBD_NO_FID;
-		fd_limit_close();
 	}
 
 	__open_id_set(fp, id, type);
@@ -1480,10 +1474,15 @@ struct ksmbd_file *ksmbd_open_fd(struct ksmbd_work *work, struct file *filp)
 	struct ksmbd_file *fp;
 	int ret;
 
+	/* Durable reconnects reuse the slot held for the lifetime of fp. */
+	if (fd_limit_depleted())
+		return ERR_PTR(-EMFILE);
+
 	fp = kmem_cache_zalloc(filp_cache, KSMBD_DEFAULT_GFP);
 	if (!fp) {
 		pr_err("Failed to allocate memory\n");
-		return ERR_PTR(-ENOMEM);
+		ret = -ENOMEM;
+		goto err_fd_limit;
 	}
 
 	INIT_LIST_HEAD(&fp->blocked_works);
@@ -1529,6 +1528,8 @@ err_out:
 	ksmbd_conn_put(fp->conn);
 	ksmbd_share_config_put(fp->share_conf);
 	kmem_cache_free(filp_cache, fp);
+err_fd_limit:
+	fd_limit_close();
 	return ERR_PTR(ret);
 }
 
@@ -2261,14 +2262,19 @@ int ksmbd_init_file_table(struct ksmbd_file_table *ft)
 void ksmbd_destroy_file_table(struct ksmbd_session *sess)
 {
 	struct ksmbd_file_table *ft = &sess->file_table;
+	struct idr *idr;
 
 	if (!ft->idr)
 		return;
 
 	__close_file_table_ids(sess, NULL, session_fd_check, true);
-	idr_destroy(ft->idr);
-	kfree(ft->idr);
+	/* Stop procfs readers before freeing the detached file table. */
+	write_lock(&ft->lock);
+	idr = ft->idr;
 	ft->idr = NULL;
+	write_unlock(&ft->lock);
+	idr_destroy(idr);
+	kfree(idr);
 }
 
 int ksmbd_init_file_cache(void)

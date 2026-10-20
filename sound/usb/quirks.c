@@ -1790,8 +1790,15 @@ int snd_usb_apply_boot_quirk_once(struct usb_device *dev,
 	}
 
 	/* Behringer devices may need explicit device descriptor read at boot */
-	if (USB_ID_VENDOR(id) == 0x1397)
+	if (USB_ID_VENDOR(id) == 0x1397) {
+		/* the quirk seems breaking on some Behringer devices */
+		switch (id) {
+		case USB_ID(0x1397, 0x0508): /* UMC204HD */
+		case USB_ID(0x1397, 0x0509): /* UMC204HD */
+			return 0;
+		}
 		return snd_usb_cm1a_boot_quirk(dev);
+	}
 
 	return 0;
 }
@@ -2723,6 +2730,8 @@ static const struct usb_audio_quirk_flags_table quirk_flags_table[] = {
 	DEVICE_FLG(0x1852, 0x5065, /* Luxman DA-06 */
 		   QUIRK_FLAG_ITF_USB_DSD_DAC | QUIRK_FLAG_CTL_MSG_DELAY),
 	DEVICE_FLG(0x1901, 0x0191, /* GE B850V3 CP2114 audio interface */
+		   QUIRK_FLAG_GET_SAMPLE_RATE),
+	DEVICE_FLG(0x194f, 0x0301, /* PreSonus AudioBox USB */
 		   QUIRK_FLAG_GET_SAMPLE_RATE),
 	DEVICE_FLG(0x19f7, 0x0003, /* RODE NT-USB */
 		   QUIRK_FLAG_MIXER_PLAYBACK_MIN_MUTE),

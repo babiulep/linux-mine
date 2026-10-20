@@ -75,7 +75,8 @@ static ssize_t nullfs_file_splice_write(struct pipe_inode_info *pipe,
 }
 
 static int nullfs_file_setattr(const struct mnt_idmap *idmap,
-			       struct dentry *dentry, struct iattr *attr)
+			       struct dentry *dentry,
+			       struct iattr *attr)
 {
 	if (attr->ia_valid & (ATTR_MODE | ATTR_UID | ATTR_GID))
 		return -EPERM;
