@@ -408,6 +408,7 @@ struct mes_misc_op_input {
 		struct {
 			uint32_t                  reg_offset;
 			uint64_t                  buffer_addr;
+			bool                      read64_bits;
 		} read_reg;
 
 		struct {
@@ -435,6 +436,7 @@ struct mes_misc_op_input {
 			} flags;
 			uint32_t spi_gdbg_per_vmid_cntl;
 			uint32_t tcp_watch_cntl[4];
+			uint64_t watch_addresses[4];
 			uint32_t trap_en;
 		} set_shader_debugger;
 
@@ -613,6 +615,8 @@ int amdgpu_mes_detect_and_reset_hung_queues(struct amdgpu_device *adev,
 
 uint32_t amdgpu_mes_rreg(struct amdgpu_device *adev, uint32_t reg,
 			 uint32_t xcc_id);
+int amdgpu_mes_rreg64(struct amdgpu_device *adev, uint32_t reg,
+		      uint32_t xcc_id, uint64_t *val);
 int amdgpu_mes_wreg(struct amdgpu_device *adev,
 		    uint32_t reg, uint32_t val, uint32_t xcc_id);
 int amdgpu_mes_reg_write_reg_wait(struct amdgpu_device *adev,
@@ -623,6 +627,7 @@ int amdgpu_mes_set_shader_debugger(struct amdgpu_device *adev,
 				uint64_t process_context_addr,
 				uint32_t spi_gdbg_per_vmid_cntl,
 				const uint32_t *tcp_watch_cntl,
+				const uint64_t *watch_addresses,
 				uint32_t flags,
 				bool trap_en,
 				uint32_t xcc_id);

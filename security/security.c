@@ -1856,8 +1856,8 @@ int security_inode_follow_link(struct dentry *dentry, struct inode *inode,
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_inode_permission(const struct mnt_idmap *idmap, struct inode *inode,
-			      int mask)
+int security_inode_permission(const struct mnt_idmap *idmap,
+			      struct inode *inode, int mask)
 {
 	if (unlikely(IS_PRIVATE(inode)))
 		return 0;
@@ -2409,7 +2409,7 @@ int security_kernfs_init_security(struct kernfs_node *kn_dir,
  *
  * Return: Returns 0 if permission is granted.
  */
-int security_file_permission(const struct file *file, int mask)
+int security_file_permission(struct file *file, int mask)
 {
 	return call_int_hook(file_permission, file, mask);
 }

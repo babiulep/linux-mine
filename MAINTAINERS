@@ -1200,8 +1200,8 @@ F:	drivers/platform/x86/amd/hfi/
 
 AMD IOMMU (AMD-VI)
 M:	Joerg Roedel (AMD) <joro@8bytes.org>
+M:	Vasant Hegde <vasant.hegde@amd.com>
 R:	Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
-R:	Vasant Hegde <vasant.hegde@amd.com>
 L:	iommu@lists.linux.dev
 S:	Maintained
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/iommu/linux.git
@@ -5772,7 +5772,7 @@ F:	drivers/net/ethernet/broadcom/unimac.h
 
 BROADCOM TG3 GIGABIT ETHERNET DRIVER
 M:	Pavan Chebbi <pavan.chebbi@broadcom.com>
-M:	Michael Chan <mchan@broadcom.com>
+M:	Michael Chan <michael.chan@broadcom.com>
 L:	netdev@vger.kernel.org
 S:	Maintained
 F:	drivers/net/ethernet/broadcom/tg3.*
@@ -8539,6 +8539,13 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/display/panel/novatek,nt37801.yaml
 F:	drivers/gpu/drm/panel/panel-novatek-nt37801.c
 
+DRM DRIVER FOR NOVATEK NT51021 PANELS
+M:	Ryan Brue <ryanbrue.dev@gmail.com>
+M:	Nickolay Goppen <setotau@mainlining.org>
+S:	Maintained
+F:	Documentation/devicetree/bindings/display/panel/novatek,nt51021.yaml
+F:	drivers/gpu/drm/panel/panel-novatek-nt51021.c
+
 DRM DRIVER FOR NVIDIA GEFORCE/QUADRO GPUS
 M:	Lyude Paul <lyude@redhat.com>
 M:	Danilo Krummrich <dakr@kernel.org>
@@ -8627,6 +8634,12 @@ M:	Robert Chiras <robert.chiras@nxp.com>
 S:	Maintained
 F:	Documentation/devicetree/bindings/display/panel/raydium,rm67191.yaml
 F:	drivers/gpu/drm/panel/panel-raydium-rm67191.c
+
+DRM DRIVER FOR RAYDIUM RM69220 PANELS
+M:	Alexander Koskovich <akoskovich@pm.me>
+S:	Maintained
+F:	Documentation/devicetree/bindings/display/panel/raydium,rm69220.yaml
+F:	drivers/gpu/drm/panel/panel-raydium-rm69220.c
 
 DRM DRIVER FOR SAMSUNG DB7430 PANELS
 M:	Linus Walleij <linusw@kernel.org>
@@ -11657,7 +11670,9 @@ M:	Harald Welte <laforge@gnumonks.org>
 L:	osmocom-net-gprs@lists.osmocom.org
 S:	Maintained
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/pablo/gtp.git
+F:	Documentation/netlink/specs/gtp.yaml
 F:	drivers/net/gtp.c
+F:	tools/testing/selftests/net/gtp.py
 
 GUID PARTITION TABLE (GPT)
 M:	Davidlohr Bueso <dave@stgolabs.net>
@@ -19554,6 +19569,7 @@ L:	netdev@vger.kernel.org
 S:	Maintained
 F:	Documentation/netlink/specs/rt-addr.yaml
 F:	Documentation/netlink/specs/rt-neigh.yaml
+F:	Documentation/netlink/specs/rt-nexthop.yaml
 F:	Documentation/netlink/specs/rt-route.yaml
 F:	Documentation/netlink/specs/rt-rule.yaml
 F:	include/linux/inetdevice.h
@@ -22945,6 +22961,7 @@ L:	netdev@vger.kernel.org
 L:	linux-arm-msm@vger.kernel.org
 S:	Maintained
 F:	Documentation/devicetree/bindings/net/qcom,ethqos.yaml
+F:	Documentation/devicetree/bindings/net/qcom,sa8255p-ethqos.yaml
 F:	drivers/net/ethernet/stmicro/stmmac/dwmac-qcom-ethqos.c
 
 QUALCOMM FASTRPC DRIVER
@@ -28430,6 +28447,22 @@ F:	kernel/trace/trace_hwlat.c
 F:	kernel/trace/trace_irqsoff.c
 F:	kernel/trace/trace_osnoise.c
 F:	kernel/trace/trace_sched_wakeup.c
+
+TRACING RING BUFFER
+M:	Steven Rostedt <rostedt@goodmis.org>
+M:	Vincent Donnefort <vdonnefort@google.com>
+M:	Masami Hiramatsu <mhiramat@kernel.org>
+L:	linux-kernel@vger.kernel.org
+L:	linux-trace-kernel@vger.kernel.org
+S:	Maintained
+Q:	https://patchwork.kernel.org/project/linux-trace-kernel/list/
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/trace/linux-trace.git
+F:	Documentation/trace/ring-buffer*
+F:	Documentation/trace/remotes.rst
+F:	include/linux/ring-buffer*.h
+F:	kernel/trace/*ring_buffer*.c
+F:	kernel/trace/remote*.c
+F:	tools/testing/selftests/ring-buffer/
 
 TRADITIONAL CHINESE DOCUMENTATION
 M:	Chen-Yu Yeh <chenyou910331@gmail.com>

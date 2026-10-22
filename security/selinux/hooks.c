@@ -3818,7 +3818,7 @@ static int selinux_kernfs_init_security(struct kernfs_node *kn_dir,
 
 /* file security operations */
 
-static int selinux_revalidate_file_permission(const struct file *file, int mask)
+static int selinux_revalidate_file_permission(struct file *file, int mask)
 {
 	const struct cred *cred = current_cred();
 	struct inode *inode = file_inode(file);
@@ -3831,7 +3831,7 @@ static int selinux_revalidate_file_permission(const struct file *file, int mask)
 			     file_mask_to_av(inode->i_mode, mask));
 }
 
-static int selinux_file_permission(const struct file *file, int mask)
+static int selinux_file_permission(struct file *file, int mask)
 {
 	struct inode *inode = file_inode(file);
 	struct file_security_struct *fsec = selinux_file(file);

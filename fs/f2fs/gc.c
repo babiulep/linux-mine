@@ -2379,7 +2379,6 @@ int f2fs_resize_fs(struct file *filp, __u64 block_count)
 	struct f2fs_lock_context glc;
 	struct f2fs_lock_context clc;
 	unsigned int secs, old_tail;
-	bool reserved = false;
 	int err = 0;
 	__u32 rem;
 
@@ -2431,17 +2430,10 @@ int f2fs_resize_fs(struct file *filp, __u64 block_count)
 	f2fs_lock_op(sbi, &lc);
 
 	spin_lock(&sbi->stat_lock);
-	if (shrunk_blocks + valid_user_blocks(sbi) >
-			__get_available_block_count(sbi, false)) {
+	if (shrunk_blocks + valid_user_blocks(sbi) +
+		sbi->current_reserved_blocks + sbi->unusable_block_count +
+		F2FS_OPTION(sbi).root_reserved_blocks > sbi->user_block_count)
 		err = -ENOSPC;
-	} else {
-		/*
-		 * Reserve the space to be shrunk so that no one, including
-		 * root, can allocate it until the shrink is done.
-		 */
-		sbi->resize_reserved_blocks += shrunk_blocks;
-		reserved = true;
-	}
 	spin_unlock(&sbi->stat_lock);
 
 	if (err)
@@ -2455,32 +2447,29 @@ out_unlock:
 out_drop_write:
 	mnt_drop_write_file(filp);
 	if (err)
-		goto out_release;
+		return err;
 
 	err = freeze_super(sbi->sb, FREEZE_HOLDER_KERNEL, NULL);
 	if (err)
-		goto out_release;
+		return err;
 
 	if (f2fs_readonly(sbi->sb)) {
 		err = thaw_super(sbi->sb, FREEZE_HOLDER_KERNEL, NULL);
-		if (!err)
-			err = -EROFS;
-		goto out_release;
+		if (err)
+			return err;
+		return -EROFS;
 	}
 
 	f2fs_down_write_trace(&sbi->gc_lock, &glc);
 	f2fs_down_write_trace(&sbi->cp_global_sem, &clc);
 
 	spin_lock(&sbi->stat_lock);
-	/* shrunk_blocks is already accounted in resize_reserved_blocks */
-	if (valid_user_blocks(sbi) >
-			__get_available_block_count(sbi, false)) {
+	if (shrunk_blocks + valid_user_blocks(sbi) +
+		sbi->current_reserved_blocks + sbi->unusable_block_count +
+		F2FS_OPTION(sbi).root_reserved_blocks > sbi->user_block_count)
 		err = -ENOSPC;
-	} else {
+	else
 		sbi->user_block_count -= shrunk_blocks;
-		sbi->resize_reserved_blocks -= shrunk_blocks;
-		reserved = false;
-	}
 	spin_unlock(&sbi->stat_lock);
 	if (err)
 		goto out_err;
@@ -2529,11 +2518,5 @@ out_err:
 	f2fs_up_write_trace(&sbi->cp_global_sem, &clc);
 	f2fs_up_write_trace(&sbi->gc_lock, &glc);
 	thaw_super(sbi->sb, FREEZE_HOLDER_KERNEL, NULL);
-out_release:
-	if (reserved) {
-		spin_lock(&sbi->stat_lock);
-		sbi->resize_reserved_blocks -= shrunk_blocks;
-		spin_unlock(&sbi->stat_lock);
-	}
 	return err;
 }

@@ -3166,8 +3166,8 @@ Kernel parameters
 			userspace VMM design.
 
 			Note, this parameter is only available when
-			CONFIG_KVM_VM_MEMORY_ATTRIBUTES=y. When
-			CONFIG_KVM_VM_MEMORY_ATTRIBUTES is not set, in-place
+			CONFIG_KVM_PRIVATE_MEMATTR_VM=y. When
+			CONFIG_KVM_PRIVATE_MEMATTR_VM is not set, in-place
 			conversion is enabled (and cannot be disabled) if KVM
 			is built with private memory support.
 
@@ -4045,7 +4045,7 @@ Kernel parameters
 			poison checking when freeing elements back to the
 			pool. Useful for debugging mempool corruption.
 
-	memtest=	[KNL,X86,ARM,M68K,PPC,RISCV,EARLY] Enable memtest
+	memtest=	[KNL,ALPHA,X86,ARM,M68K,PPC,RISCV,EARLY] Enable memtest
 			Format: <integer>
 			default : 0 <disable>
 			Specifies the number of memtest passes to be

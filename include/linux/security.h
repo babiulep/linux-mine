@@ -426,8 +426,8 @@ int security_inode_rename(struct inode *old_dir, struct dentry *old_dentry,
 int security_inode_readlink(struct dentry *dentry);
 int security_inode_follow_link(struct dentry *dentry, struct inode *inode,
 			       bool rcu);
-int security_inode_permission(const struct mnt_idmap *idmap, struct inode *inode,
-			      int mask);
+int security_inode_permission(const struct mnt_idmap *idmap,
+			      struct inode *inode, int mask);
 int security_inode_setattr(const struct mnt_idmap *idmap,
 			   struct dentry *dentry, struct iattr *attr);
 void security_inode_post_setattr(const struct mnt_idmap *idmap, struct dentry *dentry,
@@ -474,7 +474,7 @@ int security_inode_setintegrity(const struct inode *inode,
 				size_t size);
 int security_kernfs_init_security(struct kernfs_node *kn_dir,
 				  struct kernfs_node *kn);
-int security_file_permission(const struct file *file, int mask);
+int security_file_permission(struct file *file, int mask);
 int security_file_alloc(struct file *file);
 void security_file_release(struct file *file);
 void security_file_free(struct file *file);
@@ -1147,7 +1147,7 @@ static inline int security_inode_copy_up_xattr(struct dentry *src, const char *n
 	return -EOPNOTSUPP;
 }
 
-static inline int security_file_permission(const struct file *file, int mask)
+static inline int security_file_permission(struct file *file, int mask)
 {
 	return 0;
 }
