@@ -77,9 +77,6 @@ xbitmap64_clear(
 	struct xbitmap64_node	*new_bn;
 	uint64_t		last = start + len - 1;
 
-	if (!len)
-		return 0;
-
 	while ((bn = xbitmap64_tree_iter_first(&bitmap->xb_root, start, last))) {
 		if (bn->bn_start < start && bn->bn_last > last) {
 			uint64_t	old_last = bn->bn_last;
@@ -129,9 +126,6 @@ xbitmap64_set(
 	struct xbitmap64_node	*right = NULL;
 	uint64_t		last = start + len - 1;
 	int			error;
-
-	if (!len)
-		return 0;
 
 	/* Is this whole range already set? */
 	left = xbitmap64_tree_iter_first(&bitmap->xb_root, start, last);
@@ -229,8 +223,6 @@ xbitmap64_disunion(
 	struct xbitmap64_node	*bn;
 	int			error;
 
-	ASSERT(bitmap != sub);
-
 	if (xbitmap64_empty(bitmap) || xbitmap64_empty(sub))
 		return 0;
 
@@ -294,8 +286,6 @@ xbitmap64_test(
 {
 	struct xbitmap64_node	*bn;
 	uint64_t		last = start + *len - 1;
-
-	ASSERT(*len > 0);
 
 	bn = xbitmap64_tree_iter_first(&bitmap->xb_root, start, last);
 	if (!bn)
@@ -367,9 +357,6 @@ xbitmap32_clear(
 	struct xbitmap32_node	*new_bn;
 	uint32_t		last = start + len - 1;
 
-	if (!len)
-		return 0;
-
 	while ((bn = xbitmap32_tree_iter_first(&bitmap->xb_root, start, last))) {
 		if (bn->bn_start < start && bn->bn_last > last) {
 			uint32_t	old_last = bn->bn_last;
@@ -419,9 +406,6 @@ xbitmap32_set(
 	struct xbitmap32_node	*right = NULL;
 	uint32_t		last = start + len - 1;
 	int			error;
-
-	if (!len)
-		return 0;
 
 	/* Is this whole range already set? */
 	left = xbitmap32_tree_iter_first(&bitmap->xb_root, start, last);
@@ -519,8 +503,6 @@ xbitmap32_disunion(
 	struct xbitmap32_node	*bn;
 	int			error;
 
-	ASSERT(bitmap != sub);
-
 	if (xbitmap32_empty(bitmap) || xbitmap32_empty(sub))
 		return 0;
 
@@ -584,8 +566,6 @@ xbitmap32_test(
 {
 	struct xbitmap32_node	*bn;
 	uint32_t		last = start + *len - 1;
-
-	ASSERT(*len > 0);
 
 	bn = xbitmap32_tree_iter_first(&bitmap->xb_root, start, last);
 	if (!bn)

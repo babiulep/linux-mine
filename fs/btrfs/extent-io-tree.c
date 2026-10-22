@@ -751,7 +751,7 @@ hit_next:
 				btrfs_split_delalloc_extent(tree->inode, state, start);
 
 			/*
-			 * Temporarily ajdust this state's range to match the
+			 * Temporarilly ajdust this state's range to match the
 			 * range for which we are clearing bits.
 			 */
 			state->start = start;

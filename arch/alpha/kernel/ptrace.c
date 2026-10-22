@@ -134,44 +134,18 @@ get_reg_addr(struct task_struct * task, unsigned long regno)
 /*
  * Get contents of register REGNO in task TASK.
  */
-
-static bool
-valid_regno(unsigned long regno)
+static unsigned long
+get_reg(struct task_struct * task, unsigned long regno)
 {
-	return regno <= 65;
-}
-
-static long
-get_reg(struct task_struct *task, unsigned long regno)
-{
-	unsigned long *addr;
-
-	if (!valid_regno(regno))
-		return -EIO;
-
-	/*
-	 * Special hack for fpcr -- combine hardware and software bits.
-	 */
+	/* Special hack for fpcr -- combine hardware and software bits.  */
 	if (regno == 63) {
-		unsigned long fpcr;
-		unsigned long swcr;
-
-		addr = get_reg_addr(task, regno);
-		if (!addr)
-			return -EIO;
-
-		fpcr = *addr;
-		swcr = task_thread_info(task)->ieee_state & IEEE_SW_MASK;
+		unsigned long fpcr = *get_reg_addr(task, regno);
+		unsigned long swcr
+		  = task_thread_info(task)->ieee_state & IEEE_SW_MASK;
 		swcr = swcr_update_status(swcr, fpcr);
-
 		return fpcr | swcr;
 	}
-
-	addr = get_reg_addr(task, regno);
-	if (!addr)
-		return -EIO;
-
-	return *addr;
+	return *get_reg_addr(task, regno);
 }
 
 static void alpha_elf_fpregs_get(struct task_struct *target,
@@ -297,17 +271,14 @@ static void alpha_elf_gregs_set(struct task_struct *child,
 		pt->r19 = 1;
 }
 
+
+/*
+ * Write contents of register REGNO in task TASK.
+ */
 static int
 put_reg(struct task_struct *task, unsigned long regno, unsigned long data)
 {
 	struct pt_regs *regs = task_pt_regs(task);
-	unsigned long *addr;
-	unsigned long old_r0 = regs->r0;
-
-	if (regno == 31)
-		return 0;
-	if (!valid_regno(regno))
-		return -EIO;
 
 	if (regno == 63) {
 		task_thread_info(task)->ieee_state
@@ -316,30 +287,24 @@ put_reg(struct task_struct *task, unsigned long regno, unsigned long data)
 		data = (data & FPCR_DYN_MASK) | ieee_swcr_to_fpcr(data);
 	}
 
-	addr = get_reg_addr(task, regno);
-	if (!addr)
-		return -EIO;
-
-	*addr = data;
+	*get_reg_addr(task, regno) = data;
 
 	/*
 	 * Alpha historically exposes r0/v0 as the syscall number at a
 	 * syscall-entry stop.  The generic-entry conversion keeps the
-	 * mutable syscall number in regs->r1.
+	 * mutable syscall number in regs->r1, so old ptrace users such
+	 * as strace that skip a syscall by poking r0 to -1 must also
+	 * update the internal shadow syscall number.
+	 *
+	 * Do not mirror other r0 writes.  strace later pokes r0 to the
+	 * injected return value, e.g. 42, while r1 must remain -1.
 	 */
 
-	if (regno == 0 && regs->r1 == old_r0 &&
-		(data == (unsigned long)-1 ||
-		(regs->r19 == 0 && data < NR_syscalls))) {
+	if (regno == 0 && data == (unsigned long)-1) {
 		regs->r1 = data;
-
-	/*
-	 * Keep the skip path looking like a clean entry-side syscall
-	 * rewrite.  Do not touch r19 for ordinary syscall substitution.
-	 */
-		if (data == (unsigned long)-1)
-			regs->r19 = 0;
+		regs->r19 = 0;
 	}
+
 	return 0;
 }
 
@@ -440,18 +405,6 @@ ptrace_cancel_bpt(struct task_struct * child)
 	return (nsaved != 0);
 }
 
-/*
- * PALcode keeps the user stack pointer in the PCB, not the trap frame.
- * A user-mode pt_regs sits at the top of its task's stack, so the
- * thread_info is at the base.
- */
-unsigned long user_stack_pointer(struct pt_regs *regs)
-{
-	struct thread_info *ti = (void *)((unsigned long)regs & -THREAD_SIZE);
-
-	return ti == current_thread_info() ? rdusp() : ti->pcb.usp;
-}
-
 void user_enable_single_step(struct task_struct *child)
 {
 	/* Mark single stepping.  */
@@ -482,24 +435,25 @@ long arch_ptrace(struct task_struct *child, long request,
 
 	switch (request) {
 	/* When I and D space are separate, these will need to be fixed.  */
-	case PTRACE_PEEKTEXT:
+	case PTRACE_PEEKTEXT: /* read word at location addr. */
 	case PTRACE_PEEKDATA:
 		copied = ptrace_access_vm(child, addr, &tmp, sizeof(tmp),
 				FOLL_FORCE);
 		ret = -EIO;
 		if (copied != sizeof(tmp))
 			break;
+		
 		force_successful_syscall_return();
 		ret = tmp;
 		break;
 
+	/* Read register number ADDR. */
 	case PTRACE_PEEKUSR:
-		ret = get_reg(child, addr);
-		if (ret == -EIO)
-			break;
-
 		force_successful_syscall_return();
+		ret = get_reg(child, addr);
+		DBG(DBG_MEM, ("peek $%lu->%#lx\n", addr, ret));
 		break;
+
 	/* When I and D space are separate, this will have to be fixed.  */
 	case PTRACE_POKETEXT: /* write the word at location addr. */
 	case PTRACE_POKEDATA:
@@ -517,6 +471,47 @@ long arch_ptrace(struct task_struct *child, long request,
 	return ret;
 }
 
+asmlinkage unsigned long syscall_trace_enter(void)
+{
+	struct pt_regs *regs = current_pt_regs();
+
+	if (test_thread_flag(TIF_SYSCALL_TRACE) &&
+		!ptrace_report_syscall_permit_entry(regs)) {
+		syscall_set_nr(current, regs, -1);
+		if (regs->r19 == 0 && regs->r0 == (unsigned long)-1)
+			syscall_set_return_value(current, regs, -ENOSYS, 0);
+		return -1UL;
+	}
+
+	/*
+	 * Do the secure computing after ptrace; failures should be fast.
+	 * If this fails, seccomp may already have set up the return value
+	 * (e.g. SECCOMP_RET_ERRNO / TRACE).
+	 */
+	if (!seccomp_permit_syscall()) {
+		if (regs->r19 == 0 && regs->r0 == (unsigned long)-1)
+			syscall_set_return_value(current, regs, -ENOSYS, 0);
+		syscall_set_nr(current, regs, -1);
+		return -1UL;
+	}
+
+#ifdef CONFIG_AUDITSYSCALL
+	audit_syscall_entry(syscall_get_nr(current, regs),
+		regs->r16, regs->r17, regs->r18, regs->r19);
+#endif
+	return syscall_get_nr(current, regs);
+}
+
+
+
+asmlinkage void
+syscall_trace_leave(void)
+{
+	audit_syscall_exit(current_pt_regs());
+	if (test_thread_flag(TIF_SYSCALL_TRACE))
+		ptrace_report_syscall_exit(current_pt_regs(), 0);
+}
+
 /*
  * Minimal regset support for Alpha.
  *
@@ -527,6 +522,7 @@ long arch_ptrace(struct task_struct *child, long request,
  *    regset_get should return 0 on success. So call dump_elf_thread()
  *    directly and return membuf_write()'s result.
  */
+
 static int alpha_regset_set(struct task_struct *target,
 			    const struct user_regset *regset,
 			    unsigned int pos, unsigned int count,

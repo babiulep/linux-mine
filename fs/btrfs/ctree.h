@@ -160,7 +160,7 @@ enum {
  */
 struct btrfs_qgroup_swapped_blocks {
 	spinlock_t lock;
-	/* True if any of the rbtrees in the blocks array below is not empty. */
+	/* RM_EMPTY_ROOT() of above blocks[] */
 	bool swapped;
 	struct rb_root blocks[BTRFS_MAX_LEVEL];
 };

@@ -14,11 +14,14 @@
 #include "xfs_inode.h"
 #include "xfs_errortag.h"
 #include "xfs_error.h"
+#include "xfs_icache.h"
 #include "xfs_trans.h"
 #include "xfs_ialloc.h"
 #include "xfs_dir2.h"
 #include "xfs_health.h"
 #include "xfs_metafile.h"
+
+#include <linux/iversion.h>
 
 /*
  * If we are doing readahead on an inode buffer, we might be in log recovery
@@ -487,7 +490,7 @@ xfs_dinode_verify_forkoff(
 
 	switch (dip->di_format)  {
 	case XFS_DINODE_FMT_DEV:
-		if (dip->di_forkoff != XFS_B_TO_FORKOFF(sizeof(xfs_dev_t)))
+		if (dip->di_forkoff != (roundup(sizeof(xfs_dev_t), 8) >> 3))
 			return __this_address;
 		break;
 	case XFS_DINODE_FMT_META_BTREE:
@@ -497,7 +500,7 @@ xfs_dinode_verify_forkoff(
 	case XFS_DINODE_FMT_LOCAL:	/* fall through ... */
 	case XFS_DINODE_FMT_EXTENTS:    /* fall through ... */
 	case XFS_DINODE_FMT_BTREE:
-		if (dip->di_forkoff >= XFS_B_TO_FORKOFFT(XFS_LITINO(mp)))
+		if (dip->di_forkoff >= (XFS_LITINO(mp) >> 3))
 			return __this_address;
 		break;
 	default:

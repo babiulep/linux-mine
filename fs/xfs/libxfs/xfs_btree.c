@@ -3010,7 +3010,6 @@ xfs_btree_split_worker(
 						struct xfs_btree_split_args, work);
 	unsigned long		pflags;
 	unsigned long		new_pflags = 0;
-	unsigned int		nofs_flags;
 
 	/*
 	 * we are in a transaction context here, but may also be doing work
@@ -3022,17 +3021,12 @@ xfs_btree_split_worker(
 		new_pflags |= PF_MEMALLOC | PF_KSWAPD;
 
 	current_set_flags_nested(&pflags, new_pflags);
-
-	/*
-	 * Don't use xfs_trans_set_context() here: it would overwrite the
-	 * caller's saved NOFS state in tp->t_pflags. Use a local scope.
-	 */
-	nofs_flags = memalloc_nofs_save();
+	xfs_trans_set_context(args->cur->bc_tp);
 
 	args->result = __xfs_btree_split(args->cur, args->level, args->ptrp,
 					 args->key, args->curp, args->stat);
 
-	memalloc_nofs_restore(nofs_flags);
+	xfs_trans_clear_context(args->cur->bc_tp);
 	current_restore_flags_nested(&pflags, new_pflags);
 
 	/*

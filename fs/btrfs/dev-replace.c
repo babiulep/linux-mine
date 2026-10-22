@@ -235,8 +235,7 @@ static int btrfs_init_dev_replace_tgtdev(struct btrfs_fs_info *fs_info,
 				  struct btrfs_device **device_out)
 {
 	struct btrfs_fs_devices *fs_devices = fs_info->fs_devices;
-	struct btrfs_device *device = NULL;
-	struct btrfs_device *tmp_device;
+	struct btrfs_device *device;
 	struct file *bdev_file;
 	struct block_device *bdev;
 	u64 devid = BTRFS_DEV_REPLACE_DEVID;
@@ -265,8 +264,8 @@ static int btrfs_init_dev_replace_tgtdev(struct btrfs_fs_info *fs_info,
 
 	sync_blockdev(bdev);
 
-	list_for_each_entry(tmp_device, &fs_devices->devices, dev_list) {
-		if (tmp_device->bdev == bdev) {
+	list_for_each_entry(device, &fs_devices->devices, dev_list) {
+		if (device->bdev == bdev) {
 			btrfs_err(fs_info,
 				  "target device is in the filesystem!");
 			ret = -EEXIST;
@@ -286,7 +285,6 @@ static int btrfs_init_dev_replace_tgtdev(struct btrfs_fs_info *fs_info,
 	device = btrfs_alloc_device(NULL, &devid, NULL, device_path);
 	if (IS_ERR(device)) {
 		ret = PTR_ERR(device);
-		device = NULL;
 		goto error;
 	}
 
@@ -330,8 +328,6 @@ static int btrfs_init_dev_replace_tgtdev(struct btrfs_fs_info *fs_info,
 
 error:
 	/* Undo the open-time freeze deny. */
-	if (device)
-		btrfs_free_device(device);
 	btrfs_release_device_allow_freeze(bdev_file);
 	return ret;
 }

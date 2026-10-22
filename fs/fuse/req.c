@@ -3,8 +3,7 @@
 #include "dev.h"
 #include "fuse_i.h"
 
-static int fuse_fill_creds(struct fuse_mount *fm, struct fuse_args *args,
-			   const struct mnt_idmap *idmap)
+static int fuse_fill_creds(struct fuse_mount *fm, struct fuse_args *args, struct mnt_idmap *idmap)
 {
 	struct fuse_conn *fc = fm->fc;
 	bool no_idmap = !fm->sb || (fm->sb->s_iflags & SB_I_NOIDMAP);
@@ -50,8 +49,7 @@ static int fuse_fill_creds(struct fuse_mount *fm, struct fuse_args *args,
 	return 0;
 }
 
-static int fuse_req_prep(struct fuse_mount *fm, struct fuse_args *args,
-			 const struct mnt_idmap *idmap)
+static int fuse_req_prep(struct fuse_mount *fm, struct fuse_args *args, struct mnt_idmap *idmap)
 {
 	if (!args->force && fm->fc->conn_error)
 		return -ECONNREFUSED;
@@ -59,7 +57,7 @@ static int fuse_req_prep(struct fuse_mount *fm, struct fuse_args *args,
 	return fuse_fill_creds(fm, args, idmap);
 }
 
-ssize_t __fuse_simple_request(const struct mnt_idmap *idmap, struct fuse_mount *fm,
+ssize_t __fuse_simple_request(struct mnt_idmap *idmap, struct fuse_mount *fm,
 			      struct fuse_args *args)
 {
 	struct fuse_conn *fc = fm->fc;

@@ -1,7 +1,5 @@
 .. SPDX-License-Identifier: GPL-2.0
 
-.. _pt_BR_code_of_conduct_interpretation:
-
 Interpretação do Código de Conduta do Kernel Linux
 ==================================================
 

@@ -385,12 +385,6 @@ out:
 
 static inline int validate_ns(struct nsset *nsset, struct ns_common *ns)
 {
-	int ret;
-
-	ret = security_namespace_install(nsset, ns);
-	if (ret)
-		return ret;
-
 	return ns->ops->install(nsset, ns);
 }
 

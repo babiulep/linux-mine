@@ -1374,17 +1374,7 @@ static int test_single_super(struct super_block *s, struct fs_context *fc)
 	return 1;
 }
 
-/**
- * get_tree_super - Get a superblock, optionally sharing an existing one
- * @fc: The filesystem context holding the parameters
- * @test: Comparison function to find a matching existing superblock, or NULL
- * @fill_super: Helper to initialise a new superblock
- *
- * If @test is non-NULL and matches an existing superblock, that superblock is
- * reused; otherwise a new anonymous superblock is created and initialised with
- * @fill_super.  Passing NULL for @test always creates a new superblock.
- */
-int get_tree_super(struct fs_context *fc,
+static int vfs_get_super(struct fs_context *fc,
 		int (*test)(struct super_block *, struct fs_context *),
 		int (*fill_super)(struct super_block *sb,
 				  struct fs_context *fc))
@@ -1411,13 +1401,12 @@ error:
 	deactivate_locked_super(sb);
 	return err;
 }
-EXPORT_SYMBOL_GPL(get_tree_super);
 
 int get_tree_nodev(struct fs_context *fc,
 		  int (*fill_super)(struct super_block *sb,
 				    struct fs_context *fc))
 {
-	return get_tree_super(fc, NULL, fill_super);
+	return vfs_get_super(fc, NULL, fill_super);
 }
 EXPORT_SYMBOL(get_tree_nodev);
 
@@ -1425,7 +1414,7 @@ int get_tree_single(struct fs_context *fc,
 		  int (*fill_super)(struct super_block *sb,
 				    struct fs_context *fc))
 {
-	return get_tree_super(fc, test_single_super, fill_super);
+	return vfs_get_super(fc, test_single_super, fill_super);
 }
 EXPORT_SYMBOL(get_tree_single);
 
@@ -1435,7 +1424,7 @@ int get_tree_keyed(struct fs_context *fc,
 		void *key)
 {
 	fc->s_fs_info = key;
-	return get_tree_super(fc, test_keyed_super, fill_super);
+	return vfs_get_super(fc, test_keyed_super, fill_super);
 }
 EXPORT_SYMBOL(get_tree_keyed);
 

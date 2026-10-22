@@ -96,10 +96,8 @@ dmabuf_exp_wait_obj_new(struct gntdev_dmabuf_priv *priv,
 	struct gntdev_dmabuf_wait_obj *obj;
 
 	obj = kzalloc_obj(*obj);
-	if (!obj) {
-		kref_put(&gntdev_dmabuf->u.exp.refcount, dmabuf_exp_release);
+	if (!obj)
 		return ERR_PTR(-ENOMEM);
-	}
 
 	init_completion(&obj->completion);
 	obj->gntdev_dmabuf = gntdev_dmabuf;

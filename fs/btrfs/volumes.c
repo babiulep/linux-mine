@@ -403,7 +403,7 @@ static struct btrfs_fs_devices *alloc_fs_devices(const u8 *fsid)
 	return fs_devs;
 }
 
-void btrfs_free_device(struct btrfs_device *device)
+static void btrfs_free_device(struct btrfs_device *device)
 {
 	WARN_ON(!list_empty(&device->post_commit_list));
 	/*
@@ -698,8 +698,10 @@ static int btrfs_open_one_device(struct btrfs_fs_devices *fs_devices,
 		clear_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state);
 		fs_devices->seeding = true;
 	} else {
-		assign_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state,
-			   !bdev_read_only(file_bdev(bdev_file)));
+		if (bdev_read_only(file_bdev(bdev_file)))
+			clear_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state);
+		else
+			set_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state);
 	}
 
 	if (bdev_rot(file_bdev(bdev_file)))
@@ -1356,14 +1358,16 @@ int btrfs_open_devices(struct btrfs_fs_devices *fs_devices,
 
 void btrfs_release_disk_super(struct btrfs_super_block *super)
 {
-	folio_put(virt_to_folio(super));
+	struct page *page = virt_to_page(super);
+
+	put_page(page);
 }
 
 struct btrfs_super_block *btrfs_read_disk_super(struct block_device *bdev,
 						int copy_num, bool drop_cache)
 {
 	struct btrfs_super_block *super;
-	struct folio *folio;
+	struct page *page;
 	u64 bytenr, bytenr_orig;
 	struct address_space *mapping = bdev->bd_mapping;
 	int ret;
@@ -1384,7 +1388,7 @@ struct btrfs_super_block *btrfs_read_disk_super(struct block_device *bdev,
 		ASSERT(copy_num == 0);
 
 		/*
-		 * Drop the folio of the primary superblock, so later read will
+		 * Drop the page of the primary superblock, so later read will
 		 * always read from the device.
 		 */
 		invalidate_inode_pages2_range(mapping, bytenr >> PAGE_SHIFT,
@@ -1392,12 +1396,12 @@ struct btrfs_super_block *btrfs_read_disk_super(struct block_device *bdev,
 	}
 
 	filemap_invalidate_lock_shared(mapping);
-	folio = mapping_read_folio_gfp(mapping, bytenr >> PAGE_SHIFT, GFP_NOFS);
+	page = read_cache_page_gfp(mapping, bytenr >> PAGE_SHIFT, GFP_NOFS);
 	filemap_invalidate_unlock_shared(mapping);
-	if (IS_ERR(folio))
-		return ERR_CAST(folio);
+	if (IS_ERR(page))
+		return ERR_CAST(page);
 
-	super = folio_address(folio) + offset_in_folio(folio, bytenr);
+	super = page_address(page);
 	if (btrfs_super_magic(super) != BTRFS_MAGIC ||
 	    btrfs_super_bytenr(super) != bytenr_orig) {
 		btrfs_release_disk_super(super);
@@ -2810,41 +2814,6 @@ static void btrfs_setup_sprout(struct btrfs_fs_info *fs_info,
 	btrfs_set_super_flags(disk_super, super_flags);
 }
 
-static void btrfs_rollback_sprout(struct btrfs_fs_info *fs_info,
-				  struct btrfs_fs_devices *seed_devices)
-{
-	struct btrfs_fs_devices *fs_devices = fs_info->fs_devices;
-	struct btrfs_super_block *disk_super = fs_info->super_copy;
-	struct btrfs_device *device;
-	u64 super_flags;
-
-	lockdep_assert_held(&uuid_mutex);
-	lockdep_assert_held(&fs_devices->device_list_mutex);
-
-	list_del_init(&seed_devices->seed_list);
-	list_splice_init_rcu(&seed_devices->devices, &fs_devices->devices, synchronize_rcu);
-	list_for_each_entry(device, &fs_devices->devices, dev_list) {
-		device->fs_devices = fs_devices;
-	}
-
-	fs_devices->seeding = true;
-	fs_devices->num_devices = seed_devices->num_devices;
-	fs_devices->open_devices = seed_devices->open_devices;
-	fs_devices->missing_devices = seed_devices->missing_devices;
-	fs_devices->rotating = seed_devices->rotating;
-	fs_devices->latest_dev = seed_devices->latest_dev;
-
-	memcpy(fs_devices->fsid, seed_devices->fsid, BTRFS_FSID_SIZE);
-	memcpy(fs_devices->metadata_uuid, seed_devices->metadata_uuid, BTRFS_FSID_SIZE);
-	memcpy(disk_super->fsid, seed_devices->fsid, BTRFS_FSID_SIZE);
-
-	super_flags = (btrfs_super_flags(disk_super) | BTRFS_SUPER_FLAG_SEEDING);
-	btrfs_set_super_flags(disk_super, super_flags);
-
-	seed_devices->opened = 0;
-	free_fs_devices(seed_devices);
-}
-
 /*
  * Store the expected generation for seed devices in device items.
  */
@@ -3196,8 +3165,6 @@ error_sysfs:
 				    orig_super_total_bytes);
 	btrfs_set_super_num_devices(fs_info->super_copy,
 				    orig_super_num_devices);
-	if (seeding_dev)
-		btrfs_rollback_sprout(fs_info, seed_devices);
 	btrfs_update_per_profile_avail(fs_info);
 	mutex_unlock(&fs_info->chunk_mutex);
 	mutex_unlock(&fs_info->fs_devices->device_list_mutex);
@@ -9004,7 +8971,6 @@ out:
 bool btrfs_repair_one_zone(struct btrfs_fs_info *fs_info, u64 logical)
 {
 	struct btrfs_block_group *cache;
-	struct task_struct *task;
 
 	if (!btrfs_is_zoned(fs_info))
 		return false;
@@ -9022,9 +8988,8 @@ bool btrfs_repair_one_zone(struct btrfs_fs_info *fs_info, u64 logical)
 		return true;
 	}
 
-	task = kthread_run(relocating_repair_kthread, cache, "btrfs-relocating-repair");
-	if (IS_ERR(task))
-		btrfs_put_block_group(cache);
+	kthread_run(relocating_repair_kthread, cache,
+		    "btrfs-relocating-repair");
 
 	return true;
 }

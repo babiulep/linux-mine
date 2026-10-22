@@ -79,7 +79,7 @@ void btrfs_csum_init(struct btrfs_csum_ctx *ctx, u16 csum_type)
 		blake2b_init(&ctx->blake2b, 32);
 		break;
 	default:
-		/* Checksum type is validated at mount time. */
+		/* Checksume type is validated at mount time. */
 		BUG();
 	}
 }

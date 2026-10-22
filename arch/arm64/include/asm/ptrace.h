@@ -66,6 +66,12 @@
 #define PSR_AA32_IT_MASK	0x0600fc00	/* If-Then execution state mask */
 #define PSR_AA32_GE_MASK	0x000f0000
 
+#ifdef CONFIG_CPU_BIG_ENDIAN
+#define PSR_AA32_ENDSTATE	PSR_AA32_E_BIT
+#else
+#define PSR_AA32_ENDSTATE	0
+#endif
+
 /* AArch32 CPSR bits, as seen in AArch32 */
 #define COMPAT_PSR_DIT_BIT	0x00200000
 
@@ -161,11 +167,6 @@ struct pt_regs {
 
 	u64 sdei_ttbr1;
 	struct frame_record_meta stackframe;
-
-	u16	pcpu_gprs;
-	u16	__unused1;
-	u32	__unused2;
-	u64	__unused3;
 };
 
 /* For correct stack alignment, pt_regs has to be a multiple of 16 bytes. */
@@ -265,8 +266,7 @@ static inline u64 regs_get_register(struct pt_regs *regs, unsigned int offset)
  * Read a register given an architectural register index r.
  * This handles the common case where 31 means XZR, not SP.
  */
-static __always_inline unsigned long
-pt_regs_read_reg(const struct pt_regs *regs, int r)
+static inline unsigned long pt_regs_read_reg(const struct pt_regs *regs, int r)
 {
 	return (r == 31) ? 0 : regs->regs[r];
 }
@@ -275,8 +275,8 @@ pt_regs_read_reg(const struct pt_regs *regs, int r)
  * Write a register given an architectural register index r.
  * This handles the common case where 31 means XZR, not SP.
  */
-static __always_inline void
-pt_regs_write_reg(struct pt_regs *regs, int r, unsigned long val)
+static inline void pt_regs_write_reg(struct pt_regs *regs, int r,
+				     unsigned long val)
 {
 	if (r != 31)
 		regs->regs[r] = val;

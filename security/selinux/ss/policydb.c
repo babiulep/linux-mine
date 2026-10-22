@@ -560,9 +560,6 @@ static int common_index(void *key, void *datum, void *datap)
 	if (!comdatum->value || comdatum->value > p->p_commons.nprim)
 		return -EINVAL;
 
-	if (p->sym_val_to_name[SYM_COMMONS][comdatum->value - 1])
-		return -EINVAL;
-
 	p->sym_val_to_name[SYM_COMMONS][comdatum->value - 1] = key;
 
 	return 0;
@@ -576,9 +573,6 @@ static int class_index(void *key, void *datum, void *datap)
 	cladatum = datum;
 	p = datap;
 	if (!cladatum->value || cladatum->value > p->p_classes.nprim)
-		return -EINVAL;
-
-	if (p->class_val_to_struct[cladatum->value - 1])
 		return -EINVAL;
 
 	p->sym_val_to_name[SYM_CLASSES][cladatum->value - 1] = key;
@@ -595,9 +589,6 @@ static int role_index(void *key, void *datum, void *datap)
 	p = datap;
 	if (!role->value || role->value > p->p_roles.nprim ||
 	    role->bounds > p->p_roles.nprim)
-		return -EINVAL;
-
-	if (p->role_val_to_struct[role->value - 1])
 		return -EINVAL;
 
 	p->sym_val_to_name[SYM_ROLES][role->value - 1] = key;
@@ -622,8 +613,6 @@ static int type_index(void *key, void *datum, void *datap)
 	}
 
 	if (typdatum->primary) {
-		if (p->type_val_to_struct[typdatum->value - 1])
-			return -EINVAL;
 		p->sym_val_to_name[SYM_TYPES][typdatum->value - 1] = key;
 		p->type_val_to_struct[typdatum->value - 1] = typdatum;
 	}
@@ -642,9 +631,6 @@ static int user_index(void *key, void *datum, void *datap)
 	    usrdatum->bounds > p->p_users.nprim)
 		return -EINVAL;
 
-	if (p->user_val_to_struct[usrdatum->value - 1])
-		return -EINVAL;
-
 	p->sym_val_to_name[SYM_USERS][usrdatum->value - 1] = key;
 	p->user_val_to_struct[usrdatum->value - 1] = usrdatum;
 	return 0;
@@ -661,11 +647,8 @@ static int sens_index(void *key, void *datum, void *datap)
 	if (!levdatum->level.sens || levdatum->level.sens > p->p_levels.nprim)
 		return -EINVAL;
 
-	if (!levdatum->isalias) {
-		if (p->sym_val_to_name[SYM_LEVELS][levdatum->level.sens - 1])
-			return -EINVAL;
+	if (!levdatum->isalias)
 		p->sym_val_to_name[SYM_LEVELS][levdatum->level.sens - 1] = key;
-	}
 
 	return 0;
 }
@@ -681,11 +664,8 @@ static int cat_index(void *key, void *datum, void *datap)
 	if (!catdatum->value || catdatum->value > p->p_cats.nprim)
 		return -EINVAL;
 
-	if (!catdatum->isalias) {
-		if (p->sym_val_to_name[SYM_CATS][catdatum->value - 1])
-			return -EINVAL;
+	if (!catdatum->isalias)
 		p->sym_val_to_name[SYM_CATS][catdatum->value - 1] = key;
-	}
 
 	return 0;
 }
@@ -704,64 +684,6 @@ static int sens_cat_index_check(void *key, void *datum, void *datap)
 			return -EINVAL;
 		}
 	}
-	return 0;
-}
-
-static int role_index_check(void *key, void *datum, void *datap)
-{
-	const struct policydb *p = datap;
-	const struct role_datum *role = datum;
-	struct ebitmap_node *node;
-	u32 bit;
-
-	ebitmap_for_each_positive_bit(&role->dominates, node, bit) {
-		if (!policydb_role_isvalid(p, bit + 1)) {
-			pr_err("SELinux:  role %s declares dominance on undefined role %u\n",
-			       (const char *)key, bit + 1);
-			return -EINVAL;
-		}
-	}
-
-	ebitmap_for_each_positive_bit(&role->types, node, bit) {
-		if (!policydb_type_isvalid(p, bit + 1)) {
-			pr_err("SELinux:  role %s authorizes undefined type %u\n",
-			       (const char *)key, bit + 1);
-			return -EINVAL;
-		}
-	}
-
-	return 0;
-}
-
-static int user_index_check(void *key, void *datum, void *datap)
-{
-	const struct policydb *p = datap;
-	const struct user_datum *usr = datum;
-	struct ebitmap_node *node;
-	u32 bit;
-
-	ebitmap_for_each_positive_bit(&usr->roles, node, bit) {
-		if (!policydb_role_isvalid(p, bit + 1)) {
-			pr_err("SELinux:  user %s authorizes undefined role %u\n",
-			       (const char *)key, bit + 1);
-			return -EINVAL;
-		}
-	}
-
-	if (p->mls_enabled) {
-		if (!mls_range_isvalid(p, &usr->range)) {
-			pr_err("SELinux:  user %s has an invalid MLS range\n",
-			       (const char *)key);
-			return -EINVAL;
-		}
-
-		if (!mls_level_isvalid(p, &usr->dfltlevel)) {
-			pr_err("SELinux:  user %s has an invalid MLS default level\n",
-			       (const char *)key);
-			return -EINVAL;
-		}
-	}
-
 	return 0;
 }
 
@@ -818,9 +740,8 @@ static inline void symtab_hash_eval(struct symtab *s)
  */
 static int policydb_index(struct policydb *p)
 {
-	struct ebitmap_node *node;
 	int i, rc;
-	u32 bit, v;
+	u32 v;
 
 	if (p->mls_enabled)
 		pr_debug(
@@ -893,31 +814,6 @@ static int policydb_index(struct policydb *p)
 		rc = hashtab_map(&p->p_levels.table, sens_cat_index_check, p);
 		if (rc)
 			goto out;
-	}
-
-	rc = hashtab_map(&p->p_roles.table, role_index_check, p);
-	if (rc)
-		goto out;
-
-	rc = hashtab_map(&p->p_users.table, user_index_check, p);
-	if (rc)
-		goto out;
-
-	ebitmap_for_each_positive_bit(&p->permissive_map, node, bit) {
-		if (!policydb_simpletype_isvalid(p, bit)) {
-			pr_err("SELinux:  permissive map refers to invalid type %u\n",
-			       bit);
-			rc = -EINVAL;
-			goto out;
-		}
-	}
-	ebitmap_for_each_positive_bit(&p->neveraudit_map, node, bit) {
-		if (!policydb_simpletype_isvalid(p, bit)) {
-			pr_err("SELinux:  neveraudit map refers to invalid type %u\n",
-			       bit);
-			rc = -EINVAL;
-			goto out;
-		}
 	}
 
 	rc = 0;
@@ -1141,13 +1037,13 @@ bool policydb_context_isvalid(const struct policydb *p, const struct context *c)
 	const struct role_datum *role;
 	const struct user_datum *usrdatum;
 
-	if (!policydb_role_isvalid(p, c->role))
+	if (!c->role || c->role > p->p_roles.nprim)
 		return false;
 
-	if (!policydb_user_isvalid(p, c->user))
+	if (!c->user || c->user > p->p_users.nprim)
 		return false;
 
-	if (!policydb_simpletype_isvalid(p, c->type))
+	if (!c->type || c->type > p->p_types.nprim)
 		return false;
 
 	if (c->role != OBJECT_R_VAL) {
@@ -1155,7 +1051,7 @@ bool policydb_context_isvalid(const struct policydb *p, const struct context *c)
 		 * Role must be authorized for the type.
 		 */
 		role = p->role_val_to_struct[c->role - 1];
-		if (!ebitmap_get_bit(&role->types, c->type - 1))
+		if (!role || !ebitmap_get_bit(&role->types, c->type - 1))
 			/* role may not be associated with type */
 			return false;
 
@@ -1163,6 +1059,9 @@ bool policydb_context_isvalid(const struct policydb *p, const struct context *c)
 		 * User must be authorized for the role.
 		 */
 		usrdatum = p->user_val_to_struct[c->user - 1];
+		if (!usrdatum)
+			return false;
+
 		if (!ebitmap_get_bit(&usrdatum->roles, c->role - 1))
 			/* user may not be associated with role */
 			return false;
@@ -2451,10 +2350,6 @@ static int filename_trans_read_helper(struct policydb *p, struct policy_file *fp
 		if (rc)
 			goto out;
 
-		rc = -EINVAL;
-		if (ebitmap_get_highest_set_bit(&datum->stypes) >= p->p_types.nprim)
-			goto out;
-
 		rc = next_entry(buf, fp, sizeof(u32));
 		if (rc)
 			goto out;
@@ -2952,8 +2847,7 @@ int policydb_read(struct policydb *p, struct policy_file *fp)
 		goto bad;
 	}
 
-	val = le32_to_cpu(buf[1]);
-	if (val & POLICYDB_CONFIG_MLS) {
+	if ((le32_to_cpu(buf[1]) & POLICYDB_CONFIG_MLS)) {
 		p->mls_enabled = 1;
 
 		rc = -EINVAL;
@@ -2964,13 +2858,8 @@ int policydb_read(struct policydb *p, struct policy_file *fp)
 			goto bad;
 		}
 	}
-	rc = -EINVAL;
-	if ((val & (REJECT_UNKNOWN | ALLOW_UNKNOWN)) == (REJECT_UNKNOWN | ALLOW_UNKNOWN)) {
-		pr_err("SELinux:  policydb configuration both rejects and allows unknown classes and permissions\n");
-		goto bad;
-	}
-	p->reject_unknown = !!(val & REJECT_UNKNOWN);
-	p->allow_unknown = !!(val & ALLOW_UNKNOWN);
+	p->reject_unknown = !!(le32_to_cpu(buf[1]) & REJECT_UNKNOWN);
+	p->allow_unknown = !!(le32_to_cpu(buf[1]) & ALLOW_UNKNOWN);
 
 	if (p->policyvers >= POLICYDB_VERSION_POLCAP) {
 		rc = ebitmap_read(&p->policycaps, fp);

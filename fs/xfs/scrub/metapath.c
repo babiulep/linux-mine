@@ -129,8 +129,6 @@ static int
 xchk_setup_metapath_rtdir(
 	struct xfs_scrub	*sc)
 {
-	if (sc->sm->sm_agno)
-		return -EINVAL;
 	if (!sc->mp->m_rtdirip)
 		return -ENOENT;
 
@@ -178,8 +176,6 @@ xchk_setup_metapath_quotadir(
 {
 	struct xfs_quotainfo	*qi = sc->mp->m_quotainfo;
 
-	if (sc->sm->sm_agno)
-		return -EINVAL;
 	if (!qi || !qi->qi_dirip)
 		return -ENOENT;
 
@@ -196,8 +192,6 @@ xchk_setup_metapath_dqinode(
 	struct xfs_quotainfo	*qi = sc->mp->m_quotainfo;
 	struct xfs_inode	*ip = NULL;
 
-	if (sc->sm->sm_agno)
-		return -EINVAL;
 	if (!qi)
 		return -ENOENT;
 
@@ -323,13 +317,6 @@ xchk_metapath(
 	if (mpath->dp == NULL) {
 		xchk_ip_set_corrupt(sc, sc->ip);
 		return 0;
-	}
-
-	/* Callers should not set the parent to the child. */
-	if (mpath->dp == sc->ip) {
-		ASSERT(mpath->dp != sc->ip);
-		xchk_set_incomplete(sc);
-		return -EIO;
 	}
 
 	xchk_trans_alloc_empty(sc);
@@ -522,7 +509,7 @@ xrep_metapath_try_link(
 	xfs_ino_t		*alleged_child)
 {
 	struct xfs_scrub	*sc = mpath->sc;
-	xfs_ino_t		ino = NULLFSINO;
+	xfs_ino_t		ino;
 	int			error;
 
 	/* Allocate transaction, lock inodes, join to transaction. */
@@ -621,7 +608,7 @@ xrep_metapath_try_unlink(
 {
 	struct xfs_scrub	*sc = mpath->sc;
 	struct xfs_inode	*ip = NULL;
-	xfs_ino_t		ino = NULLFSINO;
+	xfs_ino_t		ino;
 	int			error;
 
 	ASSERT(*alleged_child != I_INO(sc->ip));

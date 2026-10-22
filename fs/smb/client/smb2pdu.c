@@ -395,7 +395,7 @@ again:
 		}
 	}
 
-	rc = cifs_setup_session(0, ses, server);
+	rc = cifs_setup_session(0, ses, server, ses->local_nls);
 	if ((rc == -EACCES) || (rc == -EKEYEXPIRED) || (rc == -EKEYREVOKED)) {
 		/*
 		 * Try alternate password for next reconnect (key rotation
@@ -960,6 +960,7 @@ static void decode_signing_ctx(struct TCP_Server_Info *server,
 		return;
 	}
 
+	server->signing_negotiated = true;
 	server->signing_algorithm = le16_to_cpu(pctxt->SigningAlgorithms[0]);
 	cifs_dbg(FYI, "signing algorithm %d chosen\n",
 		     server->signing_algorithm);
@@ -1529,6 +1530,7 @@ struct SMB2_sess_data {
 	unsigned int xid;
 	struct cifs_ses *ses;
 	struct TCP_Server_Info *server;
+	struct nls_table *nls_cp;
 	void (*func)(struct SMB2_sess_data *);
 	int result;
 	u64 previous_session;
@@ -1832,7 +1834,8 @@ SMB2_sess_auth_rawntlmssp_negotiate(struct SMB2_sess_data *sess_data)
 		goto out_err;
 
 	rc = build_ntlmssp_smb3_negotiate_blob(&ntlmssp_blob,
-					  &blob_length, ses, server);
+					  &blob_length, ses, server,
+					  sess_data->nls_cp);
 	if (rc)
 		goto out;
 
@@ -1916,7 +1919,8 @@ SMB2_sess_auth_rawntlmssp_authenticate(struct SMB2_sess_data *sess_data)
 	req->hdr.SessionId = cpu_to_le64(ses->Suid);
 
 	rc = build_ntlmssp_auth_blob(&ntlmssp_blob, &blob_length,
-				     ses, server);
+				     ses, server,
+				     sess_data->nls_cp);
 	if (rc) {
 		cifs_dbg(FYI, "build_ntlmssp_auth_blob failed %d\n", rc);
 		goto out;
@@ -2001,11 +2005,13 @@ SMB2_select_sec(struct SMB2_sess_data *sess_data)
 	return 0;
 }
 
-int SMB2_sess_setup(const unsigned int xid, struct cifs_ses *ses,
-		    struct TCP_Server_Info *server)
+int
+SMB2_sess_setup(const unsigned int xid, struct cifs_ses *ses,
+		struct TCP_Server_Info *server,
+		const struct nls_table *nls_cp)
 {
-	struct SMB2_sess_data sess_data;
 	int rc = 0;
+	struct SMB2_sess_data *sess_data;
 
 	cifs_dbg(FYI, "Session Setup\n");
 
@@ -2014,15 +2020,18 @@ int SMB2_sess_setup(const unsigned int xid, struct cifs_ses *ses,
 		return smb_EIO(smb_eio_trace_null_pointers);
 	}
 
-	sess_data = (struct SMB2_sess_data) {
-		.xid			= xid,
-		.ses			= ses,
-		.server			= server,
-		.buf0_type		= CIFS_NO_BUFFER,
-		.previous_session	= ses->Suid,
-	};
+	sess_data = kzalloc_obj(struct SMB2_sess_data);
+	if (!sess_data)
+		return -ENOMEM;
 
-	rc = SMB2_select_sec(&sess_data);
+	sess_data->xid = xid;
+	sess_data->ses = ses;
+	sess_data->server = server;
+	sess_data->buf0_type = CIFS_NO_BUFFER;
+	sess_data->nls_cp = (struct nls_table *) nls_cp;
+	sess_data->previous_session = ses->Suid;
+
+	rc = SMB2_select_sec(sess_data);
 	if (rc)
 		goto out;
 
@@ -2032,14 +2041,14 @@ int SMB2_sess_setup(const unsigned int xid, struct cifs_ses *ses,
 	memcpy(ses->preauth_sha_hash, server->preauth_sha_hash,
 	       SMB2_PREAUTH_HASH_SIZE);
 
-	while (sess_data.func)
-		sess_data.func(&sess_data);
+	while (sess_data->func)
+		sess_data->func(sess_data);
 
 	if ((ses->session_flags & SMB2_SESSION_FLAG_IS_GUEST) && (ses->sign))
 		cifs_server_dbg(VFS, "signing requested but authenticated as guest\n");
-	rc = sess_data.result;
+	rc = sess_data->result;
 out:
-	memzero_explicit(&sess_data, sizeof(sess_data));
+	kfree_sensitive(sess_data);
 	return rc;
 }
 
@@ -2104,6 +2113,11 @@ smb2_session_already_dead:
 	return rc;
 }
 
+static inline void cifs_stats_fail_inc(struct cifs_tcon *tcon, uint16_t code)
+{
+	cifs_stats_inc(&tcon->stats.smb2_stats.smb2_com_failed[code]);
+}
+
 #define MAX_SHARENAME_LENGTH (255 /* server */ + 80 /* share */ + 1 /* NULL */)
 
 /* These are similar values to what Windows uses */
@@ -2114,8 +2128,9 @@ static inline void init_copy_chunk_defaults(struct cifs_tcon *tcon)
 	tcon->max_bytes_copy = 16777216;
 }
 
-int SMB2_tcon(const unsigned int xid, struct cifs_ses *ses, const char *tree,
-	      struct cifs_tcon *tcon)
+int
+SMB2_tcon(const unsigned int xid, struct cifs_ses *ses, const char *tree,
+	  struct cifs_tcon *tcon, const struct nls_table *cp)
 {
 	struct smb_rqst rqst;
 	struct smb2_tree_connect_req *req;
@@ -2139,8 +2154,7 @@ int SMB2_tcon(const unsigned int xid, struct cifs_ses *ses, const char *tree,
 	if (unc_path == NULL)
 		return -ENOMEM;
 
-	unc_path_len = cifs_strtoUTF16(unc_path, tree, strlen(tree),
-				       ses->local_nls);
+	unc_path_len = cifs_strtoUTF16(unc_path, tree, strlen(tree), cp);
 	if (unc_path_len <= 0) {
 		rc = -EINVAL;
 		goto free_unc_path;
@@ -4567,10 +4581,10 @@ static inline bool smb3_use_rdma_offload(struct cifs_io_parms *io_parms)
  * To form a chain of read requests, any read requests after the first should
  * have the end_of_chain boolean set to true.
  */
-int smb2_new_read_req(void **buf, unsigned int *total_len,
-		      struct cifs_io_parms *io_parms,
-		      struct cifs_io_subrequest *rdata,
-		      unsigned int remaining_bytes, int request_type)
+static int
+smb2_new_read_req(void **buf, unsigned int *total_len,
+	struct cifs_io_parms *io_parms, struct cifs_io_subrequest *rdata,
+	unsigned int remaining_bytes, int request_type)
 {
 	int rc = -EACCES;
 	struct smb2_read_req *req = NULL;

@@ -75,6 +75,7 @@ Documentation for filesystem implementations.
    autofs
    autofs-mount-control
    befs
+   bfs
    btrfs
    ceph
    coda
