@@ -1877,6 +1877,7 @@ endmenu
 
 config GPIO_TC9563
 	tristate "Toshiba TC9563 GPIO support"
+	depends on PCI_PWRCTRL_TC9563 || COMPILE_TEST
 	default m if ARCH_QCOM
 	select AUXILIARY_BUS
 	select GPIO_REGMAP

@@ -46,7 +46,7 @@ $(obj)/compressed/vmlinux: vmlinux FORCE
 	$(Q)$(MAKE) $(build)=$(obj)/compressed $@
 
 $(obj)/vmlinuz: $(obj)/compressed/vmlinux FORCE
-	+$(call if_changed,copy)
+	$(call if_changed,copy)
 	@echo '  Kernel $@ is ready'
 
 $(obj)/main.o: $(obj)/ksize.h
