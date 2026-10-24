@@ -1392,20 +1392,18 @@ static void aer_recover_work_func(struct work_struct *work)
 		ghes_estatus_pool_region_free((unsigned long)entry.regs,
 					    sizeof(struct aer_capability_regs));
 
-		if (pdev) {
-			if (err) {
-				if (entry.severity == AER_NONFATAL)
-					pcie_do_recovery(pdev,
-							 pci_channel_io_normal,
-							 aer_root_reset);
-				else if (entry.severity == AER_FATAL)
-					pcie_do_recovery(pdev,
-							 pci_channel_io_frozen,
-							 aer_root_reset);
-			}
+		if (!pdev)
+			continue;
 
-			pci_dev_put(pdev);
+		if (err) {
+			if (entry.severity == AER_NONFATAL)
+				pcie_do_recovery(pdev, pci_channel_io_normal,
+						 aer_root_reset);
+			else if (entry.severity == AER_FATAL)
+				pcie_do_recovery(pdev, pci_channel_io_frozen,
+						 aer_root_reset);
 		}
+		pci_dev_put(pdev);
 	}
 }
 
