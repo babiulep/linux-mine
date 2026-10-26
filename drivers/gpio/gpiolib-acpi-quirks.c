@@ -345,20 +345,6 @@ static const struct dmi_system_id gpiolib_acpi_quirks[] __initconst = {
 	},
 	{
 		/*
-		 * Same camera power enable on GPIO 11 as the Acer Nitro V 16S AI
-		 * above. It also powers the internal microphones.
-		 * Found in BIOS V1.53
-		 */
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
-			DMI_MATCH(DMI_PRODUCT_FAMILY, "Acer Nitro 16S AI"),
-		},
-		.driver_data = &(struct acpi_gpiolib_dmi_quirk) {
-			.ignore_interrupt = "AMDI0030:00@11",
-		},
-	},
-	{
-		/*
 		 * GPIO 11 is the power enable of the internal USB camera.
 		 * The firmware drives it high but also lists it in _AEI with
 		 * an empty handler. Requesting it as an input turns the camera
@@ -368,6 +354,20 @@ static const struct dmi_system_id gpiolib_acpi_quirks[] __initconst = {
 		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
 			DMI_MATCH(DMI_PRODUCT_FAMILY, "Acer Nitro V 16S AI"),
+		},
+		.driver_data = &(struct acpi_gpiolib_dmi_quirk) {
+			.ignore_interrupt = "AMDI0030:00@11",
+		},
+	},
+	{
+		/*
+		 * Same camera power enable on GPIO 11 as the Acer Nitro V 16S AI
+		 * above. It also powers the internal microphones.
+		 * Found in BIOS V1.53
+		 */
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+			DMI_MATCH(DMI_PRODUCT_FAMILY, "Acer Nitro 16S AI"),
 		},
 		.driver_data = &(struct acpi_gpiolib_dmi_quirk) {
 			.ignore_interrupt = "AMDI0030:00@11",

@@ -1058,6 +1058,10 @@ static DEVICE_ATTR_RW(gpu_mux_mode);
 #endif /* IS_ENABLED(CONFIG_ASUS_WMI_DEPRECATED_ATTRS) */
 
 /* TUF Laptop Keyboard RGB Modes **********************************************/
+
+#define TUF_KBD_RGB_SPEED_SLOW		0xe1
+#define TUF_KBD_RGB_SPEED_NORMAL	0xeb
+#define TUF_KBD_RGB_SPEED_FAST		0xf5
 static ssize_t kbd_rgb_mode_store(struct device *dev,
 				 struct device_attribute *attr,
 				 const char *buf, size_t count)
@@ -1091,16 +1095,16 @@ static ssize_t kbd_rgb_mode_store(struct device *dev,
 
 	switch (speed) {
 	case 0:
-		speed = 0xe1;
+		speed = TUF_KBD_RGB_SPEED_SLOW;
 		break;
 	case 1:
-		speed = 0xeb;
+		speed = TUF_KBD_RGB_SPEED_NORMAL;
 		break;
 	case 2:
-		speed = 0xf5;
+		speed = TUF_KBD_RGB_SPEED_FAST;
 		break;
 	default:
-		speed = 0xeb;
+		speed = TUF_KBD_RGB_SPEED_NORMAL;
 	}
 
 	err = asus_wmi_evaluate_method3(ASUS_WMI_METHODID_DEVS, asus->kbd_rgb_dev,
@@ -1126,14 +1130,19 @@ static const struct attribute_group kbd_rgb_mode_group = {
 };
 
 /* TUF Laptop Keyboard RGB State **********************************************/
+
+#define TUF_KBD_RGB_STATE_BOOT		BIT(1)
+#define TUF_KBD_RGB_STATE_AWAKE		BIT(3)
+#define TUF_KBD_RGB_STATE_SLEEP		BIT(5)
+#define TUF_KBD_RGB_STATE_SHUTDOWN	BIT(7)
 static ssize_t kbd_rgb_state_store(struct device *dev,
 				 struct device_attribute *attr,
 				 const char *buf, size_t count)
 {
-	u32 flags, cmd, boot, awake, sleep, keyboard;
+	u32 flags, cmd, boot, awake, sleep, shutdown;
 	int err;
 
-	if (sscanf(buf, "%d %d %d %d %d", &cmd, &boot, &awake, &sleep, &keyboard) != 5)
+	if (sscanf(buf, "%d %d %d %d %d", &cmd, &boot, &awake, &sleep, &shutdown) != 5)
 		return -EINVAL;
 
 	if (cmd)
@@ -1141,17 +1150,17 @@ static ssize_t kbd_rgb_state_store(struct device *dev,
 
 	flags = 0;
 	if (boot)
-		flags |= BIT(1);
+		flags |= TUF_KBD_RGB_STATE_BOOT;
 	if (awake)
-		flags |= BIT(3);
+		flags |= TUF_KBD_RGB_STATE_AWAKE;
 	if (sleep)
-		flags |= BIT(5);
-	if (keyboard)
-		flags |= BIT(7);
+		flags |= TUF_KBD_RGB_STATE_SLEEP;
+	if (shutdown)
+		flags |= TUF_KBD_RGB_STATE_SHUTDOWN;
 
 	/* 0xbd is the required default arg0 for the method. Nothing happens otherwise */
 	err = asus_wmi_evaluate_method3(ASUS_WMI_METHODID_DEVS,
-			ASUS_WMI_DEVID_TUF_RGB_STATE, 0xbd | cmd << 8 | (flags << 16), 0, NULL);
+			ASUS_WMI_DEVID_TUF_RGB_CMD, 0xbd | cmd << 8 | (flags << 16), 0, NULL);
 	if (err)
 		return err;
 
@@ -1160,7 +1169,7 @@ static ssize_t kbd_rgb_state_store(struct device *dev,
 static DEVICE_ATTR_WO(kbd_rgb_state);
 
 static DEVICE_STRING_ATTR_RO(kbd_rgb_state_index, 0444,
-			     "cmd boot awake sleep keyboard");
+			     "cmd boot awake sleep shutdown");
 
 static struct attribute *kbd_rgb_state_attrs[] = {
 	&dev_attr_kbd_rgb_state.attr,
@@ -5196,7 +5205,7 @@ static int asus_wmi_add(struct platform_device *pdev)
 
 	asus->egpu_enable_available = asus_wmi_dev_is_present(asus, ASUS_WMI_DEVID_EGPU);
 	asus->dgpu_disable_available = asus_wmi_dev_is_present(asus, ASUS_WMI_DEVID_DGPU);
-	asus->kbd_rgb_state_available = asus_wmi_dev_is_present(asus, ASUS_WMI_DEVID_TUF_RGB_STATE);
+	asus->kbd_rgb_state_available = asus_wmi_dev_is_present(asus, ASUS_WMI_DEVID_TUF_RGB_CMD);
 
 	if (asus_wmi_dev_is_present(asus, ASUS_WMI_DEVID_MINI_LED_MODE))
 		asus->mini_led_dev_id = ASUS_WMI_DEVID_MINI_LED_MODE;

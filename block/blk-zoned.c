@@ -2037,8 +2037,10 @@ static unsigned int disk_get_nr_zones(struct gendisk *disk, sector_t capacity)
 		return 0;
 
 	nr_zones = DIV_ROUND_UP_ULL(capacity, lim->chunk_sectors);
-	if (nr_zones > UINT_MAX)
+	if (nr_zones > UINT_MAX) {
+		pr_warn("%s: Too many zones (%llu)\n", disk->disk_name, nr_zones);
 		return 0;
+	}
 
 	return nr_zones;
 }
@@ -2481,6 +2483,12 @@ static int blk_revalidate_zone_cb(struct blk_zone *zone, unsigned int idx,
 		pr_warn("%s: Invalid zone start %llu, length %llu\n",
 			disk->disk_name, zone->start, zone->len);
 		return -ENODEV;
+	}
+
+	if (idx >= args->nr_zones) {
+		pr_warn("%s: Zone report index %u exceeds zone count %u\n",
+			disk->disk_name, idx, args->nr_zones);
+		return -EINVAL;
 	}
 
 	/*
