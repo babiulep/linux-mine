@@ -442,13 +442,6 @@ int udf_expand_file_adinicb(struct inode *inode)
 	err = udf_map_block(inode, &map);
 	if (err < 0)
 		goto restore;
-	/*
-	 * The block may have held metadata that is still dirty in the block
-	 * device page cache (e.g. the file entry of a deleted inode). Make
-	 * sure writeback of that buffer cannot overwrite our data.
-	 */
-	if (map.oflags & UDF_BLK_NEW)
-		clean_bdev_aliases(inode->i_sb->s_bdev, map.pblk, 1);
 
 	folio_mark_dirty(folio);
 	folio_unlock(folio);
@@ -1614,6 +1607,11 @@ reread:
 	 */
 	if (iinfo->i_lenEAttr > bs || iinfo->i_lenAlloc > bs)
 		goto out;
+	/* We need to have space at least for generic descriptor */
+	if (iinfo->i_lenEAttr && iinfo->i_lenEAttr <
+					sizeof(struct extendedAttrHeaderDesc))
+		goto out;
+
 	/* Now do exact checks */
 	if (udf_file_entry_alloc_offset(inode) + iinfo->i_lenAlloc > bs)
 		goto out;

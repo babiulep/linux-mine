@@ -1743,7 +1743,7 @@ static int shmem_unuse_inode(struct inode *inode, unsigned int type)
 			break;
 
 		if (signal_pending(current)) {
-			ret = -EINTR;
+			ret = -ERESTARTSYS;
 			break;
 		}
 		start = indices[folio_batch_count(&fbatch) - 1];
