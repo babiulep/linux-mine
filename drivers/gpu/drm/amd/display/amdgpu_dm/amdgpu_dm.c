@@ -716,9 +716,6 @@ static int amdgpu_dm_init(struct amdgpu_device *adev)
 
 	dc_hardware_init(adev->dm.dc);
 
-	/* Enable cursor offload if the ASIC supports it. */
-	dc_dmub_srv_cursor_offload_init(adev->dm.dc);
-
 	/* GOP/vBIOS may leave an OPTC enabled for a display present at power-on
 	 * but no longer driven (e.g. an external DP unplugged at boot). Such a
 	 * dangling pipe keeps DCN out of idle and blocks s0i3. Power it down
@@ -1775,7 +1772,7 @@ STATIC_IFN_KUNIT void dm_gpureset_commit_state(struct dc_state *dc_state,
 		struct dc_scaling_info scaling_infos[MAX_SURFACES];
 		struct dc_flip_addrs flip_addrs[MAX_SURFACES];
 		struct dc_stream_update stream_update;
-	} *bundle __free(kfree);
+	} *bundle __free(kfree) = NULL;
 	int k, m;
 
 	bundle = kzalloc_obj(*bundle);
@@ -2020,10 +2017,6 @@ static int dm_resume(struct amdgpu_ip_block *ip_block)
 
 	/* On resume we need to rewrite the MSTM control bits to enable MST*/
 	s3_handle_mst(ddev, false);
-
-	/* Exit IPS before the detection loop's first AUX/DDC access. */
-	scoped_guard(mutex, &dm->dc_lock)
-		dc_exit_ips_for_hw_access(dm->dc);
 
 	/* Do detection*/
 	drm_connector_list_iter_begin(ddev, &iter);
@@ -4730,8 +4723,6 @@ static void amdgpu_dm_commit_streams(struct drm_atomic_commit *state,
 			if (dm_old_crtc_state->stream)
 				remove_stream(adev, acrtc, dm_old_crtc_state->stream);
 
-			pm_runtime_get_noresume(dev->dev);
-
 			acrtc->enabled = true;
 			acrtc->hw_mode = new_crtc_state->mode;
 			crtc->hwmode = new_crtc_state->mode;
@@ -5281,10 +5272,8 @@ static void amdgpu_dm_atomic_commit_tail(struct drm_atomic_commit *state)
 		 * To fix this, DC should permit updating only stream properties.
 		 */
 		dummy_updates = kzalloc(sizeof(struct dc_surface_update) * MAX_SURFACES, GFP_KERNEL);
-		if (!dummy_updates) {
-			drm_err(adev_to_drm(adev), "Failed to allocate memory for dummy_updates.\n");
+		if (!dummy_updates)
 			continue;
-		}
 		for (j = 0; j < status->plane_count; j++)
 			dummy_updates[j].surface = status->plane_states[j];
 
@@ -5315,8 +5304,13 @@ static void amdgpu_dm_atomic_commit_tail(struct drm_atomic_commit *state)
 #ifdef CONFIG_DEBUG_FS
 		enum amdgpu_dm_pipe_crc_source cur_crc_src;
 #endif
-		/* Count number of newly disabled CRTCs for dropping PM refs later. */
-		if (old_crtc_state->active && !new_crtc_state->active)
+		/*
+		 * One runtime PM reference per active CRTC: take it when the
+		 * CRTC turns on, count it when it turns off for dropping later.
+		 */
+		if (!old_crtc_state->active && new_crtc_state->active)
+			pm_runtime_get_noresume(dev->dev);
+		else if (old_crtc_state->active && !new_crtc_state->active)
 			crtc_disable_count++;
 
 		dm_new_crtc_state = to_dm_crtc_state(new_crtc_state);
@@ -5342,38 +5336,38 @@ static void amdgpu_dm_atomic_commit_tail(struct drm_atomic_commit *state)
 		amdgpu_dm_handle_vrr_transition(dm, dm_old_crtc_state, dm_new_crtc_state);
 
 #ifdef CONFIG_DEBUG_FS
-		if (new_crtc_state->active &&
-		    (!old_crtc_state->active ||
-		     drm_atomic_crtc_needs_modeset(new_crtc_state))) {
-			/**
-			 * Frontend may have changed so reapply the CRC capture
-			 * settings for the stream.
-			 */
-			if (amdgpu_dm_is_valid_crc_source(cur_crc_src)) {
+		if (!new_crtc_state->active ||
+		    (old_crtc_state->active && !drm_atomic_crtc_needs_modeset(new_crtc_state)))
+			continue;
+
+		/**
+		 * Frontend may have changed so reapply the CRC capture
+		 * settings for the stream.
+		 */
+		if (!amdgpu_dm_is_valid_crc_source(cur_crc_src))
+			continue;
+
 #if defined(CONFIG_DRM_AMD_SECURE_DISPLAY)
-				if (amdgpu_dm_crc_window_is_activated(crtc)) {
-					uint8_t cnt;
+		if (amdgpu_dm_crc_window_is_activated(crtc)) {
+			uint8_t cnt;
 
-					spin_lock_irqsave(&adev_to_drm(adev)->event_lock, flags);
-					for (cnt = 0; cnt < MAX_CRC_WINDOW_NUM; cnt++) {
-						if (acrtc->dm_irq_params.window_param[cnt].enable) {
-							acrtc->dm_irq_params.window_param[cnt].update_win = true;
+			spin_lock_irqsave(&adev_to_drm(adev)->event_lock, flags);
+			for (cnt = 0; cnt < MAX_CRC_WINDOW_NUM; cnt++) {
+				if (acrtc->dm_irq_params.window_param[cnt].enable) {
+					acrtc->dm_irq_params.window_param[cnt].update_win = true;
 
-							/**
-							 * It takes 2 frames for HW to stably generate CRC when
-							 * resuming from suspend, so we set skip_frame_cnt 2.
-							 */
-							acrtc->dm_irq_params.window_param[cnt].skip_frame_cnt = 2;
-						}
-					}
-					spin_unlock_irqrestore(&adev_to_drm(adev)->event_lock, flags);
+					/**
+					 * It takes 2 frames for HW to stably generate CRC when
+					 * resuming from suspend, so we set skip_frame_cnt 2.
+					 */
+					acrtc->dm_irq_params.window_param[cnt].skip_frame_cnt = 2;
 				}
-#endif
-				if (amdgpu_dm_crtc_configure_crc_source(
-					crtc, dm_new_crtc_state, cur_crc_src))
-					drm_dbg_atomic(dev, "Failed to configure crc source");
 			}
+			spin_unlock_irqrestore(&adev_to_drm(adev)->event_lock, flags);
 		}
+#endif
+		if (amdgpu_dm_crtc_configure_crc_source(crtc, dm_new_crtc_state, cur_crc_src))
+			drm_dbg_atomic(dev, "Failed to configure crc source");
 #endif
 	}
 

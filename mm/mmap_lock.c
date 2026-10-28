@@ -13,6 +13,8 @@
 #include <linux/trace_events.h>
 #include <linux/local_lock.h>
 
+#include "internal.h"
+
 EXPORT_TRACEPOINT_SYMBOL(mmap_lock_start_locking);
 EXPORT_TRACEPOINT_SYMBOL(mmap_lock_acquire_returned);
 EXPORT_TRACEPOINT_SYMBOL(mmap_lock_released);
@@ -428,45 +430,48 @@ static struct vm_area_struct *lock_next_vma_under_mmap_lock(struct mm_struct *mm
 	return vma;
 }
 
+/* Is there no VMA in [start, last]? */
 static bool vma_range_is_empty(struct mm_struct *mm, unsigned long start,
 		unsigned long last)
 {
-	MA_STATE(mas, &mm->mm_mt, start, start);
+	VMA_ITERATOR(vmi, mm, start);
 
-	return !mas_walk(&mas) && mas.last >= last;
+	return !vma_iter_load(&vmi) && vma_iter_end(&vmi) - 1 >= last;
 }
 
-struct vm_area_struct *lock_next_vma(struct mm_struct *mm,
-		struct vma_iterator *vmi, unsigned long from_addr,
-		unsigned int *last_seq)
+/* Might the VMA tree have been modified since last mm speculation? */
+static bool vma_rcu_iter_maybe_changed(const struct vma_rcu_iter *rvmi)
 {
+	return (rvmi->mm_wr_seq & 1) || /* Odd implies write-lock. */
+	       mmap_lock_speculate_retry(rvmi->mm, rvmi->mm_wr_seq);
+}
+
+/* Could the VMA iterator have skipped a VMA due to the tree changing? */
+static bool vma_rcu_iter_may_have_skipped(const struct vma_rcu_iter *rvmi,
+		unsigned long from, unsigned long to)
+{
+	return vma_rcu_iter_maybe_changed(rvmi) &&
+	       !vma_range_is_empty(rvmi->mm, from, to);
+}
+
+struct vm_area_struct *lock_next_vma(struct vma_rcu_iter *rvmi,
+				     unsigned long from_addr)
+{
+	struct mm_struct *mm = rvmi->mm;
+	struct vma_iterator *vmi = rvmi->vmi;
 	struct vm_area_struct *vma;
-	bool mmap_unlocked;
 
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(), "no rcu read lock held");
 retry:
-	/*
-	 * Restart by address if a writer could have changed the cached range.
-	 * The retry check's smp_rmb() orders the previous lookup before reading
-	 * the sequence and pairs with smp_wmb() in do_raw_write_seqcount_begin().
-	 *
-	 * The vma_range_is_empty() checks below avoid unnecessary mmap_lock
-	 * fallbacks.
-	 */
-	mmap_unlocked = !(*last_seq & 1);
-	if (!mmap_unlocked || mmap_lock_speculate_retry(mm, *last_seq)) {
+	/* Only trust the iterator's position if the tree cannot have changed. */
+	if (vma_rcu_iter_maybe_changed(rvmi)) {
 		vma_iter_set(vmi, from_addr);
-		mmap_unlocked = mmap_lock_speculate_try_begin(mm, last_seq);
+		mmap_lock_speculate_try_begin(mm, &rvmi->mm_wr_seq);
 	}
-
 	vma = vma_next(vmi);
 	if (!vma) {
-		/*
-		 * There is no reason to fallback if there really isn't anything
-		 * in the remaining range.
-		 */
-		if ((mmap_unlocked && !mmap_lock_speculate_retry(mm, *last_seq)) ||
-		    vma_range_is_empty(mm, from_addr, ULONG_MAX))
+		/* No reason to fallback if nothing left in range. */
+		if (!vma_rcu_iter_may_have_skipped(rvmi, from_addr, ULONG_MAX))
 			return NULL;
 
 		rcu_read_unlock();
@@ -499,13 +504,9 @@ retry:
 	 * it was not shrunk after we found it and another vma has not been
 	 * installed ahead of it. Otherwise we might observe a gap that should
 	 * not be there.
-	 *
-	 * If speculation fails, avoid taking the mmap_lock when a direct lookup
-	 * confirms that the gap is empty.
 	 */
 	if (from_addr < vma->vm_start &&
-	    (!mmap_unlocked || mmap_lock_speculate_retry(mm, *last_seq)) &&
-	    !vma_range_is_empty(mm, from_addr, vma->vm_start - 1))
+	    vma_rcu_iter_may_have_skipped(rvmi, from_addr, vma->vm_start - 1))
 		goto fallback_unlock;
 
 	return vma;

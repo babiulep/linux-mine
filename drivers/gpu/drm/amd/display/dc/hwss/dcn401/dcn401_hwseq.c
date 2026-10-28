@@ -169,15 +169,11 @@ void dcn401_init_hw(struct dc *dc)
 	//}
 
 	// Set default OPTC memory power states
-	if (dc->debug.enable_mem_low_power.bits.optc) {
-		// Shutdown when unassigned and light sleep in VBLANK
-		REG_SET_2(ODM_MEM_PWR_CTRL3, 0, ODM_MEM_UNASSIGNED_PWR_MODE, 3, ODM_MEM_VBLANK_PWR_MODE, 1);
-	}
+	if (dc->debug.enable_mem_low_power.bits.optc)
+		dcn401_init_odm_mem_power(hws);
 
-	if (dc->debug.enable_mem_low_power.bits.vga) {
-		// Power down VGA memory
-		REG_UPDATE(MMHUBBUB_MEM_PWR_CNTL, VGA_MEM_PWR_FORCE, 1);
-	}
+	if (dc->debug.enable_mem_low_power.bits.vga)
+		dcn401_power_down_vga_mem(hws);
 
 	if (dc->ctx->dc_bios->fw_info_valid) {
 		res_pool->ref_clocks.xtalin_clock_inKhz =
@@ -367,7 +363,7 @@ void dcn401_init_hw(struct dc *dc)
 		if (dc->res_pool->dccg && dc->res_pool->dccg->funcs && dc->res_pool->dccg->funcs->allow_clock_gating)
 			dc->res_pool->dccg->funcs->allow_clock_gating(dc->res_pool->dccg, true);
 
-		REG_UPDATE(DCFCLK_CNTL, DCFCLK_GATE_DIS, 0);
+		dcn401_dcfclk_gating_control(hws, true);
 	}
 
 	dcn401_setup_hpo_hw_control(hws, true);
@@ -818,15 +814,6 @@ enum dc_status dcn401_enable_stream_timing(
 
 	hws->funcs.blank_pixel_data(dc, pipe_ctx, true);
 
-	/* Legacy code path will enable DSC during DPMS on sequence. Since DSC
-	 * HW block programming is independent from link and stream encoder operations, it
-	 * has moved to hwss and should be called when enabling/disabling OTG.
-	 */
-	if (stream->timing.flags.DSC && pipe_ctx->stream_res.dsc) {
-		if (dc->hwss.configure_dsc)
-			dc->hwss.configure_dsc(pipe_ctx, true);
-	}
-
 	/* VTG is  within DCHUB command block. DCFCLK is always on */
 	if (false == pipe_ctx->stream_res.tg->funcs->enable_crtc(pipe_ctx->stream_res.tg)) {
 		BREAK_TO_DEBUGGER();
@@ -979,6 +966,22 @@ void dcn401_enable_stream(struct pipe_ctx *pipe_ctx)
 void dcn401_setup_hpo_hw_control(const struct dce_hwseq *hws, bool enable)
 {
 	REG_UPDATE(HPO_TOP_HW_CONTROL, HPO_IO_EN, enable);
+}
+
+void dcn401_init_odm_mem_power(struct dce_hwseq *hws)
+{
+	// Shutdown when unassigned and light sleep in VBLANK
+	REG_SET_2(ODM_MEM_PWR_CTRL3, 0, ODM_MEM_UNASSIGNED_PWR_MODE, 3, ODM_MEM_VBLANK_PWR_MODE, 1);
+}
+
+void dcn401_power_down_vga_mem(struct dce_hwseq *hws)
+{
+	REG_UPDATE(MMHUBBUB_MEM_PWR_CNTL, VGA_MEM_PWR_FORCE, 1);
+}
+
+void dcn401_dcfclk_gating_control(struct dce_hwseq *hws, bool enable)
+{
+	REG_UPDATE(DCFCLK_CNTL, DCFCLK_GATE_DIS, !enable);
 }
 
 void adjust_hotspot_between_slices_for_2x_magnify(uint32_t cursor_width, struct dc_cursor_position *pos_cpy)
@@ -2124,15 +2127,6 @@ void dcn401_reset_back_end_for_pipe(
 			dc->hwss.set_abm_immediate_disable(pipe_ctx);
 
 			pipe_ctx->stream_res.tg->funcs->disable_crtc(pipe_ctx->stream_res.tg);
-
-			/* Legacy code path will enable DSC during DPMS on sequence. Since DSC
-			 * HW block programming is independent from backend operations, it
-			 * has moved to hwss and should be called when enabling/disabling OTG.
-			 */
-			if (pipe_ctx->stream_res.dsc) {
-				if (dc->hwss.configure_dsc)
-					dc->hwss.configure_dsc(pipe_ctx, false);
-			}
 
 			pipe_ctx->stream_res.tg->funcs->enable_optc_clock(pipe_ctx->stream_res.tg, false);
 		}

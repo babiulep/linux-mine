@@ -17,6 +17,13 @@ extern int rcuwait_wake_up(struct rcuwait *w);
 #define MMAP_LOCK_INITIALIZER(name) \
 	.mmap_lock = __RWSEM_INITIALIZER((name).mmap_lock),
 
+/* Tie a VMA iterator to mm write lock state at iterator initialisation. */
+struct vma_rcu_iter {
+	struct mm_struct *mm;
+	struct vma_iterator *vmi;
+	unsigned int mm_wr_seq;
+};
+
 DECLARE_TRACEPOINT(mmap_lock_start_locking);
 DECLARE_TRACEPOINT(mmap_lock_acquire_returned);
 DECLARE_TRACEPOINT(mmap_lock_released);
@@ -509,17 +516,25 @@ static inline void vma_mark_detached(struct vm_area_struct *vma)
 struct vm_area_struct *lock_vma_under_rcu(struct mm_struct *mm,
 					  unsigned long address);
 
+static inline void vma_rcu_iter_init(struct vma_rcu_iter *rvmi,
+		struct mm_struct *mm, struct vma_iterator *vmi,
+		unsigned long addr)
+{
+	vma_iter_init(vmi, mm, addr);
+	rvmi->mm = mm;
+	rvmi->vmi = vmi;
+	rvmi->mm_wr_seq = UINT_MAX; /* Start odd so changed by default. */
+}
+
 /*
  * Locks next vma pointed by the iterator. Confirms the locked vma has not
  * been modified and will retry under mmap_lock protection if modification
  * was detected. Should be called from read RCU section.
- * *last_seq must initially be odd and is kept across calls.
  * Returns either a valid locked VMA, NULL if no more VMAs or -EINTR if the
  * process was interrupted.
  */
-struct vm_area_struct *lock_next_vma(struct mm_struct *mm,
-		struct vma_iterator *vmi, unsigned long from_addr,
-		unsigned int *last_seq);
+struct vm_area_struct *lock_next_vma(struct vma_rcu_iter *rvmi,
+				     unsigned long from_addr);
 
 static inline void vma_assert_can_modify(struct vm_area_struct *vma)
 {

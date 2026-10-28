@@ -386,7 +386,6 @@ struct mem_size_stats;
 struct proc_maps_locking_ctx {
 	struct mm_struct *mm;
 	bool mmap_locked;
-	unsigned int mm_wr_seq;
 	struct vm_area_struct *locked_vma;
 };
 
@@ -394,6 +393,7 @@ struct proc_maps_private {
 	struct inode *inode;
 	struct task_struct *task;
 	struct vma_iterator iter;
+	struct vma_rcu_iter rvmi;
 	loff_t last_pos;
 	struct proc_maps_locking_ctx lock_ctx;
 #ifdef CONFIG_NUMA

@@ -153,7 +153,6 @@ static void reset_lock_ctx(struct proc_maps_locking_ctx *lock_ctx)
 {
 	lock_ctx->locked_vma = NULL;
 	lock_ctx->mmap_locked = false;
-	lock_ctx->mm_wr_seq = UINT_MAX;
 }
 
 static struct vm_area_struct *get_next_vma(struct proc_maps_private *priv,
@@ -166,8 +165,7 @@ static struct vm_area_struct *get_next_vma(struct proc_maps_private *priv,
 		return vma_next(&priv->iter);
 
 	unlock_ctx_vma(lock_ctx);
-	vma = lock_next_vma(lock_ctx->mm, &priv->iter, last_pos,
-			    &lock_ctx->mm_wr_seq);
+	vma = lock_next_vma(&priv->rvmi, last_pos);
 	if (!IS_ERR_OR_NULL(vma))
 		lock_ctx->locked_vma = vma;
 
@@ -272,7 +270,7 @@ static void *m_start(struct seq_file *m, loff_t *ppos)
 	 */
 	if (last_addr && !addr_is_sentinel(last_addr))
 		*ppos = last_addr = priv->last_pos;
-	vma_iter_init(&priv->iter, mm, (unsigned long)last_addr);
+	vma_rcu_iter_init(&priv->rvmi, mm, &priv->iter, (unsigned long)last_addr);
 	hold_task_mempolicy(priv);
 	/*
 	 * If seq_file had to flush its collected data right after m_next() set
@@ -522,6 +520,7 @@ static struct vm_area_struct *query_vma_find_by_addr(struct proc_maps_locking_ct
 	struct mm_struct *mm = lock_ctx->mm;
 	struct vm_area_struct *vma;
 	struct vma_iterator vmi;
+	struct vma_rcu_iter rvmi;
 
 	if (lock_ctx->mmap_locked)
 		return find_vma(mm, addr);
@@ -529,8 +528,8 @@ static struct vm_area_struct *query_vma_find_by_addr(struct proc_maps_locking_ct
 	/* Unlock previously locked VMA and find the next one under RCU */
 	unlock_ctx_vma(lock_ctx);
 	rcu_read_lock();
-	vma_iter_init(&vmi, mm, addr);
-	vma = lock_next_vma(mm, &vmi, addr, &lock_ctx->mm_wr_seq);
+	vma_rcu_iter_init(&rvmi, mm, &vmi, addr);
+	vma = lock_next_vma(&rvmi, addr);
 	rcu_read_unlock();
 
 	if (!vma)
@@ -1423,7 +1422,7 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
 	rcu_read_lock();
 	reset_lock_ctx(lock_ctx);
 
-	vma_iter_init(&priv->iter, mm, 0);
+	vma_rcu_iter_init(&priv->rvmi, mm, &priv->iter, 0);
 	vma = proc_get_vma(m, &pos);
 	if (unlikely(!vma))
 		goto empty_set;
@@ -1472,7 +1471,7 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
 			reset_lock_ctx(lock_ctx);
 			/* Resume from the last position. */
 			pos = last_vma_end;
-			vma_iter_init(&priv->iter, mm, pos);
+			vma_rcu_iter_init(&priv->rvmi, mm, &priv->iter, pos);
 		}
 		vma = proc_get_vma(m, &pos);
 	}

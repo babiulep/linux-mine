@@ -2104,10 +2104,13 @@ static inline unsigned long zap_pmd_range(struct mmu_gather *tlb,
 				addr = next;
 				continue;
 			}
+			/* We already synchronized with concurrent zapping. */
+			if (pmd_none(*pmd)) {
+				addr = next;
+				continue;
+			}
 			/* fall through */
-		}
-
-		if (pmd_none(*pmd)) {
+		} else if (pmd_none(*pmd)) {
 			if (details && details->single_folio)
 				sync_with_folio_pmd_zap(tlb->mm, pmd);
 			addr = next;
