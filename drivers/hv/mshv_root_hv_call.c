@@ -44,6 +44,7 @@ int hv_call_withdraw_memory(u64 count, int node, u64 partition_id)
 	struct page *page;
 	u16 completed;
 	u64 status, withdrawn = 0;
+	int i;
 	unsigned long flags;
 
 	page = alloc_page(GFP_KERNEL);
@@ -66,7 +67,8 @@ int hv_call_withdraw_memory(u64 count, int node, u64 partition_id)
 
 		completed = hv_repcomp(status);
 
-		hv_restore_withdrawn_pages(output_page->gpa_page_list, completed);
+		for (i = 0; i < completed; i++)
+			__free_page(pfn_to_page(output_page->gpa_page_list[i]));
 
 		if (!hv_result_success(status)) {
 			if (hv_result(status) == HV_STATUS_NO_RESOURCES)

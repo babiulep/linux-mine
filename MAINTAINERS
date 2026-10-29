@@ -7582,10 +7582,9 @@ F:	drivers/dma/dw-edma/
 F:	include/linux/dma/edma.h
 
 DESIGNWARE USB2 DRD IP DRIVER
-M:	Minas Harutyunyan <hminas@synopsys.com>
+M:	Thinh Nguyen <Thinh.Nguyen@synopsys.com>
 L:	linux-usb@vger.kernel.org
 S:	Maintained
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/balbi/usb.git
 F:	drivers/usb/dwc2/
 
 DESIGNWARE USB3 DRD IP DRIVER
@@ -14068,6 +14067,16 @@ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/axboe/linux.git
 S:	Maintained
 F:	io_uring/bpf-ops.*
 F:	io_uring/loop.*
+
+IPC
+M:	Andrew Morton <akpm@linux-foundation.org>
+R:	Manfred Spraul <manfred@colorfullife.com>
+R:	Davidlohr Bueso <dave@stgolabs.net>
+L:	linux-kernel@vger.kernel.org
+S:	Maintained
+F:	ipc/
+F:	tools/testing/selftests/ipc/
+F:	tools/testing/selftests/mqueue/
 
 IPMI SUBSYSTEM
 M:	Corey Minyard <corey@minyard.net>
@@ -27208,6 +27217,8 @@ F:	drivers/net/ethernet/synopsys/
 SYNOPSYS DESIGNWARE ETHERNET XPCS DRIVER
 L:	netdev@vger.kernel.org
 S:	Orphan
+F:	Documentation/devicetree/bindings/net/pcs/snps,dw-xpcs.yaml
+F:	drivers/net/pcs/pcs-xpcs-plat.c
 F:	drivers/net/pcs/pcs-xpcs.c
 F:	drivers/net/pcs/pcs-xpcs.h
 F:	include/linux/pcs/pcs-xpcs.h
