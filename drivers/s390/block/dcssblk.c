@@ -101,7 +101,7 @@ static DEVICE_ATTR(remove, S_IWUSR, NULL, dcssblk_remove_store);
 static struct device *dcssblk_root_dev;
 
 static LIST_HEAD(dcssblk_devices);
-static DECLARE_RWSEM(dcssblk_devices_sem);
+static struct rw_semaphore dcssblk_devices_sem;
 
 /*
  * release function for segment device.
@@ -1026,6 +1026,7 @@ dcssblk_init(void)
 	if (rc < 0)
 		goto out_root;
 	dcssblk_major = rc;
+	init_rwsem(&dcssblk_devices_sem);
 
 	dcssblk_check_params();
 	return 0;

@@ -12,5 +12,4 @@
 #
 
 LC_ALL=C
-sed -n -e 's/\([0-9a-f]*\) . __kernel_\(.*\)/\#define vdso_offset_\2\t0x\1/p' \
-       -e 's/\([0-9a-f]*\) . \(__futex_.*\)/\#define vdso_offset_\2\t0x\1/p'
+sed -n 's/\([0-9a-f]*\) . __kernel_\(.*\)/\#define vdso_offset_\2\t0x\1/p'

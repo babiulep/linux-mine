@@ -6,7 +6,6 @@
  *
  */
 
-#include <linux/text-patching.h>
 #include <linux/uaccess.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -61,20 +60,22 @@ static notrace long s390_kernel_write_odd(void *dst, const void *src, size_t siz
  * bytes from destination at an eight byte boundary, modifies the bytes
  * requested and writes the result back in a loop.
  */
+static DEFINE_SPINLOCK(s390_kernel_write_lock);
+
 notrace void *__s390_kernel_write(void *dst, const void *src, size_t size)
 {
 	void *tmp = dst;
+	unsigned long flags;
 	long copied;
 
-	preempt_disable();
+	spin_lock_irqsave(&s390_kernel_write_lock, flags);
 	while (size) {
 		copied = s390_kernel_write_odd(tmp, src, size);
 		tmp += copied;
 		src += copied;
 		size -= copied;
 	}
-	sync_core();
-	preempt_enable();
+	spin_unlock_irqrestore(&s390_kernel_write_lock, flags);
 
 	return dst;
 }

@@ -2,8 +2,7 @@
 #ifndef _ASM_S390_RUNTIME_CONST_H
 #define _ASM_S390_RUNTIME_CONST_H
 
-#include <linux/text-patching.h>
-#include <linux/memory.h>
+#include <linux/uaccess.h>
 
 #define runtime_const_ptr(sym)					\
 ({								\
@@ -89,7 +88,6 @@ static inline void __runtime_fixup_mask(void *where, unsigned long val)
 static inline void runtime_const_fixup(void (*fn)(void *, unsigned long),
 				       unsigned long val, s32 *start, s32 *end)
 {
-	guard(mutex)(&text_mutex);
 	while (start < end) {
 		fn(*start + (void *)start, val);
 		start++;
