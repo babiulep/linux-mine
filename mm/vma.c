@@ -516,6 +516,15 @@ void unmap_region(struct unmap_desc *unmap)
 	tlb_finish_mmu(&tlb);
 }
 
+static int check_split(struct vm_area_struct *vma, unsigned long addr)
+{
+	if (!vma->vm_ops)
+		return 0;
+	if (!vma->vm_ops->may_split)
+		return 0;
+	return vma->vm_ops->may_split(vma, addr);
+}
+
 /*
  * __split_vma() bypasses sysctl_max_map_count checking.  We use this where it
  * has already been checked or doesn't make sense to fail.
@@ -532,11 +541,9 @@ __split_vma(struct vma_iterator *vmi, struct vm_area_struct *vma,
 	WARN_ON(vma->vm_start >= addr);
 	WARN_ON(vma->vm_end <= addr);
 
-	if (vma->vm_ops && vma->vm_ops->may_split) {
-		err = vma->vm_ops->may_split(vma, addr);
-		if (err)
-			return err;
-	}
+	err = check_split(vma, addr);
+	if (err)
+		return err;
 
 	vma_start_write(vma);
 	new = vm_area_dup(vma);
@@ -967,6 +974,10 @@ static __must_check struct vm_area_struct *vma_merge_existing_range(
 	 * we have no sensible recourse but to abort the merge.
 	 */
 	if (vmg->__remove_middle && !can_merge_remove_vma(middle))
+		return NULL;
+
+	/* If middle isn't removed then it's resized, i.e. splits. */
+	if (!vmg->__remove_middle && check_split(middle, left_side ? end : start))
 		return NULL;
 
 	/*
@@ -1675,9 +1686,18 @@ int do_vmi_align_munmap(struct vma_iterator *vmi, struct vm_area_struct *vma,
 	mt_init_flags(&mt_detach, vmi->mas.tree->ma_flags & MT_FLAGS_LOCK_MASK);
 	mt_on_stack(mt_detach);
 	struct vma_munmap_struct vms;
+	struct list_head *uf_unmaps;
+	LIST_HEAD(uf_new_unmaps);
 	int error;
 
-	init_vma_munmap(&vms, vmi, vma, start, end, uf, unlock);
+	/*
+	 * @uf may already hold events of earlier successful unmaps, e.g. in
+	 * mremap().
+	 * Collect new events on a separate list so they can be dropped if this
+	 * unmap fails, and splice them into @uf on success.
+	 */
+	uf_unmaps = uf ? &uf_new_unmaps : NULL;
+	init_vma_munmap(&vms, vmi, vma, start, end, uf_unmaps, unlock);
 	error = vms_gather_munmap_vmas(&vms, &mas_detach);
 	if (error)
 		goto gather_failed;
@@ -1687,12 +1707,15 @@ int do_vmi_align_munmap(struct vma_iterator *vmi, struct vm_area_struct *vma,
 		goto clear_tree_failed;
 
 	/* Point of no return */
+	if (uf)
+		list_splice_tail(&uf_new_unmaps, uf);
 	vms_complete_munmap_vmas(&vms, &mas_detach);
 	return 0;
 
 clear_tree_failed:
 	reattach_vmas(&mas_detach);
 gather_failed:
+	userfaultfd_unmap_abort(&uf_new_unmaps);
 	validate_mm(mm);
 	return error;
 }
@@ -2581,7 +2604,7 @@ static int __mmap_setup(struct mmap_state *map, struct vm_area_desc *desc,
 		if (error) {
 			/* On error VMAs will already have been reattached. */
 			vms->nr_pages = 0;
-			return error;
+			goto abort_unmaps;
 		}
 
 		map->next = vms->next;
@@ -2591,8 +2614,10 @@ static int __mmap_setup(struct mmap_state *map, struct vm_area_desc *desc,
 	}
 
 	/* Check against address space limit. */
-	if (!may_expand_vm(map->mm, &map->vma_flags, map->pglen - vms->nr_pages))
-		return -ENOMEM;
+	if (!may_expand_vm(map->mm, &map->vma_flags, map->pglen - vms->nr_pages)) {
+		error = -ENOMEM;
+		goto abort_unmaps;
+	}
 
 	/* Private writable mapping: check memory availability. */
 	if (accountable_mapping(map)) {
@@ -2602,7 +2627,7 @@ static int __mmap_setup(struct mmap_state *map, struct vm_area_desc *desc,
 		if (uncharged) {
 			error = security_vm_enough_memory_mm(map->mm, uncharged);
 			if (error)
-				return error;
+				goto abort_unmaps;
 		}
 
 		/* Our new mapping owns the entire charge now. */
@@ -2621,6 +2646,10 @@ static int __mmap_setup(struct mmap_state *map, struct vm_area_desc *desc,
 
 	set_desc_from_map(desc, map);
 	return 0;
+
+abort_unmaps:
+	userfaultfd_unmap_abort(uf);
+	return error;
 }
 
 static bool map_same_file(struct mmap_state *map)
@@ -3406,7 +3435,8 @@ static int acct_stack_growth(struct vm_area_struct *vma,
 	 * Overcommit..  This must be the final test, as it will
 	 * update security statistics.
 	 */
-	if (security_vm_enough_memory_mm(mm, grow))
+	if (vma_test(vma, VMA_ACCOUNT_BIT) &&
+	    security_vm_enough_memory_mm(mm, grow))
 		return -ENOMEM;
 
 	return 0;

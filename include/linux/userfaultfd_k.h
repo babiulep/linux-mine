@@ -153,8 +153,6 @@ extern int mrwprotect_range(struct userfaultfd_ctx *ctx, unsigned long start,
 			    unsigned long len, bool enable_rwp);
 
 /* move_pages */
-void double_pt_lock(spinlock_t *ptl1, spinlock_t *ptl2);
-void double_pt_unlock(spinlock_t *ptl1, spinlock_t *ptl2);
 int move_pages_huge_pmd(struct mm_struct *mm, pmd_t *dst_pmd, pmd_t *src_pmd, pmd_t dst_pmdval,
 			struct vm_area_struct *dst_vma,
 			struct vm_area_struct *src_vma,
@@ -279,6 +277,7 @@ extern int userfaultfd_unmap_prep(struct vm_area_struct *vma,
 		unsigned long start, unsigned long end, struct list_head *uf);
 extern void userfaultfd_unmap_complete(struct mm_struct *mm,
 				       struct list_head *uf);
+void userfaultfd_unmap_abort(struct list_head *uf);
 extern bool userfaultfd_wp_unpopulated(struct vm_area_struct *vma);
 extern bool userfaultfd_wp_async(struct vm_area_struct *vma);
 extern bool userfaultfd_rwp_async(struct vm_area_struct *vma);
@@ -442,6 +441,10 @@ static inline int userfaultfd_unmap_prep(struct vm_area_struct *vma,
 
 static inline void userfaultfd_unmap_complete(struct mm_struct *mm,
 					      struct list_head *uf)
+{
+}
+
+static inline void userfaultfd_unmap_abort(struct list_head *uf)
 {
 }
 

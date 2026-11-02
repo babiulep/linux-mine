@@ -6416,51 +6416,6 @@ struct bpf_func_ptr *bpf_map_func_ptrs(struct bpf_verifier_env *env,
 	return bpf_map_range_func_ptrs(env, map, 0, (u64)map->value_size, cnt);
 }
 
-/* instructions [off, off + len) replaced the instruction at 'off' */
-void bpf_adjust_func_ptrs(struct bpf_verifier_env *env, u32 off, u32 len)
-{
-	struct bpf_func_ptr *p;
-	u32 i;
-
-	if (len <= 1)
-		return;
-
-	for (i = 0; i < env->func_ptr_cnt; i++) {
-		p = &env->func_ptrs[i];
-		if (p->xlated_off <= off || p->xlated_off == BPF_FUNC_PTR_DELETED)
-			continue;
-		p->xlated_off += len - 1;
-	}
-}
-
-/*
- * Instructions [off, off + len) are about to be removed. It's called before
- * the starts of subprogs are adjusted. A subprog is gone when all of its
- * instructions are. Otherwise, e.g. when its first instruction is a nop,
- * it starts where the removed instructions did.
- */
-void bpf_adjust_func_ptrs_after_remove(struct bpf_verifier_env *env, u32 off, u32 len)
-{
-	struct bpf_func_ptr *p;
-	int subprog;
-	u32 i;
-
-	for (i = 0; i < env->func_ptr_cnt; i++) {
-		p = &env->func_ptrs[i];
-		if (p->xlated_off < off || p->xlated_off == BPF_FUNC_PTR_DELETED)
-			continue;
-		if (p->xlated_off >= off + len) {
-			p->xlated_off -= len;
-			continue;
-		}
-		subprog = bpf_find_subprog(env, p->xlated_off);
-		if (subprog > 0 && env->subprog_info[subprog + 1].start > off + len)
-			p->xlated_off = off;
-		else
-			p->xlated_off = BPF_FUNC_PTR_DELETED;
-	}
-}
-
 #define BTF_TYPE_SAFE_RCU(__type)  __PASTE(__type, __safe_rcu)
 #define BTF_TYPE_SAFE_RCU_OR_NULL(__type)  __PASTE(__type, __safe_rcu_or_null)
 #define BTF_TYPE_SAFE_TRUSTED(__type)  __PASTE(__type, __safe_trusted)
@@ -13574,7 +13529,12 @@ static int resolve_func_arg_type(struct bpf_verifier_env *env,
 	if (base_type(*arg_type) != ARG_PTR_TO_BTF_ID)
 		return 0;
 
+	/*
+	 * A kfunc that releases an object, or that takes a reference to one,
+	 * needs the object itself: memory of the program cannot stand in for it.
+	 */
 	if (!is_kfunc(meta) || arg_type_is_release(*arg_type) ||
+	    is_kfunc_acquire(meta) ||
 	    base_type(reg->type) == PTR_TO_BTF_ID ||
 	    reg2btf_ids[base_type(reg->type)])
 		return 0;
@@ -13585,7 +13545,15 @@ static int resolve_func_arg_type(struct bpf_verifier_env *env,
 	ref_t = btf_type_skip_modifiers(btf, ref_id, &ref_id);
 	ref_tname = btf_name_by_offset(btf, ref_t->name_off);
 
-	if (!btf_type_is_scalar_struct(env, btf, ref_t))
+	/*
+	 * A kfunc that takes a projection type (ie. xdp_md) casts it to the
+	 * underlying type. So memory of the program cannot stand in for it,
+	 * even if the projection type holds only scalars. A struct without
+	 * members (ie. iou_ctx) is a handle for an object of another type.
+	 */
+	if (btf_is_projection_type(ref_tname) ||
+	    !btf_type_is_scalar_struct(env, btf, ref_t) ||
+	    !btf_type_vlen(ref_t))
 		return 0;
 
 	resolve_ret = btf_resolve_size(btf, ref_t, arg_size);
@@ -14340,9 +14308,13 @@ static int process_arg_ptr_to_btf_id(struct bpf_verifier_env *env, struct bpf_re
 
 	/* If kfunc is accepting a projection type (ie. __sk_buff), it cannot
 	 * actually use it -- it must cast to the underlying type. So we allow
-	 * caller to pass in the underlying type.
+	 * caller to pass in the underlying type. Only kernel BTF has that type:
+	 * a type of the same name in the BTF of the program is program memory.
+	 * And only a pointer to the start of the object points to that type.
 	 */
-	taking_projection = is_kfunc(meta) && btf_is_projection_of(arg_tname, reg_tname);
+	taking_projection = is_kfunc(meta) && btf_is_kernel(reg_btf) &&
+			    !reg->var_off.value &&
+			    btf_is_projection_of(arg_tname, reg_tname);
 	if (!taking_projection && !struct_same) {
 		verbose(env, "%s %s expected pointer to %s %s but %s has a pointer to %s %s\n",
 			meta->func_name, reg_arg_name(env, argno),
@@ -16676,6 +16648,24 @@ static void scalar_min_max_mul(struct bpf_reg_state *dst_reg,
 					cnum64_from_srange(smin, smax));
 }
 
+static void scalar_min_max_uhmul(struct bpf_reg_state *dst_reg,
+				 struct bpf_reg_state *src_reg)
+{
+	u64 dst = reg_const_value(dst_reg, false);
+	u64 src = reg_const_value(src_reg, false);
+
+	___mark_reg_known(dst_reg, bpf_uhmul64(dst, src));
+}
+
+static void scalar_min_max_shmul(struct bpf_reg_state *dst_reg,
+				 struct bpf_reg_state *src_reg)
+{
+	s64 dst = reg_const_value(dst_reg, false);
+	s64 src = reg_const_value(src_reg, false);
+
+	___mark_reg_known(dst_reg, bpf_shmul64(dst, src));
+}
+
 static void scalar32_min_max_udiv(struct bpf_reg_state *dst_reg,
 				  struct bpf_reg_state *src_reg)
 {
@@ -17385,6 +17375,25 @@ static int adjust_scalar_min_max_vals(struct bpf_verifier_env *env,
 		reg_step_reset(dst_reg);
 		break;
 	case BPF_MUL:
+		/*
+		 * Range analysis for UHMUL/SHMUL is not implemented yet.
+		 * Compute an exact result only when both operands are constants.
+		 * Ordinary low-half MUL continues to use the analysis below.
+		 */
+		if (bpf_insn_is_hmul(insn) &&
+		    (!is_reg_const(dst_reg, false) ||
+		     !is_reg_const(&src_reg, false))) {
+			__mark_reg_unknown(env, dst_reg);
+			break;
+		}
+		if (!alu32 && insn->off == BPF_UHMUL) {
+			scalar_min_max_uhmul(dst_reg, &src_reg);
+			break;
+		}
+		if (!alu32 && insn->off == BPF_SHMUL) {
+			scalar_min_max_shmul(dst_reg, &src_reg);
+			break;
+		}
 		scalar_step_mul(dst_reg, &src_reg);
 		dst_reg->var_off = tnum_mul(dst_reg->var_off, src_reg.var_off);
 		scalar32_min_max_mul(dst_reg, &src_reg);
@@ -17519,6 +17528,11 @@ static int adjust_reg_min_max_vals(struct bpf_verifier_env *env,
 
 	/* Case where at least one operand is an arena. */
 	if (dst_reg->type == PTR_TO_ARENA || (src_reg && src_reg->type == PTR_TO_ARENA)) {
+
+		if (bpf_insn_is_hmul(insn)) {
+			verbose(env, "UHMUL/SHMUL with arena pointers are not supported\n");
+			return -EOPNOTSUPP;
+		}
 
 		if (dst_reg->type != PTR_TO_ARENA)
 			*dst_reg = *src_reg;
@@ -17736,6 +17750,18 @@ bool bpf_same_memory_origin(const struct bpf_reg_state *reg_a,
 	}
 }
 
+/*
+ * 'range - smax' bytes from a packet pointer are in the packet. reg_bounds_sync() can make smax
+ * smaller than @smax: with a step of 8, or with 3 zero bits in var_off, 58 becomes 56. Make the
+ * range smaller by the same number, so that the number of bytes does not grow. umax is not
+ * sufficient: it is U64_MAX when the offset can be negative.
+ */
+void bpf_trim_pkt_range(struct bpf_reg_state *reg, s64 smax)
+{
+	if (type_is_pkt_pointer(reg->type) && reg->range > 0)
+		reg->range = max_t(s64, reg->range - (smax - reg_smax(reg)), 0);
+}
+
 int bpf_set_reg_range(struct bpf_verifier_env *env, struct bpf_reg_state *reg,
 		      struct cnum64 r64, struct cnum32 r32, u16 base, u16 step)
 {
@@ -17745,6 +17771,7 @@ int bpf_set_reg_range(struct bpf_verifier_env *env, struct bpf_reg_state *reg,
 	reg->base = base;
 	reg->var_off = tnum_unknown;
 	reg_bounds_sync(reg); /* this should infer the tnum alignment */
+	bpf_trim_pkt_range(reg, cnum64_smax(r64));
 	return reg_bounds_sanity_check(env, reg, "bpf_set_reg_range");
 }
 
@@ -21214,6 +21241,31 @@ static int fd_array_get_map_idx(struct bpf_verifier_env *env, u32 idx)
 	return -EPROTO;
 }
 
+static bool is_valid_alu_variant(const struct bpf_insn *insn)
+{
+	switch (BPF_OP(insn->code)) {
+	case BPF_MUL:
+		return insn->off == 0 || bpf_insn_is_hmul(insn);
+	case BPF_DIV:
+	case BPF_MOD:
+		/* off == 1 selects SDIV/SMOD. */
+		return insn->off == 0 || insn->off == 1;
+	default:
+		return insn->off == 0;
+	}
+}
+
+/* The interpreter supports uhmul and shmul. JITs opt in. */
+static int check_hmul_jit(struct bpf_verifier_env *env)
+{
+	if (bpf_prog_is_offloaded(env->prog->aux) ||
+	    (env->prog->jit_requested && !bpf_jit_supports_hmul())) {
+		verbose(env, "JIT doesn't support uhmul and shmul\n");
+		return -EOPNOTSUPP;
+	}
+	return 0;
+}
+
 static int check_alu_fields(struct bpf_verifier_env *env, struct bpf_insn *insn)
 {
 	u8 class = BPF_CLASS(insn->code);
@@ -21269,18 +21321,14 @@ static int check_alu_fields(struct bpf_verifier_env *env, struct bpf_insn *insn)
 	case BPF_MUL:
 	case BPF_DIV:
 	case BPF_MOD:
-		if (BPF_SRC(insn->code) == BPF_X) {
-			if (insn->imm != 0 || (insn->off != 0 && insn->off != 1) ||
-			    (insn->off == 1 && opcode != BPF_MOD && opcode != BPF_DIV)) {
-				verbose(env, "BPF_ALU uses reserved fields\n");
-				return -EINVAL;
-			}
-		} else if (insn->src_reg != BPF_REG_0 ||
-			   (insn->off != 0 && insn->off != 1) ||
-			   (insn->off == 1 && opcode != BPF_MOD && opcode != BPF_DIV)) {
+		if (!is_valid_alu_variant(insn) ||
+		    (BPF_SRC(insn->code) == BPF_X && insn->imm != 0) ||
+		    (BPF_SRC(insn->code) == BPF_K && insn->src_reg != BPF_REG_0)) {
 			verbose(env, "BPF_ALU uses reserved fields\n");
 			return -EINVAL;
 		}
+		if (bpf_insn_is_hmul(insn))
+			return check_hmul_jit(env);
 		return 0;
 	default:
 		verbose(env, "invalid BPF_ALU opcode %x\n", opcode);
@@ -22497,6 +22545,37 @@ static bool func_has_rcu_read_lock(const struct bpf_prog *prog, int subprog)
 	       !sub_aux->called[BPF_FUNC_CTX_NO_RCU_LOCK];
 }
 
+/*
+ * The callers of a global function are checked against the arguments that its
+ * BTF describes, and an extension is verified with those of its own BTF. It
+ * must not expect more than the callers of the function provide.
+ *
+ * While an extension is loaded, bpf_check_attach_target() runs before its
+ * arguments are known. check_attach_btf_id() does the check when they are.
+ */
+static int check_ext_args(struct bpf_verifier_log *log, const struct bpf_prog *prog,
+			  const struct bpf_prog *tgt_prog, int subprog)
+{
+	const struct bpf_subprog_arg_info *tgt = tgt_prog->aux->func_info_aux[subprog].args;
+	const struct bpf_subprog_arg_info *ext = prog->aux->func_info_aux[0].args;
+	int i;
+
+	for (i = 0; i < MAX_BPF_FUNC_REG_ARGS && ext[i].arg_type != ARG_UNUSED; i++) {
+		/* An extension may accept NULL where the callers never pass it. */
+		if ((ext[i].arg_type == tgt[i].arg_type ||
+		     ext[i].arg_type == (tgt[i].arg_type | PTR_MAYBE_NULL)) &&
+		    (base_type(ext[i].arg_type) == ARG_PTR_TO_MEM ?
+		     ext[i].mem_size <= tgt[i].mem_size : ext[i].btf_id == tgt[i].btf_id))
+			continue;
+
+		bpf_log(log, "Extension program's argument in R%d is incompatible with original\n",
+			i + 1);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 int bpf_check_attach_target(struct bpf_verifier_log *log,
 			    const struct bpf_prog *prog,
 			    const struct bpf_prog *tgt_prog,
@@ -22784,7 +22863,8 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
 			return -EINVAL;
 		}
 		if (prog_extension &&
-		    btf_check_type_match(log, prog, btf, t))
+		    (btf_check_type_match(log, prog, btf, t) ||
+		     check_ext_args(log, prog, tgt_prog, subprog)))
 			return -EINVAL;
 		t = btf_attach_func_proto(log, btf, btf_id);
 		if (!t || !btf_type_is_func_proto(t))
@@ -23004,6 +23084,15 @@ static int check_attach_btf_id(struct bpf_verifier_env *env)
 		 */
 		env->ops = bpf_verifier_ops[tgt_prog->type];
 		prog->expected_attach_type = tgt_prog->expected_attach_type;
+
+		/* only now it is known what the arguments of prog stand for */
+		ret = btf_prepare_func_args(env, 0);
+		if (ret)
+			return ret;
+		ret = check_ext_args(&env->log, prog, tgt_prog,
+				     find_tgt_subprog(tgt_prog, btf_id));
+		if (ret)
+			return ret;
 	}
 
 	/* store info about the attachment target that will be used later */
@@ -24177,6 +24266,7 @@ err_free_env:
 	if (env->insn_aux_data)
 		bpf_clear_insn_aux_data(env, 0, env->insn_aux_data_len);
 	vfree(env->insn_aux_data);
+	bpf_patch_list_free(env);
 	kvfree(env->fd_array);
 	bpf_free_scev(env);
 	bpf_stack_liveness_free(env);

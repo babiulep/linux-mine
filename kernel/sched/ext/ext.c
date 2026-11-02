@@ -3407,6 +3407,12 @@ static enum scx_dsp_verdict dispatch_one(struct rq *rq, struct task_struct *prev
 		rq->scx.cpu_released = false;
 	}
 
+	/* the ecaps sync may have dropped the rq lock */
+	if (scx_dsp_prev_stale(rq, prev)) {
+		verdict = SCX_DSP_RETRY;
+		goto has_tasks;
+	}
+
 	if (prev->sched_class == &ext_sched_class) {
 		update_curr_scx(rq);
 
@@ -3449,6 +3455,10 @@ static enum scx_dsp_verdict dispatch_one(struct rq *rq, struct task_struct *prev
 	}
 
 	verdict = scx_dispatch_sched(root_sch, rq, prev, false);
+
+	/* scx_dispatch_sched() may have dropped the rq lock */
+	if (scx_dsp_prev_stale(rq, prev))
+		verdict = SCX_DSP_RETRY;
 	if (verdict != SCX_DSP_NONE)
 		goto has_tasks;
 
@@ -11106,7 +11116,7 @@ __bpf_kfunc struct task_struct *scx_bpf_dsq_peek(u64 dsq_id,
 /**
  * scx_bpf_dsq_reenq - Re-enqueue tasks on a DSQ
  * @dsq_id: DSQ to re-enqueue
- * @reenq_flags: %SCX_RENQ_*
+ * @reenq_flags: %SCX_REENQ_*
  * @aux: implicit BPF argument to access bpf_prog_aux hidden from BPF progs
  *
  * Iterate over all of the tasks currently enqueued on the DSQ identified by
@@ -11116,8 +11126,9 @@ __bpf_kfunc struct task_struct *scx_bpf_dsq_peek(u64 dsq_id,
  * - Local DSQs (%SCX_DSQ_LOCAL or %SCX_DSQ_LOCAL_ON | $cpu)
  * - User DSQs
  *
- * Re-enqueues are performed asynchronously. Can be called from anywhere. A
- * re-enqueue of an inactive cpu's local DSQ is ignored.
+ * Re-enqueues are performed asynchronously. Can be called from any context
+ * except NMI. A call from NMI aborts the scheduler. A re-enqueue of an inactive
+ * cpu's local DSQ is ignored.
  *
  * %SCX_DSQ_LOCAL resolves to the local DSQ of the rq the current scheduler
  * operation is locked to - e.g. the rq being dispatched for in ops.dispatch() -
@@ -11214,9 +11225,10 @@ __bpf_kfunc bool scx_bpf_dsq_reenq_task(struct bpf_iter_scx_dsq *it__iter,
  * scx_bpf_reenqueue_local___v2 - Re-enqueue tasks on a local DSQ
  * @aux: implicit BPF argument to access bpf_prog_aux hidden from BPF progs
  *
- * Iterate over all of the tasks currently enqueued on the local DSQ of the
- * caller's CPU, and re-enqueue them in the BPF scheduler. Can be called from
- * anywhere.
+ * Iterate over all of the tasks currently enqueued on the local DSQ of the rq
+ * the current scheduler operation is locked to, or the calling CPU's when no rq
+ * is locked, and re-enqueue them in the BPF scheduler. Can be called from any
+ * context except NMI. A call from NMI aborts the scheduler.
  *
  * This is now a special case of scx_bpf_dsq_reenq() and may be removed in the
  * future.

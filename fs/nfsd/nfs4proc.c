@@ -703,13 +703,16 @@ nfsd4_open(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	status = nfsd4_process_open1(cstate, open, nn);
 	if (status == nfserr_replay_me) {
 		struct nfs4_replay *rp = &open->op_openowner->oo_owner.so_replay;
+
+		/* A cached error does not guarantee rp_openfh was set. */
+		if (rp->rp_status)
+			goto out;
 		fh_put(&cstate->current_fh);
 		fh_copy_shallow(&cstate->current_fh.fh_handle,
 				&rp->rp_openfh);
 		status = fh_verify(rqstp, &cstate->current_fh, 0, NFSD_MAY_NOP);
 		if (status)
-			dprintk("nfsd4_open: replay failed"
-				" restoring previous filehandle\n");
+			nfsd4_cstate_clear_replay(cstate);
 		else
 			status = nfserr_replay_me;
 	}

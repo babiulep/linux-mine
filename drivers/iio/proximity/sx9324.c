@@ -280,7 +280,7 @@ static const struct {
 };
 
 /*
- * The scan period of the SX9324 is selected by the 5 bit wide
+ * The scan period of the SX9324 is selected by the 5-bit wide
  * SX9324_REG_GNRL_CTRL0_SCANPERIOD field. The values below are the scan
  * periods in ms of the corresponding sx9324_samp_freq_table[] entries.
  */
