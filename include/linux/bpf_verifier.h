@@ -50,6 +50,13 @@ enum bpf_iter_state {
 	BPF_ITER_STATE_DRAINED,
 };
 
+/* Bytes [off, off + size) of the stack of frame frameno. Nothing when size is 0. */
+struct bpf_stack_range {
+	u32 frameno;
+	s32 off;
+	u32 size;
+};
+
 struct bpf_reg_state {
 	/* Ordering of fields matters.  See states_equal() */
 	enum bpf_reg_type type;
@@ -83,6 +90,12 @@ struct bpf_reg_state {
 
 		struct { /* for PTR_TO_MEM | PTR_TO_MEM_OR_NULL */
 			u32 mem_size;
+			/*
+			 * bpf_dynptr_slice() and bpf_dynptr_slice_rdwr() return the
+			 * buffer when the data is not contiguous: the register may
+			 * point to this part of the stack.
+			 */
+			struct bpf_stack_range buf;
 		};
 
 		/* For dynptr stack slots */
@@ -956,6 +969,10 @@ struct bpf_subprog_info {
 	bool is_cb: 1;
 	bool is_async_cb: 1;
 	bool is_exception_cb: 1;
+	/* bpf_loop() or bpf_for_each_map_elem() call it in a loop */
+	bool is_loop_cb: 1;
+	/* BPF code, another helper or a kfunc call it */
+	bool is_called: 1;
 	bool args_cached: 1;
 	/* true if the return value is passed in the R0:R2 register pair */
 	bool ret_reg_pair: 1;
@@ -1051,67 +1068,6 @@ struct bpf_fd_array {
 	};
 };
 
-/* one deferred patch: insn 'off' is replaced by 'len' insns */
-struct bpf_insn_patch {
-	u32 off;
-	u32 len;
-	u32 start;		/* first insn of the patch in bpf_patch_list.insns */
-	u32 target;		/* insn of the patch that jumps to 'off' land on */
-	struct bpf_insn orig;	/* the replaced insn when the patch was queued */
-};
-
-/*
- * Patches queued by a rewrite pass, applied together by
- * bpf_patch_list_commit() in O(prog->len + inserted insns).
- */
-struct bpf_patch_list {
-	struct bpf_insn_patch *patches;
-	struct bpf_insn *insns;
-	u32 cnt;
-	u32 cap;
-	u32 insn_cnt;
-	u32 insn_cap;
-};
-
-/* the image of a program with the queued patches applied, see bpf_patch_list_build() */
-struct bpf_patch_image {
-	struct bpf_insn *insns;
-	u32 *new_off;
-	u32 *new_tgt;
-	u32 *new_linfo;
-	u32 cnt;
-	u32 new_cnt;
-	u32 nr_linfo;
-	s32 grow;
-	u32 bad;
-	bool del;
-};
-
-/* Map an offset in the old program, which may be past its end. */
-static inline u32 bpf_patch_image_remap(const struct bpf_patch_image *img,
-					const u32 *map, u32 off)
-{
-	return off <= img->cnt ? map[off] : off + img->grow;
-}
-
-static inline bool bpf_patch_image_deleted(const struct bpf_patch_image *img, u32 off)
-{
-	return off < img->cnt && img->new_off[off] == img->new_off[off + 1];
-}
-
-struct bpf_insn *__bpf_patch_list_add(struct bpf_patch_list *pl,
-				      const struct bpf_prog *prog, u32 off,
-				      const struct bpf_insn *patch, u32 len);
-int __bpf_patch_list_del(struct bpf_patch_list *pl, const struct bpf_prog *prog,
-			 u32 off);
-int __bpf_patch_list_insert(struct bpf_patch_list *pl, const struct bpf_prog *prog,
-			    u32 off, const struct bpf_insn *insns, u32 cnt);
-void bpf_patch_list_release(struct bpf_patch_list *pl);
-int bpf_patch_list_build(const struct bpf_patch_list *pl, const struct bpf_prog *prog,
-			 struct bpf_patch_image *img);
-void bpf_patch_image_free(struct bpf_patch_image *img);
-void bpf_patch_image_install(struct bpf_prog *prog, const struct bpf_patch_image *img);
-
 /* single container for all structs
  * one verifier_env per bpf_check() call
  */
@@ -1152,13 +1108,14 @@ struct bpf_verifier_env {
 	bool bypass_spec_v1;
 	bool bypass_spec_v4;
 	bool seen_direct_write;
+	/* a register may point to the stack and is not PTR_TO_STACK, see bpf_reg_state::buf */
+	bool seen_stack_slice;
 	/* a global function is verified for BPF_FUNC_CTX_NO_RCU_LOCK */
 	bool no_rcu_read_lock;
 	bool seen_exception;
 	bool signature;
 	u32 insn_aux_data_len;
 	struct bpf_insn_aux_data *insn_aux_data; /* array of per-insn state */
-	struct bpf_patch_list patch_list;
 	const struct bpf_line_info *prev_linfo;
 	struct bpf_verifier_log log;
 	struct bpf_diag *diag;
@@ -1589,6 +1546,8 @@ struct bpf_func_ptr *bpf_map_func_ptrs(struct bpf_verifier_env *env,
 struct bpf_func_ptr *bpf_map_range_func_ptrs(struct bpf_verifier_env *env,
 					     const struct bpf_map *map,
 					     u64 off, u64 size, u32 *cnt);
+void bpf_adjust_func_ptrs(struct bpf_verifier_env *env, u32 off, u32 len);
+void bpf_adjust_func_ptrs_after_remove(struct bpf_verifier_env *env, u32 off, u32 len);
 int bpf_map_direct_read(struct bpf_map *map, int off, int size, u64 *val,
 			bool is_ldsx);
 
@@ -1875,6 +1834,8 @@ struct bpf_call_arg_meta {
 	struct arg_constant_desc arg_constant;
 	/* The type of the dynptr that the kfunc writes through */
 	enum bpf_dynptr_type dynptr_write_type;
+	/* The buffer of bpf_dynptr_slice() or bpf_dynptr_slice_rdwr() */
+	struct bpf_stack_range slice_buf;
 
 	/* arg_{btf,btf_id,owning_ref} are used by kfunc-specific handling,
 	 * generally to pass info about user-defined local kptr types to later
@@ -2072,30 +2033,6 @@ int bpf_jit_subprogs(struct bpf_verifier_env *env);
 int bpf_fixup_call_args(struct bpf_verifier_env *env);
 int bpf_do_misc_fixups(struct bpf_verifier_env *env);
 int bpf_insn_def32(struct bpf_prog *prog, struct bpf_insn *insn);
-#ifdef CONFIG_BPF_SYSCALL
-struct bpf_insn *bpf_patch_list_add(struct bpf_verifier_env *env, u32 off,
-				    const struct bpf_insn *patch, u32 len);
-int bpf_patch_list_commit(struct bpf_verifier_env *env);
-void bpf_patch_list_free(struct bpf_verifier_env *env);
-#else
-static inline struct bpf_insn *bpf_patch_list_add(struct bpf_verifier_env *env, u32 off,
-						  const struct bpf_insn *patch, u32 len)
-{
-	return ERR_PTR(-EOPNOTSUPP);
-}
-
-static inline int bpf_patch_list_commit(struct bpf_verifier_env *env)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline void bpf_patch_list_free(struct bpf_verifier_env *env)
-{
-}
-#endif
-int bpf_patch_list_del(struct bpf_verifier_env *env, u32 off);
-int bpf_patch_list_insert(struct bpf_verifier_env *env, u32 off,
-			  const struct bpf_insn *insns, u32 cnt);
 
 int bpf_flip_opcode(u32 opcode);
 u8 bpf_rev_opcode(u8 opcode);

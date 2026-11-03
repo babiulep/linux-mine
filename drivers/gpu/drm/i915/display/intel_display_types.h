@@ -1253,13 +1253,13 @@ struct intel_crtc_state {
 		u32 lvds_border_bits;
 	} gmch_pfit;
 
-	/* Panel fitter placement and size for Ironlake+ */
+	/* Panel fitter placement and size */
 	struct {
 		struct intel_casf casf;
 		struct drm_rect dst;
 		bool enabled;
 		bool force_thru;
-	} pch_pfit;
+	} pfit;
 
 	/* FDI configuration, only valid if has_pch_encoder is set. */
 	int fdi_lanes;
@@ -1898,6 +1898,14 @@ struct intel_dp {
 	struct drm_dp_desc desc;
 	struct drm_dp_aux aux;
 	u32 aux_busy_last_status;
+
+	struct {
+		/* TODO: move the rest of the aux specific fields here */
+		/* we left the AUX engine busy and are waiting for it to recover */
+		bool left_busy;
+		u64 left_busy_since;
+	} dp_aux;
+
 	u8 train_set[4];
 
 	struct intel_pps pps;

@@ -1795,6 +1795,9 @@ struct adv_info *hci_add_adv_instance(struct hci_dev *hdev, u8 instance,
 		if (!adv)
 			return ERR_PTR(-ENOMEM);
 
+		INIT_DELAYED_WORK(&adv->rpa_expired_cb,
+				  adv_instance_rpa_expired);
+
 		adv->pending = true;
 		adv->instance = instance;
 
@@ -1830,8 +1833,6 @@ struct adv_info *hci_add_adv_instance(struct hci_dev *hdev, u8 instance,
 		adv->duration = hdev->def_multi_adv_rotation_duration;
 	else
 		adv->duration = duration;
-
-	INIT_DELAYED_WORK(&adv->rpa_expired_cb, adv_instance_rpa_expired);
 
 	BT_DBG("%s for %dMR", hdev->name, instance);
 
@@ -3272,7 +3273,8 @@ int __hci_cmd_send(struct hci_dev *hdev, u16 opcode, u32 plen,
 EXPORT_SYMBOL(__hci_cmd_send);
 
 /* Get data from the previously sent command */
-static void *hci_cmd_data(struct sk_buff *skb, __u16 opcode)
+static void *hci_cmd_data(struct sk_buff *skb, __u16 opcode,
+			  size_t *len)
 {
 	struct hci_command_hdr *hdr;
 
@@ -3284,21 +3286,30 @@ static void *hci_cmd_data(struct sk_buff *skb, __u16 opcode)
 	if (hdr->opcode != cpu_to_le16(opcode))
 		return NULL;
 
+	if (len)
+		*len = skb->len - HCI_COMMAND_HDR_SIZE;
+
 	return skb->data + HCI_COMMAND_HDR_SIZE;
+}
+
+/* Get data from the previously sent command */
+void *hci_sent_cmd_data_len(struct hci_dev *hdev, __u16 opcode, size_t *len)
+{
+	void *data;
+
+	/* Check if opcode matches last sent command */
+	data = hci_cmd_data(hdev->sent_cmd, opcode, len);
+	if (!data)
+		/* Check if opcode matches last request */
+		data = hci_cmd_data(hdev->req_skb, opcode, len);
+
+	return data;
 }
 
 /* Get data from the previously sent command */
 void *hci_sent_cmd_data(struct hci_dev *hdev, __u16 opcode)
 {
-	void *data;
-
-	/* Check if opcode matches last sent command */
-	data = hci_cmd_data(hdev->sent_cmd, opcode);
-	if (!data)
-		/* Check if opcode matches last request */
-		data = hci_cmd_data(hdev->req_skb, opcode);
-
-	return data;
+	return hci_sent_cmd_data_len(hdev, opcode, NULL);
 }
 
 /* Get data from last received event */
