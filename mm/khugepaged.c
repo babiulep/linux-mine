@@ -1837,7 +1837,7 @@ static bool pte_table_empty(pte_t *pte)
 {
 	int i;
 
-	for (i = 0; i < HPAGE_PMD_NR; i++, pte++) {
+	for (i = 0; i < PTRS_PER_PTE; i++, pte++) {
 		if (!pte_none(ptep_get(pte)))
 			return false;
 	}

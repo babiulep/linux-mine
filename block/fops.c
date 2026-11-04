@@ -725,9 +725,6 @@ static ssize_t blkdev_buffered_write(struct kiocb *iocb, struct iov_iter *from)
 	struct inode *inode = bdev_file_inode(iocb->ki_filp);
 	ssize_t ret;
 
-	if (unlikely(iov_iter_is_dmabuf_map(from)))
-		return -EOPNOTSUPP;
-
 	/* Buffered fallback waits for writeback, which NOWAIT cannot allow. */
 	if (iocb->ki_flags & IOCB_NOWAIT)
 		return -EAGAIN;
@@ -1021,8 +1018,6 @@ static int blkdev_init_dma_buf_io_ctx(struct file *file,
 	if (ctx->dmabuf->size > UINT_MAX)
 		return -EINVAL;
 	if (!disk->fops->init_dma_buf_io_ctx)
-		return -EOPNOTSUPP;
-	if (bdev_has_integrity_csum(bdev))
 		return -EOPNOTSUPP;
 	return disk->fops->init_dma_buf_io_ctx(bdev, ctx);
 }

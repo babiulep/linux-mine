@@ -1192,10 +1192,6 @@ static void hugetlbfs_free_inode(struct inode *inode)
 
 static void hugetlbfs_destroy_inode(struct inode *inode)
 {
-	/*
-	 * Not in ->free_inode(): that runs from an RCU callback, when the
-	 * superblock the event reads may already be freed.
-	 */
 	trace_hugetlbfs_destroy_inode(inode);
 	hugetlbfs_inc_free_inodes(HUGETLBFS_SB(inode->i_sb));
 }

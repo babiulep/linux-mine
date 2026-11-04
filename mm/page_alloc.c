@@ -213,8 +213,6 @@ gfp_t gfp_allowed_mask __read_mostly = GFP_BOOT_MASK;
 unsigned int pageblock_order __read_mostly;
 #endif
 
-static void __free_pages_ok(struct page *page, unsigned int order,
-			    fpi_t fpi_flags);
 static void reserve_highatomic_pageblock(struct page *page, int order,
 					 struct zone *zone);
 
@@ -370,7 +368,6 @@ get_pfnblock_bitmap_bitidx(const struct page *page, unsigned long pfn,
 	BUILD_BUG_ON(NR_PAGEBLOCK_BITS != 4);
 #endif
 	BUILD_BUG_ON(__MIGRATE_TYPE_END > PAGEBLOCK_MIGRATETYPE_MASK);
-	VM_BUG_ON_PAGE(!zone_spans_pfn(page_zone(page), pfn), page);
 
 	bitmap = get_pageblock_bitmap(page, pfn);
 	*bitidx = pfn_to_bitidx(page, pfn);
@@ -1578,6 +1575,8 @@ static void free_one_page(struct zone *zone, struct page *page,
 		llist_for_each_entry_safe(p, tmp, llnode, pcp_llist) {
 			unsigned int p_order = p->private;
 
+			/* It may end up as a tail of the merged free page. */
+			p->private = 0;
 			split_large_buddy(zone, p, page_to_pfn(p), p_order, fpi_flags);
 			__count_vm_events(PGFREE, 1 << p_order);
 		}
@@ -7368,12 +7367,24 @@ int alloc_contig_frozen_range_noprof(unsigned long start, unsigned long end,
 					    PB_ISOLATE_MODE_OTHER;
 
 	/*
-	 * In contrast to the buddy, we allow for orders here that exceed
-	 * MAX_PAGE_ORDER, so we must manually make sure that we are not
-	 * exceeding the maximum folio order.
+	 * The use of __GFP_COMP has the following requirements:
+	 * 1. the order cannot exceed MAX_FOLIO_ORDER (>MAX_PAGE_ORDER is OK);
+	 * 2. the order is at least MAX_PAGE_ORDER to ensure at the end
+	 *    outer_start and outer_end match start and end respectively;
+	 * 3. the number of pages in the range is a power of 2;
+	 * 4. start and end are naturally aligned to nr_pages.
+	 *
+	 * 3 and 4 are also the requirements for __GFP_COMP pages in general.
 	 */
-	if (WARN_ON_ONCE((gfp_mask & __GFP_COMP) && order > MAX_FOLIO_ORDER))
-		return -EINVAL;
+	if (gfp_mask & __GFP_COMP) {
+		const unsigned long nr_pages = end - start;
+
+		if (WARN_ON_ONCE(order > MAX_FOLIO_ORDER ||
+				 order < MAX_PAGE_ORDER ||
+				 !is_power_of_2(nr_pages) ||
+				 !IS_ALIGNED(start, nr_pages)))
+			return -EINVAL;
+	}
 
 	gfp_mask = current_gfp_context(gfp_mask);
 	if (__alloc_contig_verify_gfp_mask(gfp_mask, (gfp_t *)&cc.gfp_mask))
@@ -7400,9 +7411,13 @@ int alloc_contig_frozen_range_noprof(unsigned long start, unsigned long end,
 	 * put back to page allocator so that buddy can use them.
 	 */
 
+	/*
+	 * On failure this has undone its own isolation, and any other
+	 * isolated blocks in the range belong to someone else, e.g. offline.
+	 */
 	ret = start_isolate_page_range(start, end, mode);
 	if (ret)
-		goto done;
+		return ret;
 
 	drain_all_pages(cc.zone);
 
@@ -7470,12 +7485,13 @@ int alloc_contig_frozen_range_noprof(unsigned long start, unsigned long end,
 			__free_contig_frozen_range(outer_start, start - outer_start);
 		if (end != outer_end)
 			__free_contig_frozen_range(end, outer_end - end);
-	} else if (start == outer_start && end == outer_end && is_power_of_2(end - start)) {
+	} else if (start == outer_start && end == outer_end) {
 		struct page *head = pfn_to_page(start);
 
 		check_new_pages(head, order);
 		prep_new_page(head, order, gfp_mask, ALLOC_DEFAULT);
 	} else {
+		/* Unreachable with the __GFP_COMP checks above */
 		ret = -EINVAL;
 		WARN(true, "PFN range: requested [%lu, %lu), allocated [%lu, %lu)\n",
 		     start, end, outer_start, outer_end);
