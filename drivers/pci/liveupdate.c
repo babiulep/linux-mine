@@ -15,7 +15,7 @@
  * driver's own state, which the driver preserves with no involvement from the
  * PCI core, and the PCI core's state about the device, which the next kernel
  * needs so that enumeration does not disturb a device that is still running.
- * This file implements the latter.
+ * The rest of this document describes the latter.
  *
  * :ref:`FLB <flb>` Data
  * =====================
@@ -36,10 +36,10 @@
  *  * ``pci_liveupdate_register_flb(driver_file_handler)``
  *  * ``pci_liveupdate_unregister_flb(driver_file_handler)``
  *
- * LUO then refcounts the PCI core's FLB against the files preserved by that
- * handler, and that refcount drives the lifetime of struct pci_ser:
- * pci_flb_preserve() allocates and preserves it when the first file is
- * preserved, and pci_flb_unpreserve() frees it when the last file is
+ * LUO then keeps a reference count on the PCI core's FLB for the files
+ * preserved by that handler, and that reference count drives the lifetime of
+ * struct pci_ser: pci_flb_preserve() allocates and preserves it when the first
+ * file is preserved, and pci_flb_unpreserve() frees it when the last file is
  * unpreserved. In the next kernel, pci_flb_retrieve() hands the PCI core the
  * struct pci_ser built by the previous kernel, whenever the PCI core asks for
  * it (e.g. during enumeration), and pci_flb_finish() frees it once the PCI
@@ -261,6 +261,13 @@ struct pci_flb_incoming {
 	struct kho_block_set block_set;
 };
 
+/*
+ * Bits in struct pci_ser::required_flags that this kernel knows how to handle.
+ * No flags are currently defined.
+ */
+#define PCI_SER_REQUIRED_FLAGS_SUPPORTED	0ULL
+
+/* PCI_LIVEUPDATE depends on 64BIT, so domain and bdf always fit. */
 static unsigned long pci_ser_xa_key(u32 domain, u16 bdf)
 {
 	return (unsigned long)domain << 16 | bdf;
@@ -279,7 +286,9 @@ static int pci_flb_preserve(struct liveupdate_flb_op_args *args)
 	if (IS_ERR(ser))
 		return PTR_ERR(ser);
 
-	ser->version = PCI_LUO_FLB_VERSION;
+	ser->required_flags = 0;
+	ser->optional_flags = 0;
+	ser->dev_ser_size = sizeof(struct pci_dev_ser);
 	ser->nr_devices = 0;
 	ser->devices = 0;
 
@@ -320,9 +329,18 @@ static int pci_flb_retrieve(struct liveupdate_flb_op_args *args)
 
 	pr_debug("Retrieving struct pci_ser (0x%llx)\n", args->data);
 
-	if (ser->version != PCI_LUO_FLB_VERSION)
-		panic("Incoming PCI FLB version (v%d) is incompatible with this kernel (v%d)\n",
-		      ser->version, PCI_LUO_FLB_VERSION);
+	if (ser->required_flags & ~PCI_SER_REQUIRED_FLAGS_SUPPORTED)
+		panic("Incoming PCI FLB requires unsupported features (0x%llx)\n",
+		      ser->required_flags & ~PCI_SER_REQUIRED_FLAGS_SUPPORTED);
+
+	/*
+	 * The previous kernel may have appended fields to struct pci_dev_ser,
+	 * which this kernel ignores, but every entry must be at least the
+	 * minimum size.
+	 */
+	if (ser->dev_ser_size < PCI_DEV_SER_MIN_SIZE)
+		panic("Incoming PCI FLB has unsupported struct pci_dev_ser size (%u)\n",
+		      ser->dev_ser_size);
 
 	incoming = kzalloc_obj(*incoming);
 	if (!incoming)
@@ -331,7 +349,7 @@ static int pci_flb_retrieve(struct liveupdate_flb_op_args *args)
 	incoming->ser = ser;
 	xa_init(&incoming->xa);
 
-	kho_block_set_init(&incoming->block_set, sizeof(struct pci_dev_ser));
+	kho_block_set_init(&incoming->block_set, ser->dev_ser_size);
 	ret = kho_block_set_restore(&incoming->block_set, ser->devices);
 	if (ret)
 		panic("Failed to restore devices KHO block set (%d)\n", ret);
@@ -944,12 +962,17 @@ int pci_liveupdate_adopt_ari(struct pci_dev *dev)
 
 	guard(rwsem_read)(&pci_liveupdate.rwsem);
 
+	/*
+	 * Unlike ACS, only adopt ARI while the bridge is incoming-preserved.
+	 * Once all devices below the bridge have finished, recomputing ARI
+	 * Forwarding Enable yields the same result for the same device, and
+	 * must be allowed to change if a different device is hot-plugged.
+	 */
 	if (!dev->liveupdate.incoming)
 		return -EINVAL;
 
 	pcie_capability_read_word(dev, PCI_EXP_DEVCTL2, &val);
 
-	/* Safe to modify dev->ari_enabled bitfield during enumeration. */
 	dev->ari_enabled = !!(val & PCI_EXP_DEVCTL2_ARI);
 	return 0;
 }

@@ -7857,7 +7857,7 @@ W:	http://www.win.tue.nl/~aeb/linux/zip/zip-1.html
 W:	http://www.win.tue.nl/~aeb/partitions/partition_types-1.html
 
 DISKQUOTA
-M:	Jan Kara <jack@suse.com>
+M:	Jan Kara <jack@suse.cz>
 S:	Maintained
 F:	Documentation/filesystems/quota.rst
 F:	fs/quota/
@@ -10128,7 +10128,7 @@ F:	drivers/leds/leds-expresswire.c
 F:	include/linux/leds-expresswire.h
 
 EXT2 FILE SYSTEM
-M:	Jan Kara <jack@suse.com>
+M:	Jan Kara <jack@suse.cz>
 L:	linux-ext4@vger.kernel.org
 S:	Maintained
 F:	Documentation/filesystems/ext2.rst
@@ -14350,7 +14350,7 @@ F:	include/uapi/linux/jffs2.h
 
 JOURNALLING LAYER FOR BLOCK DEVICES (JBD2)
 M:	"Theodore Ts'o" <tytso@mit.edu>
-M:	Jan Kara <jack@suse.com>
+M:	Jan Kara <jack@suse.cz>
 L:	linux-ext4@vger.kernel.org
 S:	Maintained
 F:	fs/jbd2/
@@ -22959,6 +22959,7 @@ N:	ath12k
 
 QUALCOMM ATHEROS ATH10K WIRELESS DRIVER
 M:	Jeff Johnson <jjohnson@kernel.org>
+M:	Loic Poulain <loic.poulain@oss.qualcomm.com>
 L:	linux-wireless@vger.kernel.org
 L:	ath10k@lists.infradead.org
 S:	Supported
@@ -23610,6 +23611,7 @@ M:	x86@kernel.org
 R:	Dave Martin <Dave.Martin@arm.com>
 R:	James Morse <james.morse@arm.com>
 R:	Babu Moger <babu.moger@amd.com>
+R:	Drew Fustini <fustini@kernel.org>
 L:	linux-kernel@vger.kernel.org
 S:	Supported
 P:	Documentation/process/maintainer-tip.rst
@@ -28807,7 +28809,7 @@ F:	arch/m68k/coldfire/
 F:	arch/m68k/include/asm/*_no.*
 
 UDF FILESYSTEM
-M:	Jan Kara <jack@suse.com>
+M:	Jan Kara <jack@suse.cz>
 S:	Maintained
 F:	Documentation/filesystems/udf.rst
 F:	fs/udf/
@@ -29921,9 +29923,10 @@ F:	include/uapi/linux/virtio_snd.h
 F:	sound/virtio/*
 
 VIRTIO SPI DRIVER
-M:	Haixu Cui <quic_haixcui@quicinc.com>
+M:	Francesco Valla <francesco@valla.it>
 L:	virtualization@lists.linux.dev
 S:	Maintained
+F:	Documentation/devicetree/bindings/spi/spi-virtio.yaml
 F:	drivers/spi/spi-virtio.c
 F:	include/uapi/linux/virtio_spi.h
 

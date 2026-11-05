@@ -457,7 +457,6 @@ static const struct file_operations counter_fops = {
 	.read = counter_chrdev_read,
 	.poll = counter_chrdev_poll,
 	.unlocked_ioctl = counter_chrdev_ioctl,
-	.compat_ioctl = compat_ptr_ioctl,
 	.open = counter_chrdev_open,
 	.release = counter_chrdev_release,
 };
