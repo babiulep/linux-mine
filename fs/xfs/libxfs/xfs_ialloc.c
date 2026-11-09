@@ -186,13 +186,14 @@ xfs_inobt_insert_rec(
 	uint16_t		holemask,
 	uint8_t			count,
 	int32_t			freecount,
-	xfs_inofree_t		free)
+	xfs_inofree_t		free,
+	int			*stat)
 {
 	cur->bc_rec.i.ir_holemask = holemask;
 	cur->bc_rec.i.ir_count = count;
 	cur->bc_rec.i.ir_freecount = freecount;
 	cur->bc_rec.i.ir_free = free;
-	return xfs_btree_insert(cur);
+	return xfs_btree_insert(cur, stat);
 }
 
 /*
@@ -230,11 +231,12 @@ xfs_inobt_insert(
 		error = xfs_inobt_insert_rec(cur, XFS_INOBT_HOLEMASK_FULL,
 					     XFS_INODES_PER_CHUNK,
 					     XFS_INODES_PER_CHUNK,
-					     XFS_INOBT_ALL_FREE);
+					     XFS_INOBT_ALL_FREE, &i);
 		if (error) {
 			xfs_btree_del_cursor(cur, XFS_BTREE_ERROR);
 			return error;
 		}
+		ASSERT(i == 1);
 	}
 
 	xfs_btree_del_cursor(cur, XFS_BTREE_NOERROR);
@@ -567,9 +569,15 @@ xfs_inobt_insert_sprec(
 	if (i == 0) {
 		error = xfs_inobt_insert_rec(cur, nrec->ir_holemask,
 					     nrec->ir_count, nrec->ir_freecount,
-					     nrec->ir_free);
+					     nrec->ir_free, &i);
 		if (error)
 			goto error;
+		if (XFS_IS_CORRUPT(mp, i != 1)) {
+			xfs_btree_mark_sick(cur);
+			error = -EFSCORRUPTED;
+			goto error;
+		}
+
 		goto out;
 	}
 
@@ -639,6 +647,7 @@ xfs_finobt_insert_sprec(
 	struct xfs_buf			*agbp,
 	struct xfs_inobt_rec_incore	*nrec)	/* in/out: new rec. */
 {
+	struct xfs_mount		*mp = pag_mount(pag);
 	struct xfs_btree_cur		*cur;
 	int				error;
 	int				i;
@@ -653,9 +662,14 @@ xfs_finobt_insert_sprec(
 	if (i == 0) {
 		error = xfs_inobt_insert_rec(cur, nrec->ir_holemask,
 					     nrec->ir_count, nrec->ir_freecount,
-					     nrec->ir_free);
+					     nrec->ir_free, &i);
 		if (error)
 			goto error;
+		if (XFS_IS_CORRUPT(mp, i != 1)) {
+			xfs_btree_mark_sick(cur);
+			error = -EFSCORRUPTED;
+			goto error;
+		}
 	} else {
 		error = xfs_inobt_update(cur, nrec);
 		if (error)
@@ -1564,6 +1578,7 @@ xfs_dialloc_ag(
 	xfs_ino_t			ino;
 	int				error;
 	int				offset;
+	int				i;
 
 	if (!xfs_has_finobt(mp))
 		return xfs_dialloc_ag_inobt(pag, tp, agbp, parent, inop);
@@ -1616,9 +1631,14 @@ xfs_dialloc_ag(
 		if (error)
 			goto error_cur;
 	} else {
-		error = xfs_btree_delete(cur);
+		error = xfs_btree_delete(cur, &i);
 		if (error)
 			goto error_cur;
+		if (XFS_IS_CORRUPT(mp, i != 1)) {
+			xfs_btree_mark_sick(cur);
+			error = -EFSCORRUPTED;
+			goto error_cur;
+		}
 	}
 
 	/*
@@ -2147,10 +2167,14 @@ xfs_difree_inobt(
 		xfs_trans_mod_sb(tp, XFS_TRANS_SB_ICOUNT, -ilen);
 		xfs_trans_mod_sb(tp, XFS_TRANS_SB_IFREE, -(ilen - 1));
 
-		error = xfs_btree_delete(cur);
-		if (error) {
+		if ((error = xfs_btree_delete(cur, &i))) {
 			xfs_warn(mp, "%s: xfs_btree_delete returned error %d.",
 				__func__, error);
+			goto error0;
+		}
+		if (XFS_IS_CORRUPT(mp, i != 1)) {
+			xfs_btree_mark_sick(cur);
+			error = -EFSCORRUPTED;
 			goto error0;
 		}
 
@@ -2227,9 +2251,11 @@ xfs_difree_finobt(
 		error = xfs_inobt_insert_rec(cur, ibtrec->ir_holemask,
 					     ibtrec->ir_count,
 					     ibtrec->ir_freecount,
-					     ibtrec->ir_free);
+					     ibtrec->ir_free, &i);
 		if (error)
 			goto error;
+		ASSERT(i == 1);
+
 		goto out;
 	}
 
@@ -2274,9 +2300,14 @@ xfs_difree_finobt(
 	 */
 	if (rec.ir_free == XFS_INOBT_ALL_FREE &&
 	    mp->m_sb.sb_inopblock <= XFS_INODES_PER_CHUNK) {
-		error = xfs_btree_delete(cur);
+		error = xfs_btree_delete(cur, &i);
 		if (error)
 			goto error;
+		if (XFS_IS_CORRUPT(mp, i != 1)) {
+			xfs_btree_mark_sick(cur);
+			error = -EFSCORRUPTED;
+			goto error;
+		}
 	} else {
 		error = xfs_inobt_update(cur, &rec);
 		if (error)

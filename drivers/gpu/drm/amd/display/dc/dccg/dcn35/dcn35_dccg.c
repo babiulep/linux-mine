@@ -395,6 +395,9 @@ static void dccg35_set_dppclk_rcg(struct dccg *dccg, int inst, bool allow_rcg)
 {
 	struct dcn_dccg *dccg_dcn = TO_DCN_DCCG(dccg);
 
+	if (!dccg->ctx->dc->debug.root_clock_optimization.bits.dpp && allow_rcg)
+		return;
+
 	switch (inst) {
 	case 0:
 		REG_UPDATE(DCCG_GATE_DISABLE_CNTL6, DPPCLK0_ROOT_GATE_DISABLE, allow_rcg ? 0 : 1);
@@ -1142,8 +1145,7 @@ static void dccg35_disable_dpp_clk_new(
 	REG_SET_2(DPPCLK_DTO_PARAM[inst], 0,
 			  DPPCLK0_DTO_PHASE, 0,
 			  DPPCLK0_DTO_MODULO, 1);
-	if (dccg->ctx->dc->debug.root_clock_optimization.bits.dpp)
-		dccg35_set_dppclk_rcg(dccg, inst, true);
+	dccg35_set_dppclk_rcg(dccg, inst, true);
 }
 
 static void dccg35_disable_dscclk_new(struct dccg *dccg,
@@ -1299,8 +1301,7 @@ void dccg35_update_dpp_dto(struct dccg *dccg, int dpp_inst, int req_dppclk)
 		dcn35_set_dppclk_enable(dccg, dpp_inst, true);
 	} else {
 		dcn35_set_dppclk_enable(dccg, dpp_inst, false);
-		if (dccg->ctx->dc->debug.root_clock_optimization.bits.dpp)
-			dccg35_set_dppclk_rcg(dccg, dpp_inst, true);
+		dccg35_set_dppclk_rcg(dccg, dpp_inst, true);
 	}
 	udelay(10);
 	dccg->pipe_dppclk_khz[dpp_inst] = req_dppclk;
@@ -1867,8 +1868,7 @@ static void dccg35_set_valid_pixel_rate(
 	dccg35_set_dtbclk_dto(dccg, &dto_params);
 }
 
-void dccg35_dpp_root_clock_control(struct dccg *dccg, unsigned int dpp_inst, bool clock_on,
-		bool root_clock_optimization_dpp)
+void dccg35_dpp_root_clock_control(struct dccg *dccg, unsigned int dpp_inst, bool clock_on)
 {
 	struct dcn_dccg *dccg_dcn = TO_DCN_DCCG(dccg);
 
@@ -1890,8 +1890,7 @@ void dccg35_dpp_root_clock_control(struct dccg *dccg, unsigned int dpp_inst, boo
 			  DPPCLK0_DTO_PHASE, 0,
 			  DPPCLK0_DTO_MODULO, 1);
 		/*we have this in hwss: disable_plane*/
-		if (root_clock_optimization_dpp)
-			dccg35_set_dppclk_rcg(dccg, dpp_inst, true);
+		dccg35_set_dppclk_rcg(dccg, dpp_inst, true);
 	}
 
 	// wait for clock to fully ramp
@@ -2506,8 +2505,7 @@ static void dccg35_update_dpp_dto_cb(struct dccg *dccg, int dpp_inst,
 static void dccg35_dpp_root_clock_control_cb(
 	struct dccg *dccg,
 	unsigned int dpp_inst,
-	bool power_on,
-	bool root_clock_optimization_dpp)
+	bool power_on)
 {
 	if (dccg->dpp_clock_gated[dpp_inst] == power_on)
 		return;
@@ -2516,8 +2514,7 @@ static void dccg35_dpp_root_clock_control_cb(
 	 * Since clock source is not passed restore to refclock on ungate
 	 * Redundant as gating when enabled is acheived through update_dpp_dto
 	 */
-	if (power_on || root_clock_optimization_dpp)
-		dccg35_set_dppclk_rcg(dccg, dpp_inst, !power_on);
+	dccg35_set_dppclk_rcg(dccg, dpp_inst, !power_on);
 
 	dccg->dpp_clock_gated[dpp_inst] = !power_on;
 }

@@ -418,8 +418,7 @@ int use_nonstatic_global_other_sec(void *ctx)
 	if (bpf_get_current_pid_tgid() >> 32 != pid)
 		return 0;
 
-	__nonstatic_global(in_user);
-	return 0;
+	return __nonstatic_global(in_user);
 }
 
 SEC("syscall")

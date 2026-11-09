@@ -121,8 +121,7 @@ static void gfs2_unpin(struct gfs2_sbd *sdp, struct buffer_head *bh,
 	} else {
 		struct gfs2_glock *gl = bd->bd_gl;
 		list_add(&bd->bd_ail_gl_list, &gl->gl_ail_list);
-		if (atomic_inc_return(&gl->gl_ail_count) == 1)
-			gfs2_glock_hold(gl);
+		atomic_inc(&gl->gl_ail_count);
 	}
 	bd->bd_tr = tr;
 	list_add(&bd->bd_ail_st_list, &tr->tr_ail1_list);

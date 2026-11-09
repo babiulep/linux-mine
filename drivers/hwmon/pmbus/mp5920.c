@@ -46,8 +46,7 @@ static int mp5920_probe(struct i2c_client *client)
 				     I2C_FUNC_SMBUS_READ_WORD_DATA))
 		return -ENODEV;
 
-	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_MODEL,
-					sizeof(buf), buf);
+	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_MODEL, buf);
 	if (ret < 0)
 		return dev_err_probe(dev, ret, "Failed to read PMBUS_MFR_MODEL\n");
 

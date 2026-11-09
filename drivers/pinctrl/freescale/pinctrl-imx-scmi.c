@@ -273,7 +273,7 @@ scmi_pinctrl_imx_get_pins(struct scmi_pinctrl_imx *pmx, struct pinctrl_desc *des
 	int ret, i;
 
 	npins = pmx->ops->count_get(pmx->ph, PIN_TYPE);
-	pins = devm_kmalloc_array(pmx->dev, npins, sizeof(*pins), GFP_KERNEL);
+	pins = devm_kmalloc_objs(pmx->dev, *pins, npins);
 	if (!pins)
 		return -ENOMEM;
 
@@ -319,7 +319,7 @@ static int scmi_pinctrl_imx_probe(struct scmi_device *sdev)
 	if (IS_ERR(pinctrl_ops))
 		return PTR_ERR(pinctrl_ops);
 
-	pmx = devm_kzalloc(dev, sizeof(*pmx), GFP_KERNEL);
+	pmx = devm_kzalloc_obj(dev, *pmx);
 	if (!pmx)
 		return -ENOMEM;
 
@@ -348,7 +348,7 @@ static int scmi_pinctrl_imx_probe(struct scmi_device *sdev)
 }
 
 static const struct scmi_device_id scmi_id_table[] = {
-	{ SCMI_PROTOCOL_PINCTRL, "pinctrl" },
+	{ SCMI_PROTOCOL_PINCTRL, "pinctrl-imx" },
 	{ }
 };
 MODULE_DEVICE_TABLE(scmi, scmi_id_table);

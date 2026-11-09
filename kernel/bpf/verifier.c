@@ -465,7 +465,6 @@ static int bpf_compute_subprog_ret_regs(struct bpf_verifier_env *env)
 			return -EFAULT;
 		if (ret_regs_cnt(size) > 1) {
 			subprog_info(env, subprog)->ret_reg_pair = true;
-			subprog_aux(env, subprog)->ret_reg_pair = true;
 			env->prog->jit_required = 1;
 		}
 	}
@@ -3656,8 +3655,8 @@ static void mark_non_stack_access(struct bpf_verifier_env *env, int idx)
 }
 
 /* Layout of one packed linked register in the jump history, see linked_regs_pack() */
-#define LR_FRAMENO_BITS	5
-#define LR_INDEX_BITS	10
+#define LR_FRAMENO_BITS	4
+#define LR_INDEX_BITS	11
 #define LR_FRAMENO_MASK	((1u << LR_FRAMENO_BITS) - 1)
 #define LR_IS_REG	BIT(LR_FRAMENO_BITS)
 #define LR_INDEX_OFF	(LR_FRAMENO_BITS + 1)
@@ -3693,9 +3692,9 @@ static struct linked_reg *linked_regs_push(struct linked_regs *s)
 
 /*
  * Pack linked registers for a jump history entry, one u16 each:
- * - 5 bits frameno
+ * - 4 bits frameno
  * - 1 bit  is_reg
- * - 10 bits register or stack slot index
+ * - 11 bits register or stack slot index
  */
 static void linked_regs_pack(const struct linked_regs *s, u16 *packed)
 {
@@ -4633,17 +4632,11 @@ static int check_stack_write(struct bpf_verifier_env *env,
 static int check_stack_arg_write(struct bpf_verifier_env *env, struct bpf_func_state *state,
 				 int off, struct bpf_reg_state *value_reg)
 {
-	int max_stack_arg_regs = MAX_STACK_ARG_SLOTS;
+	int max_stack_arg_regs = MAX_BPF_FUNC_ARGS - MAX_BPF_FUNC_REG_ARGS;
 	struct bpf_subprog_info *subprog = &env->subprog_info[state->subprogno];
 	int spi = -off / BPF_REG_SIZE - 1;
 	struct bpf_reg_state *arg;
 	int err;
-
-	/* BTF is not needed for stack arguments, so ask here. There is no load without a store. */
-	if (!bpf_jit_supports_stack_args()) {
-		verbose(env, "JIT does not support stack arguments\n");
-		return -EOPNOTSUPP;
-	}
 
 	if (spi >= max_stack_arg_regs) {
 		verbose(env, "stack arg write offset %d exceeds max %d stack args\n",
@@ -5777,496 +5770,322 @@ static int round_up_stack_depth(struct bpf_verifier_env *env, int stack_depth)
 	return round_up(max_t(u32, stack_depth, 1), 32);
 }
 
-/*
- * A set of subprogs is a bitmap. The call graph has a set for every subprog:
- * calls + s * BITS_TO_LONGS(cnt) are the subprogs that s calls. Make it
- * the subprogs that s gets to, through any number of calls.
- */
-static void close_call_graph(unsigned long *calls, int cnt)
-{
-	int words = BITS_TO_LONGS(cnt);
-	int j, s;
-
-	for (j = 0; j < cnt; j++)
-		for (s = 0; s < cnt; s++)
-			if (test_bit(j, calls + s * words))
-				bitmap_or(calls + s * words, calls + s * words,
-					  calls + j * words, cnt);
-}
-
-/*
- * Who calls whom. It's known after the main verification pass, which finds out
- * what callx and the helpers that take callbacks call.
- *
- * What follows for a subprog from its callers, or from what it calls, is computed
- * over this graph and not by a walk of one chain of calls after another: the
- * number of chains grows exponentially.
- */
-struct bpf_call_graph {
-	int cnt; /* subprogs */
-	int words; /* longs in a set of subprogs */
-	unsigned long *calls; /* calls + s * words: the subprogs that s calls */
-	unsigned long *reach; /* reach + s * words: the subprogs that s gets to */
-	unsigned long *live; /* what the kernel calls and what that gets to */
-	unsigned long *in_cb; /* callbacks and what they get to */
-	unsigned long *in_async_cb; /* async callbacks and what they get to */
-	unsigned long *tail_calls; /* subprogs that have a tail call */
-	unsigned long *arena_sp; /* subprogs that count on r12 of the caller */
-};
-
-static unsigned long *subprog_calls(struct bpf_call_graph *cg, int s)
-{
-	return cg->calls + s * cg->words;
-}
-
-static unsigned long *subprog_reach(struct bpf_call_graph *cg, int s)
-{
-	return cg->reach + s * cg->words;
-}
-
-/* add the subprog and what it gets to */
-static void add_reach(struct bpf_call_graph *cg, unsigned long *set, int s)
-{
-	__set_bit(s, set);
-	bitmap_or(set, set, subprog_reach(cg, s), cg->cnt);
-}
-
-static int build_call_graph(struct bpf_verifier_env *env, struct bpf_call_graph *cg)
-{
-	struct bpf_subprog_info *si = env->subprog_info;
-	struct bpf_insn *insn = env->prog->insnsi;
-	int cnt = env->subprog_cnt, words = BITS_TO_LONGS(cnt);
-	int i, j, s;
-
-	cg->cnt = cnt;
-	cg->words = words;
-	cg->calls = kvcalloc((2 * cnt + 5) * words, sizeof(long), GFP_KERNEL_ACCOUNT);
-	if (!cg->calls)
-		return -ENOMEM;
-	cg->reach = cg->calls + cnt * words;
-	cg->live = cg->reach + cnt * words;
-	cg->in_cb = cg->live + words;
-	cg->in_async_cb = cg->in_cb + words;
-	cg->tail_calls = cg->in_async_cb + words;
-	cg->arena_sp = cg->tail_calls + words;
-
-	for (s = 0; s < cnt; s++) {
-		for (i = si[s].start; i < si[s + 1].start; i++) {
-			/* the subprog that takes the address of a subprog counts as its caller */
-			if (!bpf_pseudo_call(insn + i) && !bpf_pseudo_func(insn + i))
-				continue;
-			j = bpf_find_subprog(env, i + insn[i].imm + 1);
-			if (verifier_bug_if(j < 0, env, "callee not found at insn %d",
-					    i + insn[i].imm + 1))
-				return -EFAULT;
-			/*
-			 * async callbacks don't increase bpf prog stack size
-			 * unless called directly
-			 */
-			if (si[j].is_async_cb && !bpf_pseudo_call(insn + i))
-				continue;
-			__set_bit(j, subprog_calls(cg, s));
-		}
-		/* the callees of callx and the callbacks of helpers, see record_callx_edge() */
-		for (j = next_callx_callee(env, s, 0); j >= 0; j = next_callx_callee(env, s, j + 1))
-			__set_bit(j, subprog_calls(cg, s));
-	}
-	memcpy(cg->reach, cg->calls, cnt * words * sizeof(long));
-	close_call_graph(cg->reach, cnt);
-
-	for (s = 0; s < cnt; s++)
-		if (!s || si[s].is_async_cb)
-			add_reach(cg, cg->live, s);
-	for_each_set_bit(s, cg->live, cnt) {
-		if (si[s].is_cb)
-			add_reach(cg, cg->in_cb, s);
-		if (si[s].is_async_cb)
-			add_reach(cg, cg->in_async_cb, s);
-		if (si[s].has_tail_call)
-			__set_bit(s, cg->tail_calls);
-	}
-	return 0;
-}
-
-/* the insn of subprog 'caller' that is the edge to subprog 'callee' */
-static int find_call_insn(struct bpf_verifier_env *env, int caller, int callee)
-{
-	struct bpf_subprog_info *si = env->subprog_info;
-	struct bpf_insn *insn = env->prog->insnsi;
-	int i, end = si[caller + 1].start;
-
-	for (i = si[caller].start; i < end; i++) {
-		if (!bpf_pseudo_call(insn + i) &&
-		    (!bpf_pseudo_func(insn + i) || si[callee].is_async_cb))
-			continue;
-		if (i + insn[i].imm + 1 == si[callee].start)
-			return i;
-	}
-	/* It's not recorded which callx or helper calls what. Take the first one. */
-	for (i = si[caller].start; i < end - 1; i++)
-		if (bpf_is_callx(insn + i) || bpf_calls_callback(env, i))
-			break;
-	return i;
-}
-
-/* The exception callback is an async callback, so only a call is an edge to it */
-static int check_exception_cb(struct bpf_verifier_env *env, struct bpf_call_graph *cg)
-{
-	int cb = env->exception_callback_subprog, s;
-
-	for_each_set_bit(s, cg->live, cg->cnt) {
-		if (!cb || !test_bit(cb, subprog_calls(cg, s)))
-			continue;
-		verbose(env, "insn %d cannot call exception cb directly\n",
-			find_call_insn(env, s, cb));
-		return -EINVAL;
-	}
-	return 0;
-}
-
-/*
- * The DFS of sort_subprogs_topo() follows the address of a function like a call, and
- * tolerates a cycle only when such address closes it, since it doesn't know what it is
- * taken for. Such cycle counts as a recursion, unless the function is an async callback:
- * its address is not an edge of the graph. The main verification pass limits the
- * depth of the recursion, but it doesn't follow calls of global functions.
- */
-static int check_recursion(struct bpf_verifier_env *env, struct bpf_call_graph *cg)
-{
-	int j, s;
-
-	for_each_set_bit(s, cg->live, cg->cnt) {
-		if (!test_bit(s, subprog_reach(cg, s)))
-			continue;
-		/* the last call of the cycle */
-		for_each_set_bit(j, subprog_reach(cg, s), cg->cnt)
-			if (test_bit(s, subprog_calls(cg, j)))
-				break;
-		verbose(env, "recursive call from %s() to %s()\n",
-			bpf_subprog_name(env, j), bpf_subprog_name(env, s));
-		bpf_diag_program_structure(
-			env, find_call_insn(env, j, s), "recursive subprogram call",
-			"Rewrite the recursion as an explicit bounded loop, or split the logic so subprogram calls do not form a cycle.",
-			"This call or callback would make the subprogram call graph recursive. "
-			"The verifier requires a finite, acyclic call graph so it can bound stack depth and analysis.");
-		return -EINVAL;
-	}
-	return 0;
-}
-
-static int check_callbacks(struct bpf_verifier_env *env, struct bpf_call_graph *cg)
-{
-	struct bpf_subprog_info *si = env->subprog_info;
-	struct bpf_insn *insn = env->prog->insnsi;
-	int i, s;
-
-	for_each_set_bit(s, cg->in_cb, cg->cnt) {
-		if (si[s].has_ld_abs) {
-			verbose(env, "cannot use BPF_LD_[ABS|IND] within callback\n");
-			return -EINVAL;
-		}
-		for (i = si[s].start; i < si[s + 1].start; i++) {
-			if (!bpf_is_throw_kfunc(insn + i))
-				continue;
-			verbose(env,
-				"bpf_throw kfunc (insn %d) cannot be called from callback subprog %d\n",
-				i, s);
-			return -EINVAL;
-		}
-	}
-	return 0;
-}
-
-/*
- * Mark the subprogs that get to a tail call as tail call reachable subprogs;
- * this info will be utilized by JIT so that we will be preserving the
- * tail call counter throughout bpf2bpf calls combined with tailcalls
- */
-static int check_tail_calls(struct bpf_verifier_env *env, struct bpf_call_graph *cg)
-{
-	struct bpf_subprog_info *si = env->subprog_info;
-	int s;
-
-	for_each_set_bit(s, cg->live, cg->cnt) {
-		if (!si[s].has_tail_call &&
-		    !bitmap_intersects(subprog_reach(cg, s), cg->tail_calls, cg->cnt))
-			continue;
-		if (si[s].is_cb) {
-			verbose(env, "cannot tail call within callback\n");
-			return -EINVAL;
-		}
-		if (si[s].stack_arg_cnt) {
-			verbose(env, "tail_calls are not allowed in programs with stack args\n");
-			return -EINVAL;
-		}
-		/*
-		 * JITs pass tail call counter in a register that is
-		 * not available when the callee is called via callx.
-		 */
-		if (si[s].via_callx) {
-			verbose(env, "tail_calls are not allowed in functions called via callx\n");
-			return -EINVAL;
-		}
-		si[s].tail_call_reachable = true;
-	}
-	if (si[0].tail_call_reachable)
-		env->prog->aux->tail_call_reachable = true;
-	return 0;
-}
-
-/*
- * The kernel calls a callback. It knows nothing about r12. So a callback takes a
- * stack in arena, like the main prog does, when it uses r12 or calls what
- * does. The callbacks below it are not its business: they take their own.
- */
-static void mark_arena_stack_entries(struct bpf_verifier_env *env, struct bpf_call_graph *cg)
-{
-	struct bpf_subprog_info *si = env->subprog_info;
-	bool changed;
-	int s;
-
-	do {
-		changed = false;
-		for_each_set_bit(s, cg->live, cg->cnt) {
-			if (test_bit(s, cg->arena_sp) || si[s].arena_stack_entry)
-				continue;
-			if (!si[s].uses_arena_sp &&
-			    !bitmap_intersects(subprog_calls(cg, s), cg->arena_sp, cg->cnt))
-				continue;
-			if (si[s].is_cb) {
-				si[s].arena_stack_entry = true;
-				continue;
-			}
-			__set_bit(s, cg->arena_sp);
-			changed = true;
-		}
-	} while (changed);
-}
-
 /* temporary state used for call frame depth calculation */
 struct bpf_subprog_call_depth_info {
-	int caller; /* the caller that has the most on the stack. -1: the kernel */
-	int depth; /* the most that the frames of the callers take. -1: not known yet */
-	int arena_depth; /* the same in the stack in arena */
-	int frame; /* the most consecutive static call stack frames on top of stack */
+	int ret_insn; /* caller instruction where we return to. */
+	int caller; /* caller subprogram idx */
+	int frame; /* # of consecutive static call stack frames on top of stack */
+	int callx_insn; /* callx instruction whose callees are being walked */
+	int callx_next; /* next callee of callx_insn to walk */
+	bool via_callx; /* the subprogram is entered via callx */
 };
 
-/* what the frame of the subprog adds to the frames of its callers */
-static int subprog_stack_size(struct bpf_verifier_env *env, int s)
-{
-	struct bpf_subprog_info *sub = &env->subprog_info[s];
-
-	if (sub->priv_stack_mode == PRIV_STACK_ADAPTIVE)
-		return 0;
-	return round_up_stack_depth(env, sub->stack_depth);
-}
-
-/*
- * A subprog is entered with no more than what one of its callers is entered with plus
- * the frame of that caller. The graph has no cycles, so this comes to an end.
+/* starting from main bpf function walk all instructions of the function
+ * and recursively walk all callees that given function can call.
+ * Ignore jump and exit insns.
  */
-static void compute_call_depth(struct bpf_verifier_env *env, struct bpf_call_graph *cg,
-			       struct bpf_subprog_call_depth_info *dinfo)
+static int check_max_stack_depth_subprog(struct bpf_verifier_env *env, int idx,
+					 struct bpf_subprog_call_depth_info *dinfo,
+					 bool priv_stack_supported)
 {
-	struct bpf_subprog_info *si = env->subprog_info;
-	struct bpf_subprog_call_depth_info *callee;
-	int depth, arena_depth, frame, j, s;
-	bool changed;
+	struct bpf_subprog_info *subprog = env->subprog_info;
+	struct bpf_insn *insn = env->prog->insnsi;
+	int depth = 0, frame = 0, i, subprog_end, subprog_depth;
+	bool tail_call_reachable = false;
+	int total;
+	int tmp;
 
-	for (s = 0; s < cg->cnt; s++) {
-		dinfo[s].caller = -1;
-		dinfo[s].depth = !s || si[s].is_async_cb ? 0 : -1;
+	/* no caller idx */
+	dinfo[idx].caller = -1;
+	dinfo[idx].via_callx = false;
+
+	i = subprog[idx].start;
+	if (!priv_stack_supported)
+		subprog[idx].priv_stack_mode = NO_PRIV_STACK;
+process_func:
+	dinfo[idx].callx_insn = -1;
+	if (subprog[idx].has_ld_abs) {
+		for (tmp = idx; tmp >= 0; tmp = dinfo[tmp].caller) {
+			if (subprog[tmp].is_cb) {
+				verbose(env, "cannot use BPF_LD_[ABS|IND] within callback\n");
+				return -EINVAL;
+			}
+		}
 	}
-	do {
-		cond_resched();
-		changed = false;
-		for_each_set_bit(s, cg->live, cg->cnt) {
-			if (dinfo[s].depth < 0)
-				continue;
-			depth = dinfo[s].depth + subprog_stack_size(env, s);
-			arena_depth = dinfo[s].arena_depth + si[s].arena_stack_depth;
-			for_each_set_bit(j, subprog_calls(cg, s), cg->cnt) {
-				callee = &dinfo[j];
-				frame = bpf_subprog_is_global(env, j) ? 0 : dinfo[s].frame + 1;
-				if (depth <= callee->depth && arena_depth <= callee->arena_depth &&
-				    frame <= callee->frame)
-					continue;
-				if (depth > callee->depth) {
-					callee->depth = depth;
-					callee->caller = s;
-				}
-				callee->arena_depth = max(callee->arena_depth, arena_depth);
-				callee->frame = max(callee->frame, frame);
-				changed = true;
-			}
-		}
-	} while (changed);
-}
 
-static int check_call_depth(struct bpf_verifier_env *env, struct bpf_call_graph *cg)
-{
-	struct bpf_subprog_info *si = env->subprog_info;
-	struct bpf_subprog_call_depth_info *dinfo;
-	int depth, total, tmp, s, err;
+	/* protect against potential stack overflow that might happen when
+	 * bpf2bpf calls get combined with tailcalls. Limit the caller's stack
+	 * depth for such case down to 256 so that the worst case scenario
+	 * would result in 8k stack size (32 which is tailcall limit * 256 =
+	 * 8k).
+	 *
+	 * To get the idea what might happen, see an example:
+	 * func1 -> sub rsp, 128
+	 *  subfunc1 -> sub rsp, 256
+	 *  tailcall1 -> add rsp, 256
+	 *   func2 -> sub rsp, 192 (total stack size = 128 + 192 = 320)
+	 *   subfunc2 -> sub rsp, 64
+	 *   subfunc22 -> sub rsp, 128
+	 *   tailcall2 -> add rsp, 128
+	 *    func3 -> sub rsp, 32 (total stack size 128 + 192 + 64 + 32 = 416)
+	 *
+	 * tailcall will unwind the current stack frame but it will not get rid
+	 * of caller's stack as shown on the example above.
+	 */
+	if (idx && subprog[idx].has_tail_call && depth >= 256) {
+		verbose(env,
+			"tail_calls are not allowed when call stack of previous frames is %d bytes. Too large\n",
+			depth);
+		return -EACCES;
+	}
 
-	dinfo = kvzalloc_objs(*dinfo, cg->cnt, GFP_KERNEL_ACCOUNT);
-	if (!dinfo)
-		return -ENOMEM;
-	compute_call_depth(env, cg, dinfo);
-
-	for_each_set_bit(s, cg->live, cg->cnt) {
-		/* A caller of it is over a limit. That one is reported, not what it calls. */
-		if (dinfo[s].frame > MAX_CALL_FRAMES || dinfo[s].depth > env->stack_limit ||
-		    dinfo[s].arena_depth > BPF_ARENA_STACK_MAX)
-			continue;
-
-		err = -E2BIG;
-		if (dinfo[s].frame >= MAX_CALL_FRAMES) {
-			verbose(env, "the call stack of %d frames is too deep !\n",
-				dinfo[s].frame);
-			goto out;
-		}
-
-		err = -EOPNOTSUPP;
-		if (dinfo[s].frame >= MAX_CALL_FRAMES_INTERP) {
-			if (!env->prog->jit_requested) {
-				verbose(env, "JIT is required for a call stack of more than %d frames\n",
-					MAX_CALL_FRAMES_INTERP);
-				goto out;
-			}
-			env->prog->jit_required = true;
-		}
-
-		err = -EACCES;
-		depth = dinfo[s].arena_depth + si[s].arena_stack_depth;
-		if (depth > env->max_arena_stack_depth)
-			env->max_arena_stack_depth = depth;
-		if (depth > BPF_ARENA_STACK_MAX) {
-			verbose(env, "combined size of the frames in the stack in arena is %d. Too large\n",
-				depth);
-			goto out;
-		}
-
-		/*
-		 * protect against potential stack overflow that might happen when
-		 * bpf2bpf calls get combined with tailcalls. Limit the caller's stack
-		 * depth for such case down to 256 so that the worst case scenario
-		 * would result in 8k stack size (32 which is tailcall limit * 256 =
-		 * 8k).
-		 *
-		 * To get the idea what might happen, see an example:
-		 * func1 -> sub rsp, 128
-		 *  subfunc1 -> sub rsp, 256
-		 *  tailcall1 -> add rsp, 256
-		 *   func2 -> sub rsp, 192 (total stack size = 128 + 192 = 320)
-		 *   subfunc2 -> sub rsp, 64
-		 *   subfunc22 -> sub rsp, 128
-		 *   tailcall2 -> add rsp, 128
-		 *    func3 -> sub rsp, 32 (total stack size 128 + 192 + 64 + 32 = 416)
-		 *
-		 * tailcall will unwind the current stack frame but it will not get rid
-		 * of caller's stack as shown on the example above.
+	subprog_depth = round_up_stack_depth(env, subprog[idx].stack_depth);
+	if (IS_ENABLED(CONFIG_X86_64) && subprog[idx].stack_arg_cnt) {
+		/* x86-64 uses R9 for both private stack frame pointer and arg6. */
+		subprog[idx].priv_stack_mode = NO_PRIV_STACK;
+	} else if (priv_stack_supported) {
+		/* Request private stack support only if the subprog stack
+		 * depth is no less than BPF_PRIV_STACK_MIN_SIZE. This is to
+		 * avoid jit penalty if the stack usage is small.
 		 */
-		depth = dinfo[s].depth;
-		if (s && si[s].has_tail_call && depth >= 256) {
-			verbose(env,
-				"tail_calls are not allowed when call stack of previous frames is %d bytes. Too large\n",
-				depth);
-			goto out;
-		}
+		if (subprog[idx].priv_stack_mode == PRIV_STACK_UNKNOWN &&
+		    subprog_depth >= BPF_PRIV_STACK_MIN_SIZE)
+			subprog[idx].priv_stack_mode = PRIV_STACK_ADAPTIVE;
+	}
 
-		if (si[s].priv_stack_mode == PRIV_STACK_ADAPTIVE) {
-			depth = round_up_stack_depth(env, si[s].stack_depth);
-			if (depth > env->max_stack_depth)
-				env->max_stack_depth = depth;
-			if (depth > env->stack_limit) {
-				verbose(env, "stack size of subprog %d is %d. Too large\n",
-					s, depth);
-				goto out;
-			}
-			continue;
+	if (subprog[idx].priv_stack_mode == PRIV_STACK_ADAPTIVE) {
+		if (subprog_depth > env->max_stack_depth)
+			env->max_stack_depth = subprog_depth;
+		if (subprog_depth > env->stack_limit) {
+			verbose(env, "stack size of subprog %d is %d. Too large\n",
+				idx, subprog_depth);
+			return -EACCES;
 		}
-		depth = dinfo[s].depth + subprog_stack_size(env, s);
+	} else {
+		depth += subprog_depth;
 		if (depth > env->max_stack_depth)
 			env->max_stack_depth = depth;
 		if (depth > env->stack_limit) {
 			total = 0;
-			for (tmp = s; tmp >= 0; tmp = dinfo[tmp].caller)
+			for (tmp = idx; tmp >= 0; tmp = dinfo[tmp].caller)
 				total++;
 
 			verbose(env, "combined stack size of %d calls is %d. Too large\n",
 				total, depth);
-			goto out;
+			return -EACCES;
 		}
 	}
-	err = 0;
-out:
-	kvfree(dinfo);
-	return err;
+continue_func:
+	subprog_end = subprog[idx + 1].start;
+	for (; i < subprog_end; i++) {
+		int next_insn, sidx;
+
+		if (bpf_pseudo_kfunc_call(insn + i) && !insn[i].off &&
+		    bpf_is_throw_kfunc(insn + i)) {
+			bool err = false;
+
+			for (tmp = idx; tmp >= 0 && !err; tmp = dinfo[tmp].caller) {
+				if (subprog[tmp].is_cb) {
+					err = true;
+					break;
+				}
+			}
+			if (!err)
+				continue;
+			verbose(env,
+				"bpf_throw kfunc (insn %d) cannot be called from callback subprog %d\n",
+				i, idx);
+			return -EINVAL;
+		}
+
+		if (bpf_is_callx(insn + i) || bpf_calls_callback(env, i)) {
+			/*
+			 * Walk the callees and the callbacks recorded by
+			 * the main verification pass one by one, returning to
+			 * this insn after each.
+			 */
+			if (dinfo[idx].callx_insn != i) {
+				dinfo[idx].callx_insn = i;
+				dinfo[idx].callx_next = 0;
+			}
+			sidx = next_callx_callee(env, idx, dinfo[idx].callx_next);
+			if (sidx < 0)
+				continue;
+			dinfo[idx].callx_next = sidx + 1;
+			dinfo[idx].ret_insn = i;
+			next_insn = subprog[sidx].start;
+		} else if (bpf_pseudo_call(insn + i) || bpf_pseudo_func(insn + i)) {
+			/* find the callee */
+			next_insn = i + insn[i].imm + 1;
+			sidx = bpf_find_subprog(env, next_insn);
+			if (verifier_bug_if(sidx < 0, env, "callee not found at insn %d", next_insn))
+				return -EFAULT;
+			if (subprog[sidx].is_async_cb) {
+				/* async callbacks don't increase bpf prog stack size unless called directly */
+				if (!bpf_pseudo_call(insn + i))
+					continue;
+				if (subprog[sidx].is_exception_cb) {
+					verbose(env, "insn %d cannot call exception cb directly", i);
+					return -EINVAL;
+				}
+			}
+			/* remember insn to return to */
+			dinfo[idx].ret_insn = i + 1;
+		} else {
+			continue;
+		}
+
+		/*
+		 * sort_subprogs_topo() tolerates cycles in the call graph that
+		 * go through the address of a function being taken, since it
+		 * doesn't know what it is taken for. Such cycle is a recursion
+		 * unless it's an async callback, which are skipped above.
+		 * The main verification pass limits the depth of the recursion,
+		 * but it doesn't follow calls of global functions.
+		 */
+		for (tmp = idx; tmp >= 0; tmp = dinfo[tmp].caller) {
+			if (tmp != sidx)
+				continue;
+			verbose(env, "recursive call from %s() to %s()\n",
+				bpf_subprog_name(env, idx), bpf_subprog_name(env, sidx));
+			bpf_diag_program_structure(
+				env, i, "recursive subprogram call",
+				"Rewrite the recursion as an explicit bounded loop, or split the logic so subprogram calls do not form a cycle.",
+				"This call or callback would make the subprogram call graph recursive. "
+				"The verifier requires a finite, acyclic call graph so it can bound stack depth and analysis.");
+			return -EINVAL;
+		}
+
+		/* store caller info for after we return from callee */
+		dinfo[idx].frame = frame;
+
+		/* push caller idx into callee's dinfo */
+		dinfo[sidx].caller = idx;
+		dinfo[sidx].via_callx = bpf_is_callx(insn + i);
+
+		i = next_insn;
+
+		idx = sidx;
+		if (!priv_stack_supported)
+			subprog[idx].priv_stack_mode = NO_PRIV_STACK;
+
+		/* sync tail_call_reachable with callee state on entry */
+		tail_call_reachable = subprog[idx].has_tail_call;
+
+		frame = bpf_subprog_is_global(env, idx) ? 0 : frame + 1;
+		if (frame >= MAX_CALL_FRAMES) {
+			verbose(env, "the call stack of %d frames is too deep !\n",
+				frame);
+			return -E2BIG;
+		}
+		goto process_func;
+	}
+	/* if tail call got detected across bpf2bpf calls then mark each of the
+	 * currently present subprog frames as tail call reachable subprogs;
+	 * this info will be utilized by JIT so that we will be preserving the
+	 * tail call counter throughout bpf2bpf calls combined with tailcalls
+	 */
+	if (tail_call_reachable) {
+		for (tmp = idx; tmp >= 0; tmp = dinfo[tmp].caller) {
+			if (subprog[tmp].is_cb) {
+				verbose(env, "cannot tail call within callback\n");
+				return -EINVAL;
+			}
+			if (subprog[tmp].stack_arg_cnt) {
+				verbose(env, "tail_calls are not allowed in programs with stack args\n");
+				return -EINVAL;
+			}
+			/*
+			 * JITs pass tail call counter in a register that is
+			 * not available when the callee is called via callx.
+			 */
+			if (dinfo[tmp].via_callx) {
+				verbose(env, "tail_calls are not allowed in functions called via callx\n");
+				return -EINVAL;
+			}
+			subprog[tmp].tail_call_reachable = true;
+		}
+	} else if (!idx && subprog[0].has_tail_call && subprog[0].stack_arg_cnt) {
+		verbose(env, "tail_calls are not allowed in programs with stack args\n");
+		return -EINVAL;
+	}
+
+	if (subprog[0].tail_call_reachable)
+		env->prog->aux->tail_call_reachable = true;
+
+	/* end of for() loop means the last insn of the 'subprog'
+	 * was reached. Doesn't matter whether it was JA or EXIT
+	 */
+	if (frame == 0 && dinfo[idx].caller < 0)
+		return 0;
+	if (subprog[idx].priv_stack_mode != PRIV_STACK_ADAPTIVE)
+		depth -= round_up_stack_depth(env, subprog[idx].stack_depth);
+
+	/* pop caller idx from callee */
+	idx = dinfo[idx].caller;
+
+	/* retrieve caller state from its frame */
+	frame = dinfo[idx].frame;
+	i = dinfo[idx].ret_insn;
+
+	/* reset tail_call_reachable to the parent's actual state */
+	tail_call_reachable = subprog[idx].tail_call_reachable;
+
+	goto continue_func;
 }
 
 static int check_max_stack_depth(struct bpf_verifier_env *env)
 {
 	enum priv_stack_mode priv_stack_mode = PRIV_STACK_UNKNOWN;
+	struct bpf_subprog_call_depth_info *dinfo;
 	struct bpf_subprog_info *si = env->subprog_info;
-	struct bpf_call_graph cg = {};
-	int s, ret;
+	bool priv_stack_supported;
+	int ret;
+
+	dinfo = kvzalloc_objs(*dinfo, env->subprog_cnt, GFP_KERNEL_ACCOUNT);
+	if (!dinfo)
+		return -ENOMEM;
 
 	for (int i = 0; i < env->subprog_cnt; i++) {
 		if (si[i].has_tail_call) {
-			/* the stack in arena wouldn't be returned */
-			if (env->uses_arena_sp) {
-				verbose(env, "tail_calls are not allowed in programs that use R%d\n",
-					BPF_REG_ARENA_SP);
-				return -EINVAL;
-			}
 			priv_stack_mode = NO_PRIV_STACK;
 			break;
 		}
 	}
-	/* x86 JIT has one register for both */
-	if (env->uses_arena_sp)
-		priv_stack_mode = NO_PRIV_STACK;
 
 	if (priv_stack_mode == PRIV_STACK_UNKNOWN)
 		priv_stack_mode = bpf_enable_priv_stack(env->prog);
 
-	ret = build_call_graph(env, &cg);
-	ret = ret ?: check_exception_cb(env, &cg);
-	ret = ret ?: check_recursion(env, &cg);
-	ret = ret ?: check_callbacks(env, &cg);
-	ret = ret ?: check_tail_calls(env, &cg);
-	if (ret)
-		goto out;
-	mark_arena_stack_entries(env, &cg);
-
-	for_each_set_bit(s, cg.live, cg.cnt) {
-		/*
-		 * All async_cb subprogs use normal kernel stack. If a particular
-		 * subprog appears in both main prog and async_cb subtree, that
-		 * subprog will use normal kernel stack to avoid potential nesting.
-		 * x86-64 uses R9 for both private stack frame pointer and arg6.
-		 */
-		if (priv_stack_mode != PRIV_STACK_ADAPTIVE || test_bit(s, cg.in_async_cb) ||
-		    (IS_ENABLED(CONFIG_X86_64) && si[s].stack_arg_cnt)) {
-			si[s].priv_stack_mode = NO_PRIV_STACK;
-			continue;
-		}
-		/*
-		 * Request private stack support only if the subprog stack
-		 * depth is no less than BPF_PRIV_STACK_MIN_SIZE. This is to
-		 * avoid jit penalty if the stack usage is small.
-		 */
-		if (round_up_stack_depth(env, si[s].stack_depth) >= BPF_PRIV_STACK_MIN_SIZE) {
-			si[s].priv_stack_mode = PRIV_STACK_ADAPTIVE;
-			env->prog->aux->jits_use_priv_stack = true;
+	/* All async_cb subprogs use normal kernel stack. If a particular
+	 * subprog appears in both main prog and async_cb subtree, that
+	 * subprog will use normal kernel stack to avoid potential nesting.
+	 * The reverse subprog traversal ensures when main prog subtree is
+	 * checked, the subprogs appearing in async_cb subtrees are already
+	 * marked as using normal kernel stack, so stack size checking can
+	 * be done properly.
+	 */
+	for (int i = env->subprog_cnt - 1; i >= 0; i--) {
+		if (!i || si[i].is_async_cb) {
+			priv_stack_supported = !i && priv_stack_mode == PRIV_STACK_ADAPTIVE;
+			ret = check_max_stack_depth_subprog(env, i, dinfo,
+					priv_stack_supported);
+			if (ret < 0) {
+				kvfree(dinfo);
+				return ret;
+			}
 		}
 	}
 
-	ret = check_call_depth(env, &cg);
-out:
-	kvfree(cg.calls);
-	return ret;
+	for (int i = 0; i < env->subprog_cnt; i++) {
+		if (si[i].priv_stack_mode == PRIV_STACK_ADAPTIVE) {
+			env->prog->aux->jits_use_priv_stack = true;
+			break;
+		}
+	}
+
+	kvfree(dinfo);
+
+	return 0;
 }
 
 static int __check_buffer_access(struct bpf_verifier_env *env,
@@ -6631,6 +6450,51 @@ struct bpf_func_ptr *bpf_map_func_ptrs(struct bpf_verifier_env *env,
 				       const struct bpf_map *map, u32 *cnt)
 {
 	return bpf_map_range_func_ptrs(env, map, 0, (u64)map->value_size, cnt);
+}
+
+/* instructions [off, off + len) replaced the instruction at 'off' */
+void bpf_adjust_func_ptrs(struct bpf_verifier_env *env, u32 off, u32 len)
+{
+	struct bpf_func_ptr *p;
+	u32 i;
+
+	if (len <= 1)
+		return;
+
+	for (i = 0; i < env->func_ptr_cnt; i++) {
+		p = &env->func_ptrs[i];
+		if (p->xlated_off <= off || p->xlated_off == BPF_FUNC_PTR_DELETED)
+			continue;
+		p->xlated_off += len - 1;
+	}
+}
+
+/*
+ * Instructions [off, off + len) are about to be removed. It's called before
+ * the starts of subprogs are adjusted. A subprog is gone when all of its
+ * instructions are. Otherwise, e.g. when its first instruction is a nop,
+ * it starts where the removed instructions did.
+ */
+void bpf_adjust_func_ptrs_after_remove(struct bpf_verifier_env *env, u32 off, u32 len)
+{
+	struct bpf_func_ptr *p;
+	int subprog;
+	u32 i;
+
+	for (i = 0; i < env->func_ptr_cnt; i++) {
+		p = &env->func_ptrs[i];
+		if (p->xlated_off < off || p->xlated_off == BPF_FUNC_PTR_DELETED)
+			continue;
+		if (p->xlated_off >= off + len) {
+			p->xlated_off -= len;
+			continue;
+		}
+		subprog = bpf_find_subprog(env, p->xlated_off);
+		if (subprog > 0 && env->subprog_info[subprog + 1].start > off + len)
+			p->xlated_off = off;
+		else
+			p->xlated_off = BPF_FUNC_PTR_DELETED;
+	}
 }
 
 #define BTF_TYPE_SAFE_RCU(__type)  __PASTE(__type, __safe_rcu)
@@ -7242,7 +7106,7 @@ static void mark_reg_func_ptr(struct bpf_verifier_env *env, struct bpf_reg_state
 }
 
 /* a read from a table of functions branches into that many states at most */
-#define BPF_MAX_FUNC_PTR_TARGETS BPF_MAX_SUBPROGS
+#define BPF_MAX_FUNC_PTR_TARGETS 64
 /* and that many pointers at most are next to what is read at variable offset */
 #define BPF_MAX_FUNC_PTR_RANGE 4096
 
@@ -7288,20 +7152,17 @@ static int check_func_ptr_read(struct bpf_verifier_env *env, struct bpf_reg_stat
 	struct bpf_reg_state *regs = cur_regs(env);
 	struct bpf_map *map = reg->map_ptr;
 	struct bpf_verifier_state *branch;
-	u16 *targets __free(kfree) = NULL;
+	int subprog, targets[BPF_MAX_FUNC_PTR_TARGETS];
 	struct bpf_func_ptr *ptrs;
 	u32 i, cnt, n = 0;
 	u64 o, lo, hi;
-	int err, subprog;
+	int err;
 
 	ptrs = bpf_map_range_func_ptrs(env, map, min_off, max_off - min_off + size, &cnt);
 	if (!ptrs)
 		return -ENOENT;
 	if (cnt > BPF_MAX_FUNC_PTR_RANGE)
 		goto overlap;
-	targets = kmalloc_array(BPF_MAX_FUNC_PTR_TARGETS, sizeof(*targets), GFP_KERNEL_ACCOUNT);
-	if (!targets)
-		return -ENOMEM;
 
 	for (i = 0; i < cnt; i++) {
 		/* the offsets at which the read overlaps with the pointer */
@@ -9814,14 +9675,11 @@ static int check_arg_const_str(struct bpf_verifier_env *env,
 	return 0;
 }
 
-/*
- * Returns the largest value of the key in `value` if it is below `max_entries`,
- * else negative error
- */
-static int get_max_map_key(struct bpf_verifier_env *env,
-			   struct bpf_reg_state *key,
-			   u32 key_size, u32 max_entries,
-			   u64 *value)
+/* Returns constant key value in `value` if possible, else negative error */
+static int get_constant_map_key(struct bpf_verifier_env *env,
+				struct bpf_reg_state *key,
+				u32 key_size,
+				s64 *value)
 {
 	struct bpf_func_state *state = bpf_func(env, key);
 	struct bpf_stack_state *ss;
@@ -9863,17 +9721,12 @@ static int get_max_map_key(struct bpf_verifier_env *env,
 	if (spill_size != key_size)
 		return -EOPNOTSUPP;
 
-	/*
-	 * The slot has the range of the 64-bit register that was spilled. A value
-	 * below max_entries fits in the 4 bytes of the key.
-	 */
 	reg = &ss->spilled_ptr;
-	if (reg_umax(reg) >= max_entries)
-		/* The lookup can return NULL: nothing depends on the key */
+	if (!tnum_is_const(reg->var_off))
+		/* Stack value not statically known */
 		return -EOPNOTSUPP;
 
-	/*
-	 * We are relying on the range of the key. So mark as precise
+	/* We are relying on a constant value. So mark as precise
 	 * to prevent pruning on it.
 	 */
 	bpf_bt_set_frame_slot(&env->bt, key->frameno, spi);
@@ -9881,7 +9734,7 @@ static int get_max_map_key(struct bpf_verifier_env *env,
 	if (err < 0)
 		return err;
 
-	*value = reg_umax(reg);
+	*value = reg->var_off.value;
 	return 0;
 }
 
@@ -10064,10 +9917,9 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg, u32 slot, u32 p
 		if (err)
 			return err;
 		if (can_elide_value_nullness(meta->map.ptr)) {
-			err = get_max_map_key(env, reg, key_size, meta->map.ptr->max_entries,
-					      &meta->max_map_key);
+			err = get_constant_map_key(env, reg, key_size, &meta->const_map_key);
 			if (err < 0) {
-				meta->max_map_key = U64_MAX;
+				meta->const_map_key = -1;
 				if (err == -EOPNOTSUPP)
 					err = 0;
 				else
@@ -11508,22 +11360,6 @@ static void gen_subprog_arg_proto(const struct bpf_subprog_info *sub, const stru
 	}
 }
 
-/*
- * The argument slots that the code of a static subprog takes, whatever its BTF says.
- * Liveness errs on the safe side: a callx in the subprog counts as a read of r1-r5.
- * But it misses r3-r5 of bpf_trace_printk() and the flags of bpf_get_branch_snapshot(), which
- * their protos do not declare. Such a subprog prints or passes a wrong number under a tracer.
- * The helpers are safe with any value there: the verifier never checks these registers.
- */
-static u32 code_arg_slots(struct bpf_verifier_env *env, struct bpf_subprog_info *sub)
-{
-	u32 live_regs = env->insn_aux_data[sub->start].live_regs_before;
-
-	if (bpf_in_stack_arg_cnt(sub))
-		return MAX_BPF_FUNC_REG_ARGS + bpf_in_stack_arg_cnt(sub);
-	return fls((live_regs & GENMASK(BPF_REG_5, BPF_REG_1)) >> BPF_REG_1);
-}
-
 static int btf_check_func_arg_match(struct bpf_verifier_env *env, int subprog, struct btf *btf)
 {
 	struct bpf_subprog_info *sub = subprog_info(env, subprog);
@@ -11531,7 +11367,7 @@ static int btf_check_func_arg_match(struct bpf_verifier_env *env, int subprog, s
 	const struct btf_type *func, *func_proto;
 	struct bpf_call_arg_meta meta;
 	struct bpf_func_proto *fn;
-	int ret;
+	int ret, err;
 	u32 i;
 
 	memset(&meta, 0, sizeof(meta));
@@ -11540,8 +11376,16 @@ static int btf_check_func_arg_match(struct bpf_verifier_env *env, int subprog, s
 	meta.func_name = bpf_subprog_name(env, subprog);
 
 	ret = btf_prepare_func_args(env, subprog);
-	if (ret)
+	if (ret) {
+		if (bpf_in_stack_arg_cnt(sub) > 0) {
+			err = check_outgoing_stack_args(env, caller, sub->arg_slot_cnt,
+							bpf_subprog_name(env, subprog),
+							NULL, NULL);
+			if (err)
+				return err;
+		}
 		return ret;
+	}
 
 	func = btf_type_by_id(btf, env->prog->aux->func_info[subprog].type_id);
 	func_proto = btf_type_by_id(btf, func->type);
@@ -11552,19 +11396,12 @@ static int btf_check_func_arg_match(struct bpf_verifier_env *env, int subprog, s
 	meta.func_proto = func_proto;
 
 	/*
-	 * Check if all arguments declared in BTF are initialized,
-	 * and if the code takes no other arguments: a trampoline keeps only
-	 * what BTF declares. If not, the BTF is unreliable.
+	 * Check if all register arguments declared in BTF are initialized.
+	 * If they aren't the BTF is unreliable.
 	 */
 	if (!bpf_subprog_is_global(env, subprog)) {
-		if (code_arg_slots(env, sub) > sub->arg_slot_cnt)
-			return -EINVAL;
 		for (i = 0; i < min_t(u32, sub->arg_slot_cnt, MAX_BPF_FUNC_REG_ARGS); i++)
 			if (caller->regs[BPF_REG_1 + i].type == NOT_INIT)
-				return -EINVAL;
-		/* check_func_args() reports a missing slot that the code loads: it has the name */
-		for (i = max(i, code_arg_slots(env, sub)); i < sub->arg_slot_cnt; i++)
-			if (!bpf_get_spilled_stack_arg(i - MAX_BPF_FUNC_REG_ARGS, caller))
 				return -EINVAL;
 	}
 	return check_func_args(env, &meta, env->insn_idx);
@@ -11675,7 +11512,7 @@ static int push_callback_call(struct bpf_verifier_env *env, struct bpf_insn *ins
 	    (insn->imm == BPF_FUNC_loop || insn->imm == BPF_FUNC_for_each_map_elem))
 		env->subprog_info[subprog].is_loop_cb = true;
 	else
-		env->subprog_info[subprog].is_other_cb = true;
+		env->subprog_info[subprog].is_called = true;
 
 	/* for callback functions enqueue entry to callback and
 	 * proceed with next instruction within current frame.
@@ -11706,8 +11543,8 @@ static int process_bpf_exit_full(struct bpf_verifier_env *env,
 static int check_static_func_call(struct bpf_verifier_env *env, int subprog,
 				  int *insn_idx)
 {
-	struct bpf_subprog_info *caller_info, *callee_info = &env->subprog_info[subprog];
 	struct bpf_verifier_state *state = env->cur_state;
+	struct bpf_subprog_info *caller_info;
 	u16 callee_incoming, stack_arg_cnt;
 	struct bpf_func_state *caller;
 	int err;
@@ -11718,23 +11555,12 @@ static int check_static_func_call(struct bpf_verifier_env *env, int subprog,
 	/*
 	 * Track caller's total stack arg count (incoming + max outgoing).
 	 * This is needed so the JIT knows how much stack arg space to allocate.
-	 * The callee can load less than its prototype has, and the caller can still store
-	 * all of it. Count the slots of the prototype only as far as the caller has stored
-	 * them: compilers store in front of the call. bpf_fixup_call_args() rejects the rest.
 	 */
 	caller_info = &env->subprog_info[caller->subprogno];
-	callee_incoming = bpf_in_stack_arg_cnt(callee_info);
-	stack_arg_cnt = bpf_in_stack_arg_cnt(caller_info) +
-			max_t(int, callee_incoming,
-			      min_t(int, caller_info->max_out_stack_arg_cnt,
-				    callee_info->arg_slot_cnt - MAX_BPF_FUNC_REG_ARGS));
+	callee_incoming = bpf_in_stack_arg_cnt(&env->subprog_info[subprog]);
+	stack_arg_cnt = bpf_in_stack_arg_cnt(caller_info) + callee_incoming;
 	if (stack_arg_cnt > caller_info->stack_arg_cnt)
 		caller_info->stack_arg_cnt = stack_arg_cnt;
-
-	err = check_outgoing_stack_args(env, caller, MAX_BPF_FUNC_REG_ARGS + callee_incoming,
-					bpf_subprog_name(env, subprog), NULL, NULL);
-	if (err)
-		return err;
 
 	/*
 	 * For regular function entry setup new frame and continue
@@ -11944,7 +11770,6 @@ static int check_func_callx(struct bpf_verifier_env *env, struct bpf_insn *insn,
 	err = record_callx_edge(env, caller->subprogno, subprog);
 	if (err)
 		return err;
-	env->subprog_info[subprog].via_callx = true;
 
 	return check_static_func_call(env, subprog, insn_idx);
 }
@@ -12756,8 +12581,8 @@ static int update_loop_inline_state(struct bpf_verifier_env *env, u32 subprogno)
 }
 
 /* Returns whether or not the given map can potentially elide
- * lookup return value nullness check. This is possible if the largest
- * value of the key is statically known.
+ * lookup return value nullness check. This is possible if the key
+ * is statically known.
  */
 static bool can_elide_value_nullness(const struct bpf_map *map)
 {
@@ -13135,7 +12960,8 @@ static int check_helper_call(struct bpf_verifier_env *env, struct bpf_insn *insn
 
 		if (func_id == BPF_FUNC_map_lookup_elem &&
 		    can_elide_value_nullness(meta.map.ptr) &&
-		    meta.max_map_key < meta.map.ptr->max_entries)
+		    meta.const_map_key >= 0 &&
+		    meta.const_map_key < meta.map.ptr->max_entries)
 			ret_flag &= ~PTR_MAYBE_NULL;
 
 		regs[BPF_REG_0].map_ptr = meta.map.ptr;
@@ -15282,14 +15108,6 @@ scan_all_maps:
 		 * analyzed separately.
 		 */
 		return (struct arg_access_info) {};
-	case ARG_ANYTHING:
-		/*
-		 * A number that the program is free to choose. bpf_probe_read_kernel() and
-		 * the like may read what it points to. check_func_arg() does not look at
-		 * the number: do_check() keeps what it knows about the stack over the call.
-		 */
-		info.may_write = false;
-		return info;
 	default:
 		return info;
 	}
@@ -15414,29 +15232,12 @@ static bool try_btf_prepare_func_args(struct bpf_verifier_env *env, int subprog)
 /* Prepare argument metadata for liveness; the main program is handled separately. */
 static void prepare_subprog_args(struct bpf_verifier_env *env)
 {
-	struct bpf_subprog_info *sub;
-	struct bpf_insn *insn;
-	int i, j, cnt;
+	int i;
 
 	for (i = 1; i < env->subprog_cnt; i++) {
-		sub = &env->subprog_info[i];
 		if (!try_btf_prepare_func_args(env, i) && bpf_subprog_is_global(env, i))
 			/* Keep all argument registers live if the prototype is unavailable. */
-			sub->arg_slot_cnt = MAX_BPF_FUNC_REG_ARGS;
-		if (bpf_subprog_is_global(env, i))
-			continue;
-		cnt = 0;
-		for (j = sub->start; j < (sub + 1)->start; j++) {
-			insn = &env->prog->insnsi[j];
-			if (is_stack_arg_ldx(insn))
-				cnt = max(cnt, insn->off / BPF_REG_SIZE);
-		}
-		sub->stack_args_from_code = true;
-		sub->code_stack_args = min(cnt, MAX_STACK_ARG_SLOTS);
-		/* incoming + max outgoing. Calls add the latter. */
-		sub->stack_arg_cnt = sub->code_stack_args;
-		if (env->prog->aux->func_info_aux)
-			env->prog->aux->func_info_aux[i].stack_args = sub->code_stack_args;
+			env->subprog_info[i].arg_slot_cnt = MAX_BPF_FUNC_REG_ARGS;
 	}
 }
 
@@ -16594,7 +16395,6 @@ static int adjust_ptr_min_max_vals(struct bpf_verifier_env *env, struct bpf_insn
 	const char *reason;
 	int ret, bounds_ret;
 	bool to_scalar;
-	s64 smax;
 
 	dst_reg = &regs[dst];
 	/*
@@ -16750,18 +16550,12 @@ static int adjust_ptr_min_max_vals(struct bpf_verifier_env *env, struct bpf_insn
 			if (!known)
 				dst_reg->id = ++env->id_gen;
 			/*
-			 * The range is what umax of the pointer may get to, see
-			 * check_packet_access(). umax of the addend was added to it
-			 * and the pointer moved by that much at most, so the range
-			 * holds. Clear it if the addend may be negative: umax says
-			 * nothing then. Clear it if umax got to it: it permits no
-			 * byte at or after the pointer, and it would only keep equal
-			 * states apart in regsafe(). Also clear AT_PKT_END /
+			 * Clear range for unknown addends since we can't know
+			 * where the pkt pointer ended up. Also clear AT_PKT_END /
 			 * BEYOND_PKT_END from prior comparison as any pointer
 			 * arithmetic invalidates them.
 			 */
-			if (dst_reg->range < 0 ||
-			    (!known && (smin_val < 0 || reg_umax(dst_reg) >= dst_reg->range)))
+			if (!known || dst_reg->range < 0)
 				memset(&dst_reg->raw, 0, sizeof(dst_reg->raw));
 		}
 		break;
@@ -16854,18 +16648,11 @@ static int adjust_ptr_min_max_vals(struct bpf_verifier_env *env, struct bpf_insn
 	 * A packet pointer that keeps its id or range is checked against a
 	 * range set from the checked pointer's umax, so var_off must not tighten
 	 * its umax. r32 must still match var_off for reg_bounds_sanity_check().
-	 * A sum with a new id is different: progs rely on what var_off and the
-	 * step tell about it (alignment, umin). No other pointer has its id, so
-	 * it is enough that its range loses what its umax loses.
 	 */
-	if (reg_is_pkt_pointer(dst_reg) &&
-	    (known || (opcode == BPF_SUB && dst_reg->range > 0))) {
+	if (reg_is_pkt_pointer(dst_reg) && (known || dst_reg->range > 0))
 		__update_reg32_bounds(dst_reg);
-	} else {
-		smax = reg_smax(dst_reg);
+	else
 		reg_bounds_sync(dst_reg);
-		bpf_trim_pkt_range(dst_reg, smax);
-	}
 	bounds_ret = sanitize_check_bounds(env, insn, dst_reg);
 	if (bounds_ret == -EACCES)
 		return bounds_ret;
@@ -16972,32 +16759,13 @@ static void scalar_min_max_mul(struct bpf_reg_state *dst_reg,
 					cnum64_from_srange(smin, smax));
 }
 
-static void scalar_min_max_uhmul(struct bpf_reg_state *dst_reg,
-				 struct bpf_reg_state *src_reg)
-{
-	u64 dst = reg_const_value(dst_reg, false);
-	u64 src = reg_const_value(src_reg, false);
-
-	___mark_reg_known(dst_reg, bpf_uhmul64(dst, src));
-}
-
-static void scalar_min_max_shmul(struct bpf_reg_state *dst_reg,
-				 struct bpf_reg_state *src_reg)
-{
-	s64 dst = reg_const_value(dst_reg, false);
-	s64 src = reg_const_value(src_reg, false);
-
-	___mark_reg_known(dst_reg, bpf_shmul64(dst, src));
-}
-
 static void scalar32_min_max_udiv(struct bpf_reg_state *dst_reg,
 				  struct bpf_reg_state *src_reg)
 {
-	u32 src_min = reg_u32_min(src_reg), src_max = reg_u32_max(src_reg); /* src_max isn't 0 */
+	u32 src_val = reg_u32_min(src_reg); /* non-zero, const divisor */
 
-	/* The largest divisor gives the smallest result, but for x / 0 = 0 */
-	reg_set_urange32(dst_reg, src_min ? reg_u32_min(dst_reg) / src_max : 0,
-			 reg_u32_max(dst_reg) / (src_min ?: 1));
+	reg_set_urange32(dst_reg, reg_u32_min(dst_reg) / src_val,
+			 reg_u32_max(dst_reg) / src_val);
 
 	/* Reset other ranges/tnum to unbounded/unknown. */
 	reset_reg64_and_tnum(dst_reg);
@@ -17006,11 +16774,10 @@ static void scalar32_min_max_udiv(struct bpf_reg_state *dst_reg,
 static void scalar_min_max_udiv(struct bpf_reg_state *dst_reg,
 				struct bpf_reg_state *src_reg)
 {
-	u64 src_min = reg_umin(src_reg), src_max = reg_umax(src_reg); /* src_max isn't 0 */
+	u64 src_val = reg_umin(src_reg); /* non-zero, const divisor */
 
-	/* The largest divisor gives the smallest result, but for x / 0 = 0 */
-	reg_set_urange64(dst_reg, src_min ? div64_u64(reg_umin(dst_reg), src_max) : 0,
-			 div64_u64(reg_umax(dst_reg), src_min ?: 1));
+	reg_set_urange64(dst_reg, div64_u64(reg_umin(dst_reg), src_val),
+			 div64_u64(reg_umax(dst_reg), src_val));
 
 	/* Reset other ranges/tnum to unbounded/unknown. */
 	reset_reg32_and_tnum(dst_reg);
@@ -17091,17 +16858,17 @@ reset:
 static void scalar32_min_max_umod(struct bpf_reg_state *dst_reg,
 				  struct bpf_reg_state *src_reg)
 {
-	u32 src_min = reg_u32_min(src_reg), src_max = reg_u32_max(src_reg); /* src_max isn't 0 */
+	u32 src_val = reg_u32_min(src_reg); /* non-zero, const divisor */
+	u32 res_max = src_val - 1;
 
 	/*
-	 * If dst_umax < src_min, the result remains unchanged.
-	 * e.g., [2, 5] % [10, 20] = [2, 5].
+	 * If dst_umax <= res_max, the result remains unchanged.
+	 * e.g., [2, 5] % 10 = [2, 5].
 	 */
-	if (reg_u32_max(dst_reg) < src_min)
+	if (reg_u32_max(dst_reg) <= res_max)
 		return;
 
-	/* The result is below the divisor and not above x, and x % 0 = x */
-	reg_set_urange32(dst_reg, 0, min(reg_u32_max(dst_reg), src_min ? src_max - 1 : U32_MAX));
+	reg_set_urange32(dst_reg, 0, min(reg_u32_max(dst_reg), res_max));
 
 	/* Reset other ranges/tnum to unbounded/unknown. */
 	reset_reg64_and_tnum(dst_reg);
@@ -17110,17 +16877,17 @@ static void scalar32_min_max_umod(struct bpf_reg_state *dst_reg,
 static void scalar_min_max_umod(struct bpf_reg_state *dst_reg,
 				struct bpf_reg_state *src_reg)
 {
-	u64 src_min = reg_umin(src_reg), src_max = reg_umax(src_reg); /* src_max isn't 0 */
+	u64 src_val = reg_umin(src_reg); /* non-zero, const divisor */
+	u64 res_max = src_val - 1;
 
 	/*
-	 * If dst_umax < src_min, the result remains unchanged.
-	 * e.g., [2, 5] % [10, 20] = [2, 5].
+	 * If dst_umax <= res_max, the result remains unchanged.
+	 * e.g., [2, 5] % 10 = [2, 5].
 	 */
-	if (reg_umax(dst_reg) < src_min)
+	if (reg_umax(dst_reg) <= res_max)
 		return;
 
-	/* The result is below the divisor and not above x, and x % 0 = x */
-	reg_set_urange64(dst_reg, 0, min(reg_umax(dst_reg), src_min ? src_max - 1 : U64_MAX));
+	reg_set_urange64(dst_reg, 0, min(reg_umax(dst_reg), res_max));
 
 	/* Reset other ranges/tnum to unbounded/unknown. */
 	reset_reg32_and_tnum(dst_reg);
@@ -17464,16 +17231,16 @@ static void scalar_min_max_rsh(struct bpf_reg_state *dst_reg,
 static void scalar32_min_max_arsh(struct bpf_reg_state *dst_reg,
 				  struct bpf_reg_state *src_reg)
 {
-	u32 umin_val = reg_u32_min(src_reg), umax_val = reg_u32_max(src_reg);
-	s32 smin = reg_s32_min(dst_reg), smax = reg_s32_max(dst_reg);
+	u64 umin_val = reg_u32_min(src_reg);
 
-	/*
-	 * A larger count brings the result closer to 0, or to -1.
+	/* Upon reaching here, src_known is true and
+	 * umax_val is equal to umin_val.
 	 * Blow away the dst_reg umin_value/umax_value and rely on
 	 * dst_reg var_off to refine the result.
 	 */
-	reg_set_srange32(dst_reg, smin >> (smin < 0 ? umin_val : umax_val),
-			 smax >> (smax < 0 ? umax_val : umin_val));
+	reg_set_srange32(dst_reg,
+			 (u32)(((s32)reg_s32_min(dst_reg)) >> umin_val),
+			 (u32)(((s32)reg_s32_max(dst_reg)) >> umin_val));
 
 	dst_reg->var_off = tnum_arshift(tnum_subreg(dst_reg->var_off), umin_val, 32);
 
@@ -17484,12 +17251,13 @@ static void scalar32_min_max_arsh(struct bpf_reg_state *dst_reg,
 static void scalar_min_max_arsh(struct bpf_reg_state *dst_reg,
 				struct bpf_reg_state *src_reg)
 {
-	u64 umin_val = reg_umin(src_reg), umax_val = reg_umax(src_reg);
-	s64 smin = reg_smin(dst_reg), smax = reg_smax(dst_reg);
+	u64 umin_val = reg_umin(src_reg);
 
-	/* A larger count brings the result closer to 0, or to -1 */
-	reg_set_srange64(dst_reg, smin >> (smin < 0 ? umin_val : umax_val),
-			 smax >> (smax < 0 ? umax_val : umin_val));
+	/* Upon reaching here, src_known is true and umax_val is equal
+	 * to umin_val.
+	 */
+	reg_set_srange64(dst_reg, reg_smin(dst_reg) >> umin_val,
+			 reg_smax(dst_reg) >> umin_val);
 
 	dst_reg->var_off = tnum_arshift(dst_reg->var_off, umin_val, 64);
 
@@ -17580,19 +17348,22 @@ static bool is_safe_to_compute_dst_reg_range(struct bpf_insn *insn,
 	case BPF_END:
 		return true;
 
-	/* The range of a signed division or modulo is computed for a constant divisor only */
+	/*
+	 * Division and modulo operators range is only safe to compute when the
+	 * divisor is a constant.
+	 */
 	case BPF_DIV:
 	case BPF_MOD:
-		return src_is_const || !insn->off;
+		return src_is_const;
 
-	/*
-	 * Shifts greater than 31 or 63 are undefined. This includes shifts by
-	 * a negative number.
+	/* Shift operators range is only computable if shift dimension operand
+	 * is a constant. Shifts greater than 31 or 63 are undefined. This
+	 * includes shifts by a negative number.
 	 */
 	case BPF_LSH:
 	case BPF_RSH:
 	case BPF_ARSH:
-		return reg_umax(src_reg) < insn_bitness;
+		return (src_is_const && reg_umax(src_reg) < insn_bitness);
 	default:
 		return false;
 	}
@@ -17661,11 +17432,6 @@ static int adjust_scalar_min_max_vals(struct bpf_verifier_env *env,
 			return sanitize_err(env, insn, ret);
 	}
 
-	/* The count of a shift is a range: a bit of dst_reg can end up in more than one place */
-	if ((opcode == BPF_LSH || opcode == BPF_RSH || opcode == BPF_ARSH) &&
-	    reg_umin(&src_reg) != reg_umax(&src_reg))
-		dst_reg->var_off = tnum_unknown;
-
 	/* Calculate sign/unsigned bounds and tnum for alu32 and alu64 bit ops.
 	 * There are two classes of instructions: The first class we track both
 	 * alu32 and alu64 sign/unsigned bounds independently this provides the
@@ -17702,25 +17468,6 @@ static int adjust_scalar_min_max_vals(struct bpf_verifier_env *env,
 		reg_step_reset(dst_reg);
 		break;
 	case BPF_MUL:
-		/*
-		 * Range analysis for UHMUL/SHMUL is not implemented yet.
-		 * Compute an exact result only when both operands are constants.
-		 * Ordinary low-half MUL continues to use the analysis below.
-		 */
-		if (bpf_insn_is_hmul(insn) &&
-		    (!is_reg_const(dst_reg, false) ||
-		     !is_reg_const(&src_reg, false))) {
-			__mark_reg_unknown(env, dst_reg);
-			break;
-		}
-		if (!alu32 && insn->off == BPF_UHMUL) {
-			scalar_min_max_uhmul(dst_reg, &src_reg);
-			break;
-		}
-		if (!alu32 && insn->off == BPF_SHMUL) {
-			scalar_min_max_shmul(dst_reg, &src_reg);
-			break;
-		}
 		scalar_step_mul(dst_reg, &src_reg);
 		dst_reg->var_off = tnum_mul(dst_reg->var_off, src_reg.var_off);
 		scalar32_min_max_mul(dst_reg, &src_reg);
@@ -17728,7 +17475,7 @@ static int adjust_scalar_min_max_vals(struct bpf_verifier_env *env,
 		break;
 	case BPF_DIV:
 		/* BPF div specification: x / 0 = 0 */
-		if ((alu32 && reg_u32_max(&src_reg) == 0) || (!alu32 && reg_umax(&src_reg) == 0)) {
+		if ((alu32 && reg_u32_min(&src_reg) == 0) || (!alu32 && reg_umin(&src_reg) == 0)) {
 			___mark_reg_known(dst_reg, 0);
 			break;
 		}
@@ -17746,7 +17493,7 @@ static int adjust_scalar_min_max_vals(struct bpf_verifier_env *env,
 		break;
 	case BPF_MOD:
 		/* BPF mod specification: x % 0 = x */
-		if ((alu32 && reg_u32_max(&src_reg) == 0) || (!alu32 && reg_umax(&src_reg) == 0))
+		if ((alu32 && reg_u32_min(&src_reg) == 0) || (!alu32 && reg_umin(&src_reg) == 0))
 			break;
 		if (alu32)
 			if (off == 1)
@@ -17855,11 +17602,6 @@ static int adjust_reg_min_max_vals(struct bpf_verifier_env *env,
 
 	/* Case where at least one operand is an arena. */
 	if (dst_reg->type == PTR_TO_ARENA || (src_reg && src_reg->type == PTR_TO_ARENA)) {
-
-		if (bpf_insn_is_hmul(insn)) {
-			verbose(env, "UHMUL/SHMUL with arena pointers are not supported\n");
-			return -EOPNOTSUPP;
-		}
 
 		if (dst_reg->type != PTR_TO_ARENA)
 			*dst_reg = *src_reg;
@@ -18147,51 +17889,6 @@ int bpf_reg_union(struct bpf_verifier_env *env, struct bpf_reg_state *acc,
 	return reg_bounds_sanity_check(env, acc, "bpf_reg_union");
 }
 
-/*
- * There are no address spaces in Rust. The compiler doesn't cast a pointer that
- * comes from the kernel. But it can't always tell, and then it casts the pointer
- * to as(0) before the access, like an address in arena.
- * A pointer that the verifier knows is in as(0) already, so the cast is a move.
- * arg_track_xfer() does the same for pointers to stack.
- */
-static bool is_cast_mov(const struct bpf_insn *insn, const struct bpf_reg_state *src_reg)
-{
-	/* cast from as(1) to as(0) */
-	if (insn->imm != 1)
-		return false;
-
-	switch (base_type(src_reg->type)) {
-	case SCALAR_VALUE:
-	case PTR_TO_ARENA:
-		return false;
-	default:
-		return true;
-	}
-}
-
-static int check_addr_space_cast(struct bpf_verifier_env *env, struct bpf_insn *insn,
-				 struct bpf_reg_state *dst_reg, struct bpf_reg_state *src_reg)
-{
-	struct bpf_insn_aux_data *aux = cur_aux(env);
-
-	if (is_cast_mov(insn, src_reg)) {
-		aux->cast_mov = true;
-		*dst_reg = *src_reg;
-	} else {
-		aux->cast_arena = true;
-		mark_reg_unknown(env, cur_regs(env), insn->dst_reg);
-		if (insn->imm == 1) /* cast from as(1) to as(0) */
-			dst_reg->type = PTR_TO_ARENA;
-	}
-
-	/* it's either wX = wY or rX = rY, see bpf_lower_cast_mov() */
-	if (aux->cast_mov && aux->cast_arena) {
-		verbose(env, "same addr_space_cast insn cannot be used with a number and with a pointer\n");
-		return -EINVAL;
-	}
-	return 0;
-}
-
 /* check validity of 32-bit and 64-bit arithmetic operations */
 static int check_alu_op(struct bpf_verifier_env *env, struct bpf_insn *insn)
 {
@@ -18253,9 +17950,9 @@ static int check_alu_op(struct bpf_verifier_env *env, struct bpf_insn *insn)
 			if (BPF_CLASS(insn->code) == BPF_ALU64) {
 				if (insn->imm) {
 					/* off == BPF_ADDR_SPACE_CAST */
-					err = check_addr_space_cast(env, insn, dst_reg, src_reg);
-					if (err)
-						return err;
+					mark_reg_unknown(env, regs, insn->dst_reg);
+					if (insn->imm == 1) /* cast from as(1) to as(0) */
+						dst_reg->type = PTR_TO_ARENA;
 				} else if (insn->off == 0) {
 					/* case: R1 = R2
 					 * copy register state to dest reg
@@ -20044,7 +19741,6 @@ bool bpf_get_call_summary(struct bpf_verifier_env *env, struct bpf_insn *call,
 				bpf_jit_inlines_helper_call(call->imm));
 		cs->is_void = fn->ret_type == RET_VOID;
 		cs->arg_slot_cnt = 0;
-		cs->implicit_slot_cnt = 0;
 		for (i = 0; i < ARRAY_SIZE(fn->arg_type); ++i) {
 			if (fn->arg_type[i] == ARG_UNUSED)
 				break;
@@ -20061,14 +19757,6 @@ bool bpf_get_call_summary(struct bpf_verifier_env *env, struct bpf_insn *call,
 			/* error would be reported later */
 			return false;
 		cs->arg_slot_cnt = btf_proto_slots(meta.btf, meta.func_proto);
-		cs->implicit_slot_cnt = 0;
-		if (meta.kfunc_flags & KF_IMPLICIT_ARGS) {
-			const struct btf_type *func = btf_type_by_id(meta.btf, meta.func_id);
-
-			/* the prototype without implicit args, see is_kfunc_arg_implicit() */
-			cs->implicit_slot_cnt = cs->arg_slot_cnt -
-				btf_proto_slots(meta.btf, btf_type_by_id(meta.btf, func->type));
-		}
 		cs->fastcall = meta.kfunc_flags & KF_FASTCALL;
 		cs->is_void = btf_type_is_void(btf_type_by_id(meta.btf, meta.func_proto->type));
 		return true;
@@ -20619,11 +20307,6 @@ static int check_indirect_jump(struct bpf_verifier_env *env, struct bpf_insn *in
 	if (env->gotox_tmp_buf->items[0] < subprog_start)
 		return reject_gotox_out_of_subprog(env, env->gotox_tmp_buf->items[0],
 						   subprog_start, subprog_end);
-	/* it's the first insn of a function, it would be executed again */
-	if (is_arena_sp_adj(&env->prog->insnsi[env->gotox_tmp_buf->items[0]])) {
-		verbose(env, "jump to the insn that changes R%d\n", BPF_REG_ARENA_SP);
-		return -EINVAL;
-	}
 	if (env->gotox_tmp_buf->items[n - 1] >= subprog_end)
 		return reject_gotox_out_of_subprog(env, env->gotox_tmp_buf->items[n - 1],
 						   subprog_start, subprog_end);
@@ -20640,63 +20323,11 @@ static int check_indirect_jump(struct bpf_verifier_env *env, struct bpf_insn *in
 	return INSN_IDX_UPDATED;
 }
 
-/*
- * r12 is not in regs[]. Only the kernel and 'r12 += N' change it, so it points
- * to the stack in arena. What is there is not tracked, like the rest of arena.
- */
-static int check_arena_sp_insn(struct bpf_verifier_env *env, struct bpf_insn *insn)
-{
-	struct bpf_reg_state arena = { .type = PTR_TO_ARENA };
-	argno_t argno = argno_from_reg(BPF_REG_ARENA_SP);
-	struct bpf_reg_state *regs = cur_regs(env);
-	int size = BPF_SIZE(insn->code);
-	int err, value_regno = -1;
-
-	if (is_arena_sp_adj(insn))
-		return 0;
-
-	/* the address of the frame is a number */
-	if (is_arena_sp_mov(insn)) {
-		bpf_diag_mod_begin(env, &regs[insn->dst_reg], NULL, BPF_DIAG_MOD_WRITE);
-		err = check_reg_arg(env, insn->dst_reg, DST_OP);
-		if (!err)
-			bpf_diag_mod_end(env);
-		return err;
-	}
-
-	if (is_arena_sp_ldx(insn)) {
-		err = check_reg_arg(env, insn->dst_reg, DST_OP_NO_MARK);
-		if (err)
-			return err;
-		bpf_diag_mod_begin(env, &regs[insn->dst_reg], NULL, BPF_DIAG_MOD_WRITE);
-		err = check_mem_access(env, env->insn_idx, &arena, argno, insn->off, size,
-				       BPF_READ, insn->dst_reg, false,
-				       BPF_MODE(insn->code) == BPF_MEMSX);
-		err = err ?: save_aux_ptr_type(env, PTR_TO_ARENA, false);
-		if (!err)
-			bpf_diag_mod_end(env);
-		return err;
-	}
-
-	if (BPF_CLASS(insn->code) == BPF_STX) {
-		err = check_reg_arg(env, insn->src_reg, SRC_OP);
-		if (err)
-			return err;
-		value_regno = insn->src_reg;
-	}
-	err = check_mem_access(env, env->insn_idx, &arena, argno, insn->off, size,
-			       BPF_WRITE, value_regno, false, false);
-	return err ?: save_aux_ptr_type(env, PTR_TO_ARENA, false);
-}
-
 static int do_check_insn(struct bpf_verifier_env *env, bool *do_print_state)
 {
 	int err;
 	struct bpf_insn *insn = &env->prog->insnsi[env->insn_idx];
 	u8 class = BPF_CLASS(insn->code);
-
-	if (is_arena_sp_insn(insn))
-		return check_arena_sp_insn(env, insn);
 
 	switch (class) {
 	case BPF_ALU:
@@ -20924,7 +20555,8 @@ static int maybe_clamp_scev_regs(struct bpf_verifier_env *env)
 	if (!entry->terminates)
 		return 0;
 
-	return bpf_clamp_scev_regs(env, frame, env->insn_idx, entry);
+	return bpf_clamp_scev_regs(env, frame, env->insn_idx, entry->entry_state,
+				   entry->max_header_count);
 }
 
 static int handle_loop_entry_exit(struct bpf_verifier_env *env)
@@ -20970,8 +20602,6 @@ static int handle_loop_entry_exit(struct bpf_verifier_env *env)
 
 	entry->min_header_count = iters.min_header_count;
 	entry->max_header_count = iters.max_header_count;
-	entry->iv_reg = iters.iv_reg;
-	entry->iv_range = iters.iv_range;
 	entry->entry_state = cur->parent;
 	entry->terminates = true;
 	err = bpf_widen_scev_regs(env, cur, cur->parent, &iters);
@@ -21680,31 +21310,6 @@ static int fd_array_get_map_idx(struct bpf_verifier_env *env, u32 idx)
 	return -EPROTO;
 }
 
-static bool is_valid_alu_variant(const struct bpf_insn *insn)
-{
-	switch (BPF_OP(insn->code)) {
-	case BPF_MUL:
-		return insn->off == 0 || bpf_insn_is_hmul(insn);
-	case BPF_DIV:
-	case BPF_MOD:
-		/* off == 1 selects SDIV/SMOD. */
-		return insn->off == 0 || insn->off == 1;
-	default:
-		return insn->off == 0;
-	}
-}
-
-/* The interpreter supports uhmul and shmul. JITs opt in. */
-static int check_hmul_jit(struct bpf_verifier_env *env)
-{
-	if (bpf_prog_is_offloaded(env->prog->aux) ||
-	    (env->prog->jit_requested && !bpf_jit_supports_hmul())) {
-		verbose(env, "JIT doesn't support uhmul and shmul\n");
-		return -EOPNOTSUPP;
-	}
-	return 0;
-}
-
 static int check_alu_fields(struct bpf_verifier_env *env, struct bpf_insn *insn)
 {
 	u8 class = BPF_CLASS(insn->code);
@@ -21760,14 +21365,18 @@ static int check_alu_fields(struct bpf_verifier_env *env, struct bpf_insn *insn)
 	case BPF_MUL:
 	case BPF_DIV:
 	case BPF_MOD:
-		if (!is_valid_alu_variant(insn) ||
-		    (BPF_SRC(insn->code) == BPF_X && insn->imm != 0) ||
-		    (BPF_SRC(insn->code) == BPF_K && insn->src_reg != BPF_REG_0)) {
+		if (BPF_SRC(insn->code) == BPF_X) {
+			if (insn->imm != 0 || (insn->off != 0 && insn->off != 1) ||
+			    (insn->off == 1 && opcode != BPF_MOD && opcode != BPF_DIV)) {
+				verbose(env, "BPF_ALU uses reserved fields\n");
+				return -EINVAL;
+			}
+		} else if (insn->src_reg != BPF_REG_0 ||
+			   (insn->off != 0 && insn->off != 1) ||
+			   (insn->off == 1 && opcode != BPF_MOD && opcode != BPF_DIV)) {
 			verbose(env, "BPF_ALU uses reserved fields\n");
 			return -EINVAL;
 		}
-		if (bpf_insn_is_hmul(insn))
-			return check_hmul_jit(env);
 		return 0;
 	default:
 		verbose(env, "invalid BPF_ALU opcode %x\n", opcode);
@@ -21893,86 +21502,6 @@ static int check_insn_fields(struct bpf_verifier_env *env, struct bpf_insn *insn
 	}
 }
 
-static bool jumps_to_arena_sp_adj(struct bpf_insn *insn)
-{
-	u8 class = BPF_CLASS(insn->code), op = BPF_OP(insn->code);
-
-	if (class != BPF_JMP && class != BPF_JMP32)
-		return false;
-	if (op == BPF_CALL || op == BPF_EXIT || insn->code == (BPF_JMP | BPF_JA | BPF_X))
-		return false;
-	return is_arena_sp_adj(insn + bpf_jmp_offset(insn) + 1);
-}
-
-/*
- * Find the insns with BPF_REG_ARENA_SP. The sizes of the frames are in the text
- * of the program.
- */
-static int check_arena_stack(struct bpf_verifier_env *env)
-{
-	struct bpf_subprog_info *sub = env->subprog_info;
-	struct bpf_insn *insn = env->prog->insnsi;
-	int i;
-
-	for (i = 0; i < env->prog->len; i++, insn++) {
-		if (i == (sub + 1)->start)
-			sub++;
-		/* it would be executed again */
-		if (jumps_to_arena_sp_adj(insn)) {
-			verbose(env, "jump to the insn that changes R%d\n", BPF_REG_ARENA_SP);
-			return -EINVAL;
-		}
-		if (!is_arena_sp_insn(insn))
-			continue;
-		sub->uses_arena_sp = true;
-		env->uses_arena_sp = true;
-		if (!is_arena_sp_adj(insn))
-			continue;
-		if (i != sub->start) {
-			verbose(env, "R%d can be changed by the first insn of a function only\n",
-				BPF_REG_ARENA_SP);
-			return -EINVAL;
-		}
-		if (insn->imm <= 0 || insn->imm % 16 || insn->imm > BPF_ARENA_STACK_MAX) {
-			verbose(env, "invalid size of the frame in the stack in arena %d\n",
-				insn->imm);
-			return -EINVAL;
-		}
-		sub->arena_stack_depth = insn->imm;
-	}
-	if (!env->uses_arena_sp)
-		return 0;
-
-	if (!env->prog->aux->arena) {
-		verbose(env, "R%d can only be used in a program that has an associated arena\n",
-			BPF_REG_ARENA_SP);
-		return -EINVAL;
-	}
-	if (!bpf_jit_supports_arena_stack() || !bpf_jit_supports_percpu_insn() ||
-	    bpf_prog_is_offloaded(env->prog->aux)) {
-		verbose(env, "JIT doesn't support R%d\n", BPF_REG_ARENA_SP);
-		return -EOPNOTSUPP;
-	}
-	/* bpf_insert_arena_stack() relies on r2-r5 being free when the program starts */
-	if (env->prog->type == BPF_PROG_TYPE_EXT) {
-		verbose(env, "R%d is not supported in extension programs\n", BPF_REG_ARENA_SP);
-		return -EINVAL;
-	}
-	/*
-	 * It ends the function when the offset is out of the packet. bpf_do_misc_fixups()
-	 * emits that exit, after bpf_insert_arena_stack(): the frame wouldn't be dropped
-	 * and the stack wouldn't be returned.
-	 */
-	for (i = 0; i < env->subprog_cnt; i++) {
-		if (!env->subprog_info[i].has_ld_abs)
-			continue;
-		verbose(env, "BPF_LD_[ABS|IND] is not allowed in programs that use R%d\n",
-			BPF_REG_ARENA_SP);
-		return -EINVAL;
-	}
-	return bpf_arena_stack_init(env->prog->aux->arena);
-}
-
 /*
  * Check that insns are sane and rewrite pseudo imm in ld_imm64 instructions:
  *
@@ -21993,13 +21522,11 @@ static int check_and_resolve_insns(struct bpf_verifier_env *env)
 
 	for (i = 0; i < insn_cnt; i++, insn++) {
 		if (insn->dst_reg >= MAX_BPF_REG &&
-		    !is_stack_arg_st(insn) && !is_stack_arg_stx(insn) &&
-		    !is_arena_sp_adj(insn) && !is_arena_sp_st(insn)) {
+		    !is_stack_arg_st(insn) && !is_stack_arg_stx(insn)) {
 			verbose(env, "R%d is invalid\n", insn->dst_reg);
 			return -EINVAL;
 		}
-		if (insn->src_reg >= MAX_BPF_REG && !is_stack_arg_ldx(insn) &&
-		    !is_arena_sp_mov(insn) && !is_arena_sp_ldx(insn)) {
+		if (insn->src_reg >= MAX_BPF_REG && !is_stack_arg_ldx(insn)) {
 			verbose(env, "R%d is invalid\n", insn->src_reg);
 			return -EINVAL;
 		}
@@ -22468,6 +21995,7 @@ static int do_check_common(struct bpf_verifier_env *env, int subprog,
 			    sub->args[0].arg_type != ARG_PTR_TO_CTX) {
 				env->prog->aux->func_info_aux[0].unreliable = true;
 				sub->arg_slot_cnt = 1;
+				sub->stack_arg_cnt = 0;
 			}
 		}
 
@@ -22747,12 +22275,6 @@ static int check_struct_ops_btf_id(struct bpf_verifier_env *env)
 		}
 	}
 
-	/* A run that gets no stack in arena is skipped. Nobody would release the argument. */
-	if (has_refcounted_arg && env->uses_arena_sp) {
-		verbose(env, "program with __ref argument cannot use R%d\n", BPF_REG_ARENA_SP);
-		return -EINVAL;
-	}
-
 	prog->aux->st_ops = st_ops;
 	prog->aux->attach_st_ops_member_off = member_off;
 
@@ -22994,6 +22516,33 @@ static int flatten_bpf_func_model(struct bpf_verifier_log *log, const char *tnam
 	return 0;
 }
 
+/*
+ * The verifier lets a static function use stack arguments counted from its
+ * BTF, even if that BTF turns out unreliable. A trampoline on the function is
+ * then given only MAX_BPF_FUNC_REG_ARGS u64 arguments and would lose the
+ * stack arguments, so such a function cannot be attached to.
+ */
+static int check_unreliable_func_args(struct bpf_verifier_log *log, struct btf *btf,
+				      const struct btf_type *func_proto, const char *tname)
+{
+	struct btf_func_model m;
+	u32 i, nslots = 0;
+
+	if (btf_distill_func_proto(NULL, btf, func_proto, tname, &m)) {
+		/* at least a slot for each argument */
+		nslots = btf_type_vlen(func_proto);
+	} else {
+		for (i = 0; i < m.nr_args; i++)
+			nslots += btf_func_model_arg_slots(&m, i);
+	}
+	if (nslots <= MAX_BPF_FUNC_REG_ARGS)
+		return 0;
+
+	bpf_log(log, "Cannot attach to static function %s: unreliable BTF and stack arguments\n",
+		tname);
+	return -EINVAL;
+}
+
 /* Functions may share a type id. The first of them is attached to. */
 static int find_tgt_subprog(const struct bpf_prog *tgt_prog, u32 btf_id)
 {
@@ -23139,12 +22688,6 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
 		 */
 		if (subprog == 0 && bpf_prog_has_arena_ctx_arg(tgt_prog)) {
 			bpf_log(log, "Cannot attach to a target with arena context arguments\n");
-			return -EOPNOTSUPP;
-		}
-		/* x86: the trampoline and the extension don't preserve BPF_REG_ARENA_SP */
-		if (subprog && aux->arena_stack_size) {
-			bpf_log(log, "Cannot attach to a subprog of a program that uses R%d\n",
-				BPF_REG_ARENA_SP);
 			return -EOPNOTSUPP;
 		}
 		if (aux->func && aux->func[subprog]->aux->exception_cb) {
@@ -23381,16 +22924,10 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
 			return -EINVAL;
 
 		if (tgt_prog && conservative) {
-			/*
-			 * The verifier lets a static function use the stack arguments that
-			 * its code loads, whatever its BTF says. The trampoline is given
-			 * MAX_BPF_FUNC_REG_ARGS u64 arguments and would lose them.
-			 */
-			if (tgt_prog->aux->func_info_aux[subprog].stack_args) {
-				bpf_log(log,
-					"Cannot attach to static function %s: unreliable BTF and stack arguments\n",
-					tname);
-				return -EINVAL;
+			if (subprog > 0) {
+				ret = check_unreliable_func_args(log, btf, t, tname);
+				if (ret)
+					return ret;
 			}
 			t = NULL;
 		}
@@ -23404,9 +22941,7 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
 				return ret;
 		}
 
-		/* The model for unreliable BTF has a u64. The function still returns R0:R2. */
-		if ((tgt_info->fmodel.ret_size > 8 ||
-		     (tgt_prog && tgt_prog->aux->func_info_aux[subprog].ret_reg_pair)) &&
+		if (tgt_info->fmodel.ret_size > 8 &&
 		    attach_uses_trampoline_retval(prog->expected_attach_type)) {
 			bpf_log(log,
 				"Attach to function %s with a >8 byte return value is not supported for this attach type\n",
@@ -24547,10 +24082,6 @@ int bpf_check(struct bpf_prog **prog, union bpf_attr *attr, bpfptr_t uattr,
 	if (ret < 0)
 		goto skip_full_check;
 
-	ret = check_arena_stack(env);
-	if (ret < 0)
-		goto skip_full_check;
-
 	/* Find pointers to functions in the read-only maps of the program. */
 	ret = resolve_func_ptrs(env);
 	if (ret < 0)
@@ -24665,9 +24196,6 @@ skip_full_check:
 	if (ret == 0)
 		ret = bpf_optimize_bpf_loop(env);
 
-	if (ret == 0)
-		bpf_lower_cast_mov(env);
-
 	if (is_priv) {
 		if (ret == 0)
 			bpf_opt_hard_wire_dead_code_branches(env);
@@ -24679,9 +24207,6 @@ skip_full_check:
 		if (ret == 0)
 			sanitize_dead_code(env);
 	}
-
-	if (ret == 0)
-		ret = bpf_insert_arena_stack(env);
 
 	if (ret == 0)
 		/* program is valid, convert *(u32*)(ctx + off) accesses */
@@ -24705,6 +24230,11 @@ skip_full_check:
 	env->verification_time = ktime_get_ns() - start_time;
 	print_verification_stats(env);
 	env->prog->aux->verified_insns = env->insn_processed;
+
+	/* preserve original error even if log finalization is successful */
+	err = bpf_log_attr_finalize(attr_log, &env->log);
+	if (err)
+		ret = err;
 
 	if (ret)
 		goto err_release_maps;
@@ -24756,14 +24286,6 @@ skip_full_check:
 	env->prog = __bpf_prog_select_runtime(env, env->prog, &ret);
 
 err_release_maps:
-	/*
-	 * Finalize the log after the runtime is selected, which blinds the
-	 * constants of a prog of one function and can log an error. Preserve
-	 * the original error even if log finalization is successful.
-	 */
-	err = bpf_log_attr_finalize(attr_log, &env->log);
-	if (err)
-		ret = err;
 	if (ret)
 		release_insn_arrays(env);
 	if (!env->prog->aux->used_maps)
@@ -24792,7 +24314,6 @@ err_free_env:
 	if (env->insn_aux_data)
 		bpf_clear_insn_aux_data(env, 0, env->insn_aux_data_len);
 	vfree(env->insn_aux_data);
-	bpf_patch_list_free(env);
 	kvfree(env->fd_array);
 	bpf_free_scev(env);
 	bpf_stack_liveness_free(env);

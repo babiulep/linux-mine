@@ -262,14 +262,6 @@ L:	linux-gpio@vger.kernel.org
 S:	Maintained
 F:	drivers/gpio/gpio-pcie-idio-24.c
 
-ACER ASPIRE 14 AI (A14-52M, A14-52MT) EC FAN DRIVER
-M:	Ethan Jimmy <duhxu0@gmail.com>
-L:	linux-hwmon@vger.kernel.org
-L:	linux-input@vger.kernel.org
-S:	Maintained
-F:	Documentation/hwmon/acer-aspire14-ec.rst
-F:	drivers/hwmon/acer-aspire14-ec.c
-
 ACER ASPIRE ONE TEMPERATURE AND FAN DRIVER
 M:	Peter Kaestle <peter@piie.net>
 L:	platform-driver-x86@vger.kernel.org
@@ -1057,7 +1049,6 @@ R:	Gal Pressman <gal.pressman@linux.dev>
 R:	Yossi Leybovich <sleybo@amazon.com>
 L:	linux-rdma@vger.kernel.org
 S:	Supported
-Q:	https://patchwork.kernel.org/project/linux-rdma/list/
 F:	drivers/infiniband/hw/efa/
 F:	include/uapi/rdma/efa-abi.h
 
@@ -2747,7 +2738,6 @@ F:	Documentation/devicetree/bindings/pinctrl/apple,pinctrl.yaml
 F:	Documentation/devicetree/bindings/power/apple*
 F:	Documentation/devicetree/bindings/power/reset/apple,smc-reboot.yaml
 F:	Documentation/devicetree/bindings/pwm/apple,s5l-fpwm.yaml
-F:	Documentation/devicetree/bindings/reset/apple,t8103-cio-reset.yaml
 F:	Documentation/devicetree/bindings/rtc/apple,smc-rtc.yaml
 F:	Documentation/devicetree/bindings/soc/apple/apple,t6000-pmgr-misc.yaml
 F:	Documentation/devicetree/bindings/spi/apple,spi.yaml
@@ -2778,7 +2768,6 @@ F:	drivers/pinctrl/pinctrl-apple-gpio.c
 F:	drivers/power/reset/macsmc-reboot.c
 F:	drivers/power/supply/macsmc-power.c
 F:	drivers/pwm/pwm-apple.c
-F:	drivers/reset/reset-apple-cio.c
 F:	drivers/rtc/rtc-macsmc.c
 F:	drivers/soc/apple/*
 F:	drivers/spi/spi-apple.c
@@ -5412,6 +5401,12 @@ L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
 F:	arch/arm/boot/dts/broadcom/bcm47189*
 F:	arch/arm/boot/dts/broadcom/bcm53573*
+
+BROADCOM BCM57765/BCM57785 MEMORYSTICK DRIVER
+M:	Ho Jie Feng <hjf3108@gmail.com>
+L:	linux-mmc@vger.kernel.org
+S:	Maintained
+F:	drivers/memstick/host/bcm577x5_ms.*
 
 BROADCOM BCM63XX/BCM33XX UDC DRIVER
 M:	Kevin Cernekee <cernekee@gmail.com>
@@ -11850,6 +11845,7 @@ M:	Dennis Dalessandro <dennis.dalessandro@cornelisnetworks.com>
 L:	linux-rdma@vger.kernel.org
 S:	Supported
 F:	drivers/infiniband/hw/hfi1
+F:	include/uapi/rdma/hfi
 
 HFS FILESYSTEM
 M:	Viacheslav Dubeyko <slava@dubeyko.com>
@@ -12175,6 +12171,7 @@ L:	linux-rdma@vger.kernel.org
 S:	Maintained
 F:	Documentation/devicetree/bindings/infiniband/hisilicon,hns-roce-v1.yaml
 F:	drivers/infiniband/hw/hns/
+F:	include/uapi/rdma/hns-abi.h
 
 HISILICON SAS Controller
 M:	Xingui Yang <yangxingui@huawei.com>
@@ -12441,6 +12438,8 @@ F:	include/linux/memory-failure.h
 F:	include/trace/events/memory-failure.h
 F:	mm/hwpoison-inject.c
 F:	mm/memory-failure.c
+F:	mm/memory-failure.h
+F:	tools/mm/memory-failure/
 F:	tools/testing/selftests/mm/memory-failure.c
 
 HYCON HY46XX TOUCHSCREEN SUPPORT
@@ -13141,14 +13140,14 @@ W:	https://www.infineon.com/part/TLV493D-A1B6
 F:	Documentation/devicetree/bindings/iio/magnetometer/infineon,tlv493d-a1b6.yaml
 F:	drivers/iio/magnetometer/tlv493d.c
 
-INFINIBAND SUBSYSTEM
+RDMA (INFINIBAND) SUBSYSTEM
 M:	Jason Gunthorpe <jgg@nvidia.com>
 M:	Leon Romanovsky <leonro@nvidia.com>
 L:	linux-rdma@vger.kernel.org
 S:	Supported
 W:	https://github.com/linux-rdma/rdma-core
 Q:	http://patchwork.kernel.org/project/linux-rdma/list/
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/rdma/rdma.git
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/rdma/rdma.git for-next
 F:	Documentation/devicetree/bindings/infiniband/
 F:	Documentation/infiniband/
 F:	drivers/infiniband/
@@ -14232,9 +14231,6 @@ M:	Sagi Grimberg <sagi@grimberg.me>
 M:	Max Gurtovoy <mgurtovoy@nvidia.com>
 L:	linux-rdma@vger.kernel.org
 S:	Supported
-W:	http://www.openfabrics.org
-W:	www.open-iscsi.org
-Q:	http://patchwork.kernel.org/project/linux-rdma/list/
 F:	drivers/infiniband/ulp/iser/
 
 ISCSI EXTENSIONS FOR RDMA (ISER) TARGET
@@ -14242,7 +14238,6 @@ M:	Sagi Grimberg <sagi@grimberg.me>
 L:	linux-rdma@vger.kernel.org
 L:	target-devel@vger.kernel.org
 S:	Supported
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/nab/target-pending.git master
 F:	drivers/infiniband/ulp/isert
 
 ISL28022 HARDWARE MONITORING DRIVER
@@ -17163,6 +17158,13 @@ M:	Roman Vivchar <rva333@protonmail.com>
 S:	Maintained
 F:	drivers/nvmem/mt6323-efuse.c
 
+MEDIATEK MT6397 PMIC AUXADC DRIVER
+M:	Ryan Brue <ryanbrue.dev@gmail.com>
+L:	linux-iio@vger.kernel.org
+S:	Maintained
+F:	drivers/iio/adc/mt6397-auxadc.c
+F:	include/dt-bindings/iio/adc/mediatek,mt6397-auxadc.h
+
 MEDIATEK MT6735 CLOCK & RESET DRIVERS
 M:	Yassine Oudjana <y.oudjana@protonmail.com>
 L:	linux-clk@vger.kernel.org
@@ -17414,7 +17416,6 @@ M:	Yishai Hadas <yishaih@nvidia.com>
 L:	linux-rdma@vger.kernel.org
 S:	Supported
 W:	https://www.nvidia.com/networking/
-Q:	http://patchwork.kernel.org/project/linux-rdma/list/
 F:	drivers/infiniband/hw/mlx4/
 F:	include/linux/mlx4/
 F:	include/uapi/rdma/mlx4-abi.h
@@ -17438,7 +17439,6 @@ M:	Leon Romanovsky <leonro@nvidia.com>
 L:	linux-rdma@vger.kernel.org
 S:	Supported
 W:	https://www.nvidia.com/networking/
-Q:	http://patchwork.kernel.org/project/linux-rdma/list/
 F:	drivers/infiniband/hw/mlx5/
 F:	include/linux/mlx5/
 F:	include/uapi/rdma/mlx5-abi.h
@@ -17531,6 +17531,7 @@ S:	Maintained
 F:	Documentation/mm/allocation-profiling.rst
 F:	include/linux/alloc_tag.h
 F:	include/linux/pgalloc_tag.h
+F:	include/trace/events/alloc_tag.h
 F:	include/uapi/linux/alloc_tag.h
 F:	mm/alloc_tag.c
 F:	tools/testing/selftests/alloc_tag/
@@ -17693,7 +17694,9 @@ F:	Documentation/admin-guide/mm/multigen_lru.rst
 F:	Documentation/mm/multigen_lru.rst
 F:	include/linux/mm_inline.h
 F:	include/linux/mmzone.h
+F:	mm/trace_vmscan.h
 F:	mm/vmscan.c
+F:	mm/vmscan.h
 F:	mm/workingset.c
 
 MEMORY MANAGEMENT - MIGRATION
@@ -17856,8 +17859,9 @@ R:	Shakeel Butt <shakeel.butt@linux.dev>
 R:	Lorenzo Stoakes <ljs@kernel.org>
 L:	linux-mm@kvack.org
 S:	Maintained
-F:	include/trace/events/vmscan.h
+F:	mm/trace_vmscan.h
 F:	mm/vmscan.c
+F:	mm/vmscan.h
 F:	mm/workingset.c
 
 MEMORY MANAGEMENT - RMAP (REVERSE MAPPING)
@@ -22143,6 +22147,7 @@ F:	drivers/pinctrl/airoha/pinctrl-airoha.c
 PIN CONTROLLER - AMD
 M:	Basavaraj Natikar <Basavaraj.Natikar@amd.com>
 M:	Shyam Sundar S K <Shyam-sundar.S-k@amd.com>
+R:	Mario Limonciello (AMD) <superm1@kernel.org>
 S:	Maintained
 F:	drivers/pinctrl/pinctrl-amd.c
 
@@ -22959,7 +22964,6 @@ N:	ath12k
 
 QUALCOMM ATHEROS ATH10K WIRELESS DRIVER
 M:	Jeff Johnson <jjohnson@kernel.org>
-M:	Loic Poulain <loic.poulain@oss.qualcomm.com>
 L:	linux-wireless@vger.kernel.org
 L:	ath10k@lists.infradead.org
 S:	Supported
@@ -23592,6 +23596,7 @@ M:	Dennis Dalessandro <dennis.dalessandro@cornelisnetworks.com>
 L:	linux-rdma@vger.kernel.org
 S:	Supported
 F:	drivers/infiniband/sw/rdmavt
+F:	include/uapi/rdma/rvt-abi.h
 
 RDS - RELIABLE DATAGRAM SOCKETS
 M:	Allison Henderson <achender@kernel.org>
@@ -25315,7 +25320,6 @@ SCSI RDMA PROTOCOL (SRP) INITIATOR
 M:	Bart Van Assche <bvanassche@acm.org>
 L:	linux-rdma@vger.kernel.org
 S:	Supported
-Q:	http://patchwork.kernel.org/project/linux-rdma/list/
 F:	drivers/infiniband/ulp/srp/
 F:	include/scsi/srp.h
 
@@ -25324,7 +25328,6 @@ M:	Bart Van Assche <bvanassche@acm.org>
 L:	linux-rdma@vger.kernel.org
 L:	target-devel@vger.kernel.org
 S:	Supported
-Q:	http://patchwork.kernel.org/project/linux-rdma/list/
 F:	drivers/infiniband/ulp/srpt/
 
 SCSI SG DRIVER
@@ -26503,6 +26506,7 @@ F:	include/dt-bindings/reset/spacemit,k3-resets.h
 
 SPANISH DOCUMENTATION
 M:	Carlos Bilbao <carlos.bilbao@kernel.org>
+R:	Avadhut Naik <avadhut.naik@amd.com>
 S:	Maintained
 F:	Documentation/translations/sp_SP/
 
@@ -26978,14 +26982,6 @@ L:	linux-gpio@vger.kernel.org
 S:	Maintained
 F:	Documentation/devicetree/bindings/pinctrl/starfive,jhb1*.yaml
 F:	drivers/pinctrl/starfive/pinctrl-starfive-jhb1*
-
-STARFIVE JHB100 PWM FAN DRIVER
-M:	Changhuang Liang <changhuang.liang@starfivetech.com>
-L:	linux-hwmon@vger.kernel.org
-S:	Supported
-F:	Documentation/devicetree/bindings/hwmon/starfive,jhb100-pwm-fan.yaml
-F:	Documentation/hwmon/starfive-pwm-fan.rst
-F:	drivers/hwmon/starfive-pwm-fan.c
 
 STATIC BRANCH/CALL
 M:	Peter Zijlstra <peterz@infradead.org>
@@ -27557,21 +27553,6 @@ S:	Maintained
 W:	https://linuxtv.org
 T:	git git://linuxtv.org/media.git
 F:	drivers/media/i2c/tda9840*
-
-TDK FS1412 AND FS1525 MICRO POL DRIVER
-M:	Abdurrahman Hussain <abdurrahman@nexthop.ai>
-L:	linux-hwmon@vger.kernel.org
-S:	Maintained
-F:	Documentation/hwmon/fs1412.rst
-F:	drivers/hwmon/pmbus/fs1412.c
-
-TDK FS1603 HARDWARE MONITOR DRIVER
-M:	Kevin Jia <kjia@nexthop.ai>
-L:	linux-hwmon@vger.kernel.org
-S:	Maintained
-F:	Documentation/devicetree/bindings/hwmon/tdk,fs1603.yaml
-F:	Documentation/hwmon/fs1603.rst
-F:	drivers/hwmon/fs1603.c
 
 TEA5761 TUNER DRIVER
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
@@ -28418,6 +28399,21 @@ M:	Herton Ronaldo Krzesinski <herton@canonical.com>
 L:	platform-driver-x86@vger.kernel.org
 S:	Maintained
 F:	drivers/platform/x86/topstar-laptop.c
+
+TORADEX BOARD SUPPORT
+M:	Francesco Dolcini <francesco.dolcini@toradex.com>
+L:	linux-bsp@toradex.com
+S:	Supported
+F:	arch/arm/boot/dts/nxp/imx/imx*-apalis*
+F:	arch/arm/boot/dts/nxp/imx/imx*-colibri*
+F:	arch/arm64/boot/dts/freescale/imx*-apalis*
+F:	arch/arm64/boot/dts/freescale/imx*-aquila*
+F:	arch/arm64/boot/dts/freescale/imx*-colibri*
+F:	arch/arm64/boot/dts/freescale/imx*-lino*
+F:	arch/arm64/boot/dts/freescale/imx*-toradex-*
+F:	arch/arm64/boot/dts/freescale/imx*-verdin*
+F:	arch/arm64/boot/dts/ti/k3-*-aquila*
+F:	arch/arm64/boot/dts/ti/k3-*-verdin*
 
 TORADEX EMBEDDED CONTROLLER DRIVER
 M:	Emanuele Ghidoli <ghidoliemanuele@gmail.com>
@@ -30065,10 +30061,10 @@ F:	arch/x86/kernel/cpu/vmware.c
 VMWARE PVRDMA DRIVER
 M:	Bryan Tan <bryan-bt.tan@broadcom.com>
 M:	Vishnu Dasa <vishnu.dasa@broadcom.com>
-R:	Broadcom internal kernel review list <bcm-kernel-feedback-list@broadcom.com>
 L:	linux-rdma@vger.kernel.org
 S:	Supported
 F:	drivers/infiniband/hw/vmw_pvrdma/
+F:	include/uapi/rdma/vmw_pvrdma-abi.h
 
 VMWARE PVSCSI DRIVER
 M:	Vishal Bhakta <vishal.bhakta@broadcom.com>

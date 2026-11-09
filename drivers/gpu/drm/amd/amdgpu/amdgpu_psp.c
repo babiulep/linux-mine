@@ -958,13 +958,9 @@ psp_cmd_submit_buf(struct psp_context *psp,
 				psp->cmd_resp_buf_mem->resp.status);
 		/* If any firmware (including CAP) load fails under SRIOV, it should
 		 * return failure to stop the VF from initializing.
-		 * A VCN firmware load failure must also stop initialization.
 		 * Also return failure in case of timeout
 		 */
-		if ((ucode &&
-		    (amdgpu_sriov_vf(psp->adev) ||
-		    ucode->ucode_id == AMDGPU_UCODE_ID_VCN)) ||
-		    !timeout) {
+		if ((ucode && amdgpu_sriov_vf(psp->adev)) || !timeout) {
 			ret = -EINVAL;
 			goto exit;
 		}
@@ -4157,6 +4153,8 @@ static int psp_hw_init(struct amdgpu_ip_block *ip_block)
 	int ret;
 	struct amdgpu_device *adev = ip_block->adev;
 
+	mutex_lock(&adev->firmware.mutex);
+
 	ret = amdgpu_ucode_init_bo(adev);
 	if (ret)
 		goto failed;
@@ -4167,10 +4165,12 @@ static int psp_hw_init(struct amdgpu_ip_block *ip_block)
 		goto failed;
 	}
 
+	mutex_unlock(&adev->firmware.mutex);
 	return 0;
 
 failed:
 	adev->firmware.load_type = AMDGPU_FW_LOAD_DIRECT;
+	mutex_unlock(&adev->firmware.mutex);
 	return -EINVAL;
 }
 
@@ -4278,6 +4278,8 @@ static int psp_resume(struct amdgpu_ip_block *ip_block)
 		}
 	}
 
+	mutex_lock(&adev->firmware.mutex);
+
 	ret = amdgpu_ucode_init_bo(adev);
 	if (ret)
 		goto failed;
@@ -4339,10 +4341,13 @@ static int psp_resume(struct amdgpu_ip_block *ip_block)
 				"SECUREDISPLAY: Failed to initialize SECUREDISPLAY\n");
 	}
 
+	mutex_unlock(&adev->firmware.mutex);
+
 	return 0;
 
 failed:
 	dev_err(adev->dev, "PSP resume failed\n");
+	mutex_unlock(&adev->firmware.mutex);
 	return ret;
 }
 

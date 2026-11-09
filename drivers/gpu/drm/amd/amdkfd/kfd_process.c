@@ -1019,6 +1019,8 @@ struct kfd_process *kfd_create_process(struct task_struct *thread)
 		if (ret)
 			pr_warn("Failed to create debugfs entry for the kfd_process, ret = %d\n",
 				ret);
+
+		init_waitqueue_head(&process->wait_irq_drain);
 	}
 out:
 	mutex_unlock(&kfd_processes_mutex);
@@ -1419,7 +1421,7 @@ void kfd_process_notifier_release_internal(struct kfd_process *p)
 	 * back on the MES list and, once proc_ctx_bo is freed, MES would fault
 	 * on the freed process context. Retiring the context last avoids this.
 	 */
-	kfd_dbg_trap_disable(p, false);
+	kfd_dbg_trap_disable(p);
 
 	if (atomic_read(&p->debugged_process_count) > 0) {
 		struct kfd_process *target;
@@ -1429,7 +1431,7 @@ void kfd_process_notifier_release_internal(struct kfd_process *p)
 		hash_for_each_rcu(kfd_processes_table, temp, target, kfd_processes) {
 			if (target->debugger_process && target->debugger_process == p) {
 				mutex_lock_nested(&target->mutex, 1);
-				kfd_dbg_trap_disable(target, true);
+				kfd_dbg_trap_disable(target);
 				mutex_unlock(&target->mutex);
 				if (atomic_read(&p->debugged_process_count) == 0)
 					break;
@@ -2313,14 +2315,17 @@ int kfd_resume_all_processes(void)
 	return ret;
 }
 
-void kfd_process_drain_interrupts(struct kfd_process_device *pdd)
+/* assumes caller holds process lock. */
+int kfd_process_drain_interrupts(struct kfd_process_device *pdd)
 {
 	uint32_t irq_drain_fence[8];
 	uint8_t node_id = 0;
-	int r;
+	int r = 0;
 
-	if (!KFD_IS_SOC15(pdd->dev) || !pdd->drm_priv)
-		return;
+	if (!KFD_IS_SOC15(pdd->dev))
+		return 0;
+
+	pdd->process->irq_drain_is_open = true;
 
 	memset(irq_drain_fence, 0, sizeof(irq_drain_fence));
 	irq_drain_fence[0] = (KFD_IRQ_FENCE_SOURCEID << 8) |
@@ -2339,12 +2344,32 @@ void kfd_process_drain_interrupts(struct kfd_process_device *pdd)
 	}
 
 	/* ensure stale irqs scheduled KFD interrupts and send drain fence. */
-	r = amdgpu_pasid_drain_irq(pdd->dev->adev, pdd->pasid, irq_drain_fence,
-				   AMDGPU_FENCE_JIFFIES_TIMEOUT);
+	if (amdgpu_amdkfd_send_close_event_drain_irq(pdd->dev->adev,
+						     irq_drain_fence)) {
+		pdd->process->irq_drain_is_open = false;
+		return 0;
+	}
+
+	r = wait_event_interruptible(pdd->process->wait_irq_drain,
+				     !READ_ONCE(pdd->process->irq_drain_is_open));
 	if (r)
-		dev_warn_ratelimited(pdd->dev->adev->dev,
-				     "irq drain on pasid 0x%x did not complete (%d)\n",
-				     pdd->pasid, r);
+		pdd->process->irq_drain_is_open = false;
+
+	return r;
+}
+
+void kfd_process_close_interrupt_drain(unsigned int pasid)
+{
+	struct kfd_process *p;
+
+	p = kfd_lookup_process_by_pasid(pasid, NULL);
+
+	if (!p)
+		return;
+
+	WRITE_ONCE(p->irq_drain_is_open, false);
+	wake_up_all(&p->wait_irq_drain);
+	kfd_unref_process(p);
 }
 
 struct send_exception_work_handler_workarea {

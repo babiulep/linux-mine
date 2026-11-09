@@ -1130,12 +1130,11 @@ static int nct6775_add_template_attr_group(struct device *dev, struct nct6775_da
 	if (count == 0)
 		return -EINVAL;
 
-	group = devm_kzalloc(dev, sizeof(*group), GFP_KERNEL);
+	group = devm_kzalloc_obj(dev, *group);
 	if (group == NULL)
 		return -ENOMEM;
 
-	attrs = devm_kcalloc(dev, repeat * count + 1, sizeof(*attrs),
-			     GFP_KERNEL);
+	attrs = devm_kzalloc_objs(dev, *attrs, repeat * count + 1);
 	if (attrs == NULL)
 		return -ENOMEM;
 
@@ -1611,7 +1610,7 @@ struct nct6775_data *nct6775_update_device(struct device *dev)
 
 	mutex_lock(&data->update_lock);
 
-	if (time_after64(get_jiffies_64(), data->last_updated + HZ + HZ / 2)
+	if (time_after(jiffies, data->last_updated + HZ + HZ / 2)
 	    || !data->valid) {
 		/* Fan clock dividers */
 		err = nct6775_update_fan_div_common(data);
@@ -1735,7 +1734,7 @@ struct nct6775_data *nct6775_update_device(struct device *dev)
 			data->beeps |= ((u64)beep) << (i << 3);
 		}
 
-		data->last_updated = get_jiffies_64();
+		data->last_updated = jiffies;
 		data->valid = true;
 	}
 out:
@@ -2114,7 +2113,7 @@ write_div:
 		if (err)
 			goto write_min;
 		/* Give the chip time to sample a new speed value */
-		data->last_updated = get_jiffies_64();
+		data->last_updated = jiffies;
 	}
 
 write_min:

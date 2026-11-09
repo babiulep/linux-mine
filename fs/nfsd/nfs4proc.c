@@ -703,16 +703,13 @@ nfsd4_open(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	status = nfsd4_process_open1(cstate, open, nn);
 	if (status == nfserr_replay_me) {
 		struct nfs4_replay *rp = &open->op_openowner->oo_owner.so_replay;
-
-		/* A cached error does not guarantee rp_openfh was set. */
-		if (rp->rp_status)
-			goto out;
 		fh_put(&cstate->current_fh);
 		fh_copy_shallow(&cstate->current_fh.fh_handle,
 				&rp->rp_openfh);
 		status = fh_verify(rqstp, &cstate->current_fh, 0, NFSD_MAY_NOP);
 		if (status)
-			nfsd4_cstate_clear_replay(cstate);
+			dprintk("nfsd4_open: replay failed"
+				" restoring previous filehandle\n");
 		else
 			status = nfserr_replay_me;
 	}
@@ -1612,7 +1609,6 @@ void nfsd4_async_copy_reaper(struct nfsd_net *nn)
 			if (test_bit(NFSD4_COPY_F_OFFLOAD_DONE,
 				     &copy->cp_copy.cp_flags)) {
 				if (!--copy->cp_ttl) {
-					nfsd4_get_client(clp);
 					list_del_init(&copy->copies);
 					list_add(&copy->copies, &reaplist);
 				}
@@ -1623,14 +1619,10 @@ void nfsd4_async_copy_reaper(struct nfsd_net *nn)
 	spin_unlock(&nn->client_lock);
 
 	while (!list_empty(&reaplist)) {
-		struct nfs4_client *clp;
-
 		copy = list_first_entry(&reaplist, struct nfsd4_async_copy,
 					copies);
-		clp = copy->cp_stid.sc_client;
 		list_del_init(&copy->copies);
 		cleanup_async_copy(copy);
-		nfsd4_put_client(clp);
 	}
 }
 
@@ -1712,7 +1704,7 @@ static bool nfsd4_copy_on_sb(const struct nfsd4_copy *copy,
  * @net: net namespace containing the copy operations
  * @sb: targeted superblock
  *
- * Context: Caller must hold nn->nfsd_mutex with NFSD_NET_UP set.  Outside
+ * Context: Caller must hold nfsd_mutex with NFSD_NET_UP set.  Outside
  *          that window nn->conf_id_hashtbl is unallocated or freed,
  *          so the walk would dereference a NULL or dangling pointer.
  */
@@ -1724,7 +1716,7 @@ void nfsd4_cancel_copy_by_sb(struct net *net, struct super_block *sb)
 	unsigned int idhashval;
 	LIST_HEAD(to_cancel);
 
-	lockdep_assert_held(&nn->nfsd_mutex);
+	lockdep_assert_held(&nfsd_mutex);
 	spin_lock(&nn->client_lock);
 	for (idhashval = 0; idhashval < CLIENT_HASH_SIZE; idhashval++) {
 		struct list_head *head = &nn->conf_id_hashtbl[idhashval];
@@ -4302,10 +4294,9 @@ bool nfsd4_spo_must_allow(struct svc_rqst *rqstp)
 	opiter = resp->opcnt;
 	while (opiter < argp->opcnt) {
 		this = &argp->ops[opiter++];
-		if (this->opnum <= LAST_NFS4_OP &&
-		    test_bit(this->opnum, allow->u.longs) &&
-		    cstate->clp->cl_mach_cred &&
-		    nfsd4_mach_creds_match(cstate->clp, rqstp)) {
+		if (test_bit(this->opnum, allow->u.longs) &&
+			cstate->clp->cl_mach_cred &&
+			nfsd4_mach_creds_match(cstate->clp, rqstp)) {
 			cstate->spo_must_allowed = true;
 			return true;
 		}

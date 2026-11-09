@@ -12,12 +12,11 @@
 #include <linux/unaligned.h>
 #include <linux/hid.h>
 #include <linux/hwmon.h>
-#include <linux/ktime.h>
+#include <linux/jiffies.h>
 #include <linux/module.h>
-#include <linux/spinlock.h>
 
 #define STATUS_REPORT_ID	0x04
-#define STATUS_VALIDITY		(2 * MSEC_PER_SEC) /* equivalent to 4 missed updates */
+#define STATUS_VALIDITY		2 /* seconds; equivalent to 4 missed updates */
 
 static const char *const kraken2_temp_label[] = {
 	"Coolant",
@@ -31,24 +30,18 @@ static const char *const kraken2_fan_label[] = {
 struct kraken2_priv_data {
 	struct hid_device *hid_dev;
 	struct device *hwmon_dev;
-	spinlock_t lock; /* protects sensor values and updated */
 	s32 temp_input[1];
 	u16 fan_input[2];
-	ktime_t updated;
+	unsigned long updated; /* jiffies */
 };
 
 static int kraken2_read(struct device *dev, enum hwmon_sensor_types type,
 			u32 attr, int channel, long *val)
 {
 	struct kraken2_priv_data *priv = dev_get_drvdata(dev);
-	int ret = 0;
 
-	spin_lock_irq(&priv->lock);
-
-	if (ktime_after(ktime_get(), ktime_add_ms(priv->updated, STATUS_VALIDITY))) {
-		ret = -ENODATA;
-		goto unlock;
-	}
+	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ))
+		return -ENODATA;
 
 	switch (type) {
 	case hwmon_temp:
@@ -58,13 +51,10 @@ static int kraken2_read(struct device *dev, enum hwmon_sensor_types type,
 		*val = priv->fan_input[channel];
 		break;
 	default:
-		ret = -EOPNOTSUPP; /* unreachable */
-		break;
+		return -EOPNOTSUPP; /* unreachable */
 	}
 
-unlock:
-	spin_unlock_irq(&priv->lock);
-	return ret;
+	return 0;
 }
 
 static int kraken2_read_string(struct device *dev, enum hwmon_sensor_types type,
@@ -107,14 +97,11 @@ static int kraken2_raw_event(struct hid_device *hdev,
 			     struct hid_report *report, u8 *data, int size)
 {
 	struct kraken2_priv_data *priv;
-	unsigned long flags;
 
 	if (size < 7 || report->id != STATUS_REPORT_ID)
 		return 0;
 
 	priv = hid_get_drvdata(hdev);
-
-	spin_lock_irqsave(&priv->lock, flags);
 
 	/*
 	 * The fractional byte of the coolant temperature has been observed to
@@ -130,9 +117,7 @@ static int kraken2_raw_event(struct hid_device *hdev,
 	priv->fan_input[0] = get_unaligned_be16(data + 3);
 	priv->fan_input[1] = get_unaligned_be16(data + 5);
 
-	priv->updated = ktime_get();
-
-	spin_unlock_irqrestore(&priv->lock, flags);
+	priv->updated = jiffies;
 
 	return 0;
 }
@@ -143,21 +128,19 @@ static int kraken2_probe(struct hid_device *hdev,
 	struct kraken2_priv_data *priv;
 	int ret;
 
-	priv = devm_kzalloc(&hdev->dev, sizeof(*priv), GFP_KERNEL);
+	priv = devm_kzalloc_obj(&hdev->dev, *priv);
 	if (!priv)
 		return -ENOMEM;
 
 	priv->hid_dev = hdev;
 	hid_set_drvdata(hdev, priv);
 
-	spin_lock_init(&priv->lock);
-
 	/*
-	 * Initialize ->updated to STATUS_VALIDITY in the past, making
+	 * Initialize ->updated to STATUS_VALIDITY seconds in the past, making
 	 * the initial empty data invalid for kraken2_read without the need for
 	 * a special case there.
 	 */
-	priv->updated = ktime_sub_ms(ktime_get(), STATUS_VALIDITY + 1);
+	priv->updated = jiffies - STATUS_VALIDITY * HZ;
 
 	ret = hid_parse(hdev);
 	if (ret) {

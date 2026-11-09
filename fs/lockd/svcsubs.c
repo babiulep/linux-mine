@@ -186,10 +186,9 @@ nlm_lookup_file(struct svc_rqst *rqstp, struct nlm_file **result,
 	hlist_add_head(&file->f_list, &nlm_files[hash]);
 
 found:
-	dprintk("lockd: found file %p (count %d)\n", file,
-		atomic_read(&file->f_count));
+	dprintk("lockd: found file %p (count %d)\n", file, file->f_count);
 	*result = file;
-	atomic_inc(&file->f_count);
+	file->f_count++;
 
 out_unlock:
 	mutex_unlock(&nlm_file_mutex);
@@ -334,8 +333,7 @@ nlm_file_inuse(struct nlm_file *file)
 	struct file_lock *fl;
 	struct file_lock_context *flctx = locks_inode_context(inode);
 
-	if (atomic_read(&file->f_count) || !list_empty(&file->f_blocks) ||
-	    file->f_shares)
+	if (file->f_count || !list_empty(&file->f_blocks) || file->f_shares)
 		return 1;
 
 	if (flctx && !list_empty_careful(&flctx->flc_posix)) {
@@ -373,7 +371,7 @@ nlm_traverse_files(void *data, nlm_host_match_fn_t match,
 		file = hlist_entry_safe(nlm_files[i].first,
 					struct nlm_file, f_list);
 		if (file)
-			atomic_inc(&file->f_count);
+			file->f_count++;
 		while (file) {
 			/*
 			 * Pin the next neighbour before we drop the mutex
@@ -386,7 +384,7 @@ nlm_traverse_files(void *data, nlm_host_match_fn_t match,
 			next = hlist_entry_safe(file->f_list.next,
 						struct nlm_file, f_list);
 			if (next)
-				atomic_inc(&next->f_count);
+				next->f_count++;
 
 			if (!is_failover_file || is_failover_file(data, file)) {
 				mutex_unlock(&nlm_file_mutex);
@@ -397,7 +395,7 @@ nlm_traverse_files(void *data, nlm_host_match_fn_t match,
 				mutex_lock(&nlm_file_mutex);
 			}
 
-			atomic_dec(&file->f_count);
+			file->f_count--;
 			nlm_file_release(file);
 			file = next;
 		}
@@ -419,13 +417,13 @@ void
 nlm_release_file(struct nlm_file *file)
 {
 	dprintk("lockd: nlm_release_file(%p, ct = %d)\n",
-				file, atomic_read(&file->f_count));
+				file, file->f_count);
 
 	/* Lock file table */
 	mutex_lock(&nlm_file_mutex);
 
 	/* If there are no more locks etc, delete the file */
-	if (atomic_dec_and_test(&file->f_count) && !nlm_file_inuse(file))
+	if (--file->f_count == 0 && !nlm_file_inuse(file))
 		nlm_delete_file(file);
 
 	mutex_unlock(&nlm_file_mutex);

@@ -273,15 +273,9 @@ static int scmi_imx_misc_ctrl_get(const struct scmi_protocol_handle *ph,
 {
 	struct scmi_imx_misc_ctrl_get_out *out;
 	struct scmi_xfer *t;
-	u32 num_values, max_values;
 	int ret, i;
 	int max_msg_size = ph->hops->get_max_msg_size(ph);
 	int max_num = (max_msg_size - sizeof(*out)) / sizeof(__le32);
-
-	if (!num || !val || !*num)
-		return -EINVAL;
-
-	max_values = *num;
 
 	ret = scmi_imx_misc_ctrl_validate_id(ph, ctrl_id);
 	if (ret)
@@ -296,18 +290,16 @@ static int scmi_imx_misc_ctrl_get(const struct scmi_protocol_handle *ph,
 	ret = ph->xops->do_xfer(ph, t);
 	if (!ret) {
 		out = t->rx.buf;
-		num_values = le32_to_cpu(out->num);
+		*num = le32_to_cpu(out->num);
 
-		if (num_values > max_values || num_values >= max_num ||
-		    num_values * sizeof(__le32) > t->rx.len - sizeof(__le32)) {
+		if (*num >= max_num ||
+		    *num * sizeof(__le32) > t->rx.len - sizeof(__le32)) {
 			ph->xops->xfer_put(ph, t);
 			return -EINVAL;
 		}
 
-		for (i = 0; i < num_values; i++)
+		for (i = 0; i < *num; i++)
 			val[i] = le32_to_cpu(out->val[i]);
-
-		*num = num_values;
 	}
 
 	ph->xops->xfer_put(ph, t);
@@ -446,7 +438,7 @@ static int iter_misc_syslog_update_state(struct scmi_iterator_state *st,
 
 	st->num_returned = RETURNED(r->numlogflags);
 	st->num_remaining = REMAINING(r->numlogflags);
-	*p->size = st->desc_index + st->num_returned;
+	*p->size = st->num_returned + st->num_remaining;
 
 	return 0;
 }
@@ -561,7 +553,7 @@ static int scmi_imx_misc_protocol_init(const struct scmi_protocol_handle *ph)
 	dev_info(ph->dev, "NXP SM MISC Version %d.%d\n",
 		 PROTOCOL_REV_MAJOR(ph->version), PROTOCOL_REV_MINOR(ph->version));
 
-	minfo = devm_kzalloc(ph->dev, sizeof(*minfo), GFP_KERNEL);
+	minfo = devm_kzalloc_obj(ph->dev, *minfo);
 	if (!minfo)
 		return -ENOMEM;
 

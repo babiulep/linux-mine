@@ -2136,6 +2136,8 @@ static const struct ath10k_hif_ops ath10k_sdio_hif_ops = {
 #endif
 };
 
+#ifdef CONFIG_PM_SLEEP
+
 /* Empty handlers so that mmc subsystem doesn't remove us entirely during
  * suspend. We instead follow cfg80211 suspend/resume handlers.
  */
@@ -2170,8 +2172,16 @@ static int ath10k_sdio_pm_resume(struct device *device)
 	return 0;
 }
 
-static DEFINE_SIMPLE_DEV_PM_OPS(ath10k_sdio_pm_ops, ath10k_sdio_pm_suspend,
-				ath10k_sdio_pm_resume);
+static SIMPLE_DEV_PM_OPS(ath10k_sdio_pm_ops, ath10k_sdio_pm_suspend,
+			 ath10k_sdio_pm_resume);
+
+#define ATH10K_SDIO_PM_OPS (&ath10k_sdio_pm_ops)
+
+#else
+
+#define ATH10K_SDIO_PM_OPS NULL
+
+#endif /* CONFIG_PM_SLEEP */
 
 static int ath10k_sdio_napi_poll(struct napi_struct *ctx, int budget)
 {
@@ -2539,8 +2549,7 @@ static int ath10k_sdio_probe(struct sdio_func *func,
 	ar_sdio = ath10k_sdio_priv(ar);
 
 	ar_sdio->irq_data.irq_proc_reg =
-		devm_kzalloc(ar->dev, sizeof(struct ath10k_sdio_irq_proc_regs),
-			     GFP_KERNEL);
+		devm_kzalloc_obj(ar->dev, struct ath10k_sdio_irq_proc_regs);
 	if (!ar_sdio->irq_data.irq_proc_reg) {
 		ret = -ENOMEM;
 		goto err_core_destroy;
@@ -2553,8 +2562,7 @@ static int ath10k_sdio_probe(struct sdio_func *func,
 	}
 
 	ar_sdio->irq_data.irq_en_reg =
-		devm_kzalloc(ar->dev, sizeof(struct ath10k_sdio_irq_enable_regs),
-			     GFP_KERNEL);
+		devm_kzalloc_obj(ar->dev, struct ath10k_sdio_irq_enable_regs);
 	if (!ar_sdio->irq_data.irq_en_reg) {
 		ret = -ENOMEM;
 		goto err_core_destroy;
@@ -2664,7 +2672,7 @@ static struct sdio_driver ath10k_sdio_driver = {
 	.probe = ath10k_sdio_probe,
 	.remove = ath10k_sdio_remove,
 	.drv = {
-		.pm = pm_sleep_ptr(&ath10k_sdio_pm_ops),
+		.pm = ATH10K_SDIO_PM_OPS,
 	},
 };
 module_sdio_driver(ath10k_sdio_driver);

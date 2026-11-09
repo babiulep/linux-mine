@@ -185,10 +185,8 @@ static int rockchip_dfi_enable(struct rockchip_dfi *dfi)
 	}
 
 	ret = rockchip_dfi_ddrtype_to_ctrl(dfi, &ctrl);
-	if (ret) {
-		clk_disable_unprepare(dfi->clk);
+	if (ret)
 		goto out;
-	}
 
 	for (i = 0; i < dfi->max_channels; i++) {
 
@@ -831,7 +829,7 @@ static int rockchip_dfi_probe(struct platform_device *pdev)
 	if (!soc_init)
 		return -EINVAL;
 
-	dfi = devm_kzalloc(dev, sizeof(*dfi), GFP_KERNEL);
+	dfi = devm_kzalloc_obj(dev, *dfi);
 	if (!dfi)
 		return -ENOMEM;
 

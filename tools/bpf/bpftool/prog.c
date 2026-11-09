@@ -894,6 +894,8 @@ static int do_dump(int argc, char **argv)
 	int err = -1;
 
 	if (is_prefix(*argv, "jited")) {
+		if (disasm_init())
+			return -1;
 		mode = DUMP_JITED;
 	} else if (is_prefix(*argv, "xlated")) {
 		mode = DUMP_XLATED;
@@ -957,8 +959,6 @@ static int do_dump(int argc, char **argv)
 		p_err("'visual' is not compatible with JSON output");
 		goto exit_close;
 	}
-	if (mode == DUMP_JITED && !filepath && disasm_init())
-		goto exit_close;
 
 	if (json_output && nb_fds > 1)
 		jsonw_start_array(json_wtr);	/* root array */

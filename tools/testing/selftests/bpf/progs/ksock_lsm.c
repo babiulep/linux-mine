@@ -10,7 +10,6 @@
 
 char send_data[32] = "hello from bpf ksock";
 
-__u16 local_port;
 __be32 ipv4_remote;
 __u16 remote_port;
 int target_pid;
@@ -33,28 +32,19 @@ int ksock_setup(void *ctx)
 		return err;
 
 	addr.sin.sin_family = AF_INET;
-	addr.sin.sin_port = bpf_htons(local_port);
-	addr.sin.sin_addr.s_addr = bpf_htonl(0x7f000002); /* 127.0.0.2 */
-
-	err = bpf_ksock_bind(ks, &addr, sizeof(addr));
-	if (err)
-		goto err_release;
-
 	addr.sin.sin_port = bpf_htons(remote_port);
 	addr.sin.sin_addr.s_addr = ipv4_remote;
 
 	err = bpf_ksock_connect(ks, &addr, sizeof(addr));
-	if (err)
-		goto err_release;
+	if (err) {
+		bpf_ksock_release(ks);
+		return err;
+	}
 
 	err = ksock_ctx_insert(ks);
 	if (err && err != -EEXIST)
 		return err;
 	return 0;
-
-err_release:
-	bpf_ksock_release(ks);
-	return err;
 }
 
 SEC("lsm.s/socket_bind")

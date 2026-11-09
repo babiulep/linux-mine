@@ -565,7 +565,6 @@ static int cfg80211_sme_connect(struct wireless_dev *wdev,
 	if (wdev->connected) {
 		cfg80211_sme_free(wdev);
 		wdev->connected = false;
-		wdev->u.client.wep_used = false;
 	}
 
 	if (wdev->conn)
@@ -1361,7 +1360,6 @@ void __cfg80211_disconnected(struct net_device *dev, const u8 *ie,
 	wdev->valid_links = 0;
 	wdev->connected = false;
 	wdev->u.client.ssid_len = 0;
-	wdev->u.client.wep_used = false;
 	wdev->conn_owner_nlportid = 0;
 	kfree_sensitive(wdev->connect_keys);
 	wdev->connect_keys = NULL;

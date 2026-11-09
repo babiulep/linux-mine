@@ -16,7 +16,6 @@
 #include <soc/tegra/bpmp-abi.h>
 
 struct tegra_bpmp_clk;
-struct tegra_bpmp_mbwt_soc;
 struct tegra_bpmp_ops;
 
 struct tegra_bpmp_soc {
@@ -29,7 +28,6 @@ struct tegra_bpmp_soc {
 	} channels;
 
 	const struct tegra_bpmp_ops *ops;
-	const struct tegra_bpmp_mbwt_soc *mbwt;
 	unsigned int num_resets;
 };
 

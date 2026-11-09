@@ -251,8 +251,8 @@ struct f71882fg_data {
 	int temp_start;			/* temp numbering start (0 or 1) */
 	bool valid;			/* true if following fields are valid */
 	char auto_point_temp_signed;
-	u64 last_updated;		/* In jiffies */
-	u64 last_limits;		/* In jiffies */
+	unsigned long last_updated;	/* In jiffies */
+	unsigned long last_limits;	/* In jiffies */
 
 	/* Register Values */
 	u8	in[F71882FG_MAX_INS];
@@ -346,8 +346,8 @@ static struct f71882fg_data *f71882fg_update_device(struct device *dev)
 	mutex_lock(&data->update_lock);
 
 	/* Update once every 60 seconds */
-	if (time_after64(get_jiffies_64(), data->last_limits + 60 * HZ) ||
-	    !data->valid) {
+	if (time_after(jiffies, data->last_limits + 60 * HZ) ||
+			!data->valid) {
 		if (f71882fg_has_in1_alarm[data->type]) {
 			if (data->type == f81866a) {
 				data->in1_max =
@@ -450,12 +450,11 @@ static struct f71882fg_data *f71882fg_update_device(struct device *dev)
 				break;
 			}
 		}
-		data->last_limits = get_jiffies_64();
+		data->last_limits = jiffies;
 	}
 
 	/* Update every second */
-	if (time_after64(get_jiffies_64(), data->last_updated + HZ) ||
-	    !data->valid) {
+	if (time_after(jiffies, data->last_updated + HZ) || !data->valid) {
 		data->temp_status = f71882fg_read8(data,
 						F71882FG_REG_TEMP_STATUS);
 		data->temp_diode_open = f71882fg_read8(data,
@@ -503,7 +502,7 @@ static struct f71882fg_data *f71882fg_update_device(struct device *dev)
 				data->in[nr] = f71882fg_read8(data,
 							F71882FG_REG_IN(nr));
 
-		data->last_updated = get_jiffies_64();
+		data->last_updated = jiffies;
 		data->valid = true;
 	}
 
@@ -2347,8 +2346,7 @@ static int f71882fg_probe(struct platform_device *pdev)
 	int size;
 	u8 start_reg, reg;
 
-	data = devm_kzalloc(&pdev->dev, sizeof(struct f71882fg_data),
-			    GFP_KERNEL);
+	data = devm_kzalloc_obj(&pdev->dev, struct f71882fg_data);
 	if (!data)
 		return -ENOMEM;
 

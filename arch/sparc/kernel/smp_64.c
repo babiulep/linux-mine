@@ -801,15 +801,6 @@ static void xcall_deliver(u64 data0, u64 data1, u64 data2, const cpumask_t *mask
 	local_irq_save(flags);
 
 	this_cpu = smp_processor_id();
-
-	/* The mondo block and cpu list are not set up until init_IRQ(),
-	 * so do not touch them unless there is a cpu to send to.
-	 */
-	if (cpumask_any_and_but(mask, cpu_online_mask, this_cpu) >= nr_cpu_ids) {
-		local_irq_restore(flags);
-		return;
-	}
-
 	tb = &trap_block[this_cpu];
 
 	mondo = __va(tb->cpu_mondo_block_pa);
@@ -924,7 +915,6 @@ extern unsigned long xcall_kgdb_capture;
 
 #ifdef DCACHE_ALIASING_POSSIBLE
 extern unsigned long xcall_flush_dcache_page_cheetah;
-extern unsigned long xcall_flush_dcache_all;
 #endif
 extern unsigned long xcall_flush_dcache_page_spitfire;
 
@@ -992,9 +982,8 @@ void smp_flush_dcache_folio_impl(struct folio *folio, int cpu)
 	put_cpu();
 }
 
-void flush_dcache_page_all(struct mm_struct *mm, struct page *page)
+void flush_dcache_folio_all(struct mm_struct *mm, struct folio *folio)
 {
-	struct folio *folio = page_folio(page);
 	void *pg_addr;
 	u64 data0;
 
@@ -1007,7 +996,7 @@ void flush_dcache_page_all(struct mm_struct *mm, struct page *page)
 	atomic_inc(&dcpage_flushes);
 #endif
 	data0 = 0;
-	pg_addr = page_address(page);
+	pg_addr = folio_address(folio);
 	if (tlb_type == spitfire) {
 		data0 = ((u64)&xcall_flush_dcache_page_spitfire);
 		if (folio_flush_mapping(folio) != NULL)
@@ -1018,39 +1007,21 @@ void flush_dcache_page_all(struct mm_struct *mm, struct page *page)
 #endif
 	}
 	if (data0) {
-		xcall_deliver(data0, __pa(pg_addr),
-			      (u64)pg_addr, cpu_online_mask);
+		unsigned int i, nr = folio_nr_pages(folio);
+
+		for (i = 0; i < nr; i++) {
+			xcall_deliver(data0, __pa(pg_addr),
+				      (u64) pg_addr, cpu_online_mask);
 #ifdef CONFIG_DEBUG_DCFLUSH
-		atomic_inc(&dcpage_flushes_xcall);
+			atomic_inc(&dcpage_flushes_xcall);
 #endif
+			pg_addr += PAGE_SIZE;
+		}
 	}
-#ifdef DCACHE_ALIASING_POSSIBLE
-	__flush_dcache_page(pg_addr,
-			    tlb_type == spitfire && folio_flush_mapping(folio));
-#else
-	if (tlb_type == spitfire && folio_flush_mapping(folio))
-		__flush_icache_page(__pa(pg_addr));
-#endif
+	__local_flush_dcache_folio(folio);
 
 	preempt_enable();
 }
-
-#ifdef DCACHE_ALIASING_POSSIBLE
-void flush_dcache_all(void)
-{
-	unsigned long size, line_size;
-
-	if (tlb_type == hypervisor)
-		return;
-
-	preempt_disable();
-	size = local_cpu_data().dcache_size;
-	line_size = local_cpu_data().dcache_line_size;
-	smp_cross_call(&xcall_flush_dcache_all, 0, size, line_size);
-	__flush_dcache_all(size, line_size);
-	preempt_enable();
-}
-#endif
 
 #ifdef CONFIG_KGDB
 void kgdb_roundup_cpus(void)
@@ -1318,8 +1289,6 @@ void cpu_play_dead(void)
 {
 	int cpu = smp_processor_id();
 	unsigned long pstate;
-
-	idle_task_exit();
 
 	if (tlb_type == hypervisor) {
 		struct trap_per_cpu *tb = &trap_block[cpu];

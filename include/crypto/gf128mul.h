@@ -171,28 +171,35 @@ void gf128mul_lle(be128 *a, const be128 *b);
  * They are defined here for performance.
  */
 
+static inline u64 gf128mul_mask_from_bit(u64 x, int which)
+{
+	/* a constant-time version of 'x & ((u64)1 << which) ? (u64)-1 : 0' */
+	return ((s64)(x << (63 - which)) >> 63);
+}
+
 static inline void gf128mul_x_lle(be128 *r, const be128 *x)
 {
 	u64 a = be64_to_cpu(x->a);
 	u64 b = be64_to_cpu(x->b);
-	u64 mask = -(b & 1);
 
-	OPTIMIZER_HIDE_VAR(mask);
+	/* equivalent to gf128mul_table_le[(b << 7) & 0xff] << 48
+	 * (see crypto/gf128mul.c): */
+	u64 _tt = gf128mul_mask_from_bit(b, 0) & ((u64)0xe1 << 56);
 
 	r->b = cpu_to_be64((b >> 1) | (a << 63));
-	r->a = cpu_to_be64((a >> 1) ^ (mask & ((u64)0xe1 << 56)));
+	r->a = cpu_to_be64((a >> 1) ^ _tt);
 }
 
 static inline void gf128mul_x_bbe(be128 *r, const be128 *x)
 {
 	u64 a = be64_to_cpu(x->a);
 	u64 b = be64_to_cpu(x->b);
-	unsigned long mask = (s64)a >> 63;
 
-	OPTIMIZER_HIDE_VAR(mask);
+	/* equivalent to gf128mul_table_be[a >> 63] (see crypto/gf128mul.c): */
+	u64 _tt = gf128mul_mask_from_bit(a, 63) & 0x87;
 
 	r->a = cpu_to_be64((a << 1) | (b >> 63));
-	r->b = cpu_to_be64((b << 1) ^ (mask & 0x87));
+	r->b = cpu_to_be64((b << 1) ^ _tt);
 }
 
 /* needed by XTS */
@@ -200,12 +207,12 @@ static inline void gf128mul_x_ble(le128 *r, const le128 *x)
 {
 	u64 a = le64_to_cpu(x->a);
 	u64 b = le64_to_cpu(x->b);
-	unsigned long mask = (s64)a >> 63;
 
-	OPTIMIZER_HIDE_VAR(mask);
+	/* equivalent to gf128mul_table_be[b >> 63] (see crypto/gf128mul.c): */
+	u64 _tt = gf128mul_mask_from_bit(a, 63) & 0x87;
 
 	r->a = cpu_to_le64((a << 1) | (b >> 63));
-	r->b = cpu_to_le64((b << 1) ^ (mask & 0x87));
+	r->b = cpu_to_le64((b << 1) ^ _tt);
 }
 
 void gf128mul_x8_ble(le128 *r, const le128 *x);

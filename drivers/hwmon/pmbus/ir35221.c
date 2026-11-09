@@ -79,8 +79,7 @@ static int ir35221_probe(struct i2c_client *client)
 				| I2C_FUNC_SMBUS_READ_BLOCK_DATA))
 		return -ENODEV;
 
-	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_ID,
-					sizeof(buf), buf);
+	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_ID, buf);
 	if (ret < 0) {
 		dev_err(&client->dev, "Failed to read PMBUS_MFR_ID\n");
 		return ret;
@@ -90,8 +89,7 @@ static int ir35221_probe(struct i2c_client *client)
 		return -ENODEV;
 	}
 
-	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_MODEL,
-					sizeof(buf), buf);
+	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_MODEL, buf);
 	if (ret < 0) {
 		dev_err(&client->dev, "Failed to read PMBUS_MFR_MODEL\n");
 		return ret;
@@ -101,8 +99,7 @@ static int ir35221_probe(struct i2c_client *client)
 		return -ENODEV;
 	}
 
-	info = devm_kzalloc(&client->dev, sizeof(struct pmbus_driver_info),
-			    GFP_KERNEL);
+	info = devm_kzalloc_obj(&client->dev, struct pmbus_driver_info);
 	if (!info)
 		return -ENOMEM;
 

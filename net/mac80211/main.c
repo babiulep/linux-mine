@@ -512,6 +512,8 @@ static void ieee80211_restart_work(struct work_struct *work)
 							      WLAN_REASON_UNSPECIFIED,
 							      false);
 		}
+		wiphy_delayed_work_flush(local->hw.wiphy,
+					 &sdata->dec_tailroom_needed_wk);
 	}
 	ieee80211_scan_cancel(local);
 
@@ -802,7 +804,7 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 	struct wiphy *wiphy;
 	bool emulate_chanctx;
 
-	if (WARN_ON(!ops->tx || !ops->start || !ops->stop ||
+	if (WARN_ON(!ops->tx || !ops->start || !ops->stop || !ops->config ||
 		    !ops->add_interface || !ops->remove_interface ||
 		    !ops->configure_filter || !ops->wake_tx_queue))
 		return NULL;
@@ -866,8 +868,7 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 			WIPHY_FLAG_4ADDR_AP |
 			WIPHY_FLAG_4ADDR_STATION |
 			WIPHY_FLAG_REPORTS_OBSS |
-			WIPHY_FLAG_OFFCHAN_TX |
-			WIPHY_FLAG_CLIENT_AP_STA_GTK;
+			WIPHY_FLAG_OFFCHAN_TX;
 
 	if (emulate_chanctx || ops->remain_on_channel)
 		wiphy->flags |= WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL;
@@ -989,7 +990,6 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 	spin_lock_init(&local->filter_lock);
 	spin_lock_init(&local->rx_path_lock);
 	spin_lock_init(&local->queue_stop_reason_lock);
-	spin_lock_init(&local->key_lock);
 
 	local->aql_txq_limit_mc = IEEE80211_DEFAULT_AQL_TXQ_LIMIT_MC;
 	for (i = 0; i < IEEE80211_NUM_ACS; i++) {
@@ -1748,8 +1748,6 @@ void ieee80211_unregister_hw(struct ieee80211_hw *hw)
 	skb_queue_purge(&local->skb_queue_unreliable);
 
 	wiphy_unregister(local->hw.wiphy);
-	/* keys are freed via queue_rcu_work() */
-	rcu_barrier();
 	destroy_workqueue(local->workqueue);
 	ieee80211_led_exit(local);
 	kfree(local->int_scan_req);

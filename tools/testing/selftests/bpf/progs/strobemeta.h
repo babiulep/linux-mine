@@ -366,9 +366,10 @@ static __always_inline uint64_t read_str_var(struct strobemeta_cfg *cfg,
 
 	data->str_lens[idx] = 0;
 	location = calc_location(&cfg->str_locs[idx], tls_base);
-	if (bpf_probe_read_user(value, sizeof(struct strobe_value_generic), location))
-		return off;
+	if (!location)
+		return 0;
 
+	bpf_probe_read_user(value, sizeof(struct strobe_value_generic), location);
 	len = bpf_probe_read_user_str(&data->payload[off], STROBE_MAX_STR_LEN, value->ptr);
 	/*
 	 * if bpf_probe_read_user_str returns error (<0), due to casting to
@@ -378,7 +379,7 @@ static __always_inline uint64_t read_str_var(struct strobemeta_cfg *cfg,
 	 * STROBE_MAX_STR_LEN
 	 */
 	if (len > STROBE_MAX_STR_LEN)
-		return off;
+		return 0;
 
 	data->str_lens[idx] = len;
 	return off + len;
@@ -399,10 +400,11 @@ static __always_inline uint64_t read_map_var(struct strobemeta_cfg *cfg,
 	descr->cnt = -1; /* presume no value is set */
 
 	location = calc_location(&cfg->map_locs[idx], tls_base);
-	if (unlikely(bpf_probe_read_user(value, sizeof(struct strobe_value_generic), location)))
+	if (!location)
 		return off;
 
-	if (unlikely(bpf_probe_read_user(&map, sizeof(struct strobe_map_raw), value->ptr)))
+	bpf_probe_read_user(value, sizeof(struct strobe_value_generic), location);
+	if (bpf_probe_read_user(&map, sizeof(struct strobe_map_raw), value->ptr))
 		return off;
 
 	descr->id = map.id;

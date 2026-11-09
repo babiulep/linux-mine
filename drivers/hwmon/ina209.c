@@ -18,7 +18,6 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/ktime.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/err.h>
@@ -63,7 +62,7 @@ struct ina209_data {
 
 	struct mutex update_lock;
 	bool valid;
-	ktime_t last_updated;
+	unsigned long last_updated;	/* in jiffies */
 
 	u16 regs[INA209_REGISTERS];	/* All chip registers */
 
@@ -82,15 +81,8 @@ static struct ina209_data *ina209_update_device(struct device *dev)
 
 	mutex_lock(&data->update_lock);
 
-	/*
-	 * Single-sample conversion takes 532 us per channel (~1.06 ms for
-	 * shunt and bus), which truncates to 0 ms in update_interval. Enforce
-	 * at least a 1 ms cache window so rapid sequential sysfs reads coalesce.
-	 */
 	if (!data->valid ||
-	    ktime_after(ktime_get(),
-			ktime_add_ms(data->last_updated,
-				     max_t(u16, data->update_interval, 1)))) {
+	    time_after(jiffies, data->last_updated + data->update_interval)) {
 		for (i = 0; i < ARRAY_SIZE(data->regs); i++) {
 			val = i2c_smbus_read_word_swapped(client, i);
 			if (val < 0) {
@@ -99,7 +91,7 @@ static struct ina209_data *ina209_update_device(struct device *dev)
 			}
 			data->regs[i] = val;
 		}
-		data->last_updated = ktime_get();
+		data->last_updated = jiffies;
 		data->valid = true;
 	}
 abort:
@@ -542,7 +534,7 @@ static int ina209_probe(struct i2c_client *client)
 	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_WORD_DATA))
 		return -ENODEV;
 
-	data = devm_kzalloc(&client->dev, sizeof(*data), GFP_KERNEL);
+	data = devm_kzalloc_obj(&client->dev, *data);
 	if (!data)
 		return -ENOMEM;
 

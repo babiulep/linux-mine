@@ -178,8 +178,16 @@ __stderr("Call trace:\n"
 "|[ \t]+[^\n]+\n)*}}")
 int stream_arena_write_fault(void *ctx)
 {
-	u64 user_vm_start = (u64)arena_base(&arena);
+	struct bpf_arena *ptr = (void *)&arena;
+	u64 user_vm_start;
 
+	/* Prevent GCC bounds warning: casting &arena to struct bpf_arena *
+	 * triggers bounds checking since the map definition is smaller than struct
+	 * bpf_arena. barrier_var() makes the pointer opaque to GCC, preventing the
+	 * bounds analysis
+	 */
+	barrier_var(ptr);
+	user_vm_start = ptr->user_vm_start;
 	fault_addr = user_vm_start + 0x7fff;
 	bpf_addr_space_cast(user_vm_start, 0, 1);
 	asm volatile (
@@ -204,8 +212,16 @@ __stderr("Call trace:\n"
 "|[ \t]+[^\n]+\n)*}}")
 int stream_arena_read_fault(void *ctx)
 {
-	u64 user_vm_start = (u64)arena_base(&arena);
+	struct bpf_arena *ptr = (void *)&arena;
+	u64 user_vm_start;
 
+	/* Prevent GCC bounds warning: casting &arena to struct bpf_arena *
+	 * triggers bounds checking since the map definition is smaller than struct
+	 * bpf_arena. barrier_var() makes the pointer opaque to GCC, preventing the
+	 * bounds analysis
+	 */
+	barrier_var(ptr);
+	user_vm_start = ptr->user_vm_start;
 	fault_addr = user_vm_start + 0x7fff;
 	bpf_addr_space_cast(user_vm_start, 0, 1);
 	asm volatile (
@@ -236,9 +252,17 @@ int stream_arena_load_acquire_fault(void *ctx)
 		.off	 = 0x7fff,
 		.imm	 = 0x100,	/* BPF_LOAD_ACQ */
 	};
-	u64 user_vm_start = (u64)arena_base(&arena);
-	u64 val;
+	struct bpf_arena *ptr = (void *)&arena;
+	u64 user_vm_start, val;
 
+	/*
+	 * Prevent GCC bounds warning: casting &arena to struct bpf_arena *
+	 * triggers bounds checking since the map definition is smaller than
+	 * struct bpf_arena. barrier_var() makes the pointer opaque to GCC,
+	 * preventing the bounds analysis.
+	 */
+	barrier_var(ptr);
+	user_vm_start = ptr->user_vm_start;
 	fault_addr = user_vm_start + 0x7fff;
 	bpf_addr_space_cast(user_vm_start, 0, 1);
 	asm volatile (
@@ -272,9 +296,17 @@ int stream_arena_xchg_fault(void *ctx)
 		.off	 = 0x7fff,
 		.imm	 = 0xe1,	/* BPF_XCHG */
 	};
-	u64 user_vm_start = (u64)arena_base(&arena);
-	u64 val;
+	struct bpf_arena *ptr = (void *)&arena;
+	u64 user_vm_start, val;
 
+	/*
+	 * Prevent GCC bounds warning: casting &arena to struct bpf_arena *
+	 * triggers bounds checking since the map definition is smaller than
+	 * struct bpf_arena. barrier_var() makes the pointer opaque to GCC,
+	 * preventing the bounds analysis.
+	 */
+	barrier_var(ptr);
+	user_vm_start = ptr->user_vm_start;
 	fault_addr = user_vm_start + 0x7fff;
 	bpf_addr_space_cast(user_vm_start, 0, 1);
 	/*
@@ -314,9 +346,17 @@ int stream_arena_cmpxchg_fault(void *ctx)
 		.off	 = 0x7fff,
 		.imm	 = 0xf1,	/* BPF_CMPXCHG */
 	};
-	u64 user_vm_start = (u64)arena_base(&arena);
-	u64 val;
+	struct bpf_arena *ptr = (void *)&arena;
+	u64 user_vm_start, val;
 
+	/*
+	 * Prevent GCC bounds warning: casting &arena to struct bpf_arena *
+	 * triggers bounds checking since the map definition is smaller than
+	 * struct bpf_arena. barrier_var() makes the pointer opaque to GCC,
+	 * preventing the bounds analysis.
+	 */
+	barrier_var(ptr);
+	user_vm_start = ptr->user_vm_start;
 	fault_addr = user_vm_start + 0x7fff;
 	bpf_addr_space_cast(user_vm_start, 0, 1);
 	/*
@@ -341,10 +381,9 @@ int stream_arena_cmpxchg_fault(void *ctx)
 
 static __noinline void subprog(void)
 {
-	int *addr = (int *)0xdeadbeef;
+	int __arena *addr = (int __arena *)0xdeadbeef;
 
 	arena_ptr = &arena;
-	bpf_addr_space_cast(addr, 0, 1);
 	*addr = 1;
 }
 
@@ -365,10 +404,9 @@ int stream_arena_subprog_fault(void *ctx)
 
 static __noinline int timer_cb(void *map, int *key, struct bpf_timer *timer)
 {
-	int *addr = (int *)0xdeadbeef;
+	int __arena *addr = (int __arena *)0xdeadbeef;
 
 	arena_ptr = &arena;
-	bpf_addr_space_cast(addr, 0, 1);
 	*addr = 1;
 	return 0;
 }

@@ -2033,8 +2033,7 @@ struct btf *btf__load_from_kernel_by_id(__u32 id)
 
 static void btf_invalidate_raw_data(struct btf *btf)
 {
-	/* types_data and strs_data of read-only BTF point into raw_data */
-	if (btf->raw_data && btf_is_modifiable(btf))
+	if (btf->raw_data)
 		btf_free_raw_data(btf);
 	if (btf->raw_data_swapped) {
 		free(btf->raw_data_swapped);
@@ -2100,10 +2099,10 @@ static int btf_ensure_modifiable(struct btf *btf)
 	if (!btf->base_btf && btf->hdr.str_len == 1)
 		btf->strs_deduped = true;
 
-	btf->modifiable = true;
-
 	/* invalidate raw_data representation */
 	btf_invalidate_raw_data(btf);
+
+	btf->modifiable = true;
 
 	return 0;
 
@@ -6657,12 +6656,8 @@ int btf__relocate(struct btf *btf, const struct btf *base_btf)
 {
 	int err = btf_relocate(btf, base_btf, NULL, NULL);
 
-	/* types are rewritten in place, some of them even on error */
-	btf_invalidate_raw_data(btf);
-	if (!err) {
+	if (!err)
 		btf->owns_base = false;
-		btf_check_sorted(btf);
-	}
 	return libbpf_err(err);
 }
 

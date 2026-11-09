@@ -6,7 +6,9 @@
 #include "bpf_misc.h"
 #include "../../../include/linux/filter.h"
 
-#ifdef CAN_USE_CALLX
+/* gcc doesn't support indirect calls */
+#if defined(__clang__) && (defined(__TARGET_ARCH_x86) || defined(__TARGET_ARCH_arm64) || \
+    (defined(__TARGET_ARCH_riscv) && __riscv_xlen == 64))
 
 #define CALLX_INSN(DST, SRC, OFF, IMM) \
 	BPF_RAW_INSN(BPF_JMP | BPF_CALL | BPF_X, DST, SRC, OFF, IMM)
@@ -1093,7 +1095,6 @@ int callx_c_ops_on_stack(void *ctx)
 #else
 
 SEC("socket")
-__skip("callx needs arch JIT and compiler support")
 __success
 int dummy(void *ctx)
 {

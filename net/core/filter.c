@@ -939,7 +939,7 @@ static int check_load_and_stores(const struct sock_filter *filter, int flen)
 
 	BUILD_BUG_ON(BPF_MEMWORDS > 16);
 
-	masks = kmalloc_array(flen, sizeof(*masks), GFP_KERNEL);
+	masks = kmalloc_objs(*masks, flen);
 	if (!masks)
 		return -ENOMEM;
 
@@ -5641,11 +5641,12 @@ static int bpf_sol_tcp_setsockopt(struct sock *sk, int optname,
 	case TCP_BPF_IW:
 		if (val <= 0 || tp->data_segs_out > tp->syn_data)
 			return -EINVAL;
-		tcp_snd_cwnd_set(tp, val);
+		tcp_snd_cwnd_set(tp, min_t(u32, val, tp->snd_cwnd_clamp));
 		break;
 	case TCP_BPF_SNDCWND_CLAMP:
 		if (val <= 0)
 			return -EINVAL;
+		val = min_t(u32, val, TCP_MAX_SND_CWND);
 		tp->snd_cwnd_clamp = val;
 		WRITE_ONCE(tp->snd_ssthresh, val);
 		break;

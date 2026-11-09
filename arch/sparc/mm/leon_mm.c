@@ -11,7 +11,6 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/memblock.h>
 #include <linux/mm.h>
 #include <asm/asi.h>
 #include <asm/leon.h>

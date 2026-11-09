@@ -306,6 +306,7 @@
 };
 
 &u2phy0_otg {
+	phy-supply = <&vcc_5v0_typec0>;
 	status = "okay";
 };
 

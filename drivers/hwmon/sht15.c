@@ -160,8 +160,8 @@ struct sht15_data {
 	enum sht15_state		state;
 	bool				measurements_valid;
 	bool				status_valid;
-	u64				last_measurement;
-	u64				last_status;
+	unsigned long			last_measurement;
+	unsigned long			last_status;
 	struct mutex			read_lock;
 	struct device			*dev;
 	struct device			*hwmon_dev;
@@ -457,8 +457,8 @@ static int sht15_update_status(struct sht15_data *data)
 	int timeout = HZ;
 
 	mutex_lock(&data->read_lock);
-	if (time_after64(get_jiffies_64(), data->last_status + timeout) ||
-	    !data->status_valid) {
+	if (time_after(jiffies, data->last_status + timeout)
+			|| !data->status_valid) {
 		ret = sht15_send_cmd(data, SHT15_READ_STATUS);
 		if (ret)
 			goto unlock;
@@ -502,7 +502,7 @@ static int sht15_update_status(struct sht15_data *data)
 
 		data->val_status = status;
 		data->status_valid = true;
-		data->last_status = get_jiffies_64();
+		data->last_status = jiffies;
 	}
 
 unlock:
@@ -589,8 +589,8 @@ static int sht15_update_measurements(struct sht15_data *data)
 	int timeout = HZ;
 
 	mutex_lock(&data->read_lock);
-	if (time_after64(get_jiffies_64(), data->last_measurement + timeout) ||
-	    !data->measurements_valid) {
+	if (time_after(jiffies, data->last_measurement + timeout)
+	    || !data->measurements_valid) {
 		data->state = SHT15_READING_HUMID;
 		ret = sht15_measurement(data, SHT15_MEASURE_RH, 160);
 		if (ret)
@@ -600,7 +600,7 @@ static int sht15_update_measurements(struct sht15_data *data)
 		if (ret)
 			goto unlock;
 		data->measurements_valid = true;
-		data->last_measurement = get_jiffies_64();
+		data->last_measurement = jiffies;
 	}
 
 unlock:
@@ -919,7 +919,7 @@ static int sht15_probe(struct platform_device *pdev)
 	int ret;
 	struct sht15_data *data;
 
-	data = devm_kzalloc(&pdev->dev, sizeof(*data), GFP_KERNEL);
+	data = devm_kzalloc_obj(&pdev->dev, *data);
 	if (!data)
 		return -ENOMEM;
 

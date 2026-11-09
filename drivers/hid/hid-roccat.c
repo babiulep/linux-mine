@@ -40,8 +40,7 @@ struct roccat_device {
 	unsigned int minor;
 	int report_size;
 	int open;
-	struct kref ref;
-	atomic_t exist;
+	int exist;
 	wait_queue_head_t wait;
 	struct device *dev;
 	struct hid_device *hid;
@@ -71,25 +70,12 @@ static struct roccat_device *devices[ROCCAT_MAX_DEVICES];
 /* protects modifications of devices array */
 static DEFINE_MUTEX(devices_lock);
 
-static bool roccat_device_available(struct roccat_device *device)
+static void roccat_free_device(struct roccat_device *device)
 {
-	return atomic_read(&device->exist);
-}
-
-static void roccat_free_device(struct kref *ref)
-{
-	struct roccat_device *device;
 	int i;
 
-	WARN_ON(!mutex_is_locked(&devices_lock));
-
-	device = container_of(ref, struct roccat_device, ref);
 	for (i = 0; i < ROCCAT_CBUF_SIZE; i++)
 		kfree(device->cbuf[i].value);
-
-	devices[device->minor] = NULL;
-	mutex_destroy(&device->readers_lock);
-	mutex_destroy(&device->cbuf_lock);
 	kfree(device);
 }
 
@@ -119,7 +105,7 @@ static ssize_t roccat_read(struct file *file, char __user *buffer,
 				retval = -ERESTARTSYS;
 				break;
 			}
-			if (!roccat_device_available(device)) {
+			if (!device->exist) {
 				retval = -EIO;
 				break;
 			}
@@ -160,18 +146,12 @@ exit_unlock:
 static __poll_t roccat_poll(struct file *file, poll_table *wait)
 {
 	struct roccat_reader *reader = file->private_data;
-	bool avail;
-
 	poll_wait(file, &reader->device->wait, wait);
-
-	if (!roccat_device_available(reader->device))
+	if (reader->cbuf_start != reader->device->cbuf_end)
+		return EPOLLIN | EPOLLRDNORM;
+	if (!reader->device->exist)
 		return EPOLLERR | EPOLLHUP;
-
-	mutex_lock(&reader->device->cbuf_lock);
-	avail = (reader->cbuf_start != reader->device->cbuf_end);
-	mutex_unlock(&reader->device->cbuf_lock);
-
-	return avail ? EPOLLIN | EPOLLRDNORM : 0;
+	return 0;
 }
 
 static int roccat_open(struct inode *inode, struct file *file)
@@ -189,7 +169,7 @@ static int roccat_open(struct inode *inode, struct file *file)
 
 	device = devices[minor];
 
-	if (!device || !roccat_device_available(device)) {
+	if (!device) {
 		pr_emerg("roccat device with minor %d doesn't exist\n", minor);
 		error = -ENODEV;
 		goto exit_err_devices;
@@ -211,7 +191,6 @@ static int roccat_open(struct inode *inode, struct file *file)
 			--device->open;
 			goto exit_err_readers;
 		}
-		kref_get(&device->ref);
 	}
 
 	reader->device = device;
@@ -247,11 +226,12 @@ static int roccat_release(struct inode *inode, struct file *file)
 
 	if (!--device->open) {
 		/* removing last reader */
-		if (roccat_device_available(device)) {
+		if (device->exist) {
 			hid_hw_power(device->hid, PM_HINT_NORMAL);
 			hid_hw_close(device->hid);
+		} else {
+			roccat_free_device(device);
 		}
-		kref_put(&device->ref, roccat_free_device);
 	}
 
 	mutex_unlock(&devices_lock);
@@ -363,10 +343,9 @@ int roccat_connect(const struct class *klass, struct hid_device *hid, int report
 	INIT_LIST_HEAD(&device->readers);
 	mutex_init(&device->readers_lock);
 	mutex_init(&device->cbuf_lock);
-	kref_init(&device->ref);
 	device->minor = minor;
 	device->hid = hid;
-	atomic_set(&device->exist, 1);
+	device->exist = 1;
 	device->cbuf_end = 0;
 	device->report_size = report_size;
 
@@ -385,19 +364,19 @@ void roccat_disconnect(int minor)
 	mutex_lock(&devices_lock);
 	device = devices[minor];
 
-	if (WARN_ON(!device))
-		goto out;
+	device->exist = 0; /* TODO exist maybe not needed */
 
-	if (!WARN_ON(!atomic_cmpxchg(&device->exist, 1, 0)))
-		device_destroy(device->dev->class, MKDEV(roccat_major, minor));
+	device_destroy(device->dev->class, MKDEV(roccat_major, minor));
+
+	devices[minor] = NULL;
 
 	if (device->open) {
 		hid_hw_close(device->hid);
 		wake_up_interruptible(&device->wait);
+	} else {
+		roccat_free_device(device);
 	}
 
-	kref_put(&device->ref, roccat_free_device);
-out:
 	mutex_unlock(&devices_lock);
 }
 EXPORT_SYMBOL_GPL(roccat_disconnect);
@@ -412,7 +391,7 @@ static long roccat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	mutex_lock(&devices_lock);
 
 	device = devices[minor];
-	if (!device || !roccat_device_available(device)) {
+	if (!device) {
 		retval = -ENODEV;
 		goto out;
 	}

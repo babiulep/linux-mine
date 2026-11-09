@@ -528,7 +528,8 @@ static struct vector_queue *create_queue(
 		return NULL;
 	result->max_depth = max_size;
 	result->dev = vp->dev;
-	result->mmsg_vector = kmalloc_objs(*result->mmsg_vector, max_size);
+	result->mmsg_vector = kmalloc(
+		(sizeof(struct mmsghdr) * max_size), GFP_KERNEL);
 	if (result->mmsg_vector == NULL)
 		goto out_mmsg_fail;
 	result->skbuff_vector = kmalloc(

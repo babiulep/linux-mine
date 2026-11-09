@@ -1523,6 +1523,7 @@ static void rt73usb_write_beacon(struct queue_entry *entry,
 {
 	struct rt2x00_dev *rt2x00dev = entry->queue->rt2x00dev;
 	unsigned int beacon_base;
+	unsigned int padding_len;
 	u32 orig_reg, reg;
 
 	/*
@@ -1553,9 +1554,10 @@ static void rt73usb_write_beacon(struct queue_entry *entry,
 	/*
 	 * Write entire beacon with descriptor and padding to register.
 	 */
-	if (skb_put_padto(entry->skb, roundup(entry->skb->len, 4))) {
+	padding_len = roundup(entry->skb->len, 4) - entry->skb->len;
+	if (padding_len && skb_pad(entry->skb, padding_len)) {
 		rt2x00_err(rt2x00dev, "Failure padding beacon, aborting\n");
-		/* skb freed by skb_put_padto() on failure */
+		/* skb freed by skb_pad() on failure */
 		entry->skb = NULL;
 		rt2x00usb_register_write(rt2x00dev, TXRX_CSR9, orig_reg);
 		return;
@@ -1563,7 +1565,7 @@ static void rt73usb_write_beacon(struct queue_entry *entry,
 
 	beacon_base = HW_BEACON_OFFSET(entry->entry_idx);
 	rt2x00usb_register_multiwrite(rt2x00dev, beacon_base, entry->skb->data,
-				      entry->skb->len);
+				      entry->skb->len + padding_len);
 
 	/*
 	 * Enable beaconing again.

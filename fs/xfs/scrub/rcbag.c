@@ -102,9 +102,13 @@ rcbag_add(
 		bagrec.rbg_blockcount = rmap->rm_blockcount;
 		bagrec.rbg_refcount = 1;
 
-		error = rcbagbt_insert(cur, &bagrec);
+		error = rcbagbt_insert(cur, &bagrec, &has);
 		if (error)
 			goto out_cur;
+		if (!has) {
+			error = -EFSCORRUPTED;
+			goto out_cur;
+		}
 	}
 
 	xfs_btree_del_cursor(cur, 0);
@@ -239,9 +243,13 @@ rcbag_remove_ending_at(
 		if (rcbag_rec_next_bno(&bagrec) != next_bno)
 			continue;
 
-		error = xfs_btree_delete(cur);
+		error = xfs_btree_delete(cur, &has);
 		if (error)
 			goto out_cur;
+		if (!has) {
+			error = -EFSCORRUPTED;
+			goto out_cur;
+		}
 
 		bag->nr_items -= bagrec.rbg_refcount;
 	}

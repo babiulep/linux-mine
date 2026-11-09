@@ -11,7 +11,6 @@
 #include <linux/pagemap.h>
 #include <linux/highmem.h>
 #include <linux/vmalloc.h>
-#include <linux/namei.h>
 
 static bool fuse_use_readdirplus(struct inode *dir, struct dir_context *ctx)
 {
@@ -196,11 +195,14 @@ static int fuse_direntplus_link(struct file *file,
 	fc = get_fuse_conn(dir);
 	epoch = atomic_read(&fc->epoch);
 
+	name.hash = full_name_hash(parent, name.name, name.len);
+	dentry = d_lookup(parent, &name);
+	if (!dentry) {
 retry:
-	dentry = d_alloc_trylock(parent, &name);
-	if (IS_ERR(dentry))
-		return PTR_ERR(dentry);
-
+		dentry = d_alloc_parallel(parent, &name);
+		if (IS_ERR(dentry))
+			return PTR_ERR(dentry);
+	}
 	if (!d_in_lookup(dentry)) {
 		struct fuse_inode *fi;
 		inode = d_inode(dentry);

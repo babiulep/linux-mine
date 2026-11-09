@@ -342,10 +342,11 @@ rcbagbt_update(
 int
 rcbagbt_insert(
 	struct xfs_btree_cur	*cur,
-	const struct rcbag_rec	*rec)
+	const struct rcbag_rec	*rec,
+	int			*success)
 {
 	struct rcbag_rec	*btrec = (struct rcbag_rec *)&cur->bc_rec;
 
 	memcpy(btrec, rec, sizeof(struct rcbag_rec));
-	return xfs_btree_insert(cur);
+	return xfs_btree_insert(cur, success);
 }

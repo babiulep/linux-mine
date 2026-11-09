@@ -133,17 +133,6 @@ static bool erofs_is_stacked_file(struct file *file)
 		inode->i_fop == &erofs_ishare_fops);
 }
 
-/* see the comment in erofs_fc_fill_super() */
-static bool erofs_is_stacked_file(struct file *file)
-{
-	struct inode *inode = file_inode(file);
-	struct super_block *sb = inode->i_sb;
-
-	return (sb->s_op == &erofs_sops && !sb->s_bdev) || sb->s_stack_depth ||
-	       (IS_ENABLED(CONFIG_EROFS_FS_PAGE_CACHE_SHARE) &&
-		inode->i_fop == &erofs_ishare_fops);
-}
-
 static int erofs_init_device(struct erofs_buf *buf, struct super_block *sb,
 			     struct erofs_device_info *dif, erofs_off_t *pos)
 {
@@ -181,11 +170,6 @@ static int erofs_init_device(struct erofs_buf *buf, struct super_block *sb,
 			dif->dax_dev = fs_dax_get_by_bdev(file_bdev(file),
 					&dif->dax_part_off, NULL, NULL);
 		} else if (!S_ISREG(file_inode(file)->i_mode)) {
-			fput(file);
-			return -EINVAL;
-		} else if (erofs_is_stacked_file(file)) {
-			erofs_err(sb, "%s: file-backed devices cannot be on stacked fses",
-				  dif->path);
 			fput(file);
 			return -EINVAL;
 		} else if (erofs_is_stacked_file(file)) {

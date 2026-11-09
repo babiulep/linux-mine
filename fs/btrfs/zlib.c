@@ -122,6 +122,7 @@ static int copy_data_into_buffer(struct address_space *mapping,
 
 	while (cur < filepos + length) {
 		struct folio *folio;
+		void *data_in;
 		unsigned int offset;
 		unsigned long copy_length;
 		int ret;
@@ -134,8 +135,9 @@ static int copy_data_into_buffer(struct address_space *mapping,
 		copy_length = min(folio_size(folio) - offset,
 				  filepos + length - cur);
 
-		memcpy_from_folio(workspace->buf + cur - filepos, folio, offset,
-				  copy_length);
+		data_in = kmap_local_folio(folio, offset);
+		memcpy(workspace->buf + cur - filepos, data_in, copy_length);
+		kunmap_local(data_in);
 		folio_put(folio);
 		cur += copy_length;
 	}

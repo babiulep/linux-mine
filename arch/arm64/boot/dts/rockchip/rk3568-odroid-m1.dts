@@ -106,7 +106,6 @@
 	vcc3v3_pcie: regulator-vcc3v3-pcie {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc3v3_pcie";
-		regulator-boot-on;
 		enable-active-high;
 		gpio = <&gpio4 RK_PA7 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
@@ -201,7 +200,7 @@
 	assigned-clock-rates = <0>, <125000000>;
 	clock_in_out = "output";
 	phy-handle = <&rgmii_phy0>;
-	phy-mode = "rgmii-id";
+	phy-mode = "rgmii";
 	phy-supply = <&vcc3v3_sys>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&gmac0_miim
@@ -210,6 +209,9 @@
 		     &gmac0_rgmii_clk
 		     &gmac0_rgmii_bus>;
 	status = "okay";
+
+	tx_delay = <0x4f>;
+	rx_delay = <0x2d>;
 };
 
 &gpu {

@@ -200,17 +200,14 @@ static int mailbox_chan_setup(struct scmi_chan_info *cinfo, struct device *dev,
 	if (!tx && !p2a_chan)
 		return -ENODEV;
 
-	smbox = devm_kzalloc(dev, sizeof(*smbox), GFP_KERNEL);
+	smbox = devm_kzalloc_obj(dev, *smbox);
 	if (!smbox)
 		return -ENOMEM;
 
 	smbox->shmem = core->shmem->setup_iomap(cinfo, dev, tx, NULL,
 						&smbox->io_ops);
-	if (IS_ERR(smbox->shmem)) {
-		ret = PTR_ERR(smbox->shmem);
-		devm_kfree(dev, smbox);
-		return ret;
-	}
+	if (IS_ERR(smbox->shmem))
+		return PTR_ERR(smbox->shmem);
 
 	cl = &smbox->cl;
 	cl->dev = cdev;

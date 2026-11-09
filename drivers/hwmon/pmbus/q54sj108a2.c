@@ -120,26 +120,22 @@ static ssize_t q54sj108a2_debugfs_read(struct file *file, char __user *buf,
 		rc = snprintf(data, 3, "%02x", rc);
 		break;
 	case Q54SJ108A2_DEBUGFS_MFR_ID:
-		rc = i2c_smbus_read_block_data(psu->client, PMBUS_MFR_ID,
-					       I2C_SMBUS_BLOCK_MAX, data);
+		rc = i2c_smbus_read_block_data(psu->client, PMBUS_MFR_ID, data);
 		if (rc < 0)
 			return rc;
 		break;
 	case Q54SJ108A2_DEBUGFS_MFR_MODEL:
-		rc = i2c_smbus_read_block_data(psu->client, PMBUS_MFR_MODEL,
-					       I2C_SMBUS_BLOCK_MAX, data);
+		rc = i2c_smbus_read_block_data(psu->client, PMBUS_MFR_MODEL, data);
 		if (rc < 0)
 			return rc;
 		break;
 	case Q54SJ108A2_DEBUGFS_MFR_REVISION:
-		rc = i2c_smbus_read_block_data(psu->client, PMBUS_MFR_REVISION,
-					       I2C_SMBUS_BLOCK_MAX, data);
+		rc = i2c_smbus_read_block_data(psu->client, PMBUS_MFR_REVISION, data);
 		if (rc < 0)
 			return rc;
 		break;
 	case Q54SJ108A2_DEBUGFS_MFR_LOCATION:
-		rc = i2c_smbus_read_block_data(psu->client, PMBUS_MFR_LOCATION,
-					       I2C_SMBUS_BLOCK_MAX, data);
+		rc = i2c_smbus_read_block_data(psu->client, PMBUS_MFR_LOCATION, data);
 		if (rc < 0)
 			return rc;
 		break;
@@ -151,8 +147,7 @@ static ssize_t q54sj108a2_debugfs_read(struct file *file, char __user *buf,
 		rc = snprintf(data, 3, "%02x", rc);
 		break;
 	case Q54SJ108A2_DEBUGFS_BLACKBOX_READ:
-		rc = i2c_smbus_read_block_data(psu->client, READ_HISTORY_EVENTS,
-					       I2C_SMBUS_BLOCK_MAX, data);
+		rc = i2c_smbus_read_block_data(psu->client, READ_HISTORY_EVENTS, data);
 		if (rc < 0)
 			return rc;
 
@@ -161,8 +156,7 @@ static ssize_t q54sj108a2_debugfs_read(struct file *file, char __user *buf,
 		out = data_char;
 		break;
 	case Q54SJ108A2_DEBUGFS_FLASH_KEY:
-		rc = i2c_smbus_read_block_data(psu->client, PMBUS_FLASH_KEY_WRITE,
-					       I2C_SMBUS_BLOCK_MAX, data);
+		rc = i2c_smbus_read_block_data(psu->client, PMBUS_FLASH_KEY_WRITE, data);
 		if (rc < 0)
 			return rc;
 
@@ -303,8 +297,7 @@ static int q54sj108a2_probe(struct i2c_client *client)
 
 	chip_id = (enum chips)(uintptr_t)i2c_get_match_data(client);
 
-	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_ID,
-					sizeof(buf) - 1, buf);
+	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_ID, buf);
 	if (ret < 0) {
 		dev_err(&client->dev, "Failed to read Manufacturer ID\n");
 		return ret;
@@ -318,8 +311,7 @@ static int q54sj108a2_probe(struct i2c_client *client)
 	/*
 	 * The chips support reading PMBUS_MFR_MODEL.
 	 */
-	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_MODEL,
-					sizeof(buf) - 1, buf);
+	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_MODEL, buf);
 	if (ret < 0) {
 		dev_err(dev, "Failed to read Manufacturer Model\n");
 		return ret;
@@ -334,8 +326,7 @@ static int q54sj108a2_probe(struct i2c_client *client)
 		return -ENODEV;
 	}
 
-	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_REVISION,
-					sizeof(buf) - 1, buf);
+	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_REVISION, buf);
 	if (ret < 0) {
 		dev_err(dev, "Failed to read Manufacturer Revision\n");
 		return ret;
@@ -353,7 +344,7 @@ static int q54sj108a2_probe(struct i2c_client *client)
 	if (ret)
 		return ret;
 
-	psu = devm_kzalloc(&client->dev, sizeof(*psu), GFP_KERNEL);
+	psu = devm_kzalloc_obj(&client->dev, *psu);
 	if (!psu)
 		return 0;
 

@@ -1,11 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Copyright (c) 2021 Intel Corporation */
 
+#include <linux/types.h>
+
 #ifndef __PECI_HWMON_COMMON_H
 #define __PECI_HWMON_COMMON_H
-
-#include <linux/jiffies.h>
-#include <linux/types.h>
 
 #define PECI_HWMON_UPDATE_INTERVAL	HZ
 
@@ -16,7 +15,7 @@
  */
 struct peci_sensor_state {
 	bool valid;
-	u64 last_updated;
+	unsigned long last_updated;
 };
 
 /**
@@ -40,8 +39,7 @@ struct peci_sensor_data {
 static inline bool peci_sensor_need_update(struct peci_sensor_state *state)
 {
 	return !state->valid ||
-	       time_after64(get_jiffies_64(),
-			    state->last_updated + PECI_HWMON_UPDATE_INTERVAL);
+	       time_after(jiffies, state->last_updated + PECI_HWMON_UPDATE_INTERVAL);
 }
 
 /**
@@ -51,7 +49,7 @@ static inline bool peci_sensor_need_update(struct peci_sensor_state *state)
 static inline void peci_sensor_mark_updated(struct peci_sensor_state *state)
 {
 	state->valid = true;
-	state->last_updated = get_jiffies_64();
+	state->last_updated = jiffies;
 }
 
 #endif /* __PECI_HWMON_COMMON_H */

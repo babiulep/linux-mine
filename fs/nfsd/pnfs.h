@@ -78,7 +78,6 @@ void nfsd4_return_all_client_layouts(struct nfs4_client *);
 void nfsd4_return_all_file_layouts(struct nfs4_client *clp,
 		struct nfs4_file *fp);
 void nfsd4_close_layout(struct nfs4_layout_stateid *ls);
-void nfsd4_stop_layout_fence(struct nfs4_layout_stateid *ls);
 int nfsd4_init_pnfs(void);
 void nfsd4_exit_pnfs(void);
 #else
@@ -98,10 +97,6 @@ static inline void nfsd4_return_all_file_layouts(struct nfs4_client *clp,
 {
 }
 static inline void nfsd4_close_layout(struct nfs4_layout_stateid *ls)
-{
-}
-
-static inline void nfsd4_stop_layout_fence(struct nfs4_layout_stateid *ls)
 {
 }
 static inline void nfsd4_exit_pnfs(void)

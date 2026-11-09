@@ -248,7 +248,13 @@ static struct cache_head *expkey_alloc(void)
 
 static void expkey_flush(void)
 {
+	/*
+	 * Take the nfsd_mutex here to ensure that the file cache is not
+	 * destroyed while we're in the middle of flushing.
+	 */
+	mutex_lock(&nfsd_mutex);
 	nfsd_file_cache_purge(current->nsproxy->net_ns);
+	mutex_unlock(&nfsd_mutex);
 }
 
 static int expkey_notify(struct cache_detail *cd, struct cache_head *h)
@@ -340,7 +346,7 @@ int nfsd_nl_expkey_get_reqs_dumpit(struct sk_buff *skb,
 
 	nn = net_generic(sock_net(skb->sk), nfsd_net_id);
 
-	mutex_lock(&nn->nfsd_mutex);
+	mutex_lock(&nfsd_mutex);
 
 	cd = nn->svc_expkey_cache;
 	if (!cd) {
@@ -355,7 +361,7 @@ int nfsd_nl_expkey_get_reqs_dumpit(struct sk_buff *skb,
 	}
 
 	items = kzalloc_objs(*items, cnt);
-	seqnos = kcalloc(cnt, sizeof(*seqnos), GFP_KERNEL);
+	seqnos = kzalloc_objs(*seqnos, cnt);
 	if (!items || !seqnos) {
 		ret = -ENOMEM;
 		goto out_alloc;
@@ -419,7 +425,7 @@ out_alloc:
 	kfree(seqnos);
 	kfree(items);
 out_unlock:
-	mutex_unlock(&nn->nfsd_mutex);
+	mutex_unlock(&nfsd_mutex);
 	return ret;
 }
 
@@ -554,7 +560,7 @@ int nfsd_nl_expkey_set_reqs_doit(struct sk_buff *skb,
 
 	nn = net_generic(genl_info_net(info), nfsd_net_id);
 
-	mutex_lock(&nn->nfsd_mutex);
+	mutex_lock(&nfsd_mutex);
 
 	cd = nn->svc_expkey_cache;
 	if (!cd) {
@@ -570,7 +576,7 @@ int nfsd_nl_expkey_set_reqs_doit(struct sk_buff *skb,
 	}
 
 out_unlock:
-	mutex_unlock(&nn->nfsd_mutex);
+	mutex_unlock(&nfsd_mutex);
 	return ret;
 }
 
@@ -667,7 +673,7 @@ int nfsd_nl_svc_export_get_reqs_dumpit(struct sk_buff *skb,
 
 	nn = net_generic(sock_net(skb->sk), nfsd_net_id);
 
-	mutex_lock(&nn->nfsd_mutex);
+	mutex_lock(&nfsd_mutex);
 
 	cd = nn->svc_export_cache;
 	if (!cd) {
@@ -682,7 +688,7 @@ int nfsd_nl_svc_export_get_reqs_dumpit(struct sk_buff *skb,
 	}
 
 	items = kzalloc_objs(*items, cnt);
-	seqnos = kcalloc(cnt, sizeof(*seqnos), GFP_KERNEL);
+	seqnos = kzalloc_objs(*seqnos, cnt);
 	pathbuf = kmalloc(PATH_MAX, GFP_KERNEL);
 	if (!items || !seqnos || !pathbuf) {
 		ret = -ENOMEM;
@@ -751,7 +757,7 @@ out_alloc:
 	kfree(seqnos);
 	kfree(items);
 out_unlock:
-	mutex_unlock(&nn->nfsd_mutex);
+	mutex_unlock(&nfsd_mutex);
 	return ret;
 }
 
@@ -1050,7 +1056,7 @@ int nfsd_nl_svc_export_set_reqs_doit(struct sk_buff *skb,
 
 	nn = net_generic(genl_info_net(info), nfsd_net_id);
 
-	mutex_lock(&nn->nfsd_mutex);
+	mutex_lock(&nfsd_mutex);
 
 	cd = nn->svc_export_cache;
 	if (!cd) {
@@ -1066,7 +1072,7 @@ int nfsd_nl_svc_export_set_reqs_doit(struct sk_buff *skb,
 	}
 
 out_unlock:
-	mutex_unlock(&nn->nfsd_mutex);
+	mutex_unlock(&nfsd_mutex);
 	return ret;
 }
 

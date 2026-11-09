@@ -139,12 +139,11 @@ static int dps920ab_probe(struct i2c_client *client)
 	struct dps920ab_data *data;
 	int ret;
 
-	data = devm_kzalloc(&client->dev, sizeof(*data), GFP_KERNEL);
+	data = devm_kzalloc_obj(&client->dev, *data);
 	if (!data)
 		return -ENOMEM;
 
-	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_ID,
-					sizeof(buf) - 1, buf);
+	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_ID, buf);
 	if (ret < 0) {
 		dev_err(&client->dev, "Failed to read Manufacturer ID\n");
 		return ret;
@@ -160,8 +159,7 @@ static int dps920ab_probe(struct i2c_client *client)
 	if (!data->mfr_id)
 		return -ENOMEM;
 
-	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_MODEL,
-					sizeof(buf) - 1, buf);
+	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_MODEL, buf);
 	if (ret < 0) {
 		dev_err(&client->dev, "Failed to read Manufacturer Model\n");
 		return ret;

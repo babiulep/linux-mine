@@ -151,8 +151,7 @@ static int lx1308_probe(struct i2c_client *client)
 	const struct i2c_device_id *mid;
 	int ret;
 
-	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_ID,
-					sizeof(buf) - 1, buf);
+	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_ID, buf);
 	if (ret < 0)
 		return dev_err_probe(&client->dev, ret,
 				     "Failed to read manufacturer id\n");
@@ -162,8 +161,7 @@ static int lx1308_probe(struct i2c_client *client)
 		return dev_err_probe(&client->dev, -ENODEV,
 				     "Unsupported Manufacturer ID '%s'\n", buf);
 
-	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_MODEL,
-					sizeof(buf) - 1, buf);
+	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_MODEL, buf);
 	if (ret < 0)
 		return dev_err_probe(&client->dev, ret,
 				     "Failed to read Manufacturer Model\n");
@@ -177,8 +175,7 @@ static int lx1308_probe(struct i2c_client *client)
 		return dev_err_probe(&client->dev, -ENODEV,
 				     "Unsupported Manufacturer Model '%s'\n", buf);
 
-	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_REVISION,
-					sizeof(buf) - 1, buf);
+	ret = i2c_smbus_read_block_data(client, PMBUS_MFR_REVISION, buf);
 	if (ret < 0)
 		return dev_err_probe(&client->dev, ret,
 				     "Failed to read Manufacturer Revision\n");

@@ -1293,6 +1293,7 @@ static int exfat_rename(const struct mnt_idmap *idmap,
 
 	inode_inc_iversion(new_dir);
 	simple_rename_timestamp(old_dir, old_dentry, new_dir, new_dentry);
+	EXFAT_I(new_dir)->i_crtime = current_time(new_dir);
 	exfat_truncate_inode_atime(new_dir);
 	if (IS_DIRSYNC(new_dir) && size != i_size_read(new_dir))
 		exfat_sync_inode(new_dir);
@@ -1308,7 +1309,7 @@ static int exfat_rename(const struct mnt_idmap *idmap,
 	else
 		mark_inode_dirty(old_inode);
 
-	if (S_ISDIR(old_inode->i_mode) && (old_dir != new_dir || new_inode)) {
+	if (S_ISDIR(old_inode->i_mode) && old_dir != new_dir) {
 		drop_nlink(old_dir);
 		if (!new_inode)
 			inc_nlink(new_dir);
@@ -1330,6 +1331,7 @@ static int exfat_rename(const struct mnt_idmap *idmap,
 			exfat_warn(sb, "abnormal access to an inode dropped");
 			WARN_ON(new_inode->i_nlink == 0);
 		}
+		EXFAT_I(new_inode)->i_crtime = current_time(new_inode);
 	}
 
 unlock:

@@ -456,9 +456,6 @@ static int cfg80211_set_encryption(struct cfg80211_registered_device *rdev,
 				rejoin = true;
 			}
 
-			addr = cfg80211_get_key_mac_addr(wdev, 0, pairwise,
-							 addr);
-
 			if (!cfg80211_valid_key_idx(wdev, idx, key_type, addr))
 				err = -ENOENT;
 			else
@@ -493,8 +490,6 @@ static int cfg80211_set_encryption(struct cfg80211_registered_device *rdev,
 
 	if (addr)
 		tx_key = false;
-
-	addr = cfg80211_get_key_mac_addr(wdev, params->cipher, pairwise, addr);
 
 	if (cfg80211_validate_key_settings(rdev, wdev, params, idx,
 					   pairwise, addr))

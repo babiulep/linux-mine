@@ -234,8 +234,9 @@ static int copy_compressed_data_to_bio(struct btrfs_fs_info *fs_info,
 				return -ENOMEM;
 		}
 
-		memcpy_to_folio(*out_folio, foffset,
-				compressed_data + *total_out - copy_start, copy_len);
+		kaddr = kmap_local_folio(*out_folio, foffset);
+		memcpy(kaddr, compressed_data + *total_out - copy_start, copy_len);
+		kunmap_local(kaddr);
 		ret = write_and_queue_folio(out_bio, out_folio, total_out, copy_len);
 		if (ret < 0)
 			return ret;
@@ -290,6 +291,9 @@ int lzo_compress_bio(struct list_head *ws, struct compressed_bio *cb)
 
 	while (cur_in < start + len) {
 		char *data_in;
+		const u32 sectorsize_mask = sectorsize - 1;
+		u32 sector_off = (cur_in - start) & sectorsize_mask;
+		u32 in_len;
 		size_t out_len;
 
 		/* Get the input page first. */
@@ -299,9 +303,11 @@ int lzo_compress_bio(struct list_head *ws, struct compressed_bio *cb)
 				goto out;
 		}
 
-		/* Compress one sector of data each time. */
+		/* Compress at most one sector of data each time. */
+		in_len = min_t(u32, start + len - cur_in, sectorsize - sector_off);
+		ASSERT(in_len);
 		data_in = kmap_local_folio(folio_in, offset_in_folio(folio_in, cur_in));
-		ret = lzo1x_1_compress(data_in, sectorsize, workspace->cbuf, &out_len,
+		ret = lzo1x_1_compress(data_in, in_len, workspace->cbuf, &out_len,
 				       workspace->mem);
 		kunmap_local(data_in);
 		if (unlikely(ret < 0)) {
@@ -315,7 +321,7 @@ int lzo_compress_bio(struct list_head *ws, struct compressed_bio *cb)
 		if (ret < 0)
 			goto out;
 
-		cur_in += sectorsize;
+		cur_in += in_len;
 
 		/*
 		 * Check if we're making it bigger after two sectors.  And if

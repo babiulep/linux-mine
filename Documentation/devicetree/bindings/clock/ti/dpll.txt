@@ -57,14 +57,11 @@ Optional properties:
 	- ti,min-div : the minimum divisor to start from to round the DPLL
 		       target rate
 	- ti,ssc-deltam : DPLL supports spread spectrum clocking, frequency
-			  spreading in permille (10th of a percent).
-			  Deprecated, use assigned-clock-sscs instead.
+			  spreading in permille (10th of a percent)
 	- ti,ssc-modfreq-hz : DPLL supports spread spectrum clocking, spread
-			      spectrum modulation frequency.
-			      Deprecated, use assigned-clock-sscs instead.
+			      spectrum modulation frequency
 	- ti,ssc-downspread : DPLL supports spread spectrum clocking, boolean
-			      to enable the downspread feature.
-			      Deprecated, use assigned-clock-sscs instead.
+			      to enable the downspread feature
 
 Examples:
 	dpll_core_ck: dpll_core_ck@44e00490 {

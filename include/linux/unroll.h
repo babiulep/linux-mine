@@ -16,8 +16,7 @@
 #endif
 
 /**
- * unrolled_count() - loop attribute to ask the compiler to unroll it
- * @n: unroll each @n iterations of the loop
+ * unrolled - loop attributes to ask the compiler to unroll it
  *
  * Usage:
  *
@@ -35,12 +34,22 @@
  * provides best performance and object code size.
  * Available only on Clang and GCC 8.x onwards.
  */
+
+/* Ask the compiler to pick an optimal unroll count, Clang only */
+#define unrolled							\
+	__pick_unrolled(clang loop unroll(enable), /* nothing */)
+
+/* Unroll each @n iterations of the loop */
 #define unrolled_count(n)						\
 	__pick_unrolled(clang loop unroll_count(n), GCC unroll n)
 
 /* Unroll the whole loop */
 #define unrolled_full							\
 	__pick_unrolled(clang loop unroll(full), GCC unroll 65534)
+
+/* Never unroll the loop */
+#define unrolled_none							\
+	__pick_unrolled(clang loop unroll(disable), GCC unroll 1)
 
 #define UNROLL(N, MACRO, args...) CONCATENATE(__UNROLL_, N)(MACRO, args)
 

@@ -147,14 +147,13 @@ void drv_remove_interface(struct ieee80211_local *local,
 static inline int drv_config(struct ieee80211_local *local, int radio_idx,
 			     u32 changed)
 {
-	int ret = 0;
+	int ret;
 
 	might_sleep();
 	lockdep_assert_wiphy(local->hw.wiphy);
 
 	trace_drv_config(local, radio_idx, changed);
-	if (local->ops->config)
-		ret = local->ops->config(&local->hw, radio_idx, changed);
+	ret = local->ops->config(&local->hw, radio_idx, changed);
 	trace_drv_return_int(local, ret);
 	return ret;
 }

@@ -384,9 +384,7 @@ static int amdgpu_userq_fence_read_wptr(struct amdgpu_device *adev,
 			goto lock_error;
 
 		mapping = amdgpu_vm_bo_lookup_mapping(queue->vm, addr);
-		/* Imported dma-bufs can't be CPU mapped with amdgpu_bo_kmap(). */
-		if (!mapping || !mapping->bo_va->base.bo ||
-		    drm_gem_is_imported(&mapping->bo_va->base.bo->tbo.base)) {
+		if (!mapping || !mapping->bo_va->base.bo) {
 			ret = -EINVAL;
 			goto lock_error;
 		}
@@ -507,8 +505,7 @@ int amdgpu_userq_signal_ioctl(struct drm_device *dev, void *data,
 		syncobj_points = NULL;
 	}
 
-	syncobj = kmalloc_array(num_syncobj_handles, sizeof(*syncobj),
-				GFP_KERNEL);
+	syncobj = kmalloc_objs(*syncobj, num_syncobj_handles);
 	if (!syncobj) {
 		r = -ENOMEM;
 		goto free_syncobj_points;
@@ -767,13 +764,11 @@ amdgpu_userq_wait_return_fence_info(struct drm_device *dev, struct drm_file *fil
 	struct drm_exec exec;
 	int i, cnt, r;
 
-	fence_info = kmalloc_array(wait_info->num_fences, sizeof(*fence_info),
-				   GFP_KERNEL);
+	fence_info = kmalloc_objs(*fence_info, wait_info->num_fences);
 	if (!fence_info)
 		return -ENOMEM;
 
-	fences = kmalloc_array(wait_info->num_fences, sizeof(*fences),
-			       GFP_KERNEL);
+	fences = kmalloc_objs(*fences, wait_info->num_fences);
 	if (!fences) {
 		r = -ENOMEM;
 		goto free_fence_info;

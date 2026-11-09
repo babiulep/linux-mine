@@ -53,7 +53,6 @@ projeto. Trabalhando juntos, seremos mais fortes.
 Exceto onde indicado abaixo, falamos apenas por nós mesmos, e não por qualquer
 empresa para a qual possamos trabalhar hoje, no passado ou no futuro.
 
-  - Laura Abbott
   - Bjorn Andersson (Linaro)
   - Andrea Arcangeli
   - Neil Armstrong

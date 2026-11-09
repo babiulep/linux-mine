@@ -165,7 +165,7 @@ static const char *adm1266_names[ADM1266_GPIO_NR + ADM1266_PDIO_NR] = {
 static int adm1266_gpio_get(struct gpio_chip *chip, unsigned int offset)
 {
 	struct adm1266_data *data = gpiochip_get_data(chip);
-	u8 read_buf[I2C_SMBUS_BLOCK_MAX];
+	u8 read_buf[I2C_SMBUS_BLOCK_MAX + 1];
 	unsigned long pins_status;
 	unsigned int pmbus_cmd;
 	int ret;
@@ -177,8 +177,7 @@ static int adm1266_gpio_get(struct gpio_chip *chip, unsigned int offset)
 
 	guard(pmbus_lock)(data->client);
 
-	ret = i2c_smbus_read_block_data(data->client, pmbus_cmd,
-					sizeof(read_buf), read_buf);
+	ret = i2c_smbus_read_block_data(data->client, pmbus_cmd, read_buf);
 	if (ret < 0)
 		return ret;
 	if (ret < 2)
@@ -195,15 +194,14 @@ static int adm1266_gpio_get_multiple(struct gpio_chip *chip, unsigned long *mask
 				     unsigned long *bits)
 {
 	struct adm1266_data *data = gpiochip_get_data(chip);
-	u8 read_buf[I2C_SMBUS_BLOCK_MAX];
+	u8 read_buf[ADM1266_PMBUS_BLOCK_MAX + 1];
 	unsigned long status;
 	unsigned int gpio_nr;
 	int ret;
 
 	guard(pmbus_lock)(data->client);
 
-	ret = i2c_smbus_read_block_data(data->client, ADM1266_GPIO_STATUS,
-					sizeof(read_buf), read_buf);
+	ret = i2c_smbus_read_block_data(data->client, ADM1266_GPIO_STATUS, read_buf);
 	if (ret < 0)
 		return ret;
 	if (ret < 2)
@@ -217,8 +215,7 @@ static int adm1266_gpio_get_multiple(struct gpio_chip *chip, unsigned long *mask
 			set_bit(gpio_nr, bits);
 	}
 
-	ret = i2c_smbus_read_block_data(data->client, ADM1266_PDIO_STATUS,
-					sizeof(read_buf), read_buf);
+	ret = i2c_smbus_read_block_data(data->client, ADM1266_PDIO_STATUS, read_buf);
 	if (ret < 0)
 		return ret;
 	if (ret < 2)
@@ -364,8 +361,7 @@ static int adm1266_firmware_revision_read(struct seq_file *s, void *pdata)
 	int ret;
 
 	guard(pmbus_lock)(client);
-	ret = i2c_smbus_read_block_data(client, ADM1266_IC_DEVICE_REV,
-					sizeof(buf), buf);
+	ret = i2c_smbus_read_block_data(client, ADM1266_IC_DEVICE_REV, buf);
 	if (ret < 0)
 		return ret;
 	if (ret < 3)
@@ -391,8 +387,7 @@ static int adm1266_powerup_counter_read(struct seq_file *s, void *pdata)
 	int ret;
 
 	guard(pmbus_lock)(client);
-	ret = i2c_smbus_read_block_data(client, ADM1266_POWERUP_COUNTER,
-					sizeof(buf), buf);
+	ret = i2c_smbus_read_block_data(client, ADM1266_POWERUP_COUNTER, buf);
 	if (ret < 0)
 		return ret;
 	if (ret != 2)
@@ -466,8 +461,7 @@ static int adm1266_rtc_get(void *data, u64 *val)
 	int ret, i;
 
 	guard(pmbus_lock)(client);
-	ret = i2c_smbus_read_block_data(client, ADM1266_SET_RTC,
-					sizeof(buf), buf);
+	ret = i2c_smbus_read_block_data(client, ADM1266_SET_RTC, buf);
 	if (ret < 0)
 		return ret;
 	if (ret < 6)
@@ -531,8 +525,7 @@ static int adm1266_nvmem_read_blackbox(struct adm1266_data *data, u8 *read_buff)
 	u8 buf[I2C_SMBUS_BLOCK_MAX];
 	int ret;
 
-	ret = i2c_smbus_read_block_data(data->client, ADM1266_BLACKBOX_INFO,
-					sizeof(buf), buf);
+	ret = i2c_smbus_read_block_data(data->client, ADM1266_BLACKBOX_INFO, buf);
 	if (ret < 0)
 		return ret;
 
@@ -617,7 +610,7 @@ static int adm1266_probe(struct i2c_client *client)
 	int ret;
 	int i;
 
-	data = devm_kzalloc(&client->dev, sizeof(struct adm1266_data), GFP_KERNEL);
+	data = devm_kzalloc_obj(&client->dev, struct adm1266_data);
 	if (!data)
 		return -ENOMEM;
 

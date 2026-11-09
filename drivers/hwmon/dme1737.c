@@ -204,8 +204,8 @@ struct dme1737_data {
 
 	struct mutex update_lock;
 	bool valid;			/* true if following fields are valid */
-	u64 last_update;		/* in jiffies */
-	u64 last_vbat;			/* in jiffies */
+	unsigned long last_update;	/* in jiffies */
+	unsigned long last_vbat;	/* in jiffies */
 	enum chips type;
 	const int *in_nominal;		/* pointer to IN_NOMINAL array */
 
@@ -600,16 +600,14 @@ static struct dme1737_data *dme1737_update_device(struct device *dev)
 	mutex_lock(&data->update_lock);
 
 	/* Enable a Vbat monitoring cycle every 10 mins */
-	if (time_after64(get_jiffies_64(), data->last_vbat + 600 * HZ) ||
-	    !data->valid) {
+	if (time_after(jiffies, data->last_vbat + 600 * HZ) || !data->valid) {
 		dme1737_write(data, DME1737_REG_CONFIG, dme1737_read(data,
 						DME1737_REG_CONFIG) | 0x10);
-		data->last_vbat = get_jiffies_64();
+		data->last_vbat = jiffies;
 	}
 
 	/* Sample register contents every 1 sec */
-	if (time_after64(get_jiffies_64(), data->last_update + HZ) ||
-	    !data->valid) {
+	if (time_after(jiffies, data->last_update + HZ) || !data->valid) {
 		if (data->has_features & HAS_VID) {
 			data->vid = dme1737_read(data, DME1737_REG_VID) &
 				0x3f;
@@ -779,7 +777,7 @@ static struct dme1737_data *dme1737_update_device(struct device *dev)
 				dme1737_write(data, DME1737_REG_ALARM1, 0xff);
 		}
 
-		data->last_update = get_jiffies_64();
+		data->last_update = jiffies;
 		data->valid = true;
 	}
 
@@ -2469,7 +2467,7 @@ static int dme1737_i2c_probe(struct i2c_client *client)
 	struct device *dev = &client->dev;
 	int err;
 
-	data = devm_kzalloc(dev, sizeof(struct dme1737_data), GFP_KERNEL);
+	data = devm_kzalloc_obj(dev, struct dme1737_data);
 	if (!data)
 		return -ENOMEM;
 
@@ -2638,7 +2636,7 @@ static int dme1737_isa_probe(struct platform_device *pdev)
 		return -EBUSY;
 	}
 
-	data = devm_kzalloc(dev, sizeof(struct dme1737_data), GFP_KERNEL);
+	data = devm_kzalloc_obj(dev, struct dme1737_data);
 	if (!data)
 		return -ENOMEM;
 

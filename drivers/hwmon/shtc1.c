@@ -13,7 +13,6 @@
 #include <linux/hwmon-sysfs.h>
 #include <linux/err.h>
 #include <linux/delay.h>
-#include <linux/ktime.h>
 #include <linux/platform_data/shtc1.h>
 #include <linux/of.h>
 
@@ -57,7 +56,7 @@ struct shtc1_data {
 	struct i2c_client *client;
 	struct mutex update_lock;
 	bool valid;
-	ktime_t last_updated;
+	unsigned long last_updated; /* in jiffies */
 
 	const unsigned char *command;
 	unsigned int nonblocking_wait_time; /* in us */
@@ -109,8 +108,7 @@ static struct shtc1_data *shtc1_update_client(struct device *dev)
 
 	mutex_lock(&data->update_lock);
 
-	if (!data->valid ||
-	    ktime_after(ktime_get(), ktime_add_ms(data->last_updated, 100))) {
+	if (time_after(jiffies, data->last_updated + HZ / 10) || !data->valid) {
 		ret = shtc1_update_values(client, data, buf, sizeof(buf));
 		if (ret)
 			goto out;
@@ -127,7 +125,7 @@ static struct shtc1_data *shtc1_update_client(struct device *dev)
 		val = be16_to_cpup((__be16 *)(buf + 3));
 		data->humidity = ((12500 * val) >> 13);
 
-		data->last_updated = ktime_get();
+		data->last_updated = jiffies;
 		data->valid = true;
 	}
 
@@ -227,7 +225,7 @@ static int shtc1_probe(struct i2c_client *client)
 		return -ENODEV;
 	}
 
-	data = devm_kzalloc(dev, sizeof(*data), GFP_KERNEL);
+	data = devm_kzalloc_obj(dev, *data);
 	if (!data)
 		return -ENOMEM;
 

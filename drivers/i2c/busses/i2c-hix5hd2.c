@@ -394,7 +394,7 @@ static int hix5hd2_i2c_probe(struct platform_device *pdev)
 	unsigned int freq;
 	int irq, ret;
 
-	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
+	priv = devm_kzalloc_obj(&pdev->dev, *priv);
 	if (!priv)
 		return -ENOMEM;
 
@@ -486,12 +486,8 @@ static int hix5hd2_i2c_runtime_suspend(struct device *dev)
 static int hix5hd2_i2c_runtime_resume(struct device *dev)
 {
 	struct hix5hd2_i2c_priv *priv = dev_get_drvdata(dev);
-	int ret;
 
-	ret = clk_prepare_enable(priv->clk);
-	if (ret)
-		return ret;
-
+	clk_prepare_enable(priv->clk);
 	hix5hd2_i2c_init(priv);
 
 	return 0;

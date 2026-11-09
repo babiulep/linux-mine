@@ -7,7 +7,7 @@
 #include <libarena/buddy.h>
 
 struct buddy __arena buddy;
-volatile __u32 zero = 0;
+volatile u32 zero = 0;
 
 /*
  * Storage for the queue nodes declared by bpf_arena_spin_lock.h. Each program
@@ -85,3 +85,5 @@ __weak void arena_free(void __arena *ptr)
 {
 	buddy_free(&buddy, ptr);
 }
+
+char _license[] SEC("license") = "GPL";

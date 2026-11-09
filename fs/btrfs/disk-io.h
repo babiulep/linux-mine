@@ -28,7 +28,8 @@ struct btrfs_transaction;
 #define BTRFS_SUPER_MIRROR_SHIFT 12
 
 /*
- * Fixed blocksize for all devices, applies to super block writes only.
+ * Fixed blocksize for all devices, applies to specific ways of reading
+ * metadata like superblock. Must meet the set_blocksize requirements.
  *
  * Do not change.
  */

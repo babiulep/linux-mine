@@ -47,9 +47,6 @@ struct of_phandle_args;
  *                id as given to the reset control ops, defaults to
  *                :c:func:`fwnode_reset_simple_xlate`
  * @nr_resets: number of reset controls in this reset controller device
- * @can_sleep: set by the provider if its reset ops may sleep; makes the core
- *             serialize the shared reset, assert and deassert paths under a
- *             mutex
  * @lock: protects the reset control list from concurrent access
  */
 struct reset_controller_dev {
@@ -67,7 +64,6 @@ struct reset_controller_dev {
 	int (*fwnode_xlate)(struct reset_controller_dev *rcdev,
 			    const struct fwnode_reference_args *reset_spec);
 	unsigned int nr_resets;
-	bool can_sleep;
 	struct mutex lock;
 };
 

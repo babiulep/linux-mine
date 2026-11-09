@@ -1013,11 +1013,10 @@ static void free_verif_stats(struct verif_stats *stats, size_t stat_cnt)
 	free(stats);
 }
 
-/* the stats have a line for every subprog, with its name */
-static char verif_log_buf[1024 * 1024];
+static char verif_log_buf[64 * 1024];
 
-/* Keep room for all 1024 subprogram records and trailing statistics. */
-#define MAX_PARSED_LOG_LINES 1100
+/* Keep room for all 256 subprogram records and trailing statistics. */
+#define MAX_PARSED_LOG_LINES 300
 
 static int parse_verif_log(char * const buf, size_t buf_sz, struct verif_stats *s)
 {

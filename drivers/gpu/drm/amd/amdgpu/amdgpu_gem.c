@@ -751,28 +751,22 @@ int amdgpu_gem_metadata_ioctl(struct drm_device *dev, void *data,
 		goto unreserve;
 	}
 
-	switch (args->op) {
-	case AMDGPU_GEM_METADATA_OP_GET_METADATA:
+	if (args->op == AMDGPU_GEM_METADATA_OP_GET_METADATA) {
 		amdgpu_bo_get_tiling_flags(robj, &args->data.tiling_info);
 		r = amdgpu_bo_get_metadata(robj, args->data.data,
 					   sizeof(args->data.data),
 					   &args->data.data_size_bytes,
 					   &args->data.flags);
-		break;
-	case AMDGPU_GEM_METADATA_OP_SET_METADATA:
+	} else if (args->op == AMDGPU_GEM_METADATA_OP_SET_METADATA) {
 		if (args->data.data_size_bytes > sizeof(args->data.data)) {
 			r = -EINVAL;
-			break;
+			goto unreserve;
 		}
 		r = amdgpu_bo_set_tiling_flags(robj, args->data.tiling_info);
 		if (!r)
 			r = amdgpu_bo_set_metadata(robj, args->data.data,
 						   args->data.data_size_bytes,
 						   args->data.flags);
-		break;
-	default:
-		r = -EINVAL;
-		break;
 	}
 
 unreserve:
@@ -1168,7 +1162,7 @@ int amdgpu_gem_op_ioctl(struct drm_device *dev, void *data,
 			goto out_exec;
 		}
 
-		vm_entries = kvcalloc(args->num_entries, sizeof(*vm_entries), GFP_KERNEL);
+		vm_entries = kvzalloc_objs(*vm_entries, args->num_entries);
 		if (!vm_entries) {
 			r = -ENOMEM;
 			goto out_exec;

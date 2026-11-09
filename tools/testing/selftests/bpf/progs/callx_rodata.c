@@ -4,14 +4,13 @@
 #include <stdbool.h>
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
-#include "bpf_misc.h"
 
 /* set by user space before the programs are loaded, it's in .rodata too */
 const volatile int bias = 1;
 
 int op_idx;
 
-#ifdef CAN_USE_CALLX
+#ifdef __clang__
 
 const volatile bool skip = false;
 
@@ -49,6 +48,7 @@ int both_ops(void *ctx)
 
 #else
 
+/* gcc doesn't support indirect calls */
 const volatile bool skip = true;
 
 SEC("socket")

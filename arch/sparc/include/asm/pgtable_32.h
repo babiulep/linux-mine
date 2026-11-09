@@ -37,7 +37,8 @@ struct vm_area_struct;
 struct page;
 
 void load_mmu(void);
-void __init find_ramdisk(unsigned long end_of_phys_memory);
+unsigned long calc_highpages(void);
+unsigned long __init bootmem_init(unsigned long *pages_avail);
 
 
 #define PTRS_PER_PTE    	64

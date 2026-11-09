@@ -154,7 +154,7 @@ struct amdgpu_mes {
 	void				*event_log_cpu_addr;
 
 	/* MES firmware debug extension ("mes_dbgext") log buffer */
-	uint32_t			dbgext_log_size;	/* per-region size */
+	uint32_t			dbgext_log_size;	/* per-XCC region size */
 	uint64_t			dbgext_log_options;
 	struct amdgpu_bo		*dbgext_log_gpu_obj;
 	uint64_t			dbgext_log_gpu_addr;
@@ -162,13 +162,10 @@ struct amdgpu_mes {
 	bool				dbgext_use_irq;
 
 	/*
-	 * The buffer above holds dbgext_num_xcc * dbgext_num_pipes back-to-back
-	 * log regions of dbgext_log_size bytes, one per (xcc, MES pipe), at
-	 * index xcc * dbgext_num_pipes + pipe.  dbgext_num_pipes is 2 under
-	 * unified MES (scheduler + KIQ pipe each run firmware), else 1.
+	 * Number of per-XCC log regions packed back-to-back in the buffer above;
+	 * each is dbgext_log_size bytes.  1 on single-XCC ASICs (gfx11/gfx12).
 	 */
 	uint32_t			dbgext_num_xcc;
-	uint32_t			dbgext_num_pipes;
 
 	/* armed: FW attached + reader/irq running */
 	bool					dbgext_active;
@@ -408,7 +405,6 @@ struct mes_misc_op_input {
 		struct {
 			uint32_t                  reg_offset;
 			uint64_t                  buffer_addr;
-			bool                      read64_bits;
 		} read_reg;
 
 		struct {
@@ -436,7 +432,6 @@ struct mes_misc_op_input {
 			} flags;
 			uint32_t spi_gdbg_per_vmid_cntl;
 			uint32_t tcp_watch_cntl[4];
-			uint64_t watch_addresses[4];
 			uint32_t trap_en;
 		} set_shader_debugger;
 
@@ -458,7 +453,6 @@ struct mes_misc_op_input {
 		struct {
 			uint64_t log_buffer_mc_addr;
 			uint64_t log_options;
-			uint32_t pipe;
 		} setup_mes_dbgext;
 	};
 };
@@ -615,8 +609,6 @@ int amdgpu_mes_detect_and_reset_hung_queues(struct amdgpu_device *adev,
 
 uint32_t amdgpu_mes_rreg(struct amdgpu_device *adev, uint32_t reg,
 			 uint32_t xcc_id);
-int amdgpu_mes_rreg64(struct amdgpu_device *adev, uint32_t reg,
-		      uint32_t xcc_id, uint64_t *val);
 int amdgpu_mes_wreg(struct amdgpu_device *adev,
 		    uint32_t reg, uint32_t val, uint32_t xcc_id);
 int amdgpu_mes_reg_write_reg_wait(struct amdgpu_device *adev,
@@ -627,7 +619,6 @@ int amdgpu_mes_set_shader_debugger(struct amdgpu_device *adev,
 				uint64_t process_context_addr,
 				uint32_t spi_gdbg_per_vmid_cntl,
 				const uint32_t *tcp_watch_cntl,
-				const uint64_t *watch_addresses,
 				uint32_t flags,
 				bool trap_en,
 				uint32_t xcc_id);

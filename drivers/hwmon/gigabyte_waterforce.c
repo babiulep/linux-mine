@@ -9,7 +9,6 @@
 #include <linux/hid.h>
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
-#include <linux/ktime.h>
 #include <linux/module.h>
 #include <linux/spinlock.h>
 #include <linux/unaligned.h>
@@ -56,7 +55,7 @@ struct waterforce_data {
 	struct mutex buffer_lock;
 	/* For queueing multiple readers */
 	struct mutex status_report_request_mutex;
-	/* Protects status report data, timestamp, and completion below */
+	/* For reinitializing the completion below */
 	spinlock_t status_report_request_lock;
 	struct completion status_report_received;
 	struct completion fw_version_processed;
@@ -68,7 +67,7 @@ struct waterforce_data {
 
 	u8 *buffer;
 	int firmware_version;
-	ktime_t updated;
+	unsigned long updated;	/* jiffies */
 };
 
 static umode_t waterforce_is_visible(const void *data,
@@ -129,10 +128,8 @@ static int waterforce_get_status(struct waterforce_data *priv)
 	if (ret < 0)
 		return ret;
 
-	spin_lock_irq(&priv->status_report_request_lock);
-	if (!ktime_after(ktime_get(), ktime_add_ms(priv->updated, STATUS_VALIDITY))) {
+	if (!time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY))) {
 		/* Data is up to date */
-		spin_unlock_irq(&priv->status_report_request_lock);
 		goto unlock_and_return;
 	}
 
@@ -142,8 +139,9 @@ static int waterforce_get_status(struct waterforce_data *priv)
 	 * the raw event parsing and marked the priv->status_report_received
 	 * completion as done.
 	 */
+	spin_lock_bh(&priv->status_report_request_lock);
 	reinit_completion(&priv->status_report_received);
-	spin_unlock_irq(&priv->status_report_request_lock);
+	spin_unlock_bh(&priv->status_report_request_lock);
 
 	/* Send command for getting status */
 	ret = waterforce_write_expanded(priv, get_status_cmd, GET_STATUS_CMD_LENGTH);
@@ -172,8 +170,6 @@ static int waterforce_read(struct device *dev, enum hwmon_sensor_types type,
 	if (ret < 0)
 		return ret;
 
-	ret = 0;
-	spin_lock_irq(&priv->status_report_request_lock);
 	switch (type) {
 	case hwmon_temp:
 		*val = priv->temp_input[channel];
@@ -187,17 +183,14 @@ static int waterforce_read(struct device *dev, enum hwmon_sensor_types type,
 			*val = DIV_ROUND_CLOSEST(priv->duty_input[channel] * 255, 100);
 			break;
 		default:
-			ret = -EOPNOTSUPP;
-			break;
+			return -EOPNOTSUPP;
 		}
 		break;
 	default:
-		ret = -EOPNOTSUPP;	/* unreachable */
-		break;
+		return -EOPNOTSUPP;	/* unreachable */
 	}
-	spin_unlock_irq(&priv->status_report_request_lock);
 
-	return ret;
+	return 0;
 }
 
 static int waterforce_read_string(struct device *dev, enum hwmon_sensor_types type,
@@ -263,7 +256,6 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 				int size)
 {
 	struct waterforce_data *priv = hid_get_drvdata(hdev);
-	unsigned long flags;
 
 	if (size <= FIRMWARE_VER_START_OFFSET_2)
 		return 0;
@@ -283,16 +275,18 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 	if (size <= WATERFORCE_TEMP_SENSOR)
 		return 0;
 
-	spin_lock_irqsave(&priv->status_report_request_lock, flags);
 	priv->temp_input[0] = data[WATERFORCE_TEMP_SENSOR] * 1000;
 	priv->speed_input[0] = get_unaligned_le16(data + WATERFORCE_FAN_SPEED);
 	priv->speed_input[1] = get_unaligned_le16(data + WATERFORCE_PUMP_SPEED);
 	priv->duty_input[0] = data[WATERFORCE_FAN_DUTY];
 	priv->duty_input[1] = data[WATERFORCE_PUMP_DUTY];
-	priv->updated = ktime_get();
+
+	spin_lock(&priv->status_report_request_lock);
 	if (!completion_done(&priv->status_report_received))
 		complete_all(&priv->status_report_received);
-	spin_unlock_irqrestore(&priv->status_report_request_lock, flags);
+	spin_unlock(&priv->status_report_request_lock);
+
+	priv->updated = jiffies;
 
 	return 0;
 }
@@ -325,7 +319,7 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 	struct waterforce_data *priv;
 	int ret;
 
-	priv = devm_kzalloc(&hdev->dev, sizeof(*priv), GFP_KERNEL);
+	priv = devm_kzalloc_obj(&hdev->dev, *priv);
 	if (!priv)
 		return -ENOMEM;
 
@@ -333,11 +327,11 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 	hid_set_drvdata(hdev, priv);
 
 	/*
-	 * Initialize priv->updated to STATUS_VALIDITY in the past, making
+	 * Initialize priv->updated to STATUS_VALIDITY seconds in the past, making
 	 * the initial empty data invalid for waterforce_read() without the need for
 	 * a special case there.
 	 */
-	priv->updated = ktime_sub_ms(ktime_get(), STATUS_VALIDITY + 1);
+	priv->updated = jiffies - msecs_to_jiffies(STATUS_VALIDITY);
 
 	ret = hid_parse(hdev);
 	if (ret) {

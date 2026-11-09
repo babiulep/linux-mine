@@ -653,6 +653,13 @@ void iwl_mld_mac80211_stop(struct ieee80211_hw *hw, bool suspend)
 }
 
 static
+int iwl_mld_mac80211_config(struct ieee80211_hw *hw, int radio_idx,
+			    u32 changed)
+{
+	return 0;
+}
+
+static
 int iwl_mld_mac80211_add_interface(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif)
 {
@@ -2914,6 +2921,7 @@ const struct ieee80211_ops iwl_mld_hw_ops = {
 	.tx = iwl_mld_mac80211_tx,
 	.start = iwl_mld_mac80211_start,
 	.stop = iwl_mld_mac80211_stop,
+	.config = iwl_mld_mac80211_config,
 	.get_antenna = iwl_mld_get_antenna,
 	.set_antenna = iwl_mld_set_antenna,
 	.add_interface = iwl_mld_mac80211_add_interface,

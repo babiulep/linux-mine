@@ -4679,9 +4679,8 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 			return -EOPNOTSUPP;
 
 		if (rdev->wiphy.n_radio) {
-			old_radio_rts_threshold = kcalloc(rdev->wiphy.n_radio,
-							  sizeof(u32),
-							  GFP_KERNEL);
+			old_radio_rts_threshold = kzalloc_objs(u32,
+							       rdev->wiphy.n_radio);
 			if (!old_radio_rts_threshold)
 				return -ENOMEM;
 		}
@@ -5565,8 +5564,6 @@ static int nl80211_get_key(struct sk_buff *skb, struct genl_info *info)
 	if (!rdev->ops->get_key)
 		return -EOPNOTSUPP;
 
-	mac_addr = cfg80211_get_key_mac_addr(wdev, 0, pairwise, mac_addr);
-
 	if (!cfg80211_valid_key_idx(wdev, key_idx, type, mac_addr))
 		return -ENOENT;
 
@@ -5768,10 +5765,6 @@ static int nl80211_new_key(struct sk_buff *skb, struct genl_info *info)
 	if (!rdev->ops->add_key)
 		return -EOPNOTSUPP;
 
-	mac_addr = cfg80211_get_key_mac_addr(wdev, key.p.cipher,
-					     key.type == NL80211_KEYTYPE_PAIRWISE,
-					     mac_addr);
-
 	if (cfg80211_validate_key_settings(rdev, wdev, &key.p, key.idx,
 					   key.type, mac_addr)) {
 		GENL_SET_ERR_MSG(info, "key setting validation failed");
@@ -5801,7 +5794,7 @@ static int nl80211_del_key(struct sk_buff *skb, struct genl_info *info)
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
 	int err;
 	struct wireless_dev *wdev = info->user_ptr[1];
-	const u8 *mac_addr = NULL;
+	u8 *mac_addr = NULL;
 	struct key_parse key;
 	int link_id = nl80211_link_id_or_invalid(info->attrs);
 
@@ -5826,10 +5819,6 @@ static int nl80211_del_key(struct sk_buff *skb, struct genl_info *info)
 		GENL_SET_ERR_MSG(info, "key type not pairwise, group or CIGTK");
 		return -EINVAL;
 	}
-
-	mac_addr = cfg80211_get_key_mac_addr(wdev, 0,
-					     key.type == NL80211_KEYTYPE_PAIRWISE,
-					     mac_addr);
 
 	if (!cfg80211_valid_key_idx(wdev, key.idx, key.type, mac_addr))
 		return -EINVAL;
@@ -7714,13 +7703,6 @@ static int nl80211_parse_ap_update(struct cfg80211_registered_device *rdev,
 	if (attr) {
 		err = nl80211_parse_s1g_short_beacon(rdev, attr,
 						     &params->s1g_short_beacon);
-		if (err)
-			return err;
-	}
-
-	attr = attrs[NL80211_ATTR_HE_OBSS_PD];
-	if (attr) {
-		err = nl80211_parse_he_obss_pd(attr, &params->he_obss_pd);
 		if (err)
 			return err;
 	}
@@ -18314,8 +18296,7 @@ nl80211_parse_non_evac_channel(struct cfg80211_registered_device *rdev,
 			       struct cfg80211_chan_def *chandef)
 {
 	struct nlattr **channel_parsed __free(kfree) =
-		kcalloc(NL80211_ATTR_MAX + 1, sizeof(*channel_parsed),
-			GFP_KERNEL);
+		kzalloc_objs(*channel_parsed, NL80211_ATTR_MAX + 1);
 	int ret;
 
 	if (!channel_parsed)
@@ -18350,8 +18331,7 @@ static int nl80211_nan_set_non_evac_channels(struct sk_buff *skb,
 		n_channels++;
 
 	struct cfg80211_nan_non_evac_channels *channels __free(kfree) =
-		kzalloc(struct_size(channels, chandefs, n_channels),
-			GFP_KERNEL);
+		kzalloc_flex(*channels, chandefs, n_channels);
 	if (!channels)
 		return -ENOMEM;
 

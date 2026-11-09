@@ -1117,8 +1117,7 @@ void dcn42_root_clock_control(struct dc *dc,
 		for (i = 0; i < dc->res_pool->pipe_count; i++) {
 			if (update_state->pg_pipe_res_update[PG_HUBP][i] &&
 				update_state->pg_pipe_res_update[PG_DPP][i]) {
-				if (dc->hwseq->funcs.dpp_root_clock_control &&
-				    hwss_is_dpp_root_clock_control_allowed(dc->hwseq, power_on))
+				if (dc->hwseq->funcs.dpp_root_clock_control)
 					dc->hwseq->funcs.dpp_root_clock_control(dc->hwseq, i, power_on);
 			}
 			if (update_state->pg_pipe_res_update[PG_DPSTREAM][i])
@@ -1151,8 +1150,7 @@ void dcn42_root_clock_control(struct dc *dc,
 		for (i = 0; i < dc->res_pool->pipe_count; i++) {
 			if (update_state->pg_pipe_res_update[PG_HUBP][i] &&
 				update_state->pg_pipe_res_update[PG_DPP][i]) {
-				if (dc->hwseq->funcs.dpp_root_clock_control &&
-				    hwss_is_dpp_root_clock_control_allowed(dc->hwseq, power_on))
+				if (dc->hwseq->funcs.dpp_root_clock_control)
 					dc->hwseq->funcs.dpp_root_clock_control(dc->hwseq, i, power_on);
 			}
 			if (update_state->pg_pipe_res_update[PG_DPSTREAM][i])

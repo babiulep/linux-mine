@@ -29,9 +29,9 @@ SEC("syscall")
 __arch_x86_64
 __arch_arm64
 __success __retval(0)
-__skip_without_arena
 int arena_arg_forms(void *ctx)
 {
+#if defined(__BPF_FEATURE_ADDR_SPACE_CAST)
 	u64 __arena *val;
 	u64 ret;
 
@@ -59,6 +59,7 @@ int arena_arg_forms(void *ctx)
 		return 4;
 
 	bpf_arena_free_pages(&arena, (void __arena *)val, 1);
+#endif
 	return 0;
 }
 
@@ -74,6 +75,7 @@ __arch_arm64
 __success __retval(0)
 int arena_arg_rebase(void *ctx)
 {
+#if defined(__BPF_FEATURE_ADDR_SPACE_CAST)
 	u64 __arena *val;
 	u64 base, off;
 
@@ -105,6 +107,7 @@ int arena_arg_rebase(void *ctx)
 		return 7;
 
 	bpf_arena_free_pages(&arena, (void __arena *)val, 1);
+#endif
 	return 0;
 }
 
@@ -112,9 +115,9 @@ SEC("syscall")
 __arch_x86_64
 __arch_arm64
 __success __retval(0)
-__skip_without_arena
 int arena_args5(void *ctx)
 {
+#if defined(__BPF_FEATURE_ADDR_SPACE_CAST)
 	u64 __arena *val;
 
 	val = bpf_arena_alloc_pages(&arena, NULL, 1, NUMA_NO_NODE, 0);
@@ -136,6 +139,7 @@ int arena_args5(void *ctx)
 		return 3;
 
 	bpf_arena_free_pages(&arena, (void __arena *)val, 1);
+#endif
 	return 0;
 }
 
@@ -143,9 +147,9 @@ SEC("syscall")
 __arch_x86_64
 __arch_arm64
 __success __retval(0)
-__skip_without_arena
 int arena_arg_mixed(void *ctx)
 {
+#if defined(__BPF_FEATURE_ADDR_SPACE_CAST)
 	u64 __arena *val;
 
 	val = bpf_arena_alloc_pages(&arena, NULL, 1, NUMA_NO_NODE, 0);
@@ -162,6 +166,7 @@ int arena_arg_mixed(void *ctx)
 		return 3;
 
 	bpf_arena_free_pages(&arena, (void __arena *)val, 1);
+#endif
 	return 0;
 }
 
@@ -172,6 +177,7 @@ __arch_arm64
 __success __retval(0)
 int arena_arg_unpopulated(void *ctx)
 {
+#if defined(__BPF_FEATURE_ADDR_SPACE_CAST)
 	u64 __arena *val;
 
 	val = bpf_arena_alloc_pages(&arena, NULL, 1, NUMA_NO_NODE, 0);
@@ -182,6 +188,7 @@ int arena_arg_unpopulated(void *ctx)
 	bpf_kfunc_arena_arg_test((u64 *)stash);
 
 	bpf_arena_free_pages(&arena, (void __arena *)val, 1);
+#endif
 	return 0;
 }
 
@@ -213,9 +220,9 @@ SEC("syscall")
 __arch_x86_64
 __arch_arm64
 __success __retval(0)
-__skip_without_arena
 int arena_arg_subprog(void *ctx)
 {
+#if defined(__BPF_FEATURE_ADDR_SPACE_CAST)
 	u64 __arena *val;
 	int ret;
 
@@ -231,6 +238,9 @@ int arena_arg_subprog(void *ctx)
 
 	bpf_arena_free_pages(&arena, (void __arena *)val, 1);
 	return ret;
+#else
+	return 0;
+#endif
 }
 
 SEC("syscall")

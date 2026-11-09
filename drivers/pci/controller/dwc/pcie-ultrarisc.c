@@ -141,7 +141,7 @@ static int ultrarisc_pcie_probe(struct platform_device *pdev)
 	struct dw_pcie *pci;
 	int ret;
 
-	ultra = devm_kzalloc(dev, sizeof(*ultra), GFP_KERNEL);
+	ultra = devm_kzalloc_obj(dev, *ultra);
 	if (!ultra)
 		return -ENOMEM;
 
@@ -153,6 +153,12 @@ static int ultrarisc_pcie_probe(struct platform_device *pdev)
 	pci->atu_size = SZ_8K;
 
 	pp = &pci->pp;
+
+	/*
+	 * DP1000 routes MEM transactions without outbound iATU windows, which
+	 * avoids the 16-window/4GB-per-window aperture limit.
+	 */
+	pp->bypass_ob_mem_iatu = true;
 
 	platform_set_drvdata(pdev, ultra);
 

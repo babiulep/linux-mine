@@ -36,7 +36,7 @@ static void __test_callx_rodata_lskel(void)
 	if (!ASSERT_OK_PTR(skel, "open"))
 		return;
 
-	/* toolchain or JIT can't do callx */
+	/* gcc doesn't support indirect calls */
 	if (skel->rodata->skip) {
 		test__skip();
 		goto out;

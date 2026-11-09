@@ -727,8 +727,8 @@ out:
  *
  */
 
-int gfs2_freeze_super(struct super_block *sb, enum freeze_holder who,
-		      const void *freeze_owner)
+static int gfs2_freeze_super(struct super_block *sb, enum freeze_holder who,
+			     const void *freeze_owner)
 {
 	struct gfs2_sbd *sdp = sb->s_fs_info;
 	int error;
@@ -796,8 +796,8 @@ static int gfs2_freeze_fs(struct super_block *sb)
  *
  */
 
-int gfs2_thaw_super(struct super_block *sb, enum freeze_holder who,
-		    const void *freeze_owner)
+static int gfs2_thaw_super(struct super_block *sb, enum freeze_holder who,
+			   const void *freeze_owner)
 {
 	struct gfs2_sbd *sdp = sb->s_fs_info;
 	int error;

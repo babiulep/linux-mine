@@ -44,7 +44,6 @@
 	NET	Appropriate network support is enabled.
 	NFS	Appropriate NFS support is enabled.
 	NUMA	NUMA support is enabled.
-	NVME	NVMe support is enabled
 	OF	Devicetree is enabled.
 	PARISC	The PA-RISC architecture is enabled.
 	PCI	PCI bus support is enabled.
@@ -75,6 +74,7 @@
 	TPM	TPM drivers are enabled.
 	UMS	USB Mass Storage support is enabled.
 	USB	USB support is enabled.
+	NVME	NVMe support is enabled
 	USBHID	USB Human Interface Device support is enabled.
 	V4L	Video For Linux support is enabled.
 	VGA	The VGA console has been enabled.
@@ -1208,7 +1208,8 @@ Kernel parameters
 			        get a -EPERM as result when trying to register files
 				or directories within debugfs.
 				This is equivalent of the runtime functionality if
-				debugfs was not enabled in the kernel at all.
+				debugfs was not enabled in the kernel at all,
+				except that the latter returns -ENODEV.
 			Default value is set in build-time with a kernel configuration.
 
 	debugpat	[X86] Enable PAT debugging
