@@ -109,6 +109,7 @@ static inline u32 amdgpu_mes_get_hqd_mask(u32 num_pipe,
 }
 
 static void amdgpu_mes_userq_notify_unmap_work_handler(struct work_struct *work);
+static void amdgpu_mes_dbgext_work_fn(struct work_struct *work);
 
 int amdgpu_mes_init(struct amdgpu_device *adev)
 {
@@ -129,6 +130,8 @@ int amdgpu_mes_init(struct amdgpu_device *adev)
 	mutex_init(&adev->mes.dbgext_lock);
 	mutex_init(&adev->mes.dbgext_drain_lock);
 	spin_lock_init(&adev->mes.dbgext_notify_lock);
+	/* stopping the debug extension cancels it, even if it never started */
+	INIT_WORK(&adev->mes.dbgext_work, amdgpu_mes_dbgext_work_fn);
 
 	for (i = 0; i < AMDGPU_MAX_MES_PIPES * num_xcc; i++)
 		spin_lock_init(&adev->mes.ring_lock[i]);
@@ -245,18 +248,16 @@ int amdgpu_mes_init(struct amdgpu_device *adev)
 	}
 
 	if (adev->mes.hung_queue_db_array_size) {
-		for (i = 0; i < AMDGPU_MAX_MES_PIPES * num_xcc; i++) {
-			r = amdgpu_bo_create_kernel(adev,
-						    adev->mes.hung_queue_db_array_size * sizeof(u32),
-						    PAGE_SIZE,
-						    AMDGPU_GEM_DOMAIN_GTT,
-						    &adev->mes.hung_queue_db_array_gpu_obj[i],
-						    &adev->mes.hung_queue_db_array_gpu_addr[i],
-						    &adev->mes.hung_queue_db_array_cpu_addr[i]);
-			if (r) {
-				dev_warn(adev->dev, "failed to create MES hung db array buffer (%d)", r);
-				goto error_doorbell;
-			}
+		r = amdgpu_bo_create_kernel(adev,
+					    adev->mes.hung_queue_db_array_size * sizeof(u32),
+					    PAGE_SIZE,
+					    AMDGPU_GEM_DOMAIN_GTT,
+					    &adev->mes.hung_queue_db_array_gpu_obj,
+					    &adev->mes.hung_queue_db_array_gpu_addr,
+					    &adev->mes.hung_queue_db_array_cpu_addr);
+		if (r) {
+			dev_warn(adev->dev, "failed to create MES hung db array buffer (%d)", r);
+			goto error_doorbell;
 		}
 
 		adev->gfx.mec.mes_hung_db_array =
@@ -280,11 +281,11 @@ error:
 		if (adev->mes.query_status_fence_ptr[i])
 			amdgpu_wb_free(adev,
 				      adev->mes.query_status_fence_offs[i]);
-		if (adev->mes.hung_queue_db_array_gpu_obj[i])
-			amdgpu_bo_free_kernel(&adev->mes.hung_queue_db_array_gpu_obj[i],
-					      &adev->mes.hung_queue_db_array_gpu_addr[i],
-					      &adev->mes.hung_queue_db_array_cpu_addr[i]);
 	}
+	if (adev->mes.hung_queue_db_array_gpu_obj)
+		amdgpu_bo_free_kernel(&adev->mes.hung_queue_db_array_gpu_obj,
+				      &adev->mes.hung_queue_db_array_gpu_addr,
+				      &adev->mes.hung_queue_db_array_cpu_addr);
 
 	ida_destroy(&adev->mes.doorbell_ida);
 	mutex_destroy(&adev->mes.mutex_hidden);
@@ -304,11 +305,12 @@ void amdgpu_mes_fini(struct amdgpu_device *adev)
 			      &adev->mes.event_log_gpu_addr,
 			      &adev->mes.event_log_cpu_addr);
 
+	if (adev->mes.hung_queue_db_array_gpu_obj)
+		amdgpu_bo_free_kernel(&adev->mes.hung_queue_db_array_gpu_obj,
+				      &adev->mes.hung_queue_db_array_gpu_addr,
+				      &adev->mes.hung_queue_db_array_cpu_addr);
+
 	for (i = 0; i < AMDGPU_MAX_MES_PIPES * num_xcc; i++) {
-		if (adev->mes.hung_queue_db_array_gpu_obj[i])
-			 amdgpu_bo_free_kernel(&adev->mes.hung_queue_db_array_gpu_obj[i],
-					 &adev->mes.hung_queue_db_array_gpu_addr[i],
-					 &adev->mes.hung_queue_db_array_cpu_addr[i]);
 		if (adev->mes.sch_ctx_ptr[i])
 			amdgpu_wb_free(adev, adev->mes.sch_ctx_offs[i]);
 		if (adev->mes.query_status_fence_ptr[i])
@@ -531,7 +533,7 @@ int amdgpu_mes_detect_and_reset_hung_queues(struct amdgpu_device *adev,
 					    uint32_t xcc_id)
 {
 	struct mes_detect_and_reset_queue_input input;
-	u32 *db_array = adev->mes.hung_queue_db_array_cpu_addr[xcc_id];
+	u32 *db_array = adev->mes.hung_queue_db_array_cpu_addr;
 	int hqd_info_offset = adev->mes.hung_queue_hqd_info_offset, r, i;
 
 	if (!hung_db_num || !hung_db_array)
@@ -543,7 +545,7 @@ int amdgpu_mes_detect_and_reset_hung_queues(struct amdgpu_device *adev,
 		return -EINVAL;
 
 	/* Clear the doorbell array before detection */
-	memset(adev->mes.hung_queue_db_array_cpu_addr[xcc_id], AMDGPU_MES_INVALID_DB_OFFSET,
+	memset(adev->mes.hung_queue_db_array_cpu_addr, AMDGPU_MES_INVALID_DB_OFFSET,
 		adev->mes.hung_queue_db_array_size * sizeof(u32));
 	input.queue_type = queue_type;
 	input.detect_only = detect_only;
@@ -562,6 +564,7 @@ int amdgpu_mes_detect_and_reset_hung_queues(struct amdgpu_device *adev,
 	for (i = 0; i < adev->mes.hung_queue_hqd_info_offset; i++) {
 		/* Finding hung queues where db_array[i] is a valid doorbell */
 		if (db_array[i] != AMDGPU_MES_INVALID_DB_OFFSET) {
+			dev_dbg(adev->dev, "MES: hung queue doorbell 0x%x\n", db_array[i]);
 			hung_db_array[i] = db_array[i];
 			*hung_db_num += 1;
 		}
@@ -1765,7 +1768,6 @@ static int amdgpu_mes_dbgext_start_locked(struct amdgpu_device *adev)
 			return r;
 		}
 		mes->dbgext_log_size = size;
-		INIT_WORK(&mes->dbgext_work, amdgpu_mes_dbgext_work_fn);
 	} else {
 		/*
 		 * Resume: the log buffer is kept allocated across a suspend/

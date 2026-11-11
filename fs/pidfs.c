@@ -775,8 +775,7 @@ static long pidfd_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (error)
 			return error;
 
-		return FD_ADD(O_CLOEXEC,
-			      dentry_open(&path, O_PATH, current_cred()));
+		return FD_ADD(O_CLOEXEC, task_path_open(&path));
 	}
 
 	ns_common = pidfd_get_namespace(pidfd_pid(file), cmd, arg);

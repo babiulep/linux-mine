@@ -247,6 +247,7 @@ cifs_read_super(struct super_block *sb)
 
 	sb->s_magic = CIFS_SUPER_MAGIC;
 	sb->s_op = &cifs_super_ops;
+	sb->s_iflags |= SB_I_NO_ATOMIC_MKDIR;
 	sb->s_xattr = cifs_xattr_handlers;
 	rc = super_setup_bdi(sb);
 	if (rc)
@@ -295,10 +296,10 @@ out_no_root:
 }
 
 struct cifs_tcon_ref {
-	struct list_head list;
-	struct tcon_link *tlink;
-	struct cifs_tcon *tcon;
-	bool shared;
+	struct list_head	list;
+	struct tcon_link	*tlink;
+	struct cifs_tcon	*tcon;
+	bool			shared;
 };
 
 static bool used_by_other_mounts(struct cifs_tcon *tcon,
@@ -309,6 +310,7 @@ static bool used_by_other_mounts(struct cifs_tcon *tcon,
 
 	list_for_each_entry(ref, tcons, list)
 		n += ref->tcon == tcon;
+
 	guard(spinlock)(&tcon->tc_lock);
 	return tcon->mnt_refs - tcon->mnt_unlinked > n;
 }
@@ -327,9 +329,11 @@ static void get_sb_tcons(struct cifs_sb_info *cifs_sb, struct list_head *tcons)
 		tcon = tlink_tcon(tlink);
 		if (IS_ERR_OR_NULL(tcon))
 			continue;
+
 		ref = kmalloc_obj(struct cifs_tcon_ref, GFP_ATOMIC);
 		if (!ref)
 			break;
+
 		ref->tlink = cifs_get_tlink(tlink);
 		ref->tcon = tcon;
 		list_add_tail(&ref->list, tcons);

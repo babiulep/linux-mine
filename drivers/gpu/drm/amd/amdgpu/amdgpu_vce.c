@@ -790,11 +790,13 @@ int amdgpu_vce_ring_parse_cs(struct amdgpu_cs_parser *p,
 {
 	unsigned int fb_idx = 0, bs_idx = 0;
 	int session_idx = -1;
+	uint32_t img_size[AMDGPU_MAX_VCE_HANDLES];
 	uint32_t destroyed = 0;
 	uint32_t created = 0;
 	uint32_t allocated = 0;
 	uint32_t tmp, handle = 0;
 	uint32_t dummy = 0xffffffff;
+	uint32_t luma_pitch, chroma_pitch, height;
 	uint32_t *size = &dummy;
 	unsigned int idx;
 	int i, r = 0;
@@ -880,7 +882,15 @@ int amdgpu_vce_ring_parse_cs(struct amdgpu_cs_parser *p,
 				r = session_idx;
 				goto out;
 			}
-			size = &p->adev->vce.img_size[session_idx];
+			/*
+			 * Stage the image size locally and only commit it once
+			 * the whole IB is valid, otherwise a failed create
+			 * could change the size of a live session.
+			 */
+			if (!(created & (1 << session_idx)))
+				img_size[session_idx] =
+					p->adev->vce.img_size[session_idx];
+			size = &img_size[session_idx];
 			break;
 
 		case 0x00000002: /* task info */
@@ -893,26 +903,21 @@ int amdgpu_vce_ring_parse_cs(struct amdgpu_cs_parser *p,
 			if (destroyed & (1 << session_idx)) {
 				destroyed &= ~(1 << session_idx);
 				allocated |= 1 << session_idx;
+			}
 
-			} else if (!(allocated & (1 << session_idx))) {
-				DRM_ERROR("Handle already in use!\n");
+			luma_pitch = amdgpu_ib_get_value(ib, idx + 8);
+			chroma_pitch = amdgpu_ib_get_value(ib, idx + 9);
+			height = amdgpu_ib_get_value(ib, idx + 10); /* encRefYHeightInQw */
+
+			if (luma_pitch == 0 || chroma_pitch == 0 || height == 0 ||
+			    luma_pitch > 4096 || chroma_pitch > 4096 || height > 2304 / 8) {
+				DRM_ERROR("invalid VCE ref image size: (%u %u)x%u\n",
+					  luma_pitch, chroma_pitch, height * 8);
 				r = -EINVAL;
 				goto out;
 			}
 
-			uint32_t width, height;
-			width = amdgpu_ib_get_value(ib, idx + 8);
-			height = amdgpu_ib_get_value(ib, idx + 10);
-
-			if (width == 0 || height == 0 ||
-			    width > 4096 || height > 2304) {
-				DRM_ERROR("invalid VCE image size: %ux%u\n",
-					  width, height);
-				r = -EINVAL;
-				goto out;
-			}
-
-			*size = width * height * 8 * 3 / 2;
+			*size = luma_pitch * height * 8 + chroma_pitch * height * 8 / 2;
 
 			break;
 
@@ -922,6 +927,7 @@ int amdgpu_vce_ring_parse_cs(struct amdgpu_cs_parser *p,
 		case 0x04000007: /* motion estimation */
 		case 0x04000008: /* rdo */
 		case 0x04000009: /* vui */
+		case 0x0400000d: /* sei */
 		case 0x05000002: /* auxiliary buffer */
 		case 0x05000009: /* clock table */
 			break;
@@ -941,13 +947,25 @@ int amdgpu_vce_ring_parse_cs(struct amdgpu_cs_parser *p,
 			break;
 
 		case 0x03000001: /* encode */
+			height = amdgpu_ib_get_value(ib, idx + 13);
+			luma_pitch = amdgpu_ib_get_value(ib, idx + 14);
+			chroma_pitch = amdgpu_ib_get_value(ib, idx + 15);
+
+			if (luma_pitch == 0 || chroma_pitch == 0 || height == 0 ||
+			    luma_pitch > 4096 || chroma_pitch > 4096 || height > 2304) {
+				DRM_ERROR("invalid VCE image size: (%u %u)x%u\n",
+					  luma_pitch, chroma_pitch, height);
+				r = -EINVAL;
+				goto out;
+			}
+
 			r = amdgpu_vce_cs_reloc(p, ib, idx + 10, idx + 9,
-						*size, 0);
+						luma_pitch * height, 0);
 			if (r)
 				goto out;
 
 			r = amdgpu_vce_cs_reloc(p, ib, idx + 12, idx + 11,
-						*size / 3, 0);
+						chroma_pitch * height / 2, 0);
 			if (r)
 				goto out;
 			break;
@@ -1012,7 +1030,12 @@ int amdgpu_vce_ring_parse_cs(struct amdgpu_cs_parser *p,
 
 out:
 	if (!r) {
-		/* No error, free all destroyed handle slots */
+		/* No error, commit the image size of created sessions */
+		for (i = 0; i < AMDGPU_MAX_VCE_HANDLES; ++i)
+			if (created & (1 << i))
+				p->adev->vce.img_size[i] = img_size[i];
+
+		/* and free all destroyed handle slots */
 		tmp = destroyed;
 	} else {
 		/* Error during parsing, free all allocated handle slots */
@@ -1070,11 +1093,6 @@ int amdgpu_vce_ring_parse_cs_vm(struct amdgpu_cs_parser *p,
 			if (destroyed & (1 << session_idx)) {
 				destroyed &= ~(1 << session_idx);
 				allocated |= 1 << session_idx;
-
-			} else if (!(allocated & (1 << session_idx))) {
-				DRM_ERROR("Handle already in use!\n");
-				r = -EINVAL;
-				goto out;
 			}
 
 			break;

@@ -257,12 +257,15 @@ static int cifs_reopen_writeback(struct cifs_io_subrequest *wdata)
 
 	if (cifs_io_aborted(wdata))
 		return -EIO;
+
 	guard(mutex)(&req->reopen_lock);
 	if (!cifs_bad_handle_pending(req) && !cfile->invalidHandle)
 		return 0;
+
 	rc = cifs_reopen_failed(req);
 	if (rc)
 		return rc;
+
 	rc = req->reopen_pass_err;
 	if (!rc) {
 		if (!cifs_try_invalidate_bad_handle(req))
@@ -279,10 +282,12 @@ static int cifs_reopen_writeback(struct cifs_io_subrequest *wdata)
 		}
 		req->reopen_pass_err = rc;
 	}
+
 	if (!cifs_io_should_replay(wdata)) {
 		WRITE_ONCE(req->reopen_gave_up, true);
 		return -EIO;
 	}
+
 	trace_netfs_sreq(&wdata->subreq, netfs_sreq_trace_io_retry_needed);
 	__set_bit(NETFS_SREQ_NEED_RETRY, &wdata->subreq.flags);
 	return rc;
@@ -500,6 +505,7 @@ static void cifs_share_retry_state(struct netfs_io_subrequest *from,
 		sleep = max(sleep, wdata->cur_sleep);
 		replay |= wdata->replay;
 	}
+
 	subreq = from;
 	list_for_each_entry_from(subreq, head, rreq_link) {
 		if (subreq == stop)
@@ -3921,6 +3927,14 @@ void cifs_oplock_break(struct work_struct *work)
 	__u64 persistent_fid, volatile_fid;
 	__u16 net_fid;
 
+	/*
+	 * Dropping the handle reference below also drops the dentry
+	 * reference that pins this inode, and cinode is still needed to
+	 * acknowledge the break and to report it as complete.  Hold the inode
+	 * until that is done.
+	 */
+	ihold(inode);
+
 	wait_on_bit(&cinode->flags, CIFS_INODE_PENDING_WRITERS,
 			TASK_UNINTERRUPTIBLE);
 
@@ -4008,6 +4022,7 @@ oplock_break_ack:
 	cifs_put_tlink(tlink);
 out:
 	cifs_done_oplock_break(cinode);
+	iput(inode);
 }
 
 #ifdef CONFIG_SWAP

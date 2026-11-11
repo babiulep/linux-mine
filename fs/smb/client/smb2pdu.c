@@ -5303,9 +5303,10 @@ smb2_async_writev(struct cifs_io_subrequest *wdata)
 		flags |= CIFS_NO_RECONNECT_WAIT;
 		rc = smb2_io_req_init(SMB2_WRITE, tcon, server,
 				      (void **) &req, &total_len);
-	} else
+	} else {
 		rc = smb2_plain_req_init(SMB2_WRITE, tcon, server,
 					 (void **) &req, &total_len);
+	}
 	if (rc)
 		goto out;
 

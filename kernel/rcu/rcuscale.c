@@ -1232,8 +1232,7 @@ rcu_scale_init(void)
 	for (i = 0; i < nrealwriters; i++) {
 		struct writer_state *wsp = &writer_states[i];
 
-		wsp->wst_durations = kcalloc(MAX_MEAS, sizeof(*wsp->wst_durations),
-					     GFP_KERNEL);
+		wsp->wst_durations = kzalloc_objs(*wsp->wst_durations, MAX_MEAS);
 		if (!wsp->wst_durations) {
 			firsterr = -ENOMEM;
 			goto unwind;

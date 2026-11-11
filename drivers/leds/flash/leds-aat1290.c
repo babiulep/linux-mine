@@ -228,6 +228,11 @@ static int aat1290_led_flash_timeout_set(struct led_classdev_flash *fled_cdev,
 	return 0;
 }
 
+static void aat1290_of_node_put(void *data)
+{
+	of_node_put(data);
+}
+
 static int aat1290_led_parse_dt(struct aat1290_led *led,
 			struct aat1290_led_config_data *cfg,
 			struct device_node **sub_node)
@@ -296,9 +301,9 @@ static int aat1290_led_parse_dt(struct aat1290_led *led,
 		return ret;
 	}
 
-	*sub_node = child_node;
+	*sub_node = no_free_ptr(child_node);
 
-	return 0;
+	return devm_add_action_or_reset(dev, aat1290_of_node_put, *sub_node);
 }
 
 static void aat1290_led_validate_mm_current(struct aat1290_led *led,
@@ -411,6 +416,9 @@ static s32 aat1290_brightness_to_intensity(struct v4l2_flash *v4l2_flash,
 	struct led_classdev_flash *fled_cdev = v4l2_flash->fled_cdev;
 	struct aat1290_led *led = fled_cdev_to_led(fled_cdev);
 
+	if (brightness == LED_OFF)
+		return 0;
+
 	return led->mm_current_scale[brightness - 1];
 }
 
@@ -428,12 +436,14 @@ static int aat1290_led_external_strobe_set(struct v4l2_flash *v4l2_flash,
 	led->movie_mode = false;
 	led_cdev->brightness = 0;
 
-	pinctrl = devm_pinctrl_get_select(&led->pdev->dev,
-						enable ? "isp" : "host");
+	pinctrl = pinctrl_get_select(&led->pdev->dev,
+				     enable ? "isp" : "host");
 	if (IS_ERR(pinctrl)) {
 		dev_warn(&led->pdev->dev, "Unable to switch strobe source.\n");
 		return PTR_ERR(pinctrl);
 	}
+
+	pinctrl_put(pinctrl);
 
 	return 0;
 }
