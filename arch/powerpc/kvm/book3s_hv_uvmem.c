@@ -393,7 +393,7 @@ static int kvmppc_memslot_page_merge(struct kvm *kvm,
 {
 	unsigned long gfn = memslot->base_gfn;
 	unsigned long end, start = gfn_to_hva(kvm, gfn);
-	vma_flags_t vma_flags;
+	vm_flags_t vm_flags;
 	int ret = 0;
 	struct vm_area_struct *vma;
 	int merge_flag = (merge) ? MADV_MERGEABLE : MADV_UNMERGEABLE;
@@ -411,15 +411,15 @@ static int kvmppc_memslot_page_merge(struct kvm *kvm,
 			break;
 		}
 		vma_start_write(vma);
-		/* Copy flags to avoid partial modifications in ksm_madvise */
-		vma_flags = vma->flags;
+		/* Copy vm_flags to avoid partial modifications in ksm_madvise */
+		vm_flags = vma->vm_flags;
 		ret = ksm_madvise(vma, vma->vm_start, vma->vm_end,
-			  merge_flag, &vma_flags);
+			  merge_flag, &vm_flags);
 		if (ret) {
 			ret = H_STATE;
 			break;
 		}
-		vma_overwrite_flags(vma, vma_flags);
+		vm_flags_reset(vma, vm_flags);
 		start = vma->vm_end;
 	} while (end > vma->vm_end);
 

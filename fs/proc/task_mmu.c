@@ -569,18 +569,18 @@ next_vma:
 
 	/* VMA permissions should satisfy query flags */
 	if (flags & PROCMAP_QUERY_VMA_FLAGS) {
-		vma_flags_t perm = EMPTY_VMA_FLAGS;
+		u32 perm = 0;
 
 		if (flags & PROCMAP_QUERY_VMA_READABLE)
-			vma_flags_set(&perm, VMA_READ_BIT);
+			perm |= VM_READ;
 		if (flags & PROCMAP_QUERY_VMA_WRITABLE)
-			vma_flags_set(&perm, VMA_WRITE_BIT);
+			perm |= VM_WRITE;
 		if (flags & PROCMAP_QUERY_VMA_EXECUTABLE)
-			vma_flags_set(&perm, VMA_EXEC_BIT);
+			perm |= VM_EXEC;
 		if (flags & PROCMAP_QUERY_VMA_SHARED)
-			vma_flags_set(&perm, VMA_MAYSHARE_BIT);
+			perm |= VM_MAYSHARE;
 
-		if (!vma_test_all_mask(vma, perm))
+		if ((vma->vm_flags & perm) != perm)
 			goto skip_vma;
 	}
 
@@ -647,13 +647,13 @@ static int do_procmap_query(struct mm_struct *mm, void __user *uarg)
 	karg.vma_end = vma->vm_end;
 
 	karg.vma_flags = 0;
-	if (vma_test(vma, VMA_READ_BIT))
+	if (vma->vm_flags & VM_READ)
 		karg.vma_flags |= PROCMAP_QUERY_VMA_READABLE;
-	if (vma_test(vma, VMA_WRITE_BIT))
+	if (vma->vm_flags & VM_WRITE)
 		karg.vma_flags |= PROCMAP_QUERY_VMA_WRITABLE;
-	if (vma_test(vma, VMA_EXEC_BIT))
+	if (vma->vm_flags & VM_EXEC)
 		karg.vma_flags |= PROCMAP_QUERY_VMA_EXECUTABLE;
-	if (vma_test(vma, VMA_MAYSHARE_BIT))
+	if (vma->vm_flags & VM_MAYSHARE)
 		karg.vma_flags |= PROCMAP_QUERY_VMA_SHARED;
 
 	karg.vma_page_size = vma_kernel_pagesize(vma);
@@ -970,7 +970,7 @@ static void smaps_pte_entry(pte_t *pte, unsigned long addr,
 {
 	struct mem_size_stats *mss = walk->private;
 	struct vm_area_struct *vma = walk->vma;
-	bool locked = vma_test(vma, VMA_LOCKED_BIT);
+	bool locked = !!(vma->vm_flags & VM_LOCKED);
 	struct page *page = NULL;
 	bool present = false, young = false, dirty = false;
 	pte_t ptent = ptep_get(pte);
@@ -1017,7 +1017,7 @@ static void smaps_pmd_entry(pmd_t *pmd, unsigned long addr,
 {
 	struct mem_size_stats *mss = walk->private;
 	struct vm_area_struct *vma = walk->vma;
-	bool locked = vma_test(vma, VMA_LOCKED_BIT);
+	bool locked = !!(vma->vm_flags & VM_LOCKED);
 	struct page *page = NULL;
 	bool present = false;
 	struct folio *folio;
@@ -1728,7 +1728,7 @@ static int clear_refs_test_walk(unsigned long start, unsigned long end,
 	struct clear_refs_private *cp = walk->private;
 	struct vm_area_struct *vma = walk->vma;
 
-	if (vma_test(vma, VMA_PFNMAP_BIT))
+	if (vma->vm_flags & VM_PFNMAP)
 		return 1;
 
 	/*
@@ -1798,10 +1798,9 @@ static ssize_t clear_refs_write(struct file *file, const char __user *buf,
 
 		if (type == CLEAR_REFS_SOFT_DIRTY) {
 			for_each_vma(vmi, vma) {
-				if (!vma_test(vma, VMA_SOFTDIRTY_BIT))
+				if (!(vma->vm_flags & VM_SOFTDIRTY))
 					continue;
-				vma_start_write(vma);
-				vma_clear_flags(vma, VMA_SOFTDIRTY_BIT);
+				vm_flags_clear(vma, VM_SOFTDIRTY);
 				vma_set_page_prot(vma);
 			}
 
@@ -1905,7 +1904,7 @@ static int pagemap_pte_hole(unsigned long start, unsigned long end,
 			break;
 
 		/* Addresses in the VMA. */
-		if (vma_test(vma, VMA_SOFTDIRTY_BIT))
+		if (vma->vm_flags & VM_SOFTDIRTY)
 			pme = make_pme(0, PM_SOFT_DIRTY);
 		for (; addr < min(end, vma->vm_end); addr += PAGE_SIZE) {
 			err = add_to_pagemap(&pme, pm);
@@ -1977,7 +1976,7 @@ static pagemap_entry_t pte_to_pagemap_entry(struct pagemapread *pm,
 	}
 
 out:
-	if (vma_test(vma, VMA_SOFTDIRTY_BIT))
+	if (vma->vm_flags & VM_SOFTDIRTY)
 		flags |= PM_SOFT_DIRTY;
 
 	return make_pme(frame, flags);
@@ -1995,7 +1994,7 @@ static int pagemap_pmd_range_thp(pmd_t *pmdp, unsigned long addr,
 	struct folio *folio = NULL;
 	int err = 0;
 
-	if (vma_test(vma, VMA_SOFTDIRTY_BIT))
+	if (vma->vm_flags & VM_SOFTDIRTY)
 		flags |= PM_SOFT_DIRTY;
 
 	if (pmd_none(pmd))
@@ -2117,7 +2116,7 @@ static int pagemap_hugetlb_range(pte_t *ptep, unsigned long hmask,
 	int err = 0;
 	pte_t pte;
 
-	if (vma_test(vma, VMA_SOFTDIRTY_BIT))
+	if (vma->vm_flags & VM_SOFTDIRTY)
 		flags |= PM_SOFT_DIRTY;
 
 	ptl = huge_pte_lock(hstate_vma(vma), walk->mm, ptep);
@@ -2626,13 +2625,13 @@ static int pagemap_scan_test_walk(unsigned long start, unsigned long end,
 		 */
 	}
 
-	if (vma_test(vma, VMA_PFNMAP_BIT))
+	if (vma->vm_flags & VM_PFNMAP)
 		return 1;
 
 	if (wp_allowed)
 		vma_category |= PAGE_IS_WPALLOWED;
 
-	if (vma_test(vma, VMA_SOFTDIRTY_BIT))
+	if (vma->vm_flags & VM_SOFTDIRTY)
 		vma_category |= PAGE_IS_SOFT_DIRTY;
 
 	if (!pagemap_scan_is_interesting_vma(vma_category, p))

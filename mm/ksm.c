@@ -198,7 +198,6 @@ struct ksm_stable_node {
  * @head: pointer to stable_node heading this list in the stable tree
  * @hlist: link into hlist of rmap_items hanging off that stable_node
  * @age: number of scan iterations since creation (unstable node)
- * @remaining_skips: how many scans to skip (unstable node)
  * @linear_page_index: the original page's index before merged by KSM (stable node)
  */
 struct ksm_rmap_item {
@@ -215,7 +214,6 @@ struct ksm_rmap_item {
 		struct {
 			unsigned int oldchecksum;
 			rmap_age_t age;
-			rmap_age_t remaining_skips;
 		};			/* when unstable */
 		unsigned long linear_page_index;    /* for reverse mapping, when stable */
 	};
@@ -781,8 +779,7 @@ static struct vm_area_struct *find_mergeable_vma(struct mm_struct *mm,
 	if (ksm_test_exit(mm))
 		return NULL;
 	vma = vma_lookup(mm, addr);
-	if (!vma || !vma_test(vma, VMA_MERGEABLE_BIT) ||
-	    !vma_has_anon_rmap(vma))
+	if (!vma || !vma_test(vma, VMA_MERGEABLE_BIT) || !vma_has_anon_rmap(vma))
 		return NULL;
 	return vma;
 }
@@ -2452,16 +2449,14 @@ static struct ksm_rmap_item *get_next_rmap_item(struct ksm_mm_slot *mm_slot,
 }
 
 /*
- * Calculate skip age for the ksm page age. The age determines how often
- * de-duplicating has already been tried unsuccessfully. If the age is
- * smaller, the scanning of this page is skipped for less scans.
+ * Calculate how often a page of the given ksm page age is scanned. The age
+ * determines how often de-duplicating has already been tried
+ * unsuccessfully. The older the page, the fewer scans look at it.
  *
  * @age: rmap_item age of page
  */
-static unsigned int skip_age(rmap_age_t age)
+static unsigned int scan_period(rmap_age_t age)
 {
-	if (age <= 3)
-		return 1;
 	if (age <= 5)
 		return 2;
 	if (age <= 8)
@@ -2511,17 +2506,17 @@ static bool should_skip_rmap_item(struct folio *folio,
 		return false;
 
 	/*
-	 * Are we still allowed to skip? If not, then don't skip it
-	 * and determine how much more often we are allowed to skip next.
+	 * The unstable tree is rebuilt on every scan, so two identical pages
+	 * can only be merged if both are looked at in the same scan. Pick the
+	 * scans by the global scan number rather than per page: the periods
+	 * are powers of two, so pages of any age meet on every scan that is a
+	 * multiple of the longest one.
 	 */
-	if (!rmap_item->remaining_skips) {
-		rmap_item->remaining_skips = skip_age(age);
+	if (!(ksm_scan.seqnr & (scan_period(age) - 1)))
 		return false;
-	}
 
 	/* Skip this page */
 	ksm_pages_skipped++;
-	rmap_item->remaining_skips--;
 	remove_rmap_item_from_tree(rmap_item);
 	return true;
 }
@@ -2783,11 +2778,11 @@ no_vmas:
 
 		mm_slot_free(mm_slot_cache, mm_slot);
 		/*
-		 * Only clear MMF_VM_MERGEABLE. We must not clear
-		 * MMF_VM_MERGE_ANY, because for those MMF_VM_MERGE_ANY process,
-		 * perhaps their mm_struct has just been added to ksm_mm_slot
-		 * list, and its process has not yet officially started running
-		 * or has not yet performed mmap/brk to allocate anonymous VMAS.
+		 * Only clear MMF_VM_MERGEABLE. MMF_VM_MERGE_ANY is the
+		 * per-process setting inherited across exec, so it must
+		 * stay set until userspace disables it with
+		 * prctl(PR_SET_MEMORY_MERGE, 0). A later mergeable VMA
+		 * re-registers the mm through ksm_vma_flags().
 		 */
 		mm_flags_clear(MMF_VM_MERGEABLE, mm);
 		mmap_read_unlock(mm);
@@ -2915,8 +2910,10 @@ vma_flags_t ksm_vma_flags(struct mm_struct *mm, const struct file *file,
 		vma_flags_set(&vma_flags, VMA_MERGEABLE_BIT);
 		/*
 		 * Generally, the flags here always include MMF_VM_MERGEABLE.
-		 * However, in rare cases, this flag may be cleared by ksmd who
-		 * scans a cycle without finding any mergeable vma.
+		 * However, a newly execed process has not been added to
+		 * ksm_mm_slot. The first mergeable VMA registers the mm
+		 * with ksmd here. ksmd can also clear it after a full scan
+		 * cycle without finding any mergeable VMA.
 		 */
 		if (unlikely(!mm_flags_test(MMF_VM_MERGEABLE, mm)))
 			__ksm_enter(mm);
@@ -3016,7 +3013,7 @@ int ksm_disable(struct mm_struct *mm)
 }
 
 int ksm_madvise(struct vm_area_struct *vma, unsigned long start,
-		unsigned long end, int advice, vma_flags_t *vma_flags)
+		unsigned long end, int advice, vm_flags_t *vm_flags)
 {
 	struct mm_struct *mm = vma->vm_mm;
 	int err;
@@ -3034,11 +3031,11 @@ int ksm_madvise(struct vm_area_struct *vma, unsigned long start,
 				return err;
 		}
 
-		vma_flags_set(vma_flags, VMA_MERGEABLE_BIT);
+		*vm_flags |= VM_MERGEABLE;
 		break;
 
 	case MADV_UNMERGEABLE:
-		if (!vma_flags_test(vma_flags, VMA_MERGEABLE_BIT))
+		if (!(*vm_flags & VM_MERGEABLE))
 			return 0;		/* just ignore the advice */
 
 		if (vma_has_anon_rmap(vma)) {
@@ -3047,7 +3044,7 @@ int ksm_madvise(struct vm_area_struct *vma, unsigned long start,
 				return err;
 		}
 
-		vma_flags_clear(vma_flags, VMA_MERGEABLE_BIT);
+		*vm_flags &= ~VM_MERGEABLE;
 		break;
 	}
 

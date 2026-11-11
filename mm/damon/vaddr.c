@@ -240,7 +240,7 @@ static void damon_va_walk_page_range(struct mm_struct *mm, unsigned long start,
 		goto lock_mmap;
 	}
 
-	if (!vma_test(vma, VMA_PFNMAP_BIT)) {
+	if (!(vma->vm_flags & VM_PFNMAP)) {
 		ops->walk_lock = PGWALK_VMA_RDLOCK_VERIFY;
 		walk_page_range_vma(vma, start, end, ops, private);
 	}

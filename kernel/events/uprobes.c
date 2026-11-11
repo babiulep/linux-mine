@@ -134,14 +134,12 @@ static void uprobe_warn(struct task_struct *t, const char *msg)
  */
 static bool valid_vma(struct vm_area_struct *vma, bool is_register)
 {
-	vma_flags_t forbidden = mk_vma_flags(VMA_HUGETLB_BIT,
-					     VMA_MAYSHARE_BIT);
+	vm_flags_t flags = VM_HUGETLB | VM_MAYEXEC | VM_MAYSHARE;
 
 	if (is_register)
-		vma_flags_set(&forbidden, VMA_WRITE_BIT);
+		flags |= VM_WRITE;
 
-	return vma->vm_file && vma_test(vma, VMA_MAYEXEC_BIT) &&
-		!vma_test_any_mask(vma, forbidden);
+	return vma->vm_file && (vma->vm_flags & flags) == VM_MAYEXEC;
 }
 
 static unsigned long offset_to_vaddr(struct vm_area_struct *vma, loff_t offset)
@@ -288,7 +286,7 @@ static bool valid_ref_ctr_vma(struct uprobe *uprobe,
 	return uprobe->ref_ctr_offset &&
 		vma->vm_file &&
 		file_inode(vma->vm_file) == uprobe->inode &&
-		vma_test(vma, VMA_WRITE_BIT) && !vma_test(vma, VMA_SHARED_BIT) &&
+		(vma->vm_flags & (VM_WRITE|VM_SHARED)) == VM_WRITE &&
 		vma->vm_start <= vaddr &&
 		vma->vm_end > vaddr;
 }
@@ -1609,7 +1607,7 @@ int uprobe_mmap(struct vm_area_struct *vma)
 		return 0;
 
 	if (vma->vm_file &&
-	    vma_test(vma, VMA_WRITE_BIT) && !vma_test(vma, VMA_SHARED_BIT) &&
+	    (vma->vm_flags & (VM_WRITE|VM_SHARED)) == VM_WRITE &&
 	    mm_flags_test(MMF_HAS_UPROBES, vma->vm_mm))
 		delayed_ref_ctr_inc(vma);
 

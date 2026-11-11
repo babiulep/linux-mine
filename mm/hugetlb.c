@@ -1457,9 +1457,9 @@ void add_hugetlb_folio(struct hstate *h, struct folio *folio,
 
 	/* Callers must clear transient flags before returning to the pool. */
 	VM_WARN_ON_ONCE_FOLIO((unsigned long)folio->private &
-			     ~(BIT(HPG_vmemmap_optimized) |
-			       BIT(HPG_raw_hwp_unreliable) |
-			       BIT(HPG_cma)), folio);
+			      ~(BIT(HPG_vmemmap_optimized) |
+				BIT(HPG_raw_hwp_unreliable) |
+				BIT(HPG_cma)), folio);
 
 	INIT_LIST_HEAD(&folio->lru);
 	h->nr_huge_pages++;

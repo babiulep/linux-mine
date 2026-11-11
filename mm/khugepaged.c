@@ -364,16 +364,16 @@ static unsigned int collapse_max_ptes_swap(struct collapse_control *cc,
 }
 
 int hugepage_madvise(struct vm_area_struct *vma,
-		     vma_flags_t *vma_flags, int advice)
+		     vm_flags_t *vm_flags, int advice)
 {
 	switch (advice) {
 	case MADV_HUGEPAGE:
-		vma_flags_clear(vma_flags, VMA_NOHUGEPAGE_BIT);
-		vma_flags_set(vma_flags, VMA_HUGEPAGE_BIT);
+		*vm_flags &= ~VM_NOHUGEPAGE;
+		*vm_flags |= VM_HUGEPAGE;
 		break;
 	case MADV_NOHUGEPAGE:
-		vma_flags_clear(vma_flags, VMA_HUGEPAGE_BIT);
-		vma_flags_set(vma_flags, VMA_NOHUGEPAGE_BIT);
+		*vm_flags &= ~VM_HUGEPAGE;
+		*vm_flags |= VM_NOHUGEPAGE;
 		/*
 		 * Setting VM_NOHUGEPAGE will prevent khugepaged from scanning
 		 * this vma even if we leave the mm registered in khugepaged if
@@ -1828,7 +1828,7 @@ static enum scan_result set_huge_pmd(struct vm_area_struct *vma, unsigned long a
 	}
 
 	vmf.pmd = pmdp;
-	if (do_set_pmd(&vmf, folio, page))
+	if (do_set_pmd(&vmf, folio, page, /* may_alloc= */ true))
 		return SCAN_FAIL;
 
 	folio_get(folio);

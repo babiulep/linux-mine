@@ -48,6 +48,7 @@
 #include <linux/fs_parser.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter_ipv6.h>
+#include <linux/netfilter_bridge.h>
 #include <linux/tty.h>
 #include <net/icmp.h>
 #include <net/ip.h>		/* for local_port_range[] */
@@ -4178,8 +4179,11 @@ static int selinux_mmap_file(struct file *file,
 			     unsigned long reqprot __always_unused,
 			     unsigned long prot, unsigned long flags)
 {
+	const unsigned long map_type = (flags & MAP_TYPE);
+
 	return selinux_mmap_file_common(file, prot,
-					(flags & MAP_TYPE) == MAP_SHARED,
+					(map_type == MAP_SHARED ||
+					 map_type == MAP_SHARED_VALIDATE),
 					false);
 }
 
@@ -4204,16 +4208,16 @@ static int selinux_mmap_backing_file(struct vm_area_struct *vma,
 {
 	unsigned long prot = 0;
 
-	/* translate VMA flag perms into PROT perms */
-	if (vma_test(vma, VMA_READ_BIT))
+	/* translate vma->vm_flags perms into PROT perms */
+	if (vma->vm_flags & VM_READ)
 		prot |= PROT_READ;
-	if (vma_test(vma, VMA_WRITE_BIT))
+	if (vma->vm_flags & VM_WRITE)
 		prot |= PROT_WRITE;
-	if (vma_test(vma, VMA_EXEC_BIT))
+	if (vma->vm_flags & VM_EXEC)
 		prot |= PROT_EXEC;
 
 	return selinux_mmap_file_common(backing_file, prot,
-					vma_test(vma, VMA_SHARED_BIT),
+					vma->vm_flags & VM_SHARED,
 					true);
 }
 
@@ -4227,13 +4231,13 @@ static int selinux_file_mprotect(struct vm_area_struct *vma,
 	u32 av;
 	const struct file *file = vma->vm_file;
 	bool backing_file;
-	bool shared = vma_test(vma, VMA_SHARED_BIT);
+	bool shared = vma->vm_flags & VM_SHARED;
 
 	/* check if we need to trigger the "backing files are awful" mode */
 	backing_file = file && (file->f_mode & FMODE_BACKING);
 
 	if (default_noexec &&
-	    (prot & PROT_EXEC) && !vma_test(vma, VMA_EXEC_BIT)) {
+	    (prot & PROT_EXEC) && !(vma->vm_flags & VM_EXEC)) {
 		/*
 		 * We don't use the vma_is_initial_heap() helper as it has
 		 * a history of problems and is currently broken on systems
@@ -6150,11 +6154,13 @@ static unsigned int selinux_ip_forward(void *priv, struct sk_buff *skb,
 				 SECCLASS_PACKET, PACKET__FORWARD_IN, &ad))
 			return NF_DROP;
 
-	if (netlbl_enabled())
-		/* we do this in the FORWARD path and not the POST_ROUTING
-		 * path because we want to make sure we apply the necessary
-		 * labeling before IPsec is applied so we can leverage AH
-		 * protection */
+	/* we do this in the FORWARD path and not the POST_ROUTING path
+	 * because we want to make sure we apply the necessary labeling
+	 * before IPsec is applied so we can leverage AH protection; bridged
+	 * packets are skipped as changing their IP options would leave the
+	 * Ethernet header behind
+	 */
+	if (netlbl_enabled() && !nf_bridge_info_exists(skb))
 		if (selinux_netlbl_skbuff_setsid(skb, family, peer_sid) != 0)
 			return NF_DROP;
 

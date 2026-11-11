@@ -1172,15 +1172,6 @@ static bool sh_mmcif_end_cmd(struct sh_mmcif_host *host)
 	time = wait_for_completion_interruptible_timeout(&host->dma_complete,
 							 host->timeout);
 
-	if (data->flags & MMC_DATA_READ)
-		dma_unmap_sg(dmaengine_get_dma_device(host->chan_rx),
-			     data->sg, data->sg_len,
-			     DMA_FROM_DEVICE);
-	else
-		dma_unmap_sg(dmaengine_get_dma_device(host->chan_tx),
-			     data->sg, data->sg_len,
-			     DMA_TO_DEVICE);
-
 	if (host->sd_error) {
 		dev_err(host->mmc->parent,
 			"Error IRQ while waiting for DMA completion!\n");
@@ -1206,6 +1197,20 @@ static bool sh_mmcif_end_cmd(struct sh_mmcif_host *host)
 		else
 			dmaengine_terminate_sync(host->chan_tx);
 	}
+
+	/*
+	 * An error IRQ or a timeout wakes us up while the DMA transfer may
+	 * still be running: only unmap once it has completed or been
+	 * terminated above.
+	 */
+	if (data->flags & MMC_DATA_READ)
+		dma_unmap_sg(dmaengine_get_dma_device(host->chan_rx),
+			     data->sg, data->sg_len,
+			     DMA_FROM_DEVICE);
+	else
+		dma_unmap_sg(dmaengine_get_dma_device(host->chan_tx),
+			     data->sg, data->sg_len,
+			     DMA_TO_DEVICE);
 
 	return false;
 }

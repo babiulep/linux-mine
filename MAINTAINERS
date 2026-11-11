@@ -262,6 +262,14 @@ L:	linux-gpio@vger.kernel.org
 S:	Maintained
 F:	drivers/gpio/gpio-pcie-idio-24.c
 
+ACER ASPIRE 14 AI (A14-52M, A14-52MT) EC FAN DRIVER
+M:	Ethan Jimmy <duhxu0@gmail.com>
+L:	linux-hwmon@vger.kernel.org
+L:	linux-input@vger.kernel.org
+S:	Maintained
+F:	Documentation/hwmon/acer-aspire14-ec.rst
+F:	drivers/hwmon/acer-aspire14-ec.c
+
 ACER ASPIRE ONE TEMPERATURE AND FAN DRIVER
 M:	Peter Kaestle <peter@piie.net>
 L:	platform-driver-x86@vger.kernel.org
@@ -283,12 +291,16 @@ S:	Supported
 Q:	https://patchwork.kernel.org/project/linux-acpi/list/
 B:	https://bugzilla.kernel.org
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/rafael/linux-pm
+F:	Documentation/ABI/obsolete/sysfs-platform_profile
 F:	Documentation/ABI/testing/configfs-acpi
 F:	Documentation/ABI/testing/sysfs-bus-acpi
+F:	Documentation/ABI/testing/sysfs-class-platform-profile
 F:	Documentation/firmware-guide/acpi/
+F:	Documentation/userspace-api/sysfs-platform_profile.rst
 F:	arch/x86/kernel/acpi/
 F:	arch/x86/pci/acpi.c
 F:	drivers/acpi/
+F:	drivers/platform/profile/
 F:	drivers/pci/*/*acpi*
 F:	drivers/pci/*acpi*
 F:	drivers/pnp/pnpacpi/
@@ -296,6 +308,7 @@ F:	include/acpi/
 F:	include/linux/acpi.h
 F:	include/linux/fwnode.h
 F:	include/linux/fw_table.h
+F:	include/linux/platform_profile.h
 F:	lib/fw_table.c
 F:	rust/kernel/acpi.rs
 F:	tools/power/acpi/
@@ -2404,6 +2417,10 @@ ARM MALI PANTHOR DRM DRIVER
 M:	Boris Brezillon <boris.brezillon@collabora.com>
 M:	Steven Price <steven.price@arm.com>
 M:	Liviu Dudau <liviu.dudau@arm.com>
+R:	Akash Goel <akash.goel@arm.com>
+R:	Karunika Choo <karunika.choo@arm.com>
+R:	Lukas Zapolskas <lukas.zapolskas@arm.com>
+R:	Chris Diamand <chris.diamand@arm.com>
 L:	dri-devel@lists.freedesktop.org
 S:	Supported
 T:	git https://gitlab.freedesktop.org/drm/misc/kernel.git
@@ -2738,6 +2755,7 @@ F:	Documentation/devicetree/bindings/pinctrl/apple,pinctrl.yaml
 F:	Documentation/devicetree/bindings/power/apple*
 F:	Documentation/devicetree/bindings/power/reset/apple,smc-reboot.yaml
 F:	Documentation/devicetree/bindings/pwm/apple,s5l-fpwm.yaml
+F:	Documentation/devicetree/bindings/reset/apple,t8103-cio-reset.yaml
 F:	Documentation/devicetree/bindings/rtc/apple,smc-rtc.yaml
 F:	Documentation/devicetree/bindings/soc/apple/apple,t6000-pmgr-misc.yaml
 F:	Documentation/devicetree/bindings/spi/apple,spi.yaml
@@ -2768,6 +2786,7 @@ F:	drivers/pinctrl/pinctrl-apple-gpio.c
 F:	drivers/power/reset/macsmc-reboot.c
 F:	drivers/power/supply/macsmc-power.c
 F:	drivers/pwm/pwm-apple.c
+F:	drivers/reset/reset-apple-cio.c
 F:	drivers/rtc/rtc-macsmc.c
 F:	drivers/soc/apple/*
 F:	drivers/spi/spi-apple.c
@@ -4047,7 +4066,7 @@ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/arm64/linux.git
 F:	Documentation/ABI/testing/sysfs-firmware-cca
 F:	Documentation/arch/arm64/
 F:	arch/arm64/
-F:	drivers/firmware/arm_rmm/
+F:	drivers/firmware/arm/rmm/
 F:	drivers/virt/coco/arm-cca-guest/
 F:	drivers/virt/coco/pkvm-guest/
 F:	include/linux/arm-rmi-cmds.h
@@ -8375,6 +8394,7 @@ F:	drivers/gpu/drm/tiny/hx8357d.c
 
 DRM DRIVER FOR HYPERV SYNTHETIC VIDEO DEVICE
 M:	Dexuan Cui <decui@microsoft.com>
+M:	Hamza Mahfooz <hamzamahfooz@linux.microsoft.com>
 M:	Saurabh Sengar <ssengar@linux.microsoft.com>
 L:	linux-hyperv@vger.kernel.org
 L:	dri-devel@lists.freedesktop.org
@@ -8555,6 +8575,7 @@ F:	drivers/gpu/drm/panel/panel-novatek-nt36532.c
 
 DRM DRIVER FOR NOVATEK NT36672A PANELS
 M:	Sumit Semwal <sumit.semwal@linaro.org>
+M:	Alexey Minnekhanov <alexeymin@minlexx.ru>
 S:	Maintained
 T:	git https://gitlab.freedesktop.org/drm/misc/kernel.git
 F:	Documentation/devicetree/bindings/display/panel/novatek,nt36672a.yaml
@@ -8667,6 +8688,12 @@ M:	Alexander Koskovich <akoskovich@pm.me>
 S:	Maintained
 F:	Documentation/devicetree/bindings/display/panel/raydium,rm69220.yaml
 F:	drivers/gpu/drm/panel/panel-raydium-rm69220.c
+
+DRM DRIVER FOR SAMSUNG AMS644VK04 PANEL
+M:	Ishu Brar <patches@brar.si>
+S:	Maintained
+F:	Documentation/devicetree/bindings/display/panel/samsung,ams644vk04.yaml
+F:	drivers/gpu/drm/panel/panel-samsung-ams644vk04.c
 
 DRM DRIVER FOR SAMSUNG DB7430 PANELS
 M:	Linus Walleij <linusw@kernel.org>
@@ -8897,7 +8924,7 @@ F:	Documentation/devicetree/bindings/gpu/
 F:	Documentation/gpu/
 F:	drivers/gpu/drm/
 F:	drivers/gpu/vga/
-F:	include/drm/drm
+F:	include/drm/drm*.h
 F:	include/linux/vga*
 F:	include/uapi/drm/
 X:	drivers/gpu/drm/amd/
@@ -9192,6 +9219,7 @@ L:	dri-devel@lists.freedesktop.org
 S:	Maintained
 T:	git https://gitlab.freedesktop.org/drm/misc/kernel.git
 F:	Documentation/devicetree/bindings/display/ti/ti,am625-oldi.yaml
+F:	Documentation/devicetree/bindings/display/ti/ti,am62l-dss.yaml
 F:	Documentation/devicetree/bindings/display/ti/ti,am65x-dss.yaml
 F:	Documentation/devicetree/bindings/display/ti/ti,j721e-dss.yaml
 F:	Documentation/devicetree/bindings/display/ti/ti,k2g-dss.yaml
@@ -10478,7 +10506,7 @@ FIRMWARE FRAMEWORK FOR ARMV8-A
 M:	Sudeep Holla <sudeep.holla@kernel.org>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
-F:	drivers/firmware/arm_ffa/
+F:	drivers/firmware/arm/ffa/
 F:	include/linux/arm_ffa.h
 
 FIRMWARE LOADER (request_firmware)
@@ -10762,7 +10790,9 @@ L:	linux-gpio@vger.kernel.org
 L:	imx@lists.linux.dev
 S:	Maintained
 F:	Documentation/devicetree/bindings/gpio/fsl-imx-gpio.yaml
+F:	Documentation/devicetree/bindings/gpio/gpio-vf610.yaml
 F:	drivers/gpio/gpio-mxc.c
+F:	drivers/gpio/gpio-vf610.c
 
 FREESCALE IMX I2C DRIVER
 M:	Oleksij Rempel <o.rempel@pengutronix.de>
@@ -19121,6 +19151,13 @@ L:	platform-driver-x86@vger.kernel.org
 S:	Maintained
 F:	drivers/platform/x86/msi-laptop.c
 
+MSI MYSTIC LIGHT HARDWARE MONITORING DRIVER
+M:	Tomasz Bojanowski <tomasz@bojanowski.me>
+L:	linux-hwmon@vger.kernel.org
+S:	Maintained
+F:	Documentation/hwmon/msi_mystic_light.rst
+F:	drivers/hwmon/msi_mystic_light.c
+
 MSI WMI SUPPORT
 L:	platform-driver-x86@vger.kernel.org
 S:	Orphan
@@ -22415,7 +22452,7 @@ M:	Lorenzo Pieralisi <lpieralisi@kernel.org>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
 F:	Documentation/devicetree/bindings/arm/psci.yaml
-F:	drivers/firmware/psci/
+F:	drivers/firmware/arm/psci/
 F:	include/linux/psci.h
 F:	include/uapi/linux/psci.h
 
@@ -22964,6 +23001,7 @@ N:	ath12k
 
 QUALCOMM ATHEROS ATH10K WIRELESS DRIVER
 M:	Jeff Johnson <jjohnson@kernel.org>
+M:	Loic Poulain <loic.poulain@oss.qualcomm.com>
 L:	linux-wireless@vger.kernel.org
 L:	ath10k@lists.infradead.org
 S:	Supported
@@ -25054,7 +25092,7 @@ F:	include/linux/firmware/samsung/exynos-acpm-protocol.h
 
 SAMSUNG EXYNOS ACPM THERMAL DRIVER
 M:	Tudor Ambarus <tudor.ambarus@linaro.org>
-L:	linux-kernel@vger.kernel.org
+L:	linux-pm@vger.kernel.org
 L:	linux-samsung-soc@vger.kernel.org
 S:	Supported
 F:	Documentation/devicetree/bindings/thermal/google,gs101-tmu-top.yaml
@@ -25527,9 +25565,9 @@ M:	Lorenzo Pieralisi <lpieralisi@kernel.org>
 M:	Sudeep Holla <sudeep.holla@kernel.org>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
-F:	drivers/firmware/smccc/
-F:	include/linux/arm-smccc-bus.h
+F:	drivers/firmware/arm/smccc/
 F:	include/linux/arm-smccc.h
+F:	include/linux/arm-smccc-bus.h
 F:	include/linux/device-id/arm_smccc.h
 
 SECURITY CONTACT
@@ -25668,7 +25706,8 @@ F:	drivers/slimbus/
 F:	include/linux/slimbus.h
 
 SFC NETWORK DRIVER
-M:	Edward Cree <ecree.xilinx@gmail.com>
+M:	Alex Austin <alex.austin@amd.com>
+M:	Andy Moreton <andy.moreton@amd.com>
 L:	netdev@vger.kernel.org
 L:	linux-net-drivers@amd.com
 S:	Maintained
@@ -26132,7 +26171,7 @@ M:	James Morse <james.morse@arm.com>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
 F:	Documentation/devicetree/bindings/arm/firmware/sdei.txt
-F:	drivers/firmware/arm_sdei*
+F:	drivers/firmware/arm/sdei*
 F:	include/linux/arm_sdei.h
 F:	include/uapi/linux/arm_sdei.h
 
@@ -26187,9 +26226,8 @@ S:	Maintained
 F:	drivers/net/ethernet/natsemi/sonic.*
 
 SONICS SILICON BACKPLANE DRIVER (SSB)
-M:	Michael Buesch <m@bues.ch>
 L:	linux-wireless@vger.kernel.org
-S:	Maintained
+S:	Orphan
 F:	drivers/ssb/
 F:	include/linux/ssb/
 
@@ -26506,7 +26544,6 @@ F:	include/dt-bindings/reset/spacemit,k3-resets.h
 
 SPANISH DOCUMENTATION
 M:	Carlos Bilbao <carlos.bilbao@kernel.org>
-R:	Avadhut Naik <avadhut.naik@amd.com>
 S:	Maintained
 F:	Documentation/translations/sp_SP/
 
@@ -26983,6 +27020,14 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/pinctrl/starfive,jhb1*.yaml
 F:	drivers/pinctrl/starfive/pinctrl-starfive-jhb1*
 
+STARFIVE JHB100 PWM FAN DRIVER
+M:	Changhuang Liang <changhuang.liang@starfivetech.com>
+L:	linux-hwmon@vger.kernel.org
+S:	Supported
+F:	Documentation/devicetree/bindings/hwmon/starfive,jhb100-pwm-fan.yaml
+F:	Documentation/hwmon/starfive-pwm-fan.rst
+F:	drivers/hwmon/starfive-pwm-fan.c
+
 STATIC BRANCH/CALL
 M:	Peter Zijlstra <peterz@infradead.org>
 M:	Josh Poimboeuf <jpoimboe@kernel.org>
@@ -27394,8 +27439,8 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/firmware/arm,sc[mp]i.yaml
 F:	drivers/clk/clk-sc[mp]i.c
 F:	drivers/cpufreq/sc[mp]i-cpufreq.c
-F:	drivers/firmware/arm_scmi/
-F:	drivers/firmware/arm_scpi.c
+F:	drivers/firmware/arm/scmi/
+F:	drivers/firmware/arm/scpi.c
 F:	drivers/hwmon/scmi-hwmon.c
 F:	drivers/pinctrl/pinctrl-scmi.c
 F:	drivers/pmdomain/arm/
@@ -27414,7 +27459,7 @@ L:	imx@lists.linux.dev
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
 F:	Documentation/devicetree/bindings/firmware/nxp,*scmi.yaml
-F:	drivers/firmware/arm_scmi/vendors/imx/
+F:	drivers/firmware/arm/scmi/vendors/imx/
 
 SYSTEM RESET/SHUTDOWN DRIVERS
 M:	Sebastian Reichel <sre@kernel.org>
@@ -27553,6 +27598,21 @@ S:	Maintained
 W:	https://linuxtv.org
 T:	git git://linuxtv.org/media.git
 F:	drivers/media/i2c/tda9840*
+
+TDK FS1412 AND FS1525 MICRO POL DRIVER
+M:	Abdurrahman Hussain <abdurrahman@nexthop.ai>
+L:	linux-hwmon@vger.kernel.org
+S:	Maintained
+F:	Documentation/hwmon/fs1412.rst
+F:	drivers/hwmon/pmbus/fs1412.c
+
+TDK FS1603 HARDWARE MONITOR DRIVER
+M:	Kevin Jia <kjia@nexthop.ai>
+L:	linux-hwmon@vger.kernel.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/hwmon/tdk,fs1603.yaml
+F:	Documentation/hwmon/fs1603.rst
+F:	drivers/hwmon/fs1603.c
 
 TEA5761 TUNER DRIVER
 M:	Mauro Carvalho Chehab <mchehab@kernel.org>
@@ -28426,6 +28486,7 @@ TORTURE-TEST MODULES
 M:	Davidlohr Bueso <dave@stgolabs.net>
 M:	"Paul E. McKenney" <paulmck@kernel.org>
 M:	Josh Triplett <josh@joshtriplett.org>
+M:	Joel Fernandes <joelagnelf@nvidia.com>
 L:	linux-kernel@vger.kernel.org
 S:	Supported
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/rcu/linux.git rcu/dev
@@ -28434,6 +28495,7 @@ F:	kernel/locking/locktorture.c
 F:	kernel/rcu/rcuscale.c
 F:	kernel/rcu/rcutorture.c
 F:	kernel/rcu/refscale.c
+F:	kernel/scftorture.c
 F:	kernel/torture.c
 
 TOSHIBA ACPI EXTRAS DRIVER
@@ -30552,8 +30614,11 @@ L:	linux-coco@lists.linux.dev
 L:	kvm@vger.kernel.org
 S:	Supported
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git x86/tdx
-N:	tdx
-K:	\b(tdx)
+F:	arch/x86/**/*tdx*
+F:	Documentation/**/*tdx*
+F:	drivers/virt/coco/tdx*/
+F:	include/uapi/linux/tdx*
+F:	tools/testing/selftests/tdx/
 
 X86 VDSO
 M:	Andy Lutomirski <luto@kernel.org>
