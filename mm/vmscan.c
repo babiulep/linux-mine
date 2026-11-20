@@ -1342,6 +1342,12 @@ retry:
 				flags |= TTU_SYNC;
 
 			try_to_unmap(folio, flags);
+			/*
+			 * Flush deferred writable TLB entries before we could
+			 * drop the folio lock and others could start writeback.
+			 */
+			if (folio_test_dirty(folio))
+				try_to_unmap_flush_dirty();
 			if (folio_mapped(folio)) {
 				stat->nr_unmap_fail += nr_pages;
 				if (!was_swapbacked &&
@@ -1383,12 +1389,6 @@ retry:
 			if (!sc->may_writepage)
 				goto keep_locked;
 
-			/*
-			 * Folio is dirty. Flush the TLB if a writable entry
-			 * potentially exists to avoid CPU writes after I/O
-			 * starts and then write it out here.
-			 */
-			try_to_unmap_flush_dirty();
 			switch (pageout(&ctx, mapping, folio, folio_list)) {
 			case PAGE_KEEP:
 				goto keep_locked;
@@ -4344,7 +4344,7 @@ bool lru_gen_look_around(struct page_vma_mapped_walk *pvmw, unsigned int nr)
 	walk = current->reclaim_state ? current->reclaim_state->mm_walk : NULL;
 
 	start = max(addr & PMD_MASK, vma->vm_start);
-	end = min(addr | ~PMD_MASK, vma->vm_end - 1) + 1;
+	end = pte_table_clamped_end(addr, vma->vm_end);
 
 	if (end - start == PAGE_SIZE)
 		return true;
@@ -5504,7 +5504,7 @@ static bool __maybe_unused state_is_valid(struct lruvec *lruvec)
 static bool fill_evictable(struct lruvec *lruvec)
 {
 	enum lru_list lru;
-	int remaining = MAX_LRU_BATCH;
+	int remaining = MIN_LRU_BATCH;
 
 	for_each_evictable_lru(lru) {
 		int type = is_file_lru(lru);
@@ -5549,7 +5549,7 @@ static bool fill_evictable(struct lruvec *lruvec)
 static bool drain_evictable(struct lruvec *lruvec)
 {
 	int gen, type, zone;
-	int remaining = MAX_LRU_BATCH;
+	int remaining = MIN_LRU_BATCH;
 
 	for_each_gen_type_zone(gen, type, zone) {
 		struct list_head *head = &lruvec->lrugen.folios[gen][type][zone];
