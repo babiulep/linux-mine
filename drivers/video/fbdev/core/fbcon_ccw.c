@@ -252,7 +252,7 @@ static void ccw_cursor(struct vc_data *vc, struct fb_info *info, bool enable,
 	attribute = get_attribute(info, c);
 	src = font_data_glyph_buf(par->rotated.buf, width, vpitch, c & charmask);
 	if (!src) {
-		src = font_data_glyph_buf(par->rotated.buf, width, vpitch, c & charmask);
+		src = font_data_glyph_buf(par->rotated.buf, width, vpitch, '\0');
 		if (!src)
 			return;
 	}
