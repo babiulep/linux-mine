@@ -96,7 +96,7 @@ void resctrl_arch_mon_event_config_read(void *_config_info)
 		pr_warn_once("Invalid event id %d\n", config_info->evtid);
 		return;
 	}
-	msrval = rdmsrq(MSR_AMD64_EVT_CFG_BASE + index, msrval);
+	msrval = rdmsrq(MSR_AMD64_EVT_CFG_BASE + index);
 
 	/* Report only the valid event configuration bits */
 	config_info->mon_config = msrval & MAX_EVT_CONFIG_BITS;
