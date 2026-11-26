@@ -1364,6 +1364,12 @@ void perf_pmu_enable(struct pmu *pmu)
 		pmu->pmu_enable(pmu);
 }
 
+bool perf_pmu_enabled(struct pmu *pmu)
+{
+	int *count = &this_cpc(pmu)->pmu_disable_count;
+	return *count == 0;
+}
+
 static void perf_assert_pmu_disabled(struct pmu *pmu)
 {
 	int *count = &this_cpc(pmu)->pmu_disable_count;
@@ -7774,9 +7780,15 @@ static void perf_pending_task(struct callback_head *head)
 	rctx = perf_swevent_get_recursion_context();
 
 	if (event->pending_work) {
-		event->pending_work = 0;
 		perf_sigtrap(event);
 		local_dec(&event->ctx->nr_no_switch_fast);
+		/*
+		 * event->pending_work also acts as a 'lock' for
+		 * event->{pending_addr, orig_type, attr.sig_data}. As such we
+		 * must clear after perf_sigtrap is complete.
+		 */
+		barrier();
+		event->pending_work = 0;
 	}
 	put_event(event);
 
@@ -10951,16 +10963,22 @@ static int __perf_event_overflow(struct perf_event *event,
 
 		notify_mode = in_nmi() ? TWA_NMI_CURRENT : TWA_RESUME;
 
-		if (!event->pending_work &&
-		    !task_work_add(current, &event->pending_task, notify_mode)) {
-			event->pending_work = pending_id;
-			local_inc(&event->ctx->nr_no_switch_fast);
-			WARN_ON_ONCE(!atomic_long_inc_not_zero(&event->refcount));
+		/*
+		 * Software events can nest and attempt this recursively;
+		 * claim the pending_work before task_work_add() recurses.
+		 */
+		if (cmpxchg_local(&event->pending_work, 0, 1) == 0) {
+			if (!task_work_add(event->ctx->task, &event->pending_task, notify_mode)) {
+				event->pending_work = pending_id;
+				local_inc(&event->ctx->nr_no_switch_fast);
+				WARN_ON_ONCE(!atomic_long_inc_not_zero(&event->refcount));
 
-			event->pending_addr = 0;
-			if (valid_sample && (data->sample_flags & PERF_SAMPLE_ADDR))
-				event->pending_addr = data->addr;
-
+				event->pending_addr = 0;
+				if (valid_sample && (data->sample_flags & PERF_SAMPLE_ADDR))
+					event->pending_addr = data->addr;
+			} else {
+				event->pending_work = 0;
+			}
 		} else if (event->attr.exclude_kernel && valid_sample) {
 			/*
 			 * Should not be able to return to user space without
@@ -11145,6 +11163,9 @@ static int perf_swevent_match(struct perf_event *event,
 				u32 event_id,
 				struct pt_regs *regs)
 {
+	if (!perf_pmu_enabled(event->pmu))
+		return 0;
+
 	if (event->attr.type != type)
 		return 0;
 
@@ -11523,6 +11544,9 @@ static int perf_tp_event_match(struct perf_event *event,
 				struct perf_raw_record *raw,
 				struct pt_regs *regs)
 {
+	if (!perf_pmu_enabled(event->pmu))
+		return 0;
+
 	if (event->hw.state & PERF_HES_STOPPED)
 		return 0;
 	/*
