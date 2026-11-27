@@ -6,7 +6,6 @@
  */
 #include "compress.h"
 #include <linux/psi.h>
-#include <linux/mm_inline.h>
 #include <linux/cpuhotplug.h>
 #include <trace/events/erofs.h>
 
@@ -1714,7 +1713,7 @@ drain_io:
 				DBG_BUGON(bvec.bv_len < sb->s_blocksize);
 			}
 
-			if (unlikely(folio_test_workingset(page_folio(bvec.bv_page))) &&
+			if (unlikely(PageWorkingset(bvec.bv_page)) &&
 			    !memstall) {
 				psi_memstall_enter(&pflags);
 				memstall = 1;

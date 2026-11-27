@@ -344,13 +344,15 @@ static int devfreq_set_target(struct devfreq *devfreq, unsigned long new_freq,
 			      u32 flags)
 {
 	struct devfreq_freqs freqs;
-	unsigned long cur_freq;
+	unsigned long cur_freq = devfreq->previous_freq;
+	unsigned long freq;
 	int err = 0;
 
-	if (devfreq->profile->get_cur_freq)
-		devfreq->profile->get_cur_freq(devfreq->dev.parent, &cur_freq);
-	else
-		cur_freq = devfreq->previous_freq;
+	if (devfreq->profile->get_cur_freq) {
+		err = devfreq->profile->get_cur_freq(devfreq->dev.parent, &freq);
+		if (!err)
+			cur_freq = freq;
+	}
 
 	freqs.old = cur_freq;
 	freqs.new = new_freq;
@@ -1144,6 +1146,7 @@ EXPORT_SYMBOL(devm_devfreq_remove_device);
  */
 int devfreq_suspend_device(struct devfreq *devfreq)
 {
+	unsigned long resume_freq;
 	int ret;
 
 	if (!devfreq)
@@ -1161,7 +1164,10 @@ int devfreq_suspend_device(struct devfreq *devfreq)
 
 	if (devfreq->suspend_freq) {
 		mutex_lock(&devfreq->lock);
+		/* devfreq_set_target() overwrites resume_freq; keep the pre-suspend one */
+		resume_freq = devfreq->previous_freq;
 		ret = devfreq_set_target(devfreq, devfreq->suspend_freq, 0);
+		devfreq->resume_freq = resume_freq;
 		mutex_unlock(&devfreq->lock);
 		if (ret)
 			return ret;

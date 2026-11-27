@@ -2399,7 +2399,7 @@ static int walk_to_pmd(struct mm_struct *mm, unsigned long addr, pmd_t **pmdp)
 		return -ENOMEM;
 	/* We may have raced a huge PUD fault. */
 	if (pud_trans_unstable(pud))
-		return -EFAULT;
+		return -EBUSY;
 
 	*pmdp = pmd;
 	return 0;
@@ -2409,7 +2409,7 @@ static int walk_to_pmd(struct mm_struct *mm, unsigned long addr, pmd_t **pmdp)
  * Map and lock the PTE entry for addr, allocating page tables as necessary.
  *
  * Returns 0 on success, -ENOMEM if a page table could not be allocated, or
- * -EFAULT if we raced and found something other than a page table.
+ * -EBUSY if we raced and didn't find a page table.
  */
 static int __get_locked_pte(struct mm_struct *mm, unsigned long addr,
 			    pte_t **ptep, spinlock_t **ptl)
@@ -2425,7 +2425,7 @@ static int __get_locked_pte(struct mm_struct *mm, unsigned long addr,
 		return -ENOMEM;
 	pte = pte_offset_map_lock(mm, pmd, addr, ptl);
 	if (!pte)
-		return -EFAULT;
+		return -EBUSY;
 
 	*ptep = pte;
 	return 0;
@@ -2604,7 +2604,7 @@ more:
 
 		start_pte = pte_offset_map_lock(mm, pmd, addr, &pte_lock);
 		if (!start_pte) {
-			err = -EFAULT;
+			err = -EBUSY;
 			goto out;
 		}
 		for (pte = start_pte; pte_idx < batch_size; ++pte, ++pte_idx) {
@@ -7425,6 +7425,7 @@ EXPORT_SYMBOL_GPL(generic_access_phys);
 static int __access_remote_vm(struct mm_struct *mm, unsigned long addr,
 			      void *buf, int len, unsigned int gup_flags)
 {
+	const bool force = gup_flags & FOLL_FORCE;
 	void *old_buf = buf;
 	int write = gup_flags & FOLL_WRITE;
 
@@ -7461,15 +7462,39 @@ static int __access_remote_vm(struct mm_struct *mm, unsigned long addr,
 				continue;
 			}
 
+			if (gup_flags & FOLL_ANON)
+				break;
+
+			/*
+			 * In contrast to GUP, we historically allowed
+			 * FOLL_FORCE write access to non-CoW mappings and
+			 * read access to write-only mappings. However, we
+			 * must always reject writes to CoW mappings as we
+			 * cannot CoW here.
+			 */
+			if (write) {
+				if (!vma_test(vma, VMA_MAYWRITE_BIT))
+					break;
+				if (!vma_test(vma, VMA_WRITE_BIT) && !force)
+					break;
+				if (vma_is_cow_mapping(vma))
+					break;
+			} else if (!vma_test_any(vma, VMA_READ_BIT, VMA_WRITE_BIT)) {
+				if (!force || !vma_test(vma, VMA_MAYREAD_BIT))
+					break;
+			}
+
 			/*
 			 * Check if this is a VM_IO | VM_PFNMAP VMA, which
 			 * we can access using slightly different code.
 			 */
 			bytes = 0;
 #ifdef CONFIG_HAVE_IOREMAP_PROT
-			if (vma->vm_ops && vma->vm_ops->access)
+			if (vma->vm_ops && vma->vm_ops->access) {
+				bytes = min_t(unsigned long, len, vma->vm_end - addr);
 				bytes = vma->vm_ops->access(vma, addr, buf,
-							    len, write);
+							    bytes, write);
+			}
 #endif
 			if (bytes <= 0)
 				break;

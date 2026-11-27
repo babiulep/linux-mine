@@ -2534,14 +2534,12 @@ static void wait_eb_writebacks(struct btrfs_block_group *block_group)
 static int call_zone_finish(struct btrfs_block_group *block_group,
 			    struct btrfs_io_stripe *stripe)
 {
+	struct btrfs_fs_info *fs_info = block_group->fs_info;
 	struct btrfs_device *device = stripe->dev;
 	const u64 physical = stripe->physical;
 	struct btrfs_zoned_device_info *zinfo = device->zone_info;
 	bool cleared;
 	int ret;
-
-	if (!device->bdev)
-		return 0;
 
 	if (zinfo->max_active_zones == 0)
 		return 0;
@@ -2559,9 +2557,11 @@ static int call_zone_finish(struct btrfs_block_group *block_group,
 			return ret;
 	}
 
+	spin_lock(&fs_info->zone_active_bgs_lock);
 	cleared = btrfs_dev_clear_active_zone(device, physical);
 	if (!(block_group->flags & BTRFS_BLOCK_GROUP_DATA) && cleared)
 		zinfo->reserved_active_zones++;
+	spin_unlock(&fs_info->zone_active_bgs_lock);
 
 	return 0;
 }
@@ -2573,6 +2573,9 @@ static int do_zone_finish(struct btrfs_block_group *block_group, bool fully_writ
 	const bool is_metadata = (block_group->flags &
 			(BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_SYSTEM));
 	struct btrfs_dev_replace *dev_replace = &fs_info->dev_replace;
+	enum btrfs_raid_types index;
+	bool zones_full;
+	int failed = 0;
 	int ret = 0;
 	int i;
 
@@ -2639,6 +2642,13 @@ static int do_zone_finish(struct btrfs_block_group *block_group, bool fully_writ
 	}
 
 	clear_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE, &block_group->runtime_flags);
+	/*
+	 * If the block group is allocated up to the zone capacity,
+	 * everything is written and the zones should be full already. A
+	 * truncated or failed write at the end is not detected here. That
+	 * would need a zone report from every device.
+	 */
+	zones_full = (block_group->alloc_offset == block_group->zone_capacity);
 	block_group->alloc_offset = block_group->zone_capacity;
 	if (block_group->flags & (BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_SYSTEM))
 		block_group->meta_write_pointer = block_group->start +
@@ -2651,11 +2661,40 @@ static int do_zone_finish(struct btrfs_block_group *block_group, bool fully_writ
 	down_read(&dev_replace->rwsem);
 	map = block_group->physical_map;
 	for (i = 0; i < map->num_stripes; i++) {
-		ret = call_zone_finish(block_group, &map->stripes[i]);
-		if (ret)
-			break;
+		struct btrfs_io_stripe *stripe = &map->stripes[i];
+		int err;
+
+		if (!stripe->dev->bdev) {
+			failed++;
+			continue;
+		}
+
+		err = call_zone_finish(block_group, stripe);
+		if (err) {
+			btrfs_warn(fs_info,
+		"zoned: failed to finish zone at physical %llu on devid %llu: %d",
+				   stripe->physical, stripe->dev->devid, err);
+			failed++;
+			ret = err;
+			/*
+			 * Do not finish more zones of a partly written block
+			 * group. They would end at a different write pointer
+			 * than the failed one.
+			 */
+			if (!zones_full)
+				break;
+		}
 	}
 	up_read(&dev_replace->rwsem);
+
+	/*
+	 * Zones that are already full do not change with a failed finish.
+	 * Like a write, fail only if more devices failed than the profile
+	 * tolerates. A missing device counts toward the limit.
+	 */
+	index = btrfs_bg_flags_to_raid_index(map->type);
+	if (zones_full && failed <= btrfs_raid_array[index].tolerated_failures)
+		ret = 0;
 
 	if (!ret && !fully_written)
 		btrfs_dec_block_group_ro(block_group);
@@ -2783,7 +2822,7 @@ int btrfs_zone_finish_endio(struct btrfs_fs_info *fs_info, u64 logical, u64 leng
 {
 	struct btrfs_block_group *block_group;
 	u64 min_alloc_bytes;
-	int ret = 0;
+	int ret;
 
 	if (!btrfs_is_zoned(fs_info))
 		return 0;
@@ -2803,11 +2842,18 @@ int btrfs_zone_finish_endio(struct btrfs_fs_info *fs_info, u64 logical, u64 leng
 	    block_group->start + block_group->zone_capacity)
 		goto out;
 
+	/*
+	 * The data of the ordered extent is written. A failure to finish the
+	 * zones does not change that, so only report it.
+	 */
 	ret = do_zone_finish(block_group, true);
+	if (ret)
+		btrfs_warn(fs_info, "zoned: failed to finish zones of block group %llu: %d",
+			   block_group->start, ret);
 
 out:
 	btrfs_put_block_group(block_group);
-	return ret;
+	return 0;
 }
 
 static void btrfs_zone_finish_endio_workfn(struct work_struct *work)

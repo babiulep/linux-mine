@@ -715,6 +715,13 @@ int bpf_insert_recursion_checks(struct bpf_verifier_env *env)
 	for (s = 1; s < env->subprog_cnt; s++) {
 		if (!si[s].recursive)
 			continue;
+		/* The depth at which the check stops it tells the low bits of r10. */
+		if (!env->allow_ptr_leaks && env->insn_aux_data[si[s].start].seen) {
+			verbose(env,
+				"recursive %s() is allowed only to CAP_PERFMON and CAP_SYS_ADMIN\n",
+				bpf_subprog_name(env, s));
+			return -EPERM;
+		}
 		n = 0;
 		/* The exit drops the frame in the stack in arena. Take it before the check. */
 		if (is_arena_sp_adj(&env->prog->insnsi[si[s].start])) {
@@ -1257,6 +1264,7 @@ int bpf_convert_ctx_accesses(struct bpf_verifier_env *env)
 	int i, cnt, size, ctx_field_size, ret, epilogue_cnt = 0, first = 0;
 	struct bpf_insn *epilogue_buf = env->epilogue_buf;
 	struct bpf_insn *insn_buf = env->insn_buf;
+	bool nospec, nospec_next = false;
 	struct bpf_insn *insn;
 	u32 target_size, size_default, off;
 	enum bpf_access_type type;
@@ -1331,8 +1339,13 @@ int bpf_convert_ctx_accesses(struct bpf_verifier_env *env)
 
 		insn = &env->prog->insnsi[i];
 
-		if (env->insn_aux_data[i].nospec) {
-			WARN_ON_ONCE(env->insn_aux_data[i].alu_state);
+		/* A call or an atomic gets its nospec in front of the next insn */
+		nospec = env->insn_aux_data[i].nospec;
+		WARN_ON_ONCE(nospec && env->insn_aux_data[i].alu_state);
+		nospec |= nospec_next;
+		nospec_next = env->insn_aux_data[i].nospec_result;
+
+		if (nospec) {
 			struct bpf_insn *patch = insn_buf;
 
 			*patch++ = BPF_ST_NOSPEC();
@@ -1419,6 +1432,7 @@ int bpf_convert_ctx_accesses(struct bpf_verifier_env *env)
 			insn = bpf_patch_list_add(env, i, insn_buf, cnt);
 			if (IS_ERR(insn))
 				return PTR_ERR(insn);
+			nospec_next = false;
 			continue;
 		}
 
@@ -1765,6 +1779,7 @@ static int jit_subprogs(struct bpf_verifier_env *env)
 		func[i]->aux->num_exentries = num_exentries;
 		func[i]->aux->tail_call_reachable = env->subprog_info[i].tail_call_reachable;
 		func[i]->aux->exception_cb = env->subprog_info[i].is_exception_cb;
+		func[i]->aux->might_throw = env->subprog_info[i].throws;
 		func[i]->aux->changes_pkt_data = env->subprog_info[i].changes_pkt_data;
 		func[i]->aux->might_sleep = env->subprog_info[i].might_sleep;
 		func[i]->aux->can_unwind = env->subprog_info[i].can_unwind;

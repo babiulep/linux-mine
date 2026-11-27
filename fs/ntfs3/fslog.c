@@ -748,7 +748,7 @@ static bool check_rstbl(const struct RESTART_TABLE *rt, size_t bytes)
 
 	ts = rsize * ne + sizeof(struct RESTART_TABLE);
 
-	if (!rsize || rsize > bytes ||
+	if (rsize < sizeof(__le32) || rsize > bytes ||
 	    rsize + sizeof(struct RESTART_TABLE) > bytes || bytes < ts ||
 	    le16_to_cpu(rt->total) > ne || ff > ts - sizeof(__le32) ||
 	    lf > ts - sizeof(__le32) ||
@@ -2778,6 +2778,9 @@ static inline bool check_attr(const struct MFT_REC *rec,
 		break;
 
 	case 1:
+		if (asize < SIZEOF_NONRESIDENT)
+			return false;
+
 		dsize = le64_to_cpu(attr->nres.data_size);
 		svcn = le64_to_cpu(attr->nres.svcn);
 		evcn = le64_to_cpu(attr->nres.evcn);
@@ -3552,12 +3555,19 @@ move_data:
 	case AddIndexEntryRoot:
 		e = (struct NTFS_DE *)data;
 		esize = le16_to_cpu(e->size);
+
+		/*
+		 * check_if_index_root() is what validates lrh->record_off, so
+		 * it has to run before attr is dereferenced.
+		 */
+		if (!check_if_index_root(rec, lrh))
+			goto dirty_vol;
+
 		root = resident_data(attr);
 		hdr = &root->ihdr;
 		used = le32_to_cpu(hdr->used);
 
-		if (!check_if_index_root(rec, lrh) ||
-		    !check_if_root_index(attr, hdr, lrh) ||
+		if (!check_if_root_index(attr, hdr, lrh) ||
 		    Add2Ptr(data, esize) > Add2Ptr(lrh, rec_len) ||
 		    esize > le32_to_cpu(rec->total) - le32_to_cpu(rec->used)) {
 			goto dirty_vol;
@@ -3579,14 +3589,15 @@ move_data:
 		break;
 
 	case DeleteIndexEntryRoot:
+		if (!check_if_index_root(rec, lrh))
+			goto dirty_vol;
+
 		root = resident_data(attr);
 		hdr = &root->ihdr;
 		used = le32_to_cpu(hdr->used);
 
-		if (!check_if_index_root(rec, lrh) ||
-		    !check_if_root_index(attr, hdr, lrh)) {
+		if (!check_if_root_index(attr, hdr, lrh))
 			goto dirty_vol;
-		}
 
 		e1 = Add2Ptr(attr, le16_to_cpu(lrh->attr_off));
 		esize = le16_to_cpu(e1->size);
@@ -3607,16 +3618,17 @@ move_data:
 		break;
 
 	case SetIndexEntryVcnRoot:
+		if (!check_if_index_root(rec, lrh))
+			goto dirty_vol;
+
 		root = resident_data(attr);
 		hdr = &root->ihdr;
 
 		{
 			u32 eoff, de_off;
 
-			if (!check_if_index_root(rec, lrh) ||
-			    !check_if_root_index(attr, hdr, lrh)) {
+			if (!check_if_root_index(attr, hdr, lrh))
 				goto dirty_vol;
-			}
 
 			de_off = le32_to_cpu(hdr->de_off);
 			used = le32_to_cpu(hdr->used);
@@ -3640,13 +3652,14 @@ move_data:
 		break;
 
 	case UpdateFileNameRoot:
+		if (!check_if_index_root(rec, lrh))
+			goto dirty_vol;
+
 		root = resident_data(attr);
 		hdr = &root->ihdr;
 
-		if (!check_if_index_root(rec, lrh) ||
-		    !check_if_root_index(attr, hdr, lrh)) {
+		if (!check_if_root_index(attr, hdr, lrh))
 			goto dirty_vol;
-		}
 
 		e = Add2Ptr(attr, le16_to_cpu(lrh->attr_off));
 		fname = de_get_fname(e);
@@ -3657,13 +3670,14 @@ move_data:
 		break;
 
 	case UpdateRecordDataRoot:
+		if (!check_if_index_root(rec, lrh))
+			goto dirty_vol;
+
 		root = resident_data(attr);
 		hdr = &root->ihdr;
 
-		if (!check_if_index_root(rec, lrh) ||
-		    !check_if_root_index(attr, hdr, lrh)) {
+		if (!check_if_root_index(attr, hdr, lrh))
 			goto dirty_vol;
-		}
 
 		e = Add2Ptr(attr, le16_to_cpu(lrh->attr_off));
 

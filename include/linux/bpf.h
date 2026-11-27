@@ -1650,7 +1650,8 @@ void bpf_trampoline_put(struct bpf_trampoline *tr);
 int arch_prepare_bpf_dispatcher(void *image, void *buf, s64 *funcs, int num_funcs);
 
 int bpf_trampoline_multi_attach(struct bpf_prog *prog, u32 *ids,
-				struct bpf_tracing_multi_link *link);
+				struct bpf_tracing_multi_link *link,
+				struct bpf_verifier_log *log);
 void bpf_trampoline_multi_detach(struct bpf_prog *prog,
 				 struct bpf_tracing_multi_link *link);
 void bpf_trampoline_set_flags(struct bpf_trampoline *tr, u32 flags);
@@ -1768,7 +1769,8 @@ static inline bool bpf_prog_has_trampoline(const struct bpf_prog *prog)
 	return false;
 }
 static inline int bpf_trampoline_multi_attach(struct bpf_prog *prog, u32 *ids,
-					      struct bpf_tracing_multi_link *link)
+					      struct bpf_tracing_multi_link *link,
+					      struct bpf_verifier_log *log)
 {
 	return -ENOTSUPP;
 }
@@ -1949,6 +1951,7 @@ struct bpf_prog_aux {
 	bool changes_pkt_data;
 	bool has_prologue;
 	bool might_sleep;
+	bool might_throw;
 	bool can_unwind;
 	/* frames of recursive subprogs can be on the stack when it is called */
 	bool in_recursion;
@@ -3287,7 +3290,8 @@ void bpf_iter_unreg_target(const struct bpf_iter_reg *reg_info);
 int bpf_iter_prog_supported(struct bpf_prog *prog);
 const struct bpf_func_proto *
 bpf_iter_get_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog);
-int bpf_iter_link_attach(const union bpf_attr *attr, bpfptr_t uattr, struct bpf_prog *prog);
+int bpf_iter_link_attach(const union bpf_attr *attr, bpfptr_t uattr, struct bpf_prog *prog,
+			 struct bpf_verifier_log *log);
 int bpf_iter_new_fd(struct bpf_link *link);
 bool bpf_link_is_iter(struct bpf_link *link);
 struct bpf_prog *bpf_iter_get_info(struct bpf_iter_meta *meta, bool in_stop);
@@ -3489,6 +3493,14 @@ static inline bool unprivileged_ebpf_enabled(void)
 static inline bool has_current_bpf_ctx(void)
 {
 	return !!current->bpf_ctx;
+}
+
+/* An async callback runs in no hook, and current is not the task that has armed it */
+extern struct bpf_run_ctx bpf_async_run_ctx;
+
+static inline bool bpf_in_async_cb(void)
+{
+	return current->bpf_ctx == &bpf_async_run_ctx;
 }
 
 void notrace bpf_prog_inc_misses_counter(struct bpf_prog *prog);
@@ -3812,6 +3824,11 @@ static inline bool unprivileged_ebpf_enabled(void)
 }
 
 static inline bool has_current_bpf_ctx(void)
+{
+	return false;
+}
+
+static inline bool bpf_in_async_cb(void)
 {
 	return false;
 }

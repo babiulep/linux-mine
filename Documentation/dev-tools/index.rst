@@ -36,7 +36,6 @@ Documentation/process/debugging/index.rst
    kunit/index
    ktap
    checkuapi
-   kernel-api-spec
    gpio-sloppy-logic-analyzer
    autofdo
    propeller

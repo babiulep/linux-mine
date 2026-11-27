@@ -1181,6 +1181,7 @@ struct bpf_subprog_info {
 	s16 fastcall_stack_off;
 	bool has_tail_call: 1;
 	bool might_throw: 1;
+	bool throws: 1; /* as the main pass found it, callx included */
 	bool can_unwind: 1; /* has unwind_exit */
 	bool recursive: 1; /* on a cycle of the call graph */
 	bool in_recursion: 1; /* recursive, or a recursive subprog gets to it */
@@ -2492,7 +2493,8 @@ int bpf_fixup_kfunc_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 			 struct bpf_insn *insn_buf, int insn_idx, int *cnt);
 
 /* Functions exported from verifier.c, used by trampoline.c */
-int bpf_check_attach_btf_id_multi(struct btf *btf, struct bpf_prog *prog, u32 btf_id,
+int bpf_check_attach_btf_id_multi(struct bpf_verifier_log *log, struct btf *btf,
+				  struct bpf_prog *prog, u32 btf_id,
 				  struct bpf_attach_target_info *tgt_info);
 
 /* Functions in fixups.c, called from bpf_check() */

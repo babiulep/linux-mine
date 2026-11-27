@@ -34,6 +34,7 @@
 #include <linux/cpumask.h>
 #include <linux/cnum.h>
 #include <linux/gcd.h>
+#include <linux/unaligned.h>
 #include <linux/bpf_mem_alloc.h>
 #include <net/xdp.h>
 #include <linux/trace_events.h>
@@ -5477,6 +5478,7 @@ enum {
 	CG_ARENA_SP	= BIT(5), /* subprogs that get to r12 */
 	CG_CB		= BIT(6),
 	CG_GLOBAL	= BIT(7),
+	CG_THROW	= BIT(8), /* subprogs that get to bpf_throw() */
 };
 
 #define for_each_marked_subprog(cg, s, mark) \
@@ -5520,10 +5522,13 @@ static int build_call_graph(struct bpf_verifier_env *env, struct bpf_call_graph 
 				(si[s].is_async_cb ? CG_IN_ASYNC_CB : 0) |
 				(bpf_call_graph_recursive(cg, s) ? CG_IN_RECURSION : 0) |
 				(si[s].has_tail_call ? CG_TAIL_CALL : 0) |
+				(si[s].throws ? CG_THROW : 0) |
 				(si[s].uses_arena_sp ? CG_ARENA_SP : 0) |
 				(bpf_subprog_is_global(env, s) ? CG_GLOBAL : 0);
 	bpf_call_graph_mark_callees(cg, CG_IN_CB | CG_IN_ASYNC_CB | CG_IN_RECURSION);
-	bpf_call_graph_mark_callers(cg, CG_TAIL_CALL, 0);
+	bpf_call_graph_mark_callers(cg, CG_TAIL_CALL | CG_THROW, 0);
+	for_each_marked_subprog(cg, s, CG_THROW)
+		si[s].throws = true;
 	return 0;
 }
 
@@ -5712,10 +5717,11 @@ struct bpf_subprog_call_depth_info {
 static int subprog_stack_size(struct bpf_verifier_env *env, int s)
 {
 	struct bpf_subprog_info *sub = &env->subprog_info[s];
+	int args = (sub->stack_arg_cnt - bpf_in_stack_arg_cnt(sub)) * BPF_REG_SIZE;
 
 	if (sub->priv_stack_mode == PRIV_STACK_ADAPTIVE)
-		return 0;
-	return round_up_stack_depth(env, sub->stack_depth);
+		return args;
+	return round_up_stack_depth(env, sub->stack_depth + args);
 }
 
 static void max_call_depth(struct bpf_subprog_call_depth_info *to,
@@ -5912,7 +5918,6 @@ static int check_call_depth(struct bpf_verifier_env *env, struct bpf_call_graph 
 					s, depth);
 				goto out;
 			}
-			continue;
 		}
 		depth = dinfo[s].depth + subprog_stack_size(env, s);
 		if (depth > env->max_stack_depth)
@@ -6464,13 +6469,13 @@ int bpf_map_direct_read(struct bpf_map *map, int off, int size, u64 *val,
 		*val = is_ldsx ? (s64)*(s8 *)ptr : (u64)*(u8 *)ptr;
 		break;
 	case sizeof(u16):
-		*val = is_ldsx ? (s64)*(s16 *)ptr : (u64)*(u16 *)ptr;
+		*val = is_ldsx ? (s64)get_unaligned((s16 *)ptr) : (u64)get_unaligned((u16 *)ptr);
 		break;
 	case sizeof(u32):
-		*val = is_ldsx ? (s64)*(s32 *)ptr : (u64)*(u32 *)ptr;
+		*val = is_ldsx ? (s64)get_unaligned((s32 *)ptr) : (u64)get_unaligned((u32 *)ptr);
 		break;
 	case sizeof(u64):
-		*val = *(u64 *)ptr;
+		*val = get_unaligned((u64 *)ptr);
 		break;
 	default:
 		return -EINVAL;
@@ -11475,6 +11480,12 @@ static int push_callback_call(struct bpf_verifier_env *env, struct bpf_insn *ins
 		if (state->speculative)
 			return 0;
 		/* there is no real recursion here. timer and workqueue callbacks are async */
+		/* there is no cgroup to take the storage from */
+		if (env->prog->aux->cgroup_storage[BPF_CGROUP_STORAGE_SHARED] ||
+		    env->prog->aux->cgroup_storage[BPF_CGROUP_STORAGE_PERCPU]) {
+			verbose(env, "async callback in a program with cgroup storage\n");
+			return -EINVAL;
+		}
 		env->subprog_info[subprog].is_async_cb = true;
 		async_cb = push_async_cb(env, env->subprog_info[subprog].start,
 					 insn_idx, subprog,
@@ -12716,10 +12727,26 @@ record_func_key(struct bpf_verifier_env *env, struct bpf_call_arg_meta *meta,
 	return 0;
 }
 
+static bool st_ops_returns_ptr(const struct bpf_prog *prog)
+{
+	const struct bpf_prog_aux *aux = prog->aux;
+
+	return prog->type == BPF_PROG_TYPE_STRUCT_OPS &&
+	       btf_type_resolve_ptr(aux->attach_btf, aux->attach_func_proto->type, NULL);
+}
+
+/* What leaves frame 0 gets to the caller of the program */
+static bool returns_to_kernel(const struct bpf_verifier_state *state)
+{
+	const struct bpf_func_state *frame = state->frame[0];
+
+	return !frame->in_async_callback_fn &&
+	       (!state->callers_unknown || frame->in_exception_callback_fn);
+}
+
 static int check_reference_leak(struct bpf_verifier_env *env, bool exception_exit)
 {
 	struct bpf_verifier_state *state = env->cur_state;
-	enum bpf_prog_type type = resolve_prog_type(env->prog);
 	struct bpf_reg_state *reg = reg_state(env, BPF_REG_0);
 	bool refs_lingering = false;
 	int i;
@@ -12733,8 +12760,9 @@ static int check_reference_leak(struct bpf_verifier_env *env, bool exception_exi
 		/* Allow struct_ops programs to return a referenced kptr back to
 		 * kernel. Type checks are performed later in check_return_code.
 		 */
-		if (type == BPF_PROG_TYPE_STRUCT_OPS && !exception_exit &&
-		    reg->id == state->refs[i].id)
+		if (!exception_exit && reg->id == state->refs[i].id &&
+		    env->prog->insnsi[env->insn_idx].code == (BPF_JMP | BPF_EXIT) &&
+		    st_ops_returns_ptr(env->prog) && returns_to_kernel(state))
 			continue;
 		verbose(env, "Unreleased reference id=%d alloc_insn=%d\n",
 			state->refs[i].id, state->refs[i].insn_idx);
@@ -13471,6 +13499,12 @@ static int check_helper_call(struct bpf_verifier_env *env, struct bpf_insn *insn
 		 */
 		if (env->fmodret_retvals) {
 			verbose(env, "tail calls are not allowed in fmod_ret programs with restricted return values\n");
+			return -EINVAL;
+		}
+		/* It can return a reference. The caller of a subprog takes r0 for a scalar. */
+		if (st_ops_returns_ptr(env->prog) &&
+		    (env->cur_state->curframe || !returns_to_kernel(env->cur_state))) {
+			verbose(env, "tail_call in a subprog would lead to reference leak\n");
 			return -EINVAL;
 		}
 		if (env->cur_state->curframe) {
@@ -16051,6 +16085,7 @@ static int check_kfunc_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 			return -ENOTSUPP;
 		}
 		env->seen_exception = true;
+		env->subprog_info[cur_func(env)->subprogno].throws = true;
 
 		/* In the case of the default callback, the cookie value passed
 		 * to bpf_throw becomes the return value of the program.
@@ -21903,7 +21938,7 @@ static int do_check_block(struct bpf_verifier_env *env, int prev_insn_idx)
 			env->insn_idx++;
 		}
 
-		/* only a store that stays gets it, see bpf_convert_ctx_accesses() */
+		/* End speculation at a retained store with a trailing barrier. */
 		if (state->speculative && insn_aux->nospec_result && !insn_aux->fastcall_pattern &&
 		    bpf_is_mem_insn(insn) && BPF_MODE(insn->code) == BPF_MEM) {
 process_bpf_exit:
@@ -24180,8 +24215,12 @@ btf_attach_func_proto(struct bpf_verifier_log *log, struct btf *btf, u32 func_id
 	int implicit;
 
 	func = btf_type_by_id(btf, func_id);
-	if (!func || !btf_type_is_func(func))
+	if (!func)
 		return NULL;
+	if (!btf_type_is_func(func)) {
+		bpf_log(log, "Type of id %u is not function.\n", func_id);
+		return NULL;
+	}
 	name = btf_name_by_offset(btf, func->name_off);
 
 	/*
@@ -24376,7 +24415,7 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
 
 		if (bpf_prog_is_dev_bound(prog->aux) &&
 		    !bpf_prog_dev_bound_match(prog, tgt_prog)) {
-			bpf_log(log, "Target program bound device mismatch");
+			bpf_log(log, "Target program bound device mismatch\n");
 			return -EINVAL;
 		}
 
@@ -24415,6 +24454,12 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
 		if (tgt_can_unwind && !prog_extension &&
 		    prog->expected_attach_type != BPF_TRACE_FENTRY) {
 			bpf_log(log, "Only fentry can attach to %s, which can unwind\n", tname);
+			return -EINVAL;
+		}
+		/* bpf_throw() would have to skip the trampoline that called the target */
+		if (subprog && aux->func && aux->func[subprog]->aux->might_throw &&
+		    !prog_extension && prog->expected_attach_type != BPF_TRACE_FENTRY) {
+			bpf_log(log, "Only fentry can attach to %s, which can throw\n", tname);
 			return -EINVAL;
 		}
 		/* What it takes of the stack is not counted, see bpf_insert_recursion_checks() */
@@ -24644,8 +24689,10 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
 
 		if ((prog->aux->saved_dst_prog_type || prog->aux->saved_dst_attach_type) &&
 		    (!tgt_prog || prog->aux->saved_dst_prog_type != tgt_prog->type ||
-		     prog->aux->saved_dst_attach_type != tgt_prog->expected_attach_type))
+		     prog->aux->saved_dst_attach_type != tgt_prog->expected_attach_type)) {
+			bpf_log(log, "Target differs in type from the target at load time\n");
 			return -EINVAL;
+		}
 
 		if (tgt_prog && conservative) {
 			/*
@@ -24944,7 +24991,8 @@ static int check_attach_btf_id(struct bpf_verifier_env *env)
 	return 0;
 }
 
-int bpf_check_attach_btf_id_multi(struct btf *btf, struct bpf_prog *prog, u32 btf_id,
+int bpf_check_attach_btf_id_multi(struct bpf_verifier_log *log, struct btf *btf,
+				  struct bpf_prog *prog, u32 btf_id,
 				  struct bpf_attach_target_info *tgt_info)
 {
 	const struct btf_type *t;
@@ -24958,28 +25006,40 @@ int bpf_check_attach_btf_id_multi(struct btf *btf, struct bpf_prog *prog, u32 bt
 	/* Check noreturn attachment. */
 	if ((prog->expected_attach_type == BPF_TRACE_FEXIT_MULTI ||
 	     prog->expected_attach_type == BPF_TRACE_FSESSION_MULTI) &&
-	     btf_id_set_contains(&noreturn_deny, btf_id))
+	     btf_id_set_contains(&noreturn_deny, btf_id)) {
+		bpf_log(log,
+			"Cannot attach fexit/fsession_multi prog to noreturn btf id %u.\n",
+			btf_id);
 		return -EINVAL;
+	}
 	/* Check denied attachment. */
-	if (btf_id_set_contains(&btf_id_deny, btf_id))
+	if (btf_id_set_contains(&btf_id_deny, btf_id)) {
+		bpf_log(log, "Cannot attach to denylist btf id %u.\n", btf_id);
 		return -EINVAL;
+	}
 
 	/* Check and get function target data. */
 	t = btf_type_by_id(btf, btf_id);
-	if (!t)
+	if (!t) {
+		bpf_log(log, "Cannot resolve type of btf id %u.\n", btf_id);
 		return -EINVAL;
+	}
 	tname = btf_name_by_offset(btf, t->name_off);
 	if (!tname)
 		return -EINVAL;
-	t = btf_attach_func_proto(NULL, btf, btf_id);
+	t = btf_attach_func_proto(log, btf, btf_id);
 	if (!t || !btf_type_is_func_proto(t))
 		return -EINVAL;
-	err = btf_distill_func_proto(NULL, btf, t, tname, &tgt_info->fmodel);
+	err = btf_distill_func_proto(log, btf, t, tname, &tgt_info->fmodel);
 	if (err < 0)
 		return err;
 	if (tgt_info->fmodel.ret_size > 8 &&
-	    attach_uses_trampoline_retval(prog->expected_attach_type))
+	    attach_uses_trampoline_retval(prog->expected_attach_type)) {
+		bpf_log(log,
+			"Attach to target %u:%s with a >8 byte return value is not supported for this attach type.\n",
+			btf_id, tname);
 		return -EOPNOTSUPP;
+	}
 	if (btf_is_module(btf)) {
 		/* The bpf program already holds reference to module. */
 		if (WARN_ON_ONCE(!prog->aux->mod))
@@ -24988,14 +25048,22 @@ int bpf_check_attach_btf_id_multi(struct btf *btf, struct bpf_prog *prog, u32 bt
 	} else {
 		addr = kallsyms_lookup_name(tname);
 	}
-	if (!addr || !ftrace_location(addr))
+	if (!addr) {
+		bpf_log(log, "Cannot resolve address of target %u:%s.\n", btf_id, tname);
 		return -ENOENT;
+	}
+	if (!ftrace_location(addr)) {
+		bpf_log(log, "Target %u:%s is not ftrace attachable.\n", btf_id, tname);
+		return -ENOENT;
+	}
 
 	/* Check sleepable program attachment. */
 	if (prog->sleepable) {
 		err = btf_id_allow_sleepable(btf_id, addr, prog, btf);
-		if (err)
+		if (err) {
+			bpf_log(log, "Target %u:%s is not sleepable.\n", btf_id, tname);
 			return err;
+		}
 	}
 	tgt_info->tgt_addr = addr;
 	return 0;

@@ -748,6 +748,12 @@ F:	Documentation/filesystems/afs.rst
 F:	fs/afs/
 F:	include/trace/events/afs.h
 
+AGENT RESOURCES
+M:	Sasha Levin <sashal@kernel.org>
+L:	workflows@vger.kernel.org
+S:	Maintained
+F:	agents/
+
 AGPGART DRIVER
 M:	David Airlie <airlied@redhat.com>
 L:	dri-devel@lists.freedesktop.org
@@ -14529,19 +14535,6 @@ W:	https://linuxtv.org
 T:	git git://linuxtv.org/media.git
 F:	drivers/media/radio/radio-keene*
 
-KERNEL API SPECIFICATION FRAMEWORK (KAPI)
-M:	Sasha Levin <sashal@kernel.org>
-L:	linux-api@vger.kernel.org
-S:	Maintained
-F:	Documentation/dev-tools/kernel-api-spec.rst
-F:	include/linux/kapi_syscall.h
-F:	include/linux/kernel_api_spec.h
-F:	include/trace/events/kapi.h
-F:	kernel/api/
-F:	tools/kapi/
-F:	tools/lib/python/kdoc/kdoc_apispec.py
-F:	tools/testing/selftests/kapi/
-
 KERNEL AUTOMOUNTER
 M:	Ian Kent <raven@themaw.net>
 L:	autofs@vger.kernel.org
@@ -21499,7 +21492,7 @@ F:	drivers/hwmon/pc87360.c
 PC8736x GPIO DRIVER
 M:	Jim Cromie <jim.cromie@gmail.com>
 S:	Maintained
-F:	drivers/char/pc8736x_gpio.c
+F:	drivers/gpio/gpio-pc8736x.c
 
 PC87427 HARDWARE MONITORING DRIVER
 M:	Jean Delvare <jdelvare@suse.com>
@@ -21887,6 +21880,7 @@ F:	rust/helpers/pci.c
 F:	rust/kernel/pci.rs
 F:	rust/kernel/pci/
 F:	samples/rust/rust_driver_pci.rs
+F:	samples/rust/rust_driver_sriov/
 
 PCIE BANDWIDTH CONTROLLER
 M:	Ilpo Järvinen <ilpo.jarvinen@linux.intel.com>
@@ -25559,8 +25553,8 @@ F:	include/linux/scx200.h
 SCx200 GPIO DRIVER
 M:	Jim Cromie <jim.cromie@gmail.com>
 S:	Maintained
-F:	drivers/char/scx200_gpio.c
-F:	include/linux/scx200_gpio.h
+F:	drivers/gpio/gpio-scx200.c
+F:	include/linux/scx200.h
 
 SCx200 HRT CLOCKSOURCE DRIVER
 M:	Jim Cromie <jim.cromie@gmail.com>
@@ -31316,10 +31310,11 @@ Q:	https://patchwork.linuxtv.org/project/linux-media/list/
 F:	Documentation/driver-api/media/drivers/zoran.rst
 F:	drivers/media/pci/zoran/
 
-ZRAM COMPRESSED RAM BLOCK DEVICE DRVIER
+ZRAM COMPRESSED RAM BLOCK DEVICE DRIVER
 M:	Minchan Kim <minchan@kernel.org>
 M:	Sergey Senozhatsky <senozhatsky@chromium.org>
-L:	linux-kernel@vger.kernel.org
+L:	linux-mm@kvack.org
+L:	linux-block@vger.kernel.org
 S:	Maintained
 F:	Documentation/ABI/testing/sysfs-block-zram
 F:	Documentation/ABI/testing/sysfs-class-zram
